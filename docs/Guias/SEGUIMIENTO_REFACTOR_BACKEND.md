@@ -135,9 +135,12 @@ Scraping entrega los lotes mediante HTTP autenticado a Catálogo; no escribe
 productos ni precios. El contador se actualiza en coordinación después del
 commit de Catálogo. Conservar el manejo explícito de `contador_pendiente` y
 no habilitar reintentos de lotes antes de SUP-270. Ver `GUIA_CATALOGO_INGESTA.md`.
-Incorporar futuras correcciones de SUP-268 en esta rama y, tras su squash,
-actualizar la base antes de preparar el siguiente PR. El usuario autorizó
-commit y push de SUP-269 sin abrir PR, y continuar SUP-270 desde estos cambios.
+SUP-268 ya se integró mediante el squash `b465d0a`, con el mismo contenido que
+la base original `e6c73ac`. Se incorporó `develop-refactor` en SUP-269 y se
+actualizó la referencia de rollback al commit integrado. El usuario autorizó
+abrir el PR de SUP-269 hacia `develop-refactor`.
+SUP-270 está creada desde SUP-269, sin cambios propios; su implementación
+continúa pausada hasta que el usuario indique retomarla.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

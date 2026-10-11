@@ -176,10 +176,10 @@ que se usa para rollback. No se publicó ninguna imagen ni se desplegó el clús
 
 Rama: `backend/refactor/sup-269-transferir-ingesta-catalogo-vmatus`, creada desde
 `e6c73ac` de SUP-268. El [PR #95](https://github.com/danirc2024/Taller_integracion_III/pull/95)
-seguía pendiente al iniciar esta tarea. Incorporar aquí las correcciones de esa
-rama; cuando se integre por squash, actualizar la base de SUP-269 y comprobar
-que su diff hacia `develop-refactor` contenga sólo esta tarea antes de abrir PR.
-Actualizar también `SUP269_REFERENCE_REF`/su valor por defecto al squash
-integrado de SUP-268 antes de retirar su commit original del historial, para
-mantener reproducible la construcción de la imagen usada en rollback.
-No integrar SUP-269 primero ni publicar los cambios sin autorización.
+seguía pendiente al iniciar esta tarea y ya se integró mediante el squash
+`b465d0ad278830a47a0c84a532e7d3f8a6ca7397`. Su contenido coincide con la base
+original de SUP-269. Se incorporó `develop-refactor` en esta rama y se comprobó
+que el diff del PR contiene sólo SUP-269.
+El valor por defecto de `SUP269_REFERENCE_REF` apunta al squash integrado,
+para mantener reproducible la construcción de la imagen usada en rollback.
+El usuario autorizó abrir el PR de SUP-269 hacia `develop-refactor`.
