@@ -1,7 +1,7 @@
-# Gateway transparente — SUP-264 / SUP-265
+# Gateway — SUP-264 a SUP-268
 
-Servicio Go independiente que reenvía las solicitudes al backend actual. Esta
-primera extracción conserva autenticación, catálogo y scraping en `backend/api`.
+Servicio Go independiente que enruta productos y administración de productos a
+Catálogo, y autenticación/scraping a la API. No incluye reglas de negocio.
 La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
 
 ## Ejecutar
@@ -9,7 +9,7 @@ La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
 Requiere Go 1.26 y un backend en ejecución. Desde `backend/gateway`:
 
 ```bash
-BACKEND_URL=http://127.0.0.1:8080 go run ./cmd/gateway
+BACKEND_URL=http://127.0.0.1:8080 CATALOGO_URL=http://127.0.0.1:8083 go run ./cmd/gateway
 ```
 
 Escucha por defecto en el puerto 8082. Para validar localmente:
@@ -17,27 +17,29 @@ Escucha por defecto en el puerto 8082. Para validar localmente:
 ```bash
 curl -fsS http://127.0.0.1:8082/_gateway/live
 curl -fsS http://127.0.0.1:8082/_gateway/ready
+curl -fsS http://127.0.0.1:8082/_gateway/dependencies
 curl -fsS http://127.0.0.1:8082/api/v1/health
 curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 ```
 
-`/_gateway/live` comprueba únicamente el proceso de la Gateway. Las rutas `/`,
-`/health`, `/api/v1/health`, `/swagger/*` y todas las rutas de negocio se envían al
-backend sin sustituir sus respuestas. En `/api/v1/health`, verificar también los
+`/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
+Las rutas `/api/v1/productos` y `/api/v1/admin/productos`, con sus subrutas, se
+envían a Catálogo para todos los métodos; el resto se envía a la API. No se
+normalizan rutas ni se hace fallback entre destinos. En `/api/v1/health`, verificar también los
 campos de PostgreSQL y Redis: un HTTP 200 no demuestra que esas dependencias estén
 disponibles.
 
-`/_gateway/ready` consulta `/api/v1/health` y responde 200 únicamente cuando la
-API, PostgreSQL y Redis están disponibles; responde 503 ante fallos, respuestas
-inválidas o timeout. Acepta GET/HEAD, sin seguir redirects. Liveness sigue
-respondiendo independientemente del backend para evitar reinicios por fallos de
-dependencias.
+`/_gateway/dependencies` consulta en paralelo la salud de la API y de Catálogo,
+con un límite común y sin seguir redirects. Responde 503 si alguno falla. Este
+diagnóstico no es el readiness probe: retirar Gateway porque falla un dominio
+impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
 
 ## Configuración
 
 | Variable | Valor por defecto | Uso |
 |---|---|---|
 | `BACKEND_URL` | Obligatoria | Origen HTTP/HTTPS, por ejemplo `http://127.0.0.1:8080`; sin credenciales, prefijo de ruta, query o fragmento |
+| `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; vacío sólo para rollback con una API anterior a SUP-268 que conserve el lector |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección de escucha; usar `127.0.0.1:8082` para restringirla a la máquina local |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo máximo de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el backend |
@@ -45,7 +47,7 @@ dependencias.
 | `GATEWAY_READ_HEADER_TIMEOUT` | `5s` | Lectura de headers del cliente |
 | `GATEWAY_IDLE_TIMEOUT` | `60s` | Conexión entrante inactiva |
 | `GATEWAY_SHUTDOWN_TIMEOUT` | `10s` | Espera de solicitudes activas al recibir SIGINT/SIGTERM |
-| `GATEWAY_READINESS_TIMEOUT` | `2s` | Tiempo máximo de consulta al health del backend |
+| `GATEWAY_READINESS_TIMEOUT` | `2s` | Límite conjunto de las consultas de diagnóstico de dependencias |
 | `GATEWAY_TRUSTED_PROXIES` | Vacío | IPs/CIDRs de proxies de entrada confiables, separados por coma |
 
 Los timeouts deben ser duraciones positivas de Go, como `500ms` o `30s`. Una
@@ -59,12 +61,12 @@ conexiones internas no usan automáticamente el proxy de salida de la máquina.
 - Conserva método, path codificado, query, cuerpo, Host, códigos y representación
   de respuesta. Propaga cookies, Authorization, CORS, redirects y headers de la
   aplicación. Los headers de salto HTTP se gestionan con `httputil.ReverseProxy`.
-- CORS, autenticación, autorización y rate limiting continúan en el backend;
+- CORS, autenticación, autorización y rate limiting continúan en cada servicio;
   esta tarea no introduce contadores duplicados ni cambia permisos.
 - Acepta un `X-Request-ID` de hasta 128 caracteres ASCII alfanuméricos, `.`, `_`
   o `-`; genera uno si falta o es inválido. Lo propaga al backend, respuesta y
   logs JSON. No registra query, cookies, Authorization ni cuerpos.
-- Elimina `X-User-ID` y `X-Role` del cliente: no constituyen identidad verificada.
+- Elimina `X-User-ID`, `X-Role` y `X-User-Role` del cliente: no constituyen identidad verificada.
 - Reconstruye los headers `X-Forwarded-*`. Sin proxies confiables configurados,
   usa la IP de la conexión y el protocolo real de entrada. Si el peer inmediato
   es confiable, recorre la cadena de IPs desde la derecha hasta el primer salto
@@ -103,25 +105,19 @@ go build ./cmd/gateway
 Las pruebas usan servidores HTTP locales y cubren transparencia de requests y
 respuestas, cookies, estados de error del backend, compresión, redirects, IPs de
 proxies confiables, correlación sin credenciales en logs, conexión fallida,
-timeout, cancelación, escrituras sin replay y readiness ante fallos de dependencias.
+timeout, cancelación, escrituras sin replay, enrutamiento por dominio y diagnóstico
+de dependencias separado de readiness.
 
-La comprobación funcional de SUP-264 además debe comparar las rutas actuales
-directas y proxificadas con fixtures aislados: catálogo, búsqueda/detalle, salud,
-registro/login/perfil, administración y ciclo de trabajos/ingesta. No ejecutar
-escrituras de prueba en producción ni lanzar spiders reales para esta validación.
-
-Desde `backend/gateway`, el script de humo usa Python 3 estándar:
+Desde la raíz, el humo usa Docker Compose y Python 3 estándar:
 
 ```bash
-python3 tests/smoke_api.py --backend-url http://127.0.0.1:8080 --gateway-url http://127.0.0.1:8082
+bash scripts/smoke_catalogo_routing_compose.sh
 ```
 
-Espera los datos semilla del repositorio (al menos cinco productos). Por defecto
-comprueba contratos sin crear fixtures. Para validar también registro, login,
-permisos, ingesta y cierre de trabajos, apuntar el backend a una base **aislada de
-prueba** e incluir `--write-fixtures`. Ese modo crea usuarios y datos; no los
-elimina automáticamente. Eliminar la base de prueba después de detener el
-backend. Los ejemplos usan Python 3 aunque el comando disponible sea `python`.
+Utiliza fixtures, credenciales y recursos aislados; los elimina al terminar.
+Cubre contratos frente a una API anterior al corte, frontend, cookies, roles,
+registro/perfil, trabajos/ingesta, tres réplicas de Catálogo, fallos independientes
+y rollback con la imagen anterior. No inicia workers ni spiders reales.
 
 No basta con una salida exitosa de los tests del proxy para afirmar compatibilidad
 del backend real. Registrar resultados de ambas suites y del humo por separado.
@@ -140,12 +136,12 @@ La imagen ejecuta un binario estático como UID/GID 65532. Compose y Kubernetes
 añaden filesystem de solo lectura, recursos y probes. Gateway no recibe secretos
 JWT, acceso Redis ni credenciales PostgreSQL.
 
-SUP-265 incorpora Gateway a Compose, CI y los manifiestos de prueba. La API actual
-conserva todos sus dominios y datos. Los clientes usan `api:8080`; Gateway reenvía
-a `go_service:8080` en Compose y `api-backend:8080` en Kubernetes.
+Los clientes usan `api:8080`. Desde SUP-268, Gateway reenvía consultas de productos
+a `catalogo:8080`; autenticación/scraping van a `go_service:8080` en Compose y
+`api-backend:8080` en Kubernetes. API ya no contiene el lector de Catálogo.
 
-La [guía de desarrollo y pruebas](../../docs/Guias/GUIA_GATEWAY_DESARROLLO_PRUEBAS.md)
-describe configuración, pruebas aisladas, cambio de entrada gradual y rollback.
+La [guía de SUP-268](../../docs/Guias/GUIA_CATALOGO_ENRUTAMIENTO.md)
+describe configuración, pruebas aisladas, orden de activación y rollback.
 El script prueba también el frontend tras detener Gateway y devolver el alias
 `api` a la API original. Los manifiestos no implican un despliegue automático en
 el clúster de la universidad.

@@ -13,6 +13,7 @@ import (
 type Config struct {
 	ListenAddr            string
 	Backend               *url.URL
+	Catalogo              *url.URL
 	RequestTimeout        time.Duration
 	DialTimeout           time.Duration
 	ResponseHeaderTimeout time.Duration
@@ -38,19 +39,15 @@ func Load(getenv func(string) string) (Config, error) {
 		return c, fmt.Errorf("GATEWAY_LISTEN_ADDR must have a port between 1 and 65535")
 	}
 
-	c.Backend, err = url.Parse(getenv("BACKEND_URL"))
-	if err != nil || c.Backend == nil || c.Backend.Hostname() == "" ||
-		(c.Backend.Scheme != "http" && c.Backend.Scheme != "https") ||
-		c.Backend.User != nil || c.Backend.Opaque != "" ||
-		(c.Backend.Path != "" && c.Backend.Path != "/") ||
-		c.Backend.RawQuery != "" || c.Backend.ForceQuery || c.Backend.Fragment != "" ||
-		strings.ContainsAny(c.Backend.Host, " \t\r\n") {
-		return c, fmt.Errorf("BACKEND_URL is required and must be an http(s) origin without credentials, path, query or fragment")
+	c.Backend, err = parseOrigin("BACKEND_URL", getenv("BACKEND_URL"))
+	if err != nil {
+		return c, err
 	}
-	if port := c.Backend.Port(); port != "" {
-		n, err := strconv.Atoi(port)
-		if err != nil || n < 1 || n > 65535 {
-			return c, fmt.Errorf("BACKEND_URL port must be between 1 and 65535")
+	// Empty is an explicit legacy mode for rollback with a pre-cutover API image.
+	if value := getenv("CATALOGO_URL"); value != "" {
+		c.Catalogo, err = parseOrigin("CATALOGO_URL", value)
+		if err != nil {
+			return c, err
 		}
 	}
 
@@ -92,4 +89,23 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 	return c, nil
+}
+
+func parseOrigin(name, value string) (*url.URL, error) {
+	target, err := url.Parse(value)
+	if err != nil || target == nil || target.Hostname() == "" ||
+		(target.Scheme != "http" && target.Scheme != "https") ||
+		target.User != nil || target.Opaque != "" ||
+		(target.Path != "" && target.Path != "/") ||
+		target.RawQuery != "" || target.ForceQuery || target.Fragment != "" ||
+		strings.ContainsAny(target.Host, " \t\r\n") {
+		return nil, fmt.Errorf("%s must be an http(s) origin without credentials, path, query or fragment", name)
+	}
+	if port := target.Port(); port != "" {
+		n, err := strconv.Atoi(port)
+		if err != nil || n < 1 || n > 65535 {
+			return nil, fmt.Errorf("%s port must be between 1 and 65535", name)
+		}
+	}
+	return target, nil
 }

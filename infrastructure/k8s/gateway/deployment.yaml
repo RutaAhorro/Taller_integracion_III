@@ -30,6 +30,8 @@ spec:
           env:
             - name: BACKEND_URL
               value: http://api-backend:8080
+            - name: CATALOGO_URL
+              value: http://catalogo:8080
             - name: GATEWAY_LISTEN_ADDR
               value: :8080
           envFrom:

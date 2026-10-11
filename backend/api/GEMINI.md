@@ -58,9 +58,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 <!-- ARCHITECTURE:AUTO-GENERATED — NO EDITAR DEBAJO DE ESTA LÍNEA -->
 
-## Mapa auto-generado: API Gateway (Go + Gin)
+## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-**33 archivos .go** detectados
+**35 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -68,19 +68,22 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - Structs: productoSemilla
 - `main()`
 
-### `domain/producto.go` (package domain)
+### `infrastructure/models.go` (package infrastructure)
 
-- Structs: FiltroProductosDTO, ProductoDTO, ProductoAdminDTO, MetadatosPaginacionDTO, PaginaProductosDTO, PaginaProductosAdminDTO, HistorialPrecioDTO, ProductoDetalleDTO
+- Structs: Usuario, PreferencialDieteticaUsuario, DireccionUsuario, PerfilTransporteUsuario, TarjetaFidelidadUsuario, MisionValidacion, Categoria, Marca, ProductoNormalizado, EquivalenciaProducto, Receta, IngredienteReceta, MapeoProductoIA, CadenaSupermercado, SucursalSupermercado, TrabajoScraper, ProductoCrudo, CapturaPrecio, ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, DetalleArticuloParada
 
-### `domain/scraper.go` (package domain)
+### `internal/identity/internal/domain/models.go` (package domain)
 
-- Structs: IniciarTrabajoDTO, TrabajoScraperDTO, FinalizarTrabajoDTO, ProductoScrapeadoDTO, IngestaLoteDTO, IngestaResultadoDTO
+- Structs: Usuario
 
-### `domain/usuario.go` (package domain)
+### `internal/identity/internal/domain/repository.go` (package domain)
+
+
+### `internal/identity/internal/domain/usuario.go` (package domain)
 
 - Structs: ActualizarPerfilDTO, PerfilUsuarioDTO
 
-### `handlers/auth_handler.go` (package handlers)
+### `internal/identity/internal/handlers/auth_handler.go` (package handlers)
 
 - Structs: RegistroRequest, RegistroResponse, LoginRequest, LoginResponse, AuthHandler, GoogleLoginRequest
 - `NewAuthHandler(authService services.AuthService) *AuthHandler`
@@ -90,16 +93,105 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `(AuthHandler).ActualizarPerfil(c *gin.Context)`
 - `(AuthHandler).GoogleLoginUsuario(c *gin.Context)`
 
-### `handlers/producto_handler.go` (package handlers)
+### `internal/identity/internal/middleware/jwt_auth.go` (package middleware)
 
-- Structs: ProductoHandler
-- `NewProductoHandler(service services.ProductoService) *ProductoHandler`
-- `(ProductoHandler).ObtenerProductos(c *gin.Context)`
-- `(ProductoHandler).ObtenerProductosAdmin(c *gin.Context)`
-- `(ProductoHandler).BuscarProductos(c *gin.Context)`
-- `(ProductoHandler).ObtenerDetalleProducto(c *gin.Context)`
+- `RequireAuth() gin.HandlerFunc`
 
-### `handlers/scraper_handler.go` (package handlers)
+### `internal/identity/internal/middleware/rate_limit.go` (package middleware)
+
+- `RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc`
+- `RateLimitLogin(rdb *redis.Client) gin.HandlerFunc`
+
+### `internal/identity/internal/middleware/rbac.go` (package middleware)
+
+- `RequireRole(rolesPermitidos ...string) gin.HandlerFunc`
+
+### `internal/identity/internal/repositories/usuario_repository.go` (package repositories)
+
+- Structs: gormUsuarioRepository
+- `NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository`
+- `(gormUsuarioRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
+- `(gormUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
+- `(gormUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
+- `(gormUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+
+### `internal/identity/internal/routes/auth_routes.go` (package routes)
+
+- `RegistrarRutasAuth(rg *gin.RouterGroup, authHandler *handlers.AuthHandler, rdb *redis.Client)`
+
+### `internal/identity/internal/security/jwt.go` (package security)
+
+- Structs: JWTClaims
+- `getJWTSecret() []byte`
+- `GenerarToken(usuarioID, rol, provider string) (string, error)`
+- `ValidarToken(tokenString string) (*jwt.Token, error)`
+
+### `internal/identity/internal/security/password.go` (package security)
+
+- `HashPassword(password string) (string, error)`
+- `CheckPasswordHash(password, hash string) bool`
+
+### `internal/identity/internal/services/auth_service.go` (package services)
+
+- Structs: RegistroDTO, UsuarioCreadoDTO, authService
+- `NewAuthService(usuarioRepo domain.UsuarioRepository) AuthService`
+- `validarComplejidadPassword(password string) error`
+- `validarEmail(email string) bool`
+- `(authService).Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error)`
+- `(authService).Login(correo, password string) (*domain.Usuario, error)`
+- `(authService).LoginWithContext(ctx context.Context, correo, password string) (*domain.Usuario, error)`
+- `(authService).GoogleLogin(ctx context.Context, tokenGoogle string) (*domain.Usuario, error)`
+- `(authService).ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)`
+
+### `internal/identity/module.go` (package identity)
+
+- Structs: Module
+- `New(db *gorm.DB, rdb *redis.Client) *Module`
+- `(Module).RegisterRoutes(group *gin.RouterGroup)`
+- `(Module).RequireAuth() gin.HandlerFunc`
+- `(Module).RequireRole(roles ...string) gin.HandlerFunc`
+
+### `internal/identity/tests/auth_handler_test.go` (package tests)
+
+- `TestAuthHandler_RegistrarUsuario_AutoLogin(t *testing.T)`
+- `TestAuthHandler_ActualizarPerfil(t *testing.T)`
+
+### `internal/identity/tests/auth_service_test.go` (package tests)
+
+- Structs: mockUsuarioRepository
+- `newMockUsuarioRepository() *mockUsuarioRepository`
+- `(mockUsuarioRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
+- `(mockUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
+- `(mockUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
+- `(mockUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- `TestAuthService_PasswordComplexity(t *testing.T)`
+- `TestAuthService_RegistroExitoso(t *testing.T)`
+- `TestAuthService_Login(t *testing.T)`
+- `TestAuthService_ActualizarPerfil(t *testing.T)`
+
+### `internal/identity/tests/jwt_test.go` (package tests)
+
+- `TestJWT_GenerarYValidarToken(t *testing.T)`
+- `TestJWT_TokenInvalido(t *testing.T)`
+- `TestMiddleware_RequireAuth(t *testing.T)`
+- `init()`
+
+### `internal/identity/tests/rbac_test.go` (package tests)
+
+- `TestRequireRole(t *testing.T)`
+
+### `internal/scraping/internal/domain/models.go` (package domain)
+
+- Structs: CadenaSupermercado, SucursalSupermercado, TrabajoScraper
+
+### `internal/scraping/internal/domain/repository.go` (package domain)
+
+
+### `internal/scraping/internal/domain/scraper.go` (package domain)
+
+- Structs: IniciarTrabajoDTO, TrabajoScraperDTO, FinalizarTrabajoDTO, ProductoScrapeadoDTO, IngestaLoteDTO, IngestaResultadoDTO
+
+### `internal/scraping/internal/handlers/scraper_handler.go` (package handlers)
 
 - Structs: ScraperHandler, ejecutarScraperRequest
 - `NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler`
@@ -111,9 +203,57 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `(ScraperHandler).IngestarProductosDirecto(c *gin.Context)`
 - `(ScraperHandler).manejarErrorIngesta(c *gin.Context, err error)`
 
-### `infrastructure/models.go` (package infrastructure)
+### `internal/scraping/internal/repositories/ingesta_legacy_repository.go` (package repositories)
 
-- Structs: Usuario, PreferencialDieteticaUsuario, DireccionUsuario, PerfilTransporteUsuario, TarjetaFidelidadUsuario, MisionValidacion, Categoria, Marca, ProductoNormalizado, EquivalenciaProducto, Receta, IngredienteReceta, MapeoProductoIA, CadenaSupermercado, SucursalSupermercado, TrabajoScraper, ProductoCrudo, CapturaPrecio, ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, DetalleArticuloParada
+- Structs: gormIngestaRepository
+- `NewIngestaLegacyRepository(db *gorm.DB) domain.IngestaRepository`
+- `(gormIngestaRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
+- `(gormIngestaRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
+- `(gormIngestaRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+
+### `internal/scraping/internal/repositories/trabajo_repository.go` (package repositories)
+
+- Structs: gormTrabajoRepository
+- `NewTrabajoRepository(db *gorm.DB) domain.TrabajoRepository`
+- `(gormTrabajoRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
+- `(gormTrabajoRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
+- `(gormTrabajoRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+
+### `internal/scraping/internal/routes/scraper_routes.go` (package routes)
+
+- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler)`
+
+### `internal/scraping/internal/services/scraper_service.go` (package services)
+
+- Structs: scraperService
+- `NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository) ScraperService`
+- `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
+
+### `internal/scraping/module.go` (package scraping)
+
+- Structs: Module
+- `New(db *gorm.DB, rdb *redis.Client) *Module`
+- `(Module).RegisterRoutes(group *gin.RouterGroup)`
+
+### `internal/scraping/tests/scraper_test.go` (package tests)
+
+- Structs: mockScraperRepository
+- `newMockScraperRepository() *mockScraperRepository`
+- `(mockScraperRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
+- `(mockScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
+- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+- `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
+- `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
+- `(mockScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+- `TestScraperService_IniciarTrabajo_Exitoso(t *testing.T)`
+- `TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T)`
+- `TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T)`
+- `TestScraperHandler_EndpointsHTTP(t *testing.T)`
+- `stringPtr(s string) *string`
 
 ### `main.go` (package main)
 
@@ -124,6 +264,10 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `HealthHandler(c *gin.Context)`
 - `main()`
 
+### `main_test.go` (package main)
+
+- `TestModuleCompositionHTTP(t *testing.T)`
+
 ### `middleware/error_handler.go` (package middleware)
 
 - Structs: RespuestaError
@@ -132,117 +276,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `MethodNotAllowedHandler() gin.HandlerFunc`
 - `ResponderError(c *gin.Context, estado int, mensaje string, err error)`
 
-### `middleware/jwt_auth.go` (package middleware)
+### `tests/architecture_test.go` (package tests)
 
-- `RequireAuth() gin.HandlerFunc`
-
-### `middleware/rate_limit.go` (package middleware)
-
-- `RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc`
-- `RateLimitLogin(rdb *redis.Client) gin.HandlerFunc`
-
-### `middleware/rbac.go` (package middleware)
-
-- `RequireRole(rolesPermitidos ...string) gin.HandlerFunc`
-
-### `repositories/producto_repository.go` (package repositories)
-
-- Structs: gormProductoRepository
-- `NewProductoRepository(db *gorm.DB) ProductoRepository`
-- `(gormProductoRepository).Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error)`
-- `(gormProductoRepository).ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error)`
-- `(gormProductoRepository).ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)`
-
-### `repositories/scraper_repository.go` (package repositories)
-
-- Structs: gormScraperRepository
-- `NewScraperRepository(db *gorm.DB) ScraperRepository`
-- `(gormScraperRepository).CrearTrabajo(ctx context.Context, trabajo *infrastructure.TrabajoScraper) error`
-- `(gormScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*infrastructure.TrabajoScraper, error)`
-- `(gormScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*infrastructure.TrabajoScraper, error)`
-- `(gormScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*infrastructure.CadenaSupermercado, error)`
-- `(gormScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*infrastructure.SucursalSupermercado, error)`
-- `(gormScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
-
-### `repositories/usuario_repository.go` (package repositories)
-
-- Structs: gormUsuarioRepository
-- `NewUsuarioRepository(db *gorm.DB) UsuarioRepository`
-- `(gormUsuarioRepository).FindByEmail(ctx context.Context, email string) (*infrastructure.Usuario, error)`
-- `(gormUsuarioRepository).FindByID(ctx context.Context, id string) (*infrastructure.Usuario, error)`
-- `(gormUsuarioRepository).Create(ctx context.Context, usuario *infrastructure.Usuario) error`
-- `(gormUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
-
-### `routes/admin_routes.go` (package routes)
-
-- `RegistrarRutasAdmin(rg *gin.RouterGroup, db *gorm.DB)`
-
-### `routes/auth_routes.go` (package routes)
-
-- `RegistrarRutasAuth(rg *gin.RouterGroup, db *gorm.DB, rdb *redis.Client)`
-
-### `routes/producto_routes.go` (package routes)
-
-- `RegistrarRutasProductos(rg *gin.RouterGroup, db *gorm.DB)`
-
-### `routes/scraper_routes.go` (package routes)
-
-- `RegistrarRutasScraper(rg *gin.RouterGroup, db *gorm.DB, rdb *redis.Client)`
-
-### `services/auth_service.go` (package services)
-
-- Structs: RegistroDTO, UsuarioCreadoDTO, authService
-- `NewAuthService(usuarioRepo repositories.UsuarioRepository) AuthService`
-- `validarComplejidadPassword(password string) error`
-- `validarEmail(email string) bool`
-- `(authService).Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error)`
-- `(authService).Login(correo, password string) (*infrastructure.Usuario, error)`
-- `(authService).LoginWithContext(ctx context.Context, correo, password string) (*infrastructure.Usuario, error)`
-- `(authService).GoogleLogin(ctx context.Context, tokenGoogle string) (*infrastructure.Usuario, error)`
-- `(authService).ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)`
-
-### `services/producto_service.go` (package services)
-
-- Structs: productoService
-- `NewProductoService(repo repositories.ProductoRepository) ProductoService`
-- `(productoService).ObtenerCatalogo(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error)`
-- `(productoService).ObtenerCatalogoAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error)`
-- `(productoService).ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)`
-
-### `services/scraper_service.go` (package services)
-
-- Structs: scraperService
-- `NewScraperService(repo repositories.ScraperRepository) ScraperService`
-- `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
-- `(scraperService).mapearTrabajoDTO(t *infrastructure.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
-
-### `tests/auth_handler_test.go` (package tests)
-
-- `TestAuthHandler_RegistrarUsuario_AutoLogin(t *testing.T)`
-- `TestAuthHandler_ActualizarPerfil(t *testing.T)`
-
-### `tests/auth_service_test.go` (package tests)
-
-- Structs: mockUsuarioRepository
-- `newMockUsuarioRepository() *mockUsuarioRepository`
-- `(mockUsuarioRepository).FindByEmail(ctx context.Context, email string) (*infrastructure.Usuario, error)`
-- `(mockUsuarioRepository).FindByID(ctx context.Context, id string) (*infrastructure.Usuario, error)`
-- `(mockUsuarioRepository).Create(ctx context.Context, usuario *infrastructure.Usuario) error`
-- `(mockUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
-- `TestAuthService_PasswordComplexity(t *testing.T)`
-- `TestAuthService_RegistroExitoso(t *testing.T)`
-- `TestAuthService_Login(t *testing.T)`
-- `TestAuthService_ActualizarPerfil(t *testing.T)`
-
-### `tests/jwt_test.go` (package tests)
-
-- `TestJWT_GenerarYValidarToken(t *testing.T)`
-- `TestJWT_TokenInvalido(t *testing.T)`
-- `TestMiddleware_RequireAuth(t *testing.T)`
-- `init()`
+- `TestModuleDependencies(t *testing.T)`
 
 ### `tests/middleware_test.go` (package tests)
 
@@ -253,54 +289,6 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `TestPanicRecoveryHandler(t *testing.T)`
 - `TestResponderError(t *testing.T)`
 
-### `tests/producto_handler_test.go` (package tests)
-
-- `TestProductoHandler_ObtenerProductos(t *testing.T)`
-- `TestProductoHandler_BuscarProductos(t *testing.T)`
-- `TestProductoHandler_ObtenerDetalleProducto(t *testing.T)`
-- `TestProductoHandler_ObtenerProductosAdmin(t *testing.T)`
-
-### `tests/producto_service_test.go` (package tests)
-
-- Structs: mockProductoRepository
-- `(mockProductoRepository).Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error)`
-- `(mockProductoRepository).ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error)`
-- `(mockProductoRepository).ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)`
-- `TestProductoService_ValoresPorDefecto(t *testing.T)`
-- `TestProductoService_SanitizacionYLimites(t *testing.T)`
-- `TestProductoService_Busqueda_Minimo3Caracteres(t *testing.T)`
-- `TestProductoService_ObtenerPorID(t *testing.T)`
-- `TestProductoService_ObtenerCatalogoAdmin(t *testing.T)`
-
-### `tests/rbac_test.go` (package tests)
-
-- `TestRequireRole(t *testing.T)`
-
-### `tests/scraper_test.go` (package tests)
-
-- Structs: mockScraperRepository
-- `newMockScraperRepository() *mockScraperRepository`
-- `(mockScraperRepository).CrearTrabajo(ctx context.Context, trabajo *infrastructure.TrabajoScraper) error`
-- `(mockScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*infrastructure.TrabajoScraper, error)`
-- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*infrastructure.TrabajoScraper, error)`
-- `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*infrastructure.CadenaSupermercado, error)`
-- `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*infrastructure.SucursalSupermercado, error)`
-- `(mockScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
-- `TestScraperService_IniciarTrabajo_Exitoso(t *testing.T)`
-- `TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T)`
-- `TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T)`
-- `TestScraperHandler_EndpointsHTTP(t *testing.T)`
-- `stringPtr(s string) *string`
-
-### `utils/jwt.go` (package utils)
-
-- Structs: JWTClaims
-- `getJWTSecret() []byte`
-- `GenerarToken(usuarioID, rol, provider string) (string, error)`
-- `ValidarToken(tokenString string) (*jwt.Token, error)`
-
 ### `utils/security.go` (package utils)
 
 - `SanitizarInputBusqueda(input string) string`
-- `HashPassword(password string) (string, error)`
-- `CheckPasswordHash(password, hash string) bool`

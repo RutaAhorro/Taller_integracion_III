@@ -1,0 +1,66 @@
+# SUP-268: aplica el Compose real sobre recursos aislados, sin bot ni worker.
+services:
+  db:
+    container_name: !reset null
+    ports: !reset []
+    volumes: !override
+      - pgdata:/var/lib/postgresql/data
+      - ${SUP268_INIT_DIR:?}:/docker-entrypoint-initdb.d:ro
+  redis:
+    container_name: !reset null
+    ports: !reset []
+  go_service:
+    image: sup268-api:local
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP268_API_PORT:-18080}:8080"]
+    healthcheck:
+      interval: 2s
+  catalogo:
+    image: sup268-catalogo:local
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    environment:
+      DB_URL: postgres://sup268_catalog_reader:${SUP268_READER_PASSWORD:?}@db:5432/sup268?sslmode=disable
+    healthcheck:
+      interval: 2s
+  gateway:
+    image: sup268-gateway:local
+    ports: !override ["127.0.0.1:${SUP268_GATEWAY_PORT:-18082}:8080"]
+    healthcheck:
+      interval: 2s
+  frontend:
+    image: sup265-frontend:local
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP268_FRONTEND_PORT:-13000}:3000"]
+    volumes: !reset []
+  reference_api:
+    image: sup267-api:local
+    build:
+      context: ${SUP268_REFERENCE_API_DIR:?}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://sup268:${DB_PASSWORD}@db:5432/sup268?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?}
+      REDIS_URL: redis://redis:6379/0
+    ports: ["127.0.0.1:${SUP268_REFERENCE_PORT:-18084}:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [microservices_net]
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+secrets:
+  network_ca:
+    file: ${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

@@ -11,7 +11,6 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/middleware"
-	"github.com/danirc2024/Taller_integracion_III/backend/api/routes"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 	"github.com/redis/go-redis/v9"
@@ -121,9 +120,7 @@ func setupRouter() *gin.Engine {
 	identidad := identity.New(DB, RDB)
 	coordinacion := scraping.New(DB, RDB)
 	identidad.RegisterRoutes(v1)
-	routes.RegistrarRutasProductos(v1, DB)
 	coordinacion.RegisterRoutes(v1)
-	routes.RegistrarRutasAdmin(v1, DB, identidad.RequireAuth(), identidad.RequireRole("admin"))
 
 	return r
 }

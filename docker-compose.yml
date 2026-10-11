@@ -34,7 +34,7 @@ services:
       # - air
     container_name: go_service_api
     ports:
-      - 8080:8080
+      - "127.0.0.1:8080:8080" # API interna: Catálogo se consulta por Gateway (8082).
     environment:
       - PORT=8080
       - DB_HOST=db
@@ -71,6 +71,40 @@ services:
         limits:
           cpus: '0.3'
           memory: 500M
+  catalogo:
+    build:
+      context: ./backend/catalogo
+      dockerfile: Dockerfile
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el entorno local}
+      CORS_ALLOWED_ORIGINS: ${CATALOGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      DB_MAX_OPEN_CONNS: '10'
+      DB_MAX_IDLE_CONNS: '5'
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/_catalogo/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - microservices_net
+    deploy:
+      resources:
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+        limits:
+          cpus: '0.5'
+          memory: 256M
   gateway:
     build:
       context: ./backend/gateway
@@ -79,10 +113,13 @@ services:
       - "127.0.0.1:8082:8080"
     environment:
       BACKEND_URL: http://go_service:8080
+      CATALOGO_URL: http://catalogo:8080
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
     depends_on:
       go_service:
+        condition: service_healthy
+      catalogo:
         condition: service_healthy
     restart: unless-stopped
     read_only: true

@@ -5,21 +5,25 @@ on:
     branches: [main, develop, develop-refactor]
     paths:
       - 'backend/gateway/**'
+      - 'backend/catalogo/**'
       - 'backend/api/**'
       - 'frontend/web/**'
       - 'docker-compose*.yml'
       - 'infrastructure/k8s/**'
       - 'scripts/smoke_gateway_compose.sh'
+      - 'scripts/smoke_catalogo_routing_compose.sh'
       - '.github/workflows/**'
   push:
     branches: [develop-refactor]
     paths:
       - 'backend/gateway/**'
+      - 'backend/catalogo/**'
       - 'backend/api/**'
       - 'frontend/web/**'
       - 'docker-compose*.yml'
       - 'infrastructure/k8s/**'
       - 'scripts/smoke_gateway_compose.sh'
+      - 'scripts/smoke_catalogo_routing_compose.sh'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -43,7 +47,7 @@ jobs:
         run: |
           go test -race ./...
           go vet ./...
-          go build -o /tmp/sup266-api .
+          go build -o /tmp/sup268-api .
 
   gateway:
     runs-on: ubuntu-latest
@@ -72,8 +76,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - name: Compose smoke and rollback
-        run: bash scripts/smoke_gateway_compose.sh
+        run: bash scripts/smoke_catalogo_routing_compose.sh
 
   manifests:
     runs-on: ubuntu-latest
@@ -92,5 +97,5 @@ jobs:
         run: |
           kubeconform -strict -summary -kubernetes-version 1.32.0 \
             infrastructure/k8s/gateway/ \
-            infrastructure/k8s/api/service.yaml \
-            infrastructure/k8s/api/backend-service.yaml
+            infrastructure/k8s/catalogo/ \
+            infrastructure/k8s/api/

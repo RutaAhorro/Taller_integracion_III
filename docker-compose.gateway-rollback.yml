@@ -1,6 +1,9 @@
 # Docker Compose >= 2.24.4. Return api:8080 to the existing backend.
 services:
   go_service:
+    # Desde SUP-268 la API actual no tiene lector: restaurar también su imagen.
+    image: ${SUP268_LEGACY_API_IMAGE:?Define una imagen de API anterior a SUP-268}
+    build: !reset null
     networks:
       microservices_net:
         aliases: !override [api-backend, api]

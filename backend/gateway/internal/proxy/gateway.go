@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
@@ -45,48 +46,60 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 
-	reverse := &httputil.ReverseProxy{
-		Transport: methodTransport{reads: reads, writes: writes},
-		Rewrite: func(pr *httputil.ProxyRequest) {
-			pr.SetURL(c.Backend)
-			// The configured target is an origin; don't normalize paths or queries.
-			pr.Out.URL.Path = pr.In.URL.Path
-			pr.Out.URL.RawPath = pr.In.URL.RawPath
-			pr.Out.URL.RawQuery = pr.In.URL.RawQuery
-			pr.Out.URL.ForceQuery = pr.In.URL.ForceQuery
-			pr.Out.Host = pr.In.Host
-			pr.Out.Header.Set("X-Request-ID", pr.In.Header.Get("X-Request-ID"))
-			pr.Out.Header.Del("X-User-ID")
-			pr.Out.Header.Del("X-Role")
-			clientIP, scheme := forwardingIdentity(pr.In, c.TrustedProxies)
-			pr.SetXForwarded()
-			if clientIP != "" {
-				pr.Out.Header.Set("X-Forwarded-For", clientIP)
-			}
-			pr.Out.Header.Set("X-Forwarded-Proto", scheme)
-		},
-		ModifyResponse: func(res *http.Response) error {
-			res.Header.Set("X-Request-ID", res.Request.Header.Get("X-Request-ID"))
-			return nil
-		},
-		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
-		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			id := r.Header.Get("X-Request-ID")
-			if errors.Is(r.Context().Err(), context.Canceled) {
-				logger.Info("upstream_canceled", "request_id", id)
-				return
-			}
-			status, code, message := http.StatusBadGateway, "backend_unavailable", "El backend no está disponible."
-			var timeout net.Error
-			if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
-				status, code, message = http.StatusGatewayTimeout, "backend_timeout", "El backend no respondió a tiempo."
-			}
-			logger.Warn("upstream_error", "request_id", id, "status", status, "error", err.Error())
-			w.Header().Set("Content-Type", "application/json; charset=utf-8")
-			w.Header().Set("X-Request-ID", id)
-			w.WriteHeader(status)
-			_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "mensaje": message, "request_id": id})
-		},
+	newProxy := func(target *url.URL, upstream string) *httputil.ReverseProxy {
+		unavailableMessage, timeoutMessage := "El backend no está disponible.", "El backend no respondió a tiempo."
+		if upstream == "catalogo" {
+			unavailableMessage, timeoutMessage = "Catálogo no está disponible.", "Catálogo no respondió a tiempo."
+		}
+		return &httputil.ReverseProxy{
+			Transport: methodTransport{reads: reads, writes: writes},
+			Rewrite: func(pr *httputil.ProxyRequest) {
+				pr.SetURL(target)
+				// The configured target is an origin; don't normalize paths or queries.
+				pr.Out.URL.Path = pr.In.URL.Path
+				pr.Out.URL.RawPath = pr.In.URL.RawPath
+				pr.Out.URL.RawQuery = pr.In.URL.RawQuery
+				pr.Out.URL.ForceQuery = pr.In.URL.ForceQuery
+				pr.Out.Host = pr.In.Host
+				pr.Out.Header.Set("X-Request-ID", pr.In.Header.Get("X-Request-ID"))
+				pr.Out.Header.Del("X-User-ID")
+				pr.Out.Header.Del("X-Role")
+				pr.Out.Header.Del("X-User-Role")
+				clientIP, scheme := forwardingIdentity(pr.In, c.TrustedProxies)
+				pr.SetXForwarded()
+				if clientIP != "" {
+					pr.Out.Header.Set("X-Forwarded-For", clientIP)
+				}
+				pr.Out.Header.Set("X-Forwarded-Proto", scheme)
+			},
+			ModifyResponse: func(res *http.Response) error {
+				res.Header.Set("X-Request-ID", res.Request.Header.Get("X-Request-ID"))
+				return nil
+			},
+			ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+			ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+				id := r.Header.Get("X-Request-ID")
+				if errors.Is(r.Context().Err(), context.Canceled) {
+					logger.Info("upstream_canceled", "request_id", id)
+					return
+				}
+				status, code, message := http.StatusBadGateway, upstream+"_unavailable", unavailableMessage
+				var timeout net.Error
+				if errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &timeout) && timeout.Timeout()) {
+					status, code, message = http.StatusGatewayTimeout, upstream+"_timeout", timeoutMessage
+				}
+				logger.Warn("upstream_error", "request_id", id, "upstream", upstream, "status", status, "error", err.Error())
+				w.Header().Set("Content-Type", "application/json; charset=utf-8")
+				w.Header().Set("X-Request-ID", id)
+				w.WriteHeader(status)
+				_ = json.NewEncoder(w).Encode(map[string]string{"error": code, "mensaje": message, "request_id": id})
+			},
+		}
+	}
+	backendProxy := newProxy(c.Backend, "backend")
+	var catalogProxy *httputil.ReverseProxy
+	if c.Catalogo != nil {
+		catalogProxy = newProxy(c.Catalogo, "catalogo")
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -109,7 +122,7 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 				"duration_ms", time.Since(started).Milliseconds(), "response_bytes", response.bytes)
 		}()
 		// Existing /health and /api/v1/health still belong to the backend.
-		if r.URL.Path == "/_gateway/live" {
+		if r.URL.Path == "/_gateway/live" || r.URL.Path == "/_gateway/ready" {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				response.Header().Set("Allow", "GET, HEAD")
 				response.WriteHeader(http.StatusMethodNotAllowed)
@@ -122,7 +135,7 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			}
 			return
 		}
-		if r.URL.Path == "/_gateway/ready" {
+		if r.URL.Path == "/_gateway/dependencies" {
 			if r.Method != http.MethodGet && r.Method != http.MethodHead {
 				response.Header().Set("Allow", "GET, HEAD")
 				response.WriteHeader(http.StatusMethodNotAllowed)
@@ -130,27 +143,7 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			}
 			ctx, cancel := context.WithTimeout(r.Context(), c.ReadinessTimeout)
 			defer cancel()
-			target := *c.Backend
-			target.Path, target.RawPath, target.RawQuery = "/api/v1/health", "", ""
-			probe, _ := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
-			probe.Header.Set("X-Request-ID", id)
-			checks := map[string]string{"backend": "error", "database": "error", "redis": "error"}
-			res, err := readinessClient.Do(probe)
-			if err == nil {
-				defer res.Body.Close()
-				var health struct {
-					Status string            `json:"status"`
-					Checks map[string]string `json:"checks"`
-				}
-				if res.StatusCode == http.StatusOK && json.NewDecoder(io.LimitReader(res.Body, 64*1024)).Decode(&health) == nil && health.Status == "ok" {
-					checks["backend"] = "ok"
-					for _, dependency := range []string{"database", "redis"} {
-						if health.Checks[dependency] == "ok" {
-							checks[dependency] = "ok"
-						}
-					}
-				}
-			}
+			checks := dependencyChecks(ctx, readinessClient, c, id)
 			status, state := http.StatusOK, "ok"
 			for _, check := range checks {
 				if check != "ok" {
@@ -166,9 +159,22 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), c.RequestTimeout)
 		defer cancel()
-		reverse.ServeHTTP(response, r.WithContext(ctx))
+		if catalogProxy != nil && isCatalogPath(r.URL.Path) {
+			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else {
+			backendProxy.ServeHTTP(response, r.WithContext(ctx))
+		}
 	})
 	return &Gateway{handler: handler, reads: reads, writes: writes}
+}
+
+func isCatalogPath(path string) bool {
+	for _, prefix := range []string{"/api/v1/productos", "/api/v1/admin/productos"} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) { g.handler.ServeHTTP(w, r) }

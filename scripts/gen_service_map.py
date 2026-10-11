@@ -29,7 +29,7 @@ SERVICES = {
     },
     "backend/api": {
         "lang": "go",
-        "name": "API Gateway (Go + Gin)",
+        "name": "API de Identidad y Scraping (Go + Gin)",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },

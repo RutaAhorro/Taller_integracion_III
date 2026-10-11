@@ -1,0 +1,12 @@
+# Restaurar una imagen verificada de API anterior a SUP-268, con el lector.
+# La Gateway conserva api:8080 y deja de enviar consultas a Catálogo.
+services:
+  go_service:
+    image: ${SUP268_LEGACY_API_IMAGE:?Define una imagen de API anterior a SUP-268}
+    build: !reset null
+  gateway:
+    environment:
+      CATALOGO_URL: ''
+    depends_on: !override
+      go_service:
+        condition: service_healthy

@@ -7,6 +7,9 @@ test_project="sup267-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:10])')"
 test_env="$test_dir/test.env"
 test_ca=""
 export SUP267_INIT_DIR="$test_dir/db-init"
+export SUP267_REFERENCE_API_DIR="$test_dir/reference-api"
+# La API actual ya no tiene lector. Comparar contra el merge de SUP-267.
+reference_ref="${SUP267_REFERENCE_REF:-1ae1f8662e1d0fa972b04700ec7a84c9e037565c}"
 
 compose() {
   env -u SUP267_DB_PASSWORD -u SUP267_READER_PASSWORD -u SUP267_JWT_SECRET \
@@ -27,6 +30,9 @@ finish() {
   exit "$status"
 }
 trap finish EXIT
+
+mkdir -p "$SUP267_REFERENCE_API_DIR"
+git -C "$repo_root" archive "$reference_ref" backend/api | tar -x -C "$SUP267_REFERENCE_API_DIR" --strip-components=2
 
 mkdir -p "$SUP267_INIT_DIR"
 chmod 755 "$test_dir" "$SUP267_INIT_DIR"

@@ -1,5 +1,12 @@
 # SUP-266: módulos de Identidad y coordinación de scraping
 
+> Estado posterior: SUP-267 extrajo Catálogo y SUP-268 retira su lector de la API.
+> `main.go` compone ahora únicamente Identidad y Scraping. Los paquetes antiguos
+> `domain`, `handlers`, `repositories`, `services` y `routes` de productos se
+> eliminan; sus pruebas de negocio permanecen en Catálogo. La persistencia de
+> ingesta y los modelos heredados continúan hasta SUP-269/SUP-271.
+> Ver [procedimiento vigente](GUIA_CATALOGO_ENRUTAMIENTO.md).
+
 ## Alcance y resultado
 
 Identidad y Scraping tienen implementaciones privadas y entradas pequeñas para

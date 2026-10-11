@@ -1,5 +1,10 @@
 # Integración de Gateway en desarrollo y pruebas — SUP-265
 
+> SUP-268 activa Catálogo como destino separado y cambia readiness. El procedimiento
+> vigente está en [Enrutamiento y despliegue de Catálogo](GUIA_CATALOGO_ENRUTAMIENTO.md).
+> Esta guía conserva el contexto de SUP-265; un rollback completo ahora requiere
+> también una imagen de API anterior a SUP-268, mediante `SUP268_LEGACY_API_IMAGE`.
+
 ## Resultado y alcance
 
 El frontend (Nginx o Vite), bot y worker usan `api:8080`. Ese nombre corresponde a
@@ -115,7 +120,8 @@ real en todos los comandos (`<namespace>` es un placeholder).
 1. Aplicar `infrastructure/k8s/api/backend-service.yaml`: selecciona `app: api`,
    sin cambiar el acceso actual.
 2. Aplicar `infrastructure/k8s/gateway/` y esperar `rollout status deployment/gateway`.
-   Startup/liveness comprueban el proceso; readiness exige API, PostgreSQL y Redis.
+   Desde SUP-268 startup/liveness/readiness comprueban la Gateway; el diagnóstico
+   de API, PostgreSQL, Redis y Catálogo está en `/_gateway/dependencies`.
 3. Probar por `kubectl -n <namespace> port-forward service/gateway 8082:8080`:
    readiness y rutas de lectura; comparar con la API directa. Ejecutar fixtures
    de escritura solo contra una base aislada de prueba.

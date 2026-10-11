@@ -30,6 +30,12 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"BACKEND_URL", "http://backend:8080?token=private"},
 		{"BACKEND_URL", "http://backend:8080#fragment"},
 		{"BACKEND_URL", "http://backend:70000"},
+		{"CATALOGO_URL", "ftp://catalogo:8080"},
+		{"CATALOGO_URL", "http://user:password@catalogo:8080"},
+		{"CATALOGO_URL", "http://catalogo:8080/api"},
+		{"CATALOGO_URL", "http://catalogo:8080?token=private"},
+		{"CATALOGO_URL", "http://catalogo:8080#fragment"},
+		{"CATALOGO_URL", "http://catalogo:70000"},
 		{"GATEWAY_LISTEN_ADDR", "8082"},
 		{"GATEWAY_LISTEN_ADDR", ":0"},
 		{"GATEWAY_REQUEST_TIMEOUT", "-1s"},
@@ -61,13 +67,14 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 func TestLoadOverrides(t *testing.T) {
 	env := map[string]string{
 		"BACKEND_URL": "https://[::1]:8443/", "GATEWAY_LISTEN_ADDR": "127.0.0.1:9000",
+		"CATALOGO_URL":            "http://catalogo:8080",
 		"GATEWAY_REQUEST_TIMEOUT": "2s", "GATEWAY_TRUSTED_PROXIES": "127.0.0.1,10.0.0.0/24,::1",
 	}
 	c, err := Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != env["GATEWAY_LISTEN_ADDR"] || c.RequestTimeout != 2*time.Second || len(c.TrustedProxies) != 3 {
+	if c.ListenAddr != env["GATEWAY_LISTEN_ADDR"] || c.Catalogo.String() != env["CATALOGO_URL"] || c.RequestTimeout != 2*time.Second || len(c.TrustedProxies) != 3 {
 		t.Fatalf("overrides not applied: %+v", c)
 	}
 }

@@ -45,7 +45,7 @@ func bodyOf(t *testing.T, res *http.Response) []byte {
 	return body
 }
 
-func TestReadinessRequiresHealthyDependencies(t *testing.T) {
+func TestDiagnosticsRequireHealthyDependencies(t *testing.T) {
 	for _, tc := range []struct {
 		name, body                     string
 		upstreamStatus, expectedStatus int
@@ -70,7 +70,7 @@ func TestReadinessRequiresHealthyDependencies(t *testing.T) {
 			}))
 			defer backend.Close()
 			gateway := gatewayFor(t, backend.URL, nil, nil)
-			req, _ := http.NewRequest("GET", gateway.URL+"/_gateway/ready", nil)
+			req, _ := http.NewRequest("GET", gateway.URL+"/_gateway/dependencies", nil)
 			req.Header.Set("X-Request-ID", "ready-test")
 			res, err := http.DefaultClient.Do(req)
 			if err != nil {
@@ -107,8 +107,9 @@ func TestReadinessTimeoutAndLivenessIndependence(t *testing.T) {
 		method, path   string
 		expectedStatus int
 	}{
-		{"GET", "/_gateway/ready", 503}, {"HEAD", "/_gateway/ready", 503},
-		{"POST", "/_gateway/ready", 405}, {"GET", "/_gateway/live", 200},
+		{"GET", "/_gateway/dependencies", 503}, {"HEAD", "/_gateway/dependencies", 503},
+		{"POST", "/_gateway/dependencies", 405}, {"GET", "/_gateway/live", 200},
+		{"GET", "/_gateway/ready", 200}, {"HEAD", "/_gateway/ready", 200}, {"POST", "/_gateway/ready", 405},
 	} {
 		req, _ := http.NewRequest(tc.method, gateway.URL+tc.path, nil)
 		res, err := client.Do(req)

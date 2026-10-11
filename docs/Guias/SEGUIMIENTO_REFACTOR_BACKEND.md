@@ -6,7 +6,9 @@ retomar las tareas y actualizarlo cuando cambie la base de integración.
 ## Base de integración revisada
 
 - Rama: `develop-refactor`.
-- HEAD remoto actual al comenzar SUP-267: `b2d1b5f1e14896602f24d39d96605b70d7419366`.
+- HEAD remoto al comenzar SUP-268: `1ae1f8662e1d0fa972b04700ec7a84c9e037565c`.
+- SUP-267 se integró por squash en `1ae1f86` ([PR #94](https://github.com/danirc2024/Taller_integracion_III/pull/94)),
+  con los fixes de CORS y errores internos. La base anterior de SUP-267 era `b2d1b5f`.
 - SUP-266 se integró por squash en `b2d1b5f` ([PR #93](https://github.com/danirc2024/Taller_integracion_III/pull/93));
   el seguimiento de SUP-264/265 se integró en `e263379` (PR #92).
 - La revisión histórica de SUP-264/265 descrita debajo corresponde a `bd94276`.
@@ -103,16 +105,25 @@ sus contratos y siguen en el binario de API. Se verificó el review de login SSO
 la comprobación de `PasswordHash` nulo/vacío estaba conservada en `390a2bd`, con
 prueba de regresión aprobada. No fue necesario modificar la lógica de login.
 
-La tarea en curso es SUP-267: Catálogo y precios como servicio independiente.
-Su rama `backend/refactor/sup-267-extraer-catalogo-vmatus` parte de `b2d1b5f`.
-La activación de rutas y despliegues corresponde a SUP-268. Consultar
-`GUIA_CATALOGO_INDEPENDIENTE.md` para alcance y brechas funcionales previas.
+SUP-267 está integrada: Catálogo tiene módulo, proceso, imagen y pruebas propios.
+La tarea en curso es SUP-268, en
+`backend/refactor/sup-268-enrutar-desplegar-catalogo-vmatus`, desde `1ae1f86`.
+Activa las consultas en Gateway, incorpora Compose/Kubernetes/HPA y elimina
+el lector duplicado de API. Consultar `GUIA_CATALOGO_ENRUTAMIENTO.md` para
+activación, rollback y límites de la validación local.
 El review de seguridad de PR #94 detectó dos deudas heredadas: CORS con reflexión
 de cualquier origen y exposición de errores internos. Se corrigen en Catálogo
 con `CORS_ALLOWED_ORIGINS`, mensajes públicos genéricos y logs correlacionados.
 Al activar SUP-268, configurar los orígenes exactos del frontend. La política
 CORS y los errores de las otras rutas de la API heredada requieren seguimiento
 propio; esta corrección no cambia el proceso de Identidad ni sus cookies.
+Gateway usa readiness local y diagnóstico separado de dependencias para que
+una caída de API/Redis no retire el acceso a Catálogo. El rollback de Catálogo
+exige una imagen anterior de API con lector; quitar sólo `CATALOGO_URL` no basta.
+El humo de SUP-268 reemplaza el antiguo script de integración y resuelve los
+pendientes de certificados de ese script mediante una copia única, respetando
+el bundle recibido y eliminando sólo archivos propios. Las observaciones de
+SUP-264/265 anteriores son históricas.
 Los squashes ya incorporaron el contenido de las ramas anteriores; evitar
 reintroducir sus commits históricos al preparar la siguiente tarea.
 
