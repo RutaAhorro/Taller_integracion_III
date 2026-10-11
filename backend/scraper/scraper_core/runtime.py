@@ -16,7 +16,7 @@ class ScrapyCommandExecutor:
         self.command_runner = command_runner
         self.spider_name = spider_name
 
-    def __call__(self, job):
+    def __call__(self, job, cancelled=None):
         job = job or {}
         if job.get("product_id") and not job.get("product_url"):
             raise ValueError("Un scraping puntual requiere product_url")
@@ -39,12 +39,28 @@ class ScrapyCommandExecutor:
         command.append(self.spider_name)
 
         try:
-            completed = self.command_runner(
-                command,
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            if cancelled is None or self.command_runner is not subprocess.run:
+                completed = self.command_runner(command, capture_output=True, text=True, check=False)
+            else:
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                try:
+                    while True:
+                        if cancelled.is_set():
+                            raise RuntimeError("Se perdió la lease del trabajo")
+                        try:
+                            stdout, stderr = process.communicate(timeout=1)
+                            completed = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
+                finally:
+                    if process.poll() is None:
+                        process.terminate()
+                        try:
+                            process.communicate(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            process.kill()
+                            process.communicate()
             if completed.returncode != 0:
                 error = completed.stderr.strip() or "Scrapy terminó con error"
                 raise RuntimeError(error)

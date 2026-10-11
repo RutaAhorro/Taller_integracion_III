@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"github.com/google/uuid"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -19,7 +20,10 @@ import (
 type ScraperHandler struct {
 	service services.ScraperService
 	rdb     *redis.Client
+	queue   *services.QueueService
 }
+
+func (h *ScraperHandler) SetQueue(queue *services.QueueService) { h.queue = queue }
 
 // NewScraperHandler inicializa una nueva instancia de ScraperHandler
 func NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler {
@@ -51,7 +55,7 @@ type ejecutarScraperRequest struct {
 // @Failure      503     {object}  map[string]interface{}
 // @Router       /api/v1/scraper/trabajos/{id}/ejecutar [post]
 func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
-	if h.rdb == nil {
+	if h.queue == nil || h.rdb == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "La cola Redis no está disponible"})
 		return
 	}
@@ -73,6 +77,7 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "El trabajo no está disponible para ejecución"})
 		return
 	}
+	id = trabajo.ID
 
 	var input ejecutarScraperRequest
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -115,11 +120,17 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 		return
 	}
 
-	if err := h.rdb.LPush(c.Request.Context(), "scraper:jobs", payload).Err(); err != nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "No se pudo encolar el trabajo", "detalle": err.Error()})
+	if err := h.queue.Encolar(c.Request.Context(), id, payload); err != nil {
+		if errors.Is(err, services.ErrIdempotencia) || errors.Is(err, services.ErrTrabajoYaFinalizado) {
+			c.JSON(409, gin.H{"error": err.Error(), "codigo": "ejecucion_conflict"})
+			return
+		}
+		slog.Error("scraper_encolar_error", "trabajo_id", id, "error", err)
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "No se pudo registrar el trabajo"})
 		return
 	}
 
+	c.Header("X-Scraper-Queue", "durable-stream")
 	c.JSON(http.StatusAccepted, gin.H{
 		"trabajo_id": id,
 		"estado":     "encolado",
@@ -199,10 +210,13 @@ func (h *ScraperHandler) FinalizarTrabajo(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrTrabajoYaFinalizado):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+		case errors.Is(err, services.ErrEntregaPendiente):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "entregas_pendientes"})
 		case errors.Is(err, services.ErrEstadoTrabajoInvalido), errors.Is(err, services.ErrUUIDInvalido):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al finalizar trabajo", "detalle": err.Error()})
+			slog.Error("scraper_finalizar_error", "trabajo_id", id, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al finalizar trabajo"})
 		}
 		return
 	}
@@ -234,7 +248,8 @@ func (h *ScraperHandler) ObtenerTrabajo(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al consultar trabajo", "detalle": err.Error()})
+		slog.Error("scraper_consultar_error", "trabajo_id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al consultar trabajo"})
 		return
 	}
 
@@ -259,6 +274,9 @@ func (h *ScraperHandler) IngestarProductosConTrabajo(c *gin.Context) {
 	id := c.Param("id")
 
 	var input domain.IngestaLoteDTO
+	if !prepararLote(c, &input) {
+		return
+	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Payload inválido para ingesta de lote",
@@ -290,6 +308,9 @@ func (h *ScraperHandler) IngestarProductosConTrabajo(c *gin.Context) {
 // @Router       /api/v1/scraper/productos [post]
 func (h *ScraperHandler) IngestarProductosDirecto(c *gin.Context) {
 	var input domain.IngestaLoteDTO
+	if !prepararLote(c, &input) {
+		return
+	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   "Payload inválido para ingesta de lote",
@@ -312,6 +333,15 @@ func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, services.ErrEntregaPendiente):
+		c.Header("Retry-After", "2")
+		c.JSON(http.StatusAccepted, gin.H{"error": err.Error(), "codigo": "entrega_pendiente"})
+	case errors.Is(err, services.ErrEntregaFallida):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "entrega_fallida"})
+	case errors.Is(err, services.ErrIdempotencia):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "idempotency_conflict"})
+	case errors.Is(err, services.ErrCatalogoRechazo):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error(), "codigo": "lote_rechazado"})
 	case errors.Is(err, services.ErrContadorPendiente):
 		slog.Error("scraper_counter_pending", "request_id", c.GetHeader("X-Request-ID"), "trabajo_id", c.Param("id"))
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "contador_pendiente", "catalogo_confirmado": true})
@@ -325,6 +355,23 @@ func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
 		slog.Error("scraper_ingesta_error", "request_id", c.GetHeader("X-Request-ID"), "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno durante la ingesta"})
 	}
+}
+
+func prepararLote(c *gin.Context, input *domain.IngestaLoteDTO) bool {
+	key := c.GetHeader("Idempotency-Key")
+	id := uuid.New()
+	if key != "" {
+		var err error
+		id, err = uuid.Parse(key)
+		if err != nil {
+			c.JSON(400, gin.H{"error": "Idempotency-Key debe ser un UUID"})
+			return false
+		}
+	}
+	input.LoteID = id.String()
+	c.Header("Idempotency-Key", input.LoteID)
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<20)
+	return true
 }
 
 func (h *ScraperHandler) responderErrorCatalogo(c *gin.Context, err error) bool {

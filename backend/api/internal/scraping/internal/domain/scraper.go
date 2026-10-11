@@ -54,6 +54,7 @@ type ProductoScrapeadoDTO struct {
 
 // IngestaLoteDTO es el contenedor de un lote de productos scrapeados enviados en un único request HTTP.
 type IngestaLoteDTO struct {
+	LoteID         string                 `json:"-"` // Idempotency-Key; no cambia el payload público.
 	SucursalID     *int                   `json:"sucursal_id,omitempty"`
 	CodigoSucursal *string                `json:"codigo_sucursal,omitempty"`
 	Supermercado   *string                `json:"supermercado,omitempty"`

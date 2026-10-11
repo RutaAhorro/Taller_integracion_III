@@ -23,7 +23,11 @@ var (
 	ErrUUIDInvalido          = errors.New("el identificador proporcionado no es un UUID válido")
 	ErrCatalogoNoDisponible  = errors.New("Catálogo no está disponible")
 	ErrCatalogoTimeout       = errors.New("Catálogo no respondió a tiempo")
-	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote, pero no se pudo actualizar el contador del trabajo; no reenviar el lote")
+	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote y el contador está pendiente; conservar la clave del lote")
+	ErrIdempotencia          = errors.New("la clave ya fue utilizada con otro contenido")
+	ErrEntregaPendiente      = errors.New("el lote está registrado y pendiente de confirmación")
+	ErrEntregaFallida        = errors.New("el lote agotó sus reintentos; requiere revisión")
+	ErrCatalogoRechazo       = errors.New("Catálogo rechazó el lote")
 )
 
 // ScraperService define la lógica de negocio para auditar trabajos e ingestar catálogos
@@ -37,11 +41,16 @@ type ScraperService interface {
 type scraperService struct {
 	trabajos domain.TrabajoRepository
 	ingesta  domain.IngestaRepository
+	entregas domain.EntregaRepository
 }
 
 // NewScraperService crea una nueva instancia de ScraperService con sus dependencias
-func NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository) ScraperService {
-	return &scraperService{trabajos: trabajos, ingesta: ingesta}
+func NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository, entregas ...domain.EntregaRepository) ScraperService {
+	s := &scraperService{trabajos: trabajos, ingesta: ingesta}
+	if len(entregas) > 0 {
+		s.entregas = entregas[0]
+	}
+	return s
 }
 
 // IniciarTrabajo registra el arranque de una araña de scraping y retorna su DTO
@@ -98,6 +107,9 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 		return nil, ErrTrabajoNoEncontrado
 	}
 	if existente.Estado == "completado" || existente.Estado == "fallido" {
+		if s.entregas != nil && existente.Estado == estado {
+			return s.mapearTrabajoDTO(existente, s.nombreCadena(ctx, existente.CadenaID)), nil
+		}
 		return nil, ErrTrabajoYaFinalizado
 	}
 
@@ -135,6 +147,9 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios
 func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
+	if s.entregas != nil {
+		return s.ingestarDurable(ctx, trabajoIDStr, input)
+	}
 	if len(input.Productos) == 0 {
 		return nil, ErrLoteVacio
 	}

@@ -1,5 +1,9 @@
 # SUP-269: persistencia de ingesta bajo propiedad de Catálogo
 
+> La recuperación e idempotencia que esta guía deja pendientes se implementan
+> en SUP-270. Su comportamiento vigente, migración de cola y operación están
+> en [GUIA_SCRAPING_RECUPERACION.md](GUIA_SCRAPING_RECUPERACION.md).
+
 Esta tarea parte de SUP-268 y conserva las rutas usadas por el bot y el worker.
 Scraping deja de escribir o consultar directamente tablas de Catálogo y utiliza
 un cliente HTTP privado. No hay una biblioteca de entidades compartida.

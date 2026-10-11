@@ -60,9 +60,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 ## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping; setupRouter devuelve router y error. Scraping requiere CATALOGO_INTERNAL_URL y CATALOGO_INTERNAL_TOKEN, entrega lotes por HTTP y sólo persiste trabajos. Catálogo pertenece a otro proceso; las pruebas están activas. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.
+Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
 
-**37 archivos .go** detectados
+**44 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -182,6 +182,12 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 
 - `TestRequireRole(t *testing.T)`
 
+### `internal/scraping/internal/domain/entrega.go` (package domain)
+
+- Structs: Entrega, loteIDKey, Ejecucion
+- `ConLoteID(ctx context.Context, id string) context.Context`
+- `LoteID(ctx context.Context) string`
+
 ### `internal/scraping/internal/domain/models.go` (package domain)
 
 - Structs: CadenaSupermercado, SucursalSupermercado, TrabajoScraper
@@ -196,6 +202,7 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 ### `internal/scraping/internal/handlers/scraper_handler.go` (package handlers)
 
 - Structs: ScraperHandler, ejecutarScraperRequest
+- `(ScraperHandler).SetQueue(queue *services.QueueService)`
 - `NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler`
 - `(ScraperHandler).EjecutarTrabajo(c *gin.Context)`
 - `(ScraperHandler).IniciarTrabajo(c *gin.Context)`
@@ -204,6 +211,7 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 - `(ScraperHandler).IngestarProductosConTrabajo(c *gin.Context)`
 - `(ScraperHandler).IngestarProductosDirecto(c *gin.Context)`
 - `(ScraperHandler).manejarErrorIngesta(c *gin.Context, err error)`
+- `prepararLote(c *gin.Context, input *domain.IngestaLoteDTO) bool`
 - `(ScraperHandler).responderErrorCatalogo(c *gin.Context, err error) bool`
 
 ### `internal/scraping/internal/repositories/catalogo_client.go` (package repositories)
@@ -223,6 +231,36 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 - `TestCatalogoClientTimeoutAndCancellation(t *testing.T)`
 - `TestCatalogoClientInvalidConfiguration(t *testing.T)`
 
+### `internal/scraping/internal/repositories/ejecucion_repository.go` (package repositories)
+
+- Structs: ejecucionRepository
+- `NewEjecucionRepository(db *gorm.DB) domain.EjecucionRepository`
+- `(ejecucionRepository).RegistrarEjecucion(ctx context.Context, e domain.Ejecucion) error`
+- `(ejecucionRepository).Pendientes(ctx context.Context) ([]domain.Ejecucion, error)`
+- `(ejecucionRepository).PosponerPublicacion(ctx context.Context, id uuid.UUID) error`
+
+### `internal/scraping/internal/repositories/entrega_repository.go` (package repositories)
+
+- Structs: entregaRepository
+- `NewEntregaRepository(db *gorm.DB) domain.EntregaRepository`
+- `(entregaRepository).Obtener(ctx context.Context, id uuid.UUID) (*domain.Entrega, error)`
+- `(entregaRepository).Registrar(ctx context.Context, e *domain.Entrega) (*domain.Entrega, error)`
+- `(entregaRepository).Adquirir(ctx context.Context, id *uuid.UUID) (*domain.Entrega, error)`
+- `(entregaRepository).FijarSucursal(ctx context.Context, id uuid.UUID, branch int) (int, error)`
+- `(entregaRepository).Confirmar(ctx context.Context, e *domain.Entrega, result domain.IngestaResultadoDTO) error`
+- `(entregaRepository).Reprogramar(ctx context.Context, e *domain.Entrega, code string, permanent bool) error`
+
+### `internal/scraping/internal/repositories/idempotencia_test.go` (package repositories)
+
+- `TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T)`
+
+### `internal/scraping/internal/repositories/job_publisher.go` (package repositories)
+
+- Structs: jobPublisher
+- `NewJobPublisher(rdb *redis.Client, db *gorm.DB) *jobPublisher`
+- `(jobPublisher).Close() error`
+- `(jobPublisher).Publicar(ctx context.Context, e domain.Ejecucion) error`
+
 ### `internal/scraping/internal/repositories/trabajo_repository.go` (package repositories)
 
 - Structs: gormTrabajoRepository
@@ -236,10 +274,23 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 
 - `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler)`
 
+### `internal/scraping/internal/services/ejecuciones.go` (package services)
+
+- Structs: QueueService
+- `NewQueueService(jobs domain.EjecucionRepository, publisher domain.JobPublisher) *QueueService`
+- `(QueueService).Encolar(ctx context.Context, id string, payload []byte) error`
+- `(QueueService).Recuperar(ctx context.Context)`
+
+### `internal/scraping/internal/services/entregas.go` (package services)
+
+- `(scraperService).ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).entregar(ctx context.Context, e *domain.Entrega) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).Recuperar(ctx context.Context)`
+
 ### `internal/scraping/internal/services/scraper_service.go` (package services)
 
 - Structs: scraperService
-- `NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository) ScraperService`
+- `NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository, entregas ...domain.EntregaRepository) ScraperService`
 - `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
@@ -251,6 +302,8 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 
 - Structs: Module
 - `New(db *gorm.DB, rdb *redis.Client) (*Module, error)`
+- `(Module).VerifyStorage(ctx context.Context) error`
+- `(Module).Start(ctx context.Context)`
 - `(Module).RegisterRoutes(group *gin.RouterGroup)`
 
 ### `internal/scraping/tests/ingesta_failures_test.go` (package tests)
@@ -282,6 +335,7 @@ Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main c
 - `initDB()`
 - `initRedis()`
 - `setupRouter() (*gin.Engine, error)`
+- `setupApplication() (*gin.Engine, *scraping.Module, error)`
 - `RootHandler(c *gin.Context)`
 - `HealthHandler(c *gin.Context)`
 - `main()`

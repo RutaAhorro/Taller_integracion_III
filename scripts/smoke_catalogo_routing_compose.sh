@@ -54,6 +54,7 @@ Path(sys.argv[2]).write_text("CREATE ROLE sup269_catalog_writer LOGIN PASSWORD '
     "scraper.cadenas_supermercado, scraper.sucursales_supermercado TO sup269_catalog_writer;\n"
     "GRANT INSERT, UPDATE ON scraper.productos_crudos, scraper.capturas_precios, "
     "scraper.cadenas_supermercado, scraper.sucursales_supermercado TO sup269_catalog_writer;\n"
+    "GRANT SELECT, INSERT ON scraper.lotes_catalogo TO sup269_catalog_writer;\n"
     "GRANT USAGE, SELECT ON SEQUENCE scraper.capturas_precios_id_seq, "
     "scraper.cadenas_supermercado_id_seq, scraper.sucursales_supermercado_id_seq TO sup269_catalog_writer;\n"
     "CREATE ROLE sup269_coordinator LOGIN PASSWORD '" + coordinator + "';\n"
@@ -61,7 +62,8 @@ Path(sys.argv[2]).write_text("CREATE ROLE sup269_catalog_writer LOGIN PASSWORD '
     "GRANT USAGE ON SCHEMA api, scraper TO sup269_coordinator;\n"
     "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA api TO sup269_coordinator;\n"
     "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO sup269_coordinator;\n"
-    "GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper TO sup269_coordinator;\n")
+    "GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper, scraper.entregas_ingesta, "
+    "scraper.entregas_trabajos TO sup269_coordinator;\n")
 PY
 chmod 644 "$SUP268_INIT_DIR"/*.sql
 source_ca="${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
@@ -100,6 +102,10 @@ DROP TRIGGER sup269_fail_counter ON scraper.trabajos_scraper;
 DROP FUNCTION scraper.sup269_fail_counter();
 SQL
 compose exec -T db psql -U sup268 -d sup268 -v ON_ERROR_STOP=1 < "$repo_root/backend/catalogo/tests/verify_ingesta_ownership.sql"
+if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
+  PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
+    --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state"
+fi
 
 api_before=$(compose ps -q go_service)
 gateway_before=$(compose ps -q gateway)
@@ -107,6 +113,10 @@ compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
 test "$(compose ps -q catalogo | wc -l)" -eq 3
 test "$(compose ps -q go_service)" = "$api_before"
 test "$(compose ps -q gateway)" = "$gateway_before"
+if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
+  PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
+    --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state" --replicas-only
+fi
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --mode load
 compose logs --no-color catalogo > "$test_dir/catalogo.log"
 python3 - "$test_dir/catalogo.log" <<'PY'

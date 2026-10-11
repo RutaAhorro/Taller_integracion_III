@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 const MaxBodyBytes = 8 << 20
@@ -109,11 +110,24 @@ func Register(r *gin.Engine, cfg Config, logger *slog.Logger) {
 			c.JSON(400, gin.H{"error": "invalid_batch"})
 			return
 		}
+		if input.LoteID != "" {
+			id, err := uuid.Parse(input.LoteID)
+			if err != nil {
+				c.JSON(400, gin.H{"error": "invalid_batch_id"})
+				return
+			}
+			input.LoteID = id.String()
+		}
 		result, err := cfg.Repository.IngestarLote(c.Request.Context(), input)
 		if err != nil {
+			if errors.Is(err, ErrIdempotencia) {
+				c.JSON(409, gin.H{"error": "idempotency_conflict"})
+				return
+			}
 			fail(c, err)
 			return
 		}
+		logger.Info("catalogo_batch_confirmed", "lote_id", input.LoteID, "request_id", c.Writer.Header().Get("X-Request-ID"), "sucursal_id", input.SucursalID)
 		c.JSON(http.StatusOK, result)
 	})
 }

@@ -64,6 +64,9 @@ func (r *catalogoClient) call(ctx context.Context, path string, payload, result 
 	if id, ok := ctx.Value(requestIDKey{}).(string); ok {
 		req.Header.Set("X-Request-ID", id)
 	}
+	if req.Header.Get("X-Request-ID") == "" {
+		req.Header.Set("X-Request-ID", domain.LoteID(ctx))
+	}
 	response, err := r.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -78,6 +81,12 @@ func (r *catalogoClient) call(ctx context.Context, path string, payload, result 
 	defer response.Body.Close()
 	if response.StatusCode == 404 {
 		return false, nil
+	}
+	if response.StatusCode == 409 {
+		return false, services.ErrIdempotencia
+	}
+	if response.StatusCode == 400 || response.StatusCode == 413 {
+		return false, services.ErrCatalogoRechazo
 	}
 	if response.StatusCode != http.StatusOK {
 		return false, services.ErrCatalogoNoDisponible
@@ -114,7 +123,11 @@ func (r *catalogoClient) ObtenerSucursal(ctx context.Context, cadenaID int, sucu
 }
 func (r *catalogoClient) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
 	var result domain.IngestaResultadoDTO
-	found, err := r.call(ctx, "ingestas", map[string]any{"sucursal_id": sucursalID, "productos": productos}, &result)
+	payload := map[string]any{"sucursal_id": sucursalID, "productos": productos}
+	if id := domain.LoteID(ctx); id != "" {
+		payload["lote_id"] = id
+	}
+	found, err := r.call(ctx, "ingestas", payload, &result)
 	if err != nil {
 		return nil, err
 	}

@@ -15,6 +15,7 @@ SPIDER_MODULES = ["scraper_core.spiders"]
 NEWSPIDER_MODULE = "scraper_core.spiders"
 
 ADDONS = {}
+EXTENSIONS = {"scraper_core.extensions.DurableCrawlExtension": 500}
 
 
 # Crawl responsibly by identifying yourself (and your website) on the user-agent

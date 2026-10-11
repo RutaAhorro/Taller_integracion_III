@@ -24,14 +24,14 @@ SERVICES = {
     "backend/catalogo": {
         "lang": "go",
         "name": "Catálogo y precios (Go + Gin)",
-        "notes": "Estado vigente SUP-269: Catálogo consulta y persiste productos/precios. Su API de ingesta requiere CATALOGO_INTERNAL_TOKEN; no accede a usuarios ni trabajos. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.",
+        "notes": "Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su ingesta privada requiere CATALOGO_INTERNAL_TOKEN y deduplica lote_id en scraper.lotes_catalogo, en la misma transacción que las capturas. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".go"],
         "exclude": ["tmp"],
     },
     "backend/api": {
         "lang": "go",
         "name": "API de Identidad y Scraping (Go + Gin)",
-        "notes": "Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping; setupRouter devuelve router y error. Scraping requiere CATALOGO_INTERNAL_URL y CATALOGO_INTERNAL_TOKEN, entrega lotes por HTTP y sólo persiste trabajos. Catálogo pertenece a otro proceso; las pruebas están activas. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.",
+        "notes": "Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },
@@ -50,6 +50,7 @@ SERVICES = {
     "backend/scraper": {
         "lang": "python",
         "name": "Scraper (Scrapy)",
+        "notes": "Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".py"],
         "exclude": ["__pycache__"],
     },
@@ -270,6 +271,8 @@ def generate_python_map(service_path: Path, config: dict) -> str:
         return "_Sin archivos Python detectados._\n"
 
     lines = [f"\n## Mapa auto-generado: {config['name']}\n"]
+    if config.get("notes"):
+        lines.append(config["notes"] + "\n")
     lines.append(f"**{len(files)} archivos .py** detectados\n")
 
     for f in files:
