@@ -346,17 +346,15 @@ assert redis.xpending(QUEUE_NAME,GROUP)['pending']==0
 
 # El rol de cada servicio no puede leer el ledger del otro dominio.
 assert sql("SELECT has_table_privilege('app_scraping','scraper.lotes_catalogo','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_ingesta','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_trabajos','SELECT');")=='f'
-# Tablas ausentes: API impide arrancar; Catálogo sigue vivo con readiness 503.
-compose('stop', 'go_service')
+# Tablas ausentes: ambos binarios impiden arrancar antes de exponer HTTP.
+catalog_logs_before = len(compose('logs', '--no-color', 'catalogo'))
+compose('stop', 'go_service', 'catalogo')
 sql('ALTER TABLE scraper.entregas_ingesta RENAME TO sup270_restore_ingesta; ALTER TABLE scraper.lotes_catalogo RENAME TO sup270_restore_catalogo;')
-compose('up', '-d', '--no-deps', 'go_service')
+compose('up', '-d', '--no-deps', 'go_service', 'catalogo')
 wait_for(lambda: 'aplicar 05_recuperacion_scraping.sql' in compose('logs', '--no-color', 'go_service'))
-live = compose('exec','-T','catalogo','wget','-q','-O','-','http://127.0.0.1:8080/_catalogo/live')
-assert json.loads(live)['status'] == 'ok'
-ready = compose('exec','-T','catalogo','sh','-c','wget -S -O /dev/null http://127.0.0.1:8080/_catalogo/ready 2>&1 || true')
-assert '503 Service Unavailable' in ready
+wait_for(lambda: 'catalogo_storage_invalid' in compose('logs', '--no-color', 'catalogo')[catalog_logs_before:])
+compose('stop', 'go_service', 'catalogo')
 sql('ALTER TABLE scraper.sup270_restore_ingesta RENAME TO entregas_ingesta; ALTER TABLE scraper.sup270_restore_catalogo RENAME TO lotes_catalogo;')
-compose('restart', 'go_service')
 compose('up','-d','--no-deps','--wait','--wait-timeout','90','go_service','catalogo')
 request('/health')
 print(json.dumps({'task':'SUP-270','http_checks':passed,'recovery_scenarios':18,'failed':0}))

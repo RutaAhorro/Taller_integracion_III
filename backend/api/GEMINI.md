@@ -60,15 +60,25 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 ## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio y permisos exclusivos. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
+Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio (máximo 5 conexiones) y permisos exclusivos. /health responde 503 si falla cualquiera; /_api/live no consulta dependencias. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**48 archivos .go** detectados
+**49 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
 
 - Structs: productoSemilla
 - `main()`
+
+### `health_test.go` (package main)
+
+- Structs: healthConnector, healthDriver, healthConn
+- `TestHealthRedisTimeoutDoesNotRemoveReadiness(t *testing.T)`
+- `(healthConnector).Connect(context.Context) (driver.Conn, error)`
+- `(healthConnector).Driver() driver.Driver`
+- `(healthConn).Ping(ctx context.Context) error`
+- `probeDatabase(t *testing.T, connector *healthConnector) *gorm.DB`
+- `TestHealthRequiresBothDatabasePools(t *testing.T)`
 
 ### `infrastructure/models.go` (package infrastructure)
 
@@ -364,6 +374,7 @@ Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un bin
 - `setupApplication() (*gin.Engine, *scraping.Module, error)`
 - `RootHandler(c *gin.Context)`
 - `HealthHandler(c *gin.Context)`
+- `LivenessHandler(c *gin.Context)`
 - `main()`
 
 ### `main_test.go` (package main)

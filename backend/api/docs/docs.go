@@ -981,7 +981,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Verifica la disponibilidad de la API Gateway y sus dependencias (PostgreSQL, Redis).",
+                "description": "Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.",
                 "produces": [
                     "application/json"
                 ],
@@ -989,6 +989,34 @@ const docTemplate = `{
                     "health"
                 ],
                 "summary": "Comprobación de salud del servicio (Healthcheck)",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/_api/live": {
+            "get": {
+                "description": "Liveness independiente de PostgreSQL y Redis.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "health"
+                ],
+                "summary": "Comprueba que el proceso responde",
                 "responses": {
                     "200": {
                         "description": "OK",

@@ -48,8 +48,9 @@ func Open(ctx context.Context, dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.New("no se pudo obtener la conexión PostgreSQL")
 	}
-	sqlDB.SetMaxOpenConns(10)
-	sqlDB.SetMaxIdleConns(5)
+	// Dos pools por API: con 4 API y 4 Catálogo (10 cada uno), techo runtime 80.
+	sqlDB.SetMaxOpenConns(5)
+	sqlDB.SetMaxIdleConns(2)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)
 	if err := sqlDB.PingContext(ctx); err != nil {
 		sqlDB.Close()

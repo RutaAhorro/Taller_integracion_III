@@ -187,12 +187,28 @@ guarda el nombre de cadena y elimina las FK externas desde trabajos. El script 0
 provisiona contraseñas privadas distintas; no corre al iniciar los servicios.
 Consultar `GUIA_DATOS_Y_PERMISOS_BACKEND.md` antes de desplegar. El trabajo local
 no aplica migraciones, Secrets ni cambios en el clúster universitario.
-Validación SUP-271 sobre el merge aprobado: 200 resultados Go (199 unitarios y
+Validación inicial de SUP-271 (`4d019dd`): 200 resultados Go (199 unitarios y
 una integración con PostgreSQL real), 25 pruebas Python, 352 comprobaciones HTTP
 y 118 accesos SQL por rol aprobados. Veinte recursos Kubernetes válidos; bootstrap
 del script 07 sourceado con modo 0644 y rollback a SUP-270 y vuelta comprobados.
 Se usaron imágenes runtime verificadas con binarios nuevos; builders completos
 de producción y despliegue universitario quedan fuera de la comprobación local.
+
+
+Correcciones solicitadas en review de SUP-271 (H-01/H-02): API devuelve 503
+cuando falla cualquiera de sus dos pools, con liveness independiente en
+`/_api/live` y presupuesto compartido de 2 s. Catálogo valida permisos una vez,
+antes de abrir HTTP (5 s), y readiness queda limitado a Ping. Cada pool de API
+baja a cinco conexiones: ambos HPA al máximo suman 80 conexiones de runtime.
+No se amplían max_connections/recursos DB ni se modifica Keep-Alive en este fix.
+La prueba real de probes registra la caída/recuperación de DB sin reiniciar API
+ni Catálogo, cuenta consultas de permisos en PostgreSQL y verifica el rechazo
+al arrancar sin grants. Validación del fix: 212 resultados Go (211 unitarios y una integración PostgreSQL),
+25 pruebas Python, 413 comprobaciones HTTP y 118 controles SQL por rol.
+Veinte recursos Kubernetes válidos, workflows/sintaxis/Swagger/diff comprobados.
+Los recursos temporales se eliminaron. El autor autorizó publicar estas
+correcciones en la misma rama de SUP-271 y actualizar el PR #98 hacia
+`develop-refactor`, solicitando nuevamente revisión a Renato, Dani y Esban.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

@@ -7,8 +7,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// VerifyStorage mantiene Catálogo fuera de readiness si faltan tablas o permisos
-// propios. El modo lector de los contratos históricos no requiere escrituras.
+// VerifyStorage valida tablas y permisos propios una vez, antes de abrir HTTP.
+// El modo lector de los contratos históricos no requiere escrituras.
 func VerifyStorage(ctx context.Context, db *gorm.DB, writer bool) error {
 	var schemaAllowed bool
 	if err := db.WithContext(ctx).Raw("SELECT has_schema_privilege(current_user, 'scraper', 'USAGE')").Scan(&schemaAllowed).Error; err != nil || !schemaAllowed {

@@ -68,6 +68,9 @@ func initRedis() {
 		}
 	}
 
+	// Sin esta opción go-redis usa sus timeouts de socket aunque venza el
+	// contexto del probe. Los comandos deben respetar el presupuesto HTTP.
+	opt.ContextTimeoutEnabled = true
 	RDB = redis.NewClient(opt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -120,6 +123,7 @@ func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	})
 
 	r.GET("/", RootHandler)
+	r.GET("/_api/live", LivenessHandler)
 	r.GET("/health", HealthHandler)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -154,17 +158,21 @@ func RootHandler(c *gin.Context) {
 
 // HealthHandler godoc
 // @Summary      Comprobación de salud del servicio (Healthcheck)
-// @Description  Verifica la disponibilidad de la API Gateway y sus dependencias (PostgreSQL, Redis).
+// @Description  Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.
 // @Tags         health
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
+// @Failure      503  {object}  map[string]interface{}
 // @Router       /health [get]
 func HealthHandler(c *gin.Context) {
+	// Un presupuesto común mantiene el probe por debajo del timeout de K8s (3s).
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
 	checkDB := func(db *gorm.DB) string {
 		if db == nil {
 			return "not_configured"
 		}
-		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		sqlDB, err := db.DB()
 		if err != nil || sqlDB.PingContext(ctx) != nil {
@@ -183,7 +191,7 @@ func HealthHandler(c *gin.Context) {
 
 	redisStatus := "ok"
 	if RDB != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		defer cancel()
 		if err := RDB.Ping(ctx).Err(); err != nil {
 			redisStatus = "error"
@@ -192,8 +200,12 @@ func HealthHandler(c *gin.Context) {
 		redisStatus = "not_configured"
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "ok",
+	status, state := http.StatusOK, "ok"
+	if dbStatus != "ok" {
+		status, state = http.StatusServiceUnavailable, "error"
+	}
+	c.JSON(status, gin.H{
+		"status":    state,
 		"service":   "api-gateway",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"checks": gin.H{
@@ -203,6 +215,17 @@ func HealthHandler(c *gin.Context) {
 			"redis":             redisStatus,
 		},
 	})
+}
+
+// LivenessHandler godoc
+// @Summary      Comprueba que el proceso responde
+// @Description  Liveness independiente de PostgreSQL y Redis.
+// @Tags         health
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /_api/live [get]
+func LivenessHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "api-gateway"})
 }
 
 // @title           API Gateway de Supermercados

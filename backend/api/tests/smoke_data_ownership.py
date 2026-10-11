@@ -2,9 +2,11 @@
 import argparse
 import json
 import os
+import re
 import secrets
 import subprocess
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -54,13 +56,13 @@ def runtime(role, statement, success=True):
     return result.stdout.strip()
 
 
-def http(method, path, payload=None, status=200, headers=None):
+def http(method, path, payload=None, status=200, headers=None, base=None):
     global http_passed
-    req = urllib.request.Request(args.gateway_url + path, method=method,
+    req = urllib.request.Request((base or args.gateway_url) + path, method=method,
                                  data=json.dumps(payload).encode() if payload is not None else None,
                                  headers={'Content-Type': 'application/json', **(headers or {})})
     try:
-        response = urllib.request.urlopen(req, timeout=20)
+        response = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=20)
     except urllib.error.HTTPError as error:
         response = error
     body = json.loads(response.read())
@@ -146,6 +148,87 @@ runtime('app_catalogo', 'SELECT count(*) FROM scraper.productos_crudos')
 health = http('GET', '/health')
 assert all(health['checks'][key] == 'ok' for key in ('database', 'identity_database', 'scraping_database'))
 
+# H-01/H-02: probes reales contra los binarios y PostgreSQL del harness.
+def catalog_probe(path, status=200):
+    global http_passed
+    result = compose('exec', '-T', 'catalogo', 'wget', '-S', '-O', '/dev/null',
+                     'http://127.0.0.1:8080' + path, success=status == 200)
+    assert re.search(r'HTTP/1\.1 ' + str(status) + r'\b', result.stderr), result.stderr
+    http_passed += 1
+
+
+def container_state(service):
+    identifier = compose('ps', '-q', service).stdout.strip()
+    return subprocess.run(['docker', 'inspect', '--format',
+                           '{{.Id}} {{.State.StartedAt}} {{.RestartCount}}', identifier],
+                          check=True, text=True, stdout=subprocess.PIPE).stdout.strip()
+
+
+def wait_for(predicate, timeout=40):
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        if predicate():
+            return
+        time.sleep(.2)
+    raise AssertionError('El escenario de probes no terminó dentro del plazo')
+
+
+api_url = 'http://127.0.0.1:' + os.getenv('SUP268_API_PORT', '18080')
+before_api, before_catalog = container_state('go_service'), container_state('catalogo')
+compose('stop', 'db')
+try:
+    health = http('GET', '/health', status=503, base=api_url)
+    assert health['status'] == 'error'
+    assert all(health['checks'][key] == 'error' for key in
+               ('database', 'identity_database', 'scraping_database'))
+    http('GET', '/api/v1/health', status=503, base=api_url)
+    http('GET', '/_api/live', base=api_url)
+    catalog_probe('/_catalogo/ready', 503)
+    catalog_probe('/_catalogo/live')
+finally:
+    compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'db')
+http('GET', '/health', base=api_url)
+http('GET', '/_api/live', base=api_url)
+catalog_probe('/_catalogo/ready')
+assert container_state('go_service') == before_api
+assert container_state('catalogo') == before_catalog
+
+# Contar consultas reales en el log PostgreSQL del rol, no en un mock del probe.
+# log_statement se activa sólo para Catálogo en esta DB efímera; no para el
+# operador de credenciales ni para Identidad. Se restablece antes de continuar.
+privilege_query = re.compile(r'\bSELECT\s+has_(?:schema|table|sequence)_privilege\(', re.I)
+def privilege_queries():
+    return len(privilege_query.findall(compose('logs', '--no-color', 'db').stdout))
+
+initial_queries = privilege_queries()
+sql("ALTER ROLE app_catalogo SET log_statement = 'all';")
+try:
+    compose('restart', 'catalogo')
+    compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
+    startup_queries = privilege_queries()
+    assert startup_queries - initial_queries == 15, 'validación inicial no ejecutada una vez'
+    for _ in range(3):
+        catalog_probe('/_catalogo/ready')
+    catalog_probe('/_catalogo/live')
+    assert privilege_queries() == startup_queries, 'readiness repite las consultas de permisos'
+finally:
+    sql('ALTER ROLE app_catalogo RESET log_statement;')
+    compose('restart', 'catalogo')
+    compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
+
+# El chequeo de arranque no se elimina: un grant ausente impide abrir HTTP.
+previous_logs = compose('logs', '--no-color', 'catalogo').stdout
+sql('REVOKE INSERT ON scraper.lotes_catalogo FROM app_catalogo;')
+try:
+    compose('restart', 'catalogo')
+    wait_for(lambda: 'catalogo_storage_invalid' in
+             compose('logs', '--no-color', 'catalogo').stdout[len(previous_logs):])
+    compose('stop', 'catalogo')
+finally:
+    sql('GRANT INSERT ON scraper.lotes_catalogo TO app_catalogo;')
+    compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
+catalog_probe('/_catalogo/ready')
+
 # Rollback real a SUP-270 con una credencial combinada temporal y mínima,
 # sin ampliar los roles dedicados ni utilizar al administrador como runtime.
 rollback_password = secrets.token_hex(32)
@@ -185,4 +268,6 @@ assert all(health['checks'][key] == 'ok' for key in ('database', 'identity_datab
 assert sql("SELECT count(*) FROM scraper.capturas_precios cp JOIN scraper.productos_crudos pc ON pc.id=cp.producto_crudo_id WHERE pc.sku='SUP271-ROLLBACK';") == '1'
 print(json.dumps({'task': 'SUP-271', 'passed': http_passed, 'failed': 0,
                   'sql_checks': sql_passed, 'roles': list(allowed), 'migration': 'idempotent',
+                  'health': '503 on DB outage; live 200; recovery without restart',
+                  'catalog_permission_queries': '15 at startup; 0 per readiness',
                   'rollback': 'SUP-270 and back with restricted credentials'}))

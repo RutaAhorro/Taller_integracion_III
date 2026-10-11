@@ -90,16 +90,43 @@ esta tarea. Evitar crear nuevas dependencias de runtime hacia ellas.
 API requiere `IDENTITY_DB_URL` con usuario `app_identity` y `SCRAPING_DB_URL`
 con usuario `app_scraping`, base y contraseña explícitos. No utiliza `DB_URL`
 como fallback. Los errores de configuración/conexión no incluyen el DSN.
-Cada pool tiene máximo 10 conexiones, 5 inactivas y vida máxima de 30 minutos.
-Al iniciar se verifican migración/tablas y permisos mínimos de ambos módulos.
-`/health` conserva `checks.database` e incorpora los dos estados individuales.
+Cada pool de API tiene máximo 5 conexiones, 2 inactivas y vida máxima de 30
+minutos. Al iniciar se verifican migración/tablas y permisos mínimos de ambos
+módulos. `/health` y `/api/v1/health` conservan `checks.database` y los estados
+individuales: responden 503 y `status: error` si alguna conexión falla o falta.
+El handler comparte un presupuesto de 2 s, inferior al timeout de readiness
+Kubernetes (3 s). El cliente Redis habilita `ContextTimeoutEnabled` para que
+sus sockets respeten el deadline del comando. Redis continúa como diagnóstico: su caída no retira la API,
+porque el outbox SQL acepta ejecuciones y el rate limiter conserva fail-open.
+
+El liveness de Kubernetes usa `/_api/live`, que responde sin consultar PostgreSQL
+ni Redis. Readiness sigue usando `/health`: una caída de DB retira el endpoint
+sin reiniciar un proceso que continúa respondiendo. Compose usa `/health` como
+healthcheck; marcar un contenedor unhealthy no lo reinicia automáticamente.
 
 Catálogo sigue usando `DB_URL`, inyectado exclusivamente con `app_catalogo`.
-Readiness comprueba permisos de sus tablas/secuencias; un lector usado para
-comparar contratos no necesita los grants de ingesta. No se ejecuta AutoMigrate.
-Con una API y el HPA de Catálogo de hasta cuatro réplicas, reservar hasta
-20 + 4×10 = 60 conexiones, además de operadores y otros procesos. Si aumenta
-el HPA de API, contar 20 por réplica. Ajustar PostgreSQL/pools con datos de carga.
+Antes de abrir HTTP valida una sola vez sus tablas y permisos, con timeout de
+5 s (15 consultas en modo escritor, 5 en modo lector). Si faltan permisos,
+migración o conectividad al iniciar, termina con un diagnóstico controlado:
+no puede aceptar tráfico sólo porque un Ping funcione. No ejecuta AutoMigrate.
+Después de arrancar, `/_catalogo/ready` sólo hace `PingContext` (presupuesto 2 s)
+y `/_catalogo/live` no consulta SQL. Si DB cae y vuelve, el mismo proceso recupera
+readiness. Cambios posteriores de permisos/tablas requieren un rollout/reinicio
+para volver a validar storage; los probes periódicos no auditan privilegios.
+
+Ambos HPA permiten hasta cuatro réplicas. El techo de los pools nuevos es
+`4 × (5 + 5) + 4 × 10 = 80` conexiones. Una API y cuatro Catálogo requieren hasta
+50. Contar además operadores, migraciones, bot/IA/rutas y otros consumidores:
+80 es un máximo configurado de estos servicios, no un consumo medido ni una
+garantía de capacidad. Si cambia el HPA o `DB_MAX_OPEN_CONNS` de Catálogo,
+recalcular el presupuesto antes de desplegar.
+
+Esta corrección no aumenta `max_connections` ni los recursos del pod DB. Sus
+300 MiB de límite de memoria deben contrastarse con carga real de PostGIS y
+cuotas de la universidad antes de aumentar concurrencia. Elevar el máximo a
+200 no aporta capacidad de memoria por sí solo. El Keep-Alive del cliente interno
+sigue como mejora posterior de SUP-269; conservar en esa mejora la idempotencia,
+los timeouts y el control de reintentos de escrituras.
 
 Compose recibe `IDENTITY_DB_PASSWORD`, `SCRAPING_DB_PASSWORD` y
 `CATALOGO_DB_PASSWORD` por `.env` privado. Generar cada valor por separado con
@@ -205,12 +232,19 @@ del operador durante despliegue; este trabajo no los ejecuta.
 
 Comprobaciones locales completadas:
 
-- 200 resultados Go: 91 unitarios de API, 108 de Catálogo y una integración
+- 212 resultados Go: 103 unitarios de API, 108 de Catálogo y una integración
   de publisher con PostgreSQL real (omitida en la corrida unitaria y ejecutada
   explícitamente en el harness). Race detector, vet y compilación `CGO_ENABLED=0`
   correctos; 25 pruebas Python aprobadas.
-- 352 comprobaciones HTTP: 338 de contratos/recuperación anteriores y 14 de
-  propiedad de datos y rollback SUP-271 → SUP-270 → SUP-271.
+- 413 comprobaciones HTTP: 365 de contratos, recuperación, ownership/probes y
+  rollback SUP-271 → SUP-270 → SUP-271; 48 adicionales del modo lector histórico,
+  incluyendo funcionamiento sin API/Redis y fallo de PostgreSQL.
+- Probes reales: API 503 y Catálogo 503 con DB caída; liveness 200 en ambos,
+  recuperación sin cambiar contenedor, fecha de inicio ni contador de reinicios.
+  PostgreSQL registró 15 consultas de permisos al arrancar Catálogo y ninguna
+  adicional durante los probes. Un grant faltante impidió abrir HTTP.
+- Redis simulado acepta TCP pero no responde: el cliente real respeta el
+  deadline y conserva readiness cuando ambos pools PostgreSQL están sanos.
 - 118 comprobaciones de acceso SQL por rol, además de las aserciones de
   migración, conservación de referencias, snapshots e idempotencia.
 - Inicialización de un PostgreSQL nuevo con el script 07 no ejecutable (0644),

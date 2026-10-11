@@ -24,14 +24,14 @@ SERVICES = {
     "backend/catalogo": {
         "lang": "go",
         "name": "Catálogo y precios (Go + Gin)",
-        "notes": "Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Readiness verifica sus permisos. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
+        "notes": "Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
         "extensions": [".go"],
         "exclude": ["tmp"],
     },
     "backend/api": {
         "lang": "go",
         "name": "API de Identidad y Scraping (Go + Gin)",
-        "notes": "Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio y permisos exclusivos. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
+        "notes": "Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio (máximo 5 conexiones) y permisos exclusivos. /health responde 503 si falla cualquiera; /_api/live no consulta dependencias. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },
