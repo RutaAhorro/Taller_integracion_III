@@ -39,7 +39,8 @@ passed = 0
 compose_env = {k:v for k,v in os.environ.items() if k not in {
     'DB_USER','DB_PASSWORD','DB_NAME','JWT_SECRET','GOOGLE_CLIENT_ID',
     'CATALOGO_CORS_ALLOWED_ORIGINS','GATEWAY_TRUSTED_PROXIES','SUP268_READER_PASSWORD',
-    'CATALOGO_INTERNAL_TOKEN','SUP269_COORDINATOR_PASSWORD'}}
+    'CATALOGO_INTERNAL_TOKEN','SUP269_COORDINATOR_PASSWORD',
+    'IDENTITY_DB_PASSWORD','SCRAPING_DB_PASSWORD','CATALOGO_DB_PASSWORD'}}
 
 
 def compose(*command, input=None):
@@ -196,7 +197,7 @@ request(path(work) + '/finalizar', {'estado':'fallido'}, method='PUT')
 # Redis bloqueado no puede mantener una transacción SQL ni impedir el cierre.
 test_env = dict(line.split('=', 1) for line in Path(args.env_file).read_text().splitlines() if '=' in line)
 go_env = dict(os.environ)
-go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://sup269_coordinator:' + test_env['SUP269_COORDINATOR_PASSWORD'] +
+go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://app_scraping:' + test_env['SCRAPING_DB_PASSWORD'] +
     '@127.0.0.1:' + os.getenv('SUP270_DB_PORT', '18078') + '/sup268?sslmode=disable')
 subprocess.run(['go', 'test', '-race', '-count=1', '-run', '^TestPublisherStalledRedisAllowsJobFinalization$', '-v',
                 './internal/scraping/internal/repositories'], cwd=root/'backend/api', env=go_env, check=True)
@@ -344,18 +345,16 @@ with patch('scraper_core.worker.ScrapyCommandExecutor') as executor:
 assert redis.xpending(QUEUE_NAME,GROUP)['pending']==0
 
 # El rol de cada servicio no puede leer el ledger del otro dominio.
-assert sql("SELECT has_table_privilege('sup269_coordinator','scraper.lotes_catalogo','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_ingesta','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_trabajos','SELECT');")=='f'
-# Tablas ausentes: API impide arrancar; Catálogo sigue vivo con readiness 503.
-compose('stop', 'go_service')
+assert sql("SELECT has_table_privilege('app_scraping','scraper.lotes_catalogo','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_ingesta','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_trabajos','SELECT');")=='f'
+# Tablas ausentes: ambos binarios impiden arrancar antes de exponer HTTP.
+catalog_logs_before = len(compose('logs', '--no-color', 'catalogo'))
+compose('stop', 'go_service', 'catalogo')
 sql('ALTER TABLE scraper.entregas_ingesta RENAME TO sup270_restore_ingesta; ALTER TABLE scraper.lotes_catalogo RENAME TO sup270_restore_catalogo;')
-compose('up', '-d', '--no-deps', 'go_service')
+compose('up', '-d', '--no-deps', 'go_service', 'catalogo')
 wait_for(lambda: 'aplicar 05_recuperacion_scraping.sql' in compose('logs', '--no-color', 'go_service'))
-live = compose('exec','-T','catalogo','wget','-q','-O','-','http://127.0.0.1:8080/_catalogo/live')
-assert json.loads(live)['status'] == 'ok'
-ready = compose('exec','-T','catalogo','sh','-c','wget -S -O /dev/null http://127.0.0.1:8080/_catalogo/ready 2>&1 || true')
-assert '503 Service Unavailable' in ready
+wait_for(lambda: 'catalogo_storage_invalid' in compose('logs', '--no-color', 'catalogo')[catalog_logs_before:])
+compose('stop', 'go_service', 'catalogo')
 sql('ALTER TABLE scraper.sup270_restore_ingesta RENAME TO entregas_ingesta; ALTER TABLE scraper.sup270_restore_catalogo RENAME TO lotes_catalogo;')
-compose('restart', 'go_service')
 compose('up','-d','--no-deps','--wait','--wait-timeout','90','go_service','catalogo')
 request('/health')
 print(json.dumps({'task':'SUP-270','http_checks':passed,'recovery_scenarios':18,'failed':0}))

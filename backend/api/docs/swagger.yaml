@@ -1072,17 +1072,25 @@ paths:
       - scraper
   /health:
     get:
-      description: Verifica la disponibilidad de la API Gateway y sus dependencias
-        (PostgreSQL, Redis).
-      produces:
-      - application/json
+      description: 'Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.'
+      produces: [application/json]
+      tags: [health]
+      summary: Comprobación de salud del servicio (Healthcheck)
       responses:
         "200":
           description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Comprobación de salud del servicio (Healthcheck)
-      tags:
-      - health
+          schema: {type: object, additionalProperties: true}
+        "503":
+          description: Service Unavailable
+          schema: {type: object, additionalProperties: true}
+  /_api/live:
+    get:
+      description: Liveness independiente de PostgreSQL y Redis.
+      produces: [application/json]
+      tags: [health]
+      summary: Comprueba que el proceso responde
+      responses:
+        "200":
+          description: OK
+          schema: {type: object, additionalProperties: true}
 swagger: "2.0"

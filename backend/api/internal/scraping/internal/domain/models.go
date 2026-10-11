@@ -47,14 +47,13 @@ func (SucursalSupermercado) TableName() string {
 type TrabajoScraper struct {
 	ID                    uuid.UUID  `gorm:"type:uuid;default:gen_random_uuid();primaryKey" json:"id"`
 	CadenaID              int        `gorm:"not null;index" json:"cadena_id"`
+	CadenaNombre          string     `gorm:"column:cadena_nombre;not null" json:"-"`
 	DisparadoPorUsuarioID *uuid.UUID `gorm:"type:uuid" json:"disparado_por_usuario_id,omitempty"`
 	Estado                string     `gorm:"type:varchar(30);default:'pendiente';not null" json:"estado"`
 	IniciadoEl            time.Time  `gorm:"default:now();not null" json:"iniciado_el"`
 	FinalizadoEl          *time.Time `json:"finalizado_el,omitempty"`
 	ElementosExtraidos    int        `gorm:"default:0" json:"elementos_extraidos"`
 	RegistroErrores       *string    `gorm:"type:text" json:"registro_errores,omitempty"`
-
-	Cadena *CadenaSupermercado `gorm:"foreignKey:CadenaID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
 func (TrabajoScraper) TableName() string {

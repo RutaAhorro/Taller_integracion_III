@@ -50,12 +50,24 @@ func New(db *gorm.DB, rdb *redis.Client) (*Module, error) {
 }
 
 func (m *Module) VerifyStorage(ctx context.Context) error {
-	for _, table := range []string{"scraper.entregas_ingesta", "scraper.entregas_trabajos"} {
+	rows, err := m.db.WithContext(ctx).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
+	if err != nil {
+		return errors.New("aplicar 06_propiedad_permisos.sql y permisos de coordinación antes de iniciar la API")
+	}
+	rows.Close()
+	for _, table := range []string{"scraper.trabajos_scraper", "scraper.entregas_ingesta", "scraper.entregas_trabajos"} {
 		rows, err := m.db.WithContext(ctx).Raw("SELECT * FROM " + table + " LIMIT 0").Rows()
 		if err != nil {
 			return errors.New("aplicar 05_recuperacion_scraping.sql y permisos de coordinación antes de iniciar la API")
 		}
 		rows.Close()
+		var permitted bool
+		if err := m.db.WithContext(ctx).Raw(`SELECT
+            has_table_privilege(current_user, ?, 'SELECT') AND
+            has_table_privilege(current_user, ?, 'INSERT') AND
+            has_table_privilege(current_user, ?, 'UPDATE')`, table, table, table).Scan(&permitted).Error; err != nil || !permitted {
+			return errors.New("faltan permisos runtime de coordinación; revisar 06_propiedad_permisos.sql")
+		}
 	}
 	var canDelete bool
 	if err := m.db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&canDelete).Error; err != nil || !canDelete {

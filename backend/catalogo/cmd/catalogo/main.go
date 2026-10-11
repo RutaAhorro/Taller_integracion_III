@@ -45,22 +45,17 @@ func run(log *slog.Logger) error {
 	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
 	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	// El proceso puede arrancar durante una indisponibilidad de PostgreSQL;
-	// readiness impide aceptar tráfico hasta que la conexión funcione.
-	service := services.NewProductoService(repositories.NewProductoRepository(db))
-	ready := func(ctx context.Context) error {
-		if err := sqlDB.PingContext(ctx); err != nil {
-			return err
-		}
-		if cfg.InternalToken != "" {
-			rows, err := sqlDB.QueryContext(ctx, "SELECT id FROM scraper.lotes_catalogo LIMIT 0")
-			if err != nil {
-				return err
-			}
-			rows.Close()
-		}
-		return nil
+	// Validar una sola vez antes de exponer HTTP; no migrar ni servir con grants
+	// incompletos. Durante la ejecución readiness sólo comprueba conectividad.
+	storageCtx, storageCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	storageErr := ingesta.VerifyStorage(storageCtx, db, cfg.InternalToken != "")
+	storageCancel()
+	if storageErr != nil {
+		log.Error("catalogo_storage_invalid", "error", storageErr)
+		return errors.New("Catálogo requiere tablas y permisos runtime antes de iniciar")
 	}
+	service := services.NewProductoService(repositories.NewProductoRepository(db))
+	ready := sqlDB.PingContext
 	httpServer := &http.Server{
 		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
 			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),

@@ -25,6 +25,8 @@ finish() {
   status=$?
   if (( status != 0 )); then
     compose logs --no-color --tail 40 api catalogo || true
+    # Sólo errores/init: no volcar SQL ni credenciales del fixture.
+    compose logs --no-color db | python3 -c 'import sys; print("".join(line for line in sys.stdin if "running /docker-entrypoint-initdb.d/" in line or "ERROR:" in line or "FATAL:" in line))' || true
   fi
   cleanup
   exit "$status"

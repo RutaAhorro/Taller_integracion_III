@@ -1,5 +1,9 @@
 # SUP-269: persistencia de ingesta bajo propiedad de Catálogo
 
+> SUP-271 define los roles definitivos y las conexiones separadas. Las notas de
+> permisos transitorios de esta guía describen SUP-269; consultar
+> [datos y permisos vigentes](GUIA_DATOS_Y_PERMISOS_BACKEND.md) antes de desplegar.
+
 > La recuperación e idempotencia que esta guía deja pendientes se implementan
 > en SUP-270. Su comportamiento vigente, migración de cola y operación están
 > en [GUIA_SCRAPING_RECUPERACION.md](GUIA_SCRAPING_RECUPERACION.md).

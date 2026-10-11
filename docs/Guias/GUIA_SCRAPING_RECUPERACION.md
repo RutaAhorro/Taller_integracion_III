@@ -159,11 +159,14 @@ El registro SQL de entregas fallidas y el spool conservan el diagnóstico.
    `scraper.entregas_trabajos`, y DELETE **sólo** en `scraper.entregas_trabajos`
    para retirar ejecuciones terminales. Conservar los permisos de SUP-269.
    Ninguno necesita permisos en el ledger del otro. Los roles definitivos de
-   producción siguen correspondiendo a SUP-271.
+   producción y sus conexiones separadas se definen en SUP-271; consultar
+   [datos y permisos](GUIA_DATOS_Y_PERMISOS_BACKEND.md) al aplicar ambas tareas.
 4. Desplegar Catálogo, luego API. Readiness de Catálogo comprueba su ledger
    en modo escritor; API verifica sus tablas antes de iniciar. No usan AutoMigrate.
    Si falta la migración, API impide arrancar con un diagnóstico controlado;
-   Catálogo mantiene liveness 200 y readiness 503. No desplegar imágenes antes
+   en SUP-271 corregida Catálogo también impide abrir HTTP si la validación inicial
+   de tablas/permisos falla. Durante una caída de DB posterior al arranque,
+   liveness sigue 200 y readiness pasa a 503. No desplegar imágenes antes
    de aplicar SQL y permisos. En una instalación ya migrada, este fix no añade
    tablas: añadir el permiso DELETE al rol de coordinación antes del rollout.
 5. Migrar la lista anterior desde el entorno del scraper, con REDIS_URL y
@@ -261,7 +264,8 @@ CI ejecuta la construcción completa desde fuente. La validación local puede
 reutilizar las imágenes runtime verificadas, con binarios nuevos compilados
 desde fuente y `SUP268_SKIP_BUILD=1`; ese modo no valida los builders completos.
 
-Validación local completada en esta rama:
+Validación local de SUP-270 antes de integrar SUP-271 (la validación vigente
+de permisos/probes está en `GUIA_DATOS_Y_PERMISOS_BACKEND.md`):
 
 - 193 resultados Go unitarios (85 API, 108 Catálogo), sin fallos, con race
   detector, vet y compilación `CGO_ENABLED=0` correctos. El escenario de
@@ -275,7 +279,8 @@ Validación local completada en esta rama:
   escenarios y 12 enviando la misma clave a tres réplicas de Catálogo).
   Se incluyen cierre con lotes fallidos/pendientes, rechazo SQL inmediato,
   reintentos transitorios, prioridad al reiniciar, marca de cierre ante
-  republicación tardía, GC y liveness/readiness con tablas ausentes.
+  republicación tardía, GC y detección de tablas ausentes. SUP-271 valida storage
+  de Catálogo al arranque y reserva el readiness periódico a conectividad.
   El recibo, captura y contador permanecieron únicos en los casos de reintento.
 - Pipeline y señales Scrapy reales sobre el fixture local, sin red externa;
   recuperación después de terminar abruptamente un proceso tras el commit HTTP.

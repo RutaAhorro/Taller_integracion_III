@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/api/docs"
+	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/database"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/middleware"
@@ -18,26 +19,28 @@ import (
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
+var IdentityDB *gorm.DB
+var ScrapingDB *gorm.DB
 var RDB *redis.Client
 
-func initDB() {
-	dsn := os.Getenv("DB_URL")
-	if dsn == "" {
-		log.Fatal("ERROR DE SEGURIDAD: No se encontró DB_URL en las variables de entorno. Abortando inicio.")
-	}
-
-	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+func initDB(ctx context.Context) error {
+	cfg, err := database.Load()
 	if err != nil {
-		log.Fatalf("Error conectando a la base de datos: %v", err)
+		return err
 	}
-
-	log.Println("Conexión a la base de datos establecida exitosamente.")
+	IdentityDB, err = database.Open(ctx, cfg.IdentityURL)
+	if err != nil {
+		return err
+	}
+	ScrapingDB, err = database.Open(ctx, cfg.ScrapingURL)
+	if err != nil {
+		database.Close(IdentityDB)
+		return err
+	}
+	return nil
 }
 
 func initRedis() {
@@ -65,6 +68,9 @@ func initRedis() {
 		}
 	}
 
+	// Sin esta opción go-redis usa sus timeouts de socket aunque venza el
+	// contexto del probe. Los comandos deben respetar el presupuesto HTTP.
+	opt.ContextTimeoutEnabled = true
 	RDB = redis.NewClient(opt)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -117,6 +123,7 @@ func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	})
 
 	r.GET("/", RootHandler)
+	r.GET("/_api/live", LivenessHandler)
 	r.GET("/health", HealthHandler)
 
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -124,8 +131,8 @@ func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	// Grupo de rutas de la API v1
 	v1 := r.Group("/api/v1")
 	v1.GET("/health", HealthHandler)
-	identidad := identity.New(DB, RDB)
-	coordinacion, err := scraping.New(DB, RDB)
+	identidad := identity.New(IdentityDB, RDB)
+	coordinacion, err := scraping.New(ScrapingDB, RDB)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -151,25 +158,40 @@ func RootHandler(c *gin.Context) {
 
 // HealthHandler godoc
 // @Summary      Comprobación de salud del servicio (Healthcheck)
-// @Description  Verifica la disponibilidad de la API Gateway y sus dependencias (PostgreSQL, Redis).
+// @Description  Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.
 // @Tags         health
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
+// @Failure      503  {object}  map[string]interface{}
 // @Router       /health [get]
 func HealthHandler(c *gin.Context) {
-	dbStatus := "ok"
-	if DB != nil {
-		sqlDB, err := DB.DB()
-		if err != nil || sqlDB.Ping() != nil {
-			dbStatus = "error"
+	// Un presupuesto común mantiene el probe por debajo del timeout de K8s (3s).
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
+	defer cancel()
+	checkDB := func(db *gorm.DB) string {
+		if db == nil {
+			return "not_configured"
 		}
-	} else {
-		dbStatus = "not_configured"
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
+		defer cancel()
+		sqlDB, err := db.DB()
+		if err != nil || sqlDB.PingContext(ctx) != nil {
+			return "error"
+		}
+		return "ok"
+	}
+	identityStatus, scrapingStatus := checkDB(IdentityDB), checkDB(ScrapingDB)
+	dbStatus := "ok"
+	if identityStatus != "ok" || scrapingStatus != "ok" {
+		dbStatus = "error"
+		if identityStatus == "not_configured" && scrapingStatus == "not_configured" {
+			dbStatus = "not_configured"
+		}
 	}
 
 	redisStatus := "ok"
 	if RDB != nil {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 1*time.Second)
+		ctx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
 		defer cancel()
 		if err := RDB.Ping(ctx).Err(); err != nil {
 			redisStatus = "error"
@@ -178,15 +200,32 @@ func HealthHandler(c *gin.Context) {
 		redisStatus = "not_configured"
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":    "ok",
+	status, state := http.StatusOK, "ok"
+	if dbStatus != "ok" {
+		status, state = http.StatusServiceUnavailable, "error"
+	}
+	c.JSON(status, gin.H{
+		"status":    state,
 		"service":   "api-gateway",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"checks": gin.H{
-			"database": dbStatus,
-			"redis":    redisStatus,
+			"database":          dbStatus,
+			"identity_database": identityStatus,
+			"scraping_database": scrapingStatus,
+			"redis":             redisStatus,
 		},
 	})
+}
+
+// LivenessHandler godoc
+// @Summary      Comprueba que el proceso responde
+// @Description  Liveness independiente de PostgreSQL y Redis.
+// @Tags         health
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /_api/live [get]
+func LivenessHandler(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "api-gateway"})
 }
 
 // @title           API Gateway de Supermercados
@@ -203,7 +242,14 @@ func main() {
 	// Permitir que Swagger se adapte dinámicamente a cualquier dominio o IP
 	docs.SwaggerInfo.Host = ""
 
-	initDB()
+	connectionCtx, connectionCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := initDB(connectionCtx); err != nil {
+		connectionCancel()
+		log.Fatal(err)
+	}
+	connectionCancel()
+	defer database.Close(IdentityDB)
+	defer database.Close(ScrapingDB)
 	initRedis()
 
 	r, coordinacion, err := setupApplication()
@@ -213,6 +259,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	storageCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if err := identity.VerifyStorage(storageCtx, IdentityDB); err != nil {
+		cancel()
+		log.Fatal(err)
+	}
 	if err := coordinacion.VerifyStorage(storageCtx); err != nil {
 		cancel()
 		log.Fatal(err)

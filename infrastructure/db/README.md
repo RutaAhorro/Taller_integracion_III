@@ -6,6 +6,19 @@ Este directorio contiene las definiciones DDL del esquema PostgreSQL (PostGIS) e
 
 ## 📁 Estructura de Archivos
 
+Las migraciones recientes de la refactorización se aplican expresamente a
+volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
+
+| Archivo | Uso |
+| --- | --- |
+| [05_recuperacion_scraping.sql](05_recuperacion_scraping.sql) | Recibos idempotentes de Catálogo y outboxes de coordinación (SUP-270). |
+| [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). |
+| [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los tres roles mediante variables privadas; no se ejecuta automáticamente sobre un volumen existente. |
+
+Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
+para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para
+migraciones ni recrear el volumen para aplicar estos scripts.
+
 | Archivo | Descripción | Cuándo usar |
 |---|---|---|
 | [`init.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/init.sql) | Script completo de inicialización con esquemas y datos seed de prueba (Jumbo, Lider, Santa Isabel, A Cuenta, Cugat). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |

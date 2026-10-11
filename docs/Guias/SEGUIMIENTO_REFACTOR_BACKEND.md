@@ -141,7 +141,7 @@ actualizó la referencia de rollback al commit integrado. El usuario autorizó
 abrir el PR de SUP-269 hacia `develop-refactor`.
 SUP-269 se integró mediante [PR #96](https://github.com/danirc2024/Taller_integracion_III/pull/96),
 con el squash `fc2b1c2`, cuyo contenido coincide con la base de trabajo `d45650a`.
-La tarea en curso es SUP-270, en
+SUP-270 se publicó en [PR #97](https://github.com/danirc2024/Taller_integracion_III/pull/97), en
 `backend/refactor/sup-270-recuperacion-trabajos-ingesta-vmatus`, preparada
 sobre `fc2b1c2` de `develop-refactor` para incluir sólo los cambios de SUP-270.
 El usuario autorizó commit, push y PR hacia `develop-refactor`, con revisión
@@ -169,9 +169,46 @@ Validación SUP-270 tras el review: 194 resultados Go (193 unitarios más
 HTTP sin fallos; 16 recursos Kubernetes válidos. API y Catálogo compilan y
 pasan race detector/vet. Los builders completos quedan en CI.
 
-SUP-271 permanece guardada sin commit mientras se corrige SUP-270. Al retomarla,
-incorporar estos fixes y conceder a `app_scraping` DELETE exclusivamente sobre
-`scraper.entregas_trabajos`, actualizando su verificación de permisos y rollback.
+SUP-270 fue aprobada e integrada mediante PR #97 (`42b6ca4`). SUP-271 se retomó
+sobre ese merge, conservando cierre fallido, conciliación posterior, clasificación
+de errores, retención del spool, recuperación de leases y publisher sin locks SQL.
+El rol `app_scraping` tiene DELETE exclusivamente sobre `scraper.entregas_trabajos`,
+comprobado al arrancar y también en el rollback a la imagen aprobada de SUP-270.
+
+La tarea en curso es SUP-271, en
+`backend/refactor/sup-271-separar-permisos-datos-vmatus`, basada en `42b6ca4`
+de `develop-refactor`.
+El usuario autorizó commit, push y apertura del PR de SUP-271 hacia
+`develop-refactor`, con revisión de Renato (`RCarrascoO`), Dani (`danirc2024`)
+y Esban (`EsbanV`).
+Se preparan roles `app_identity`, `app_scraping`, `app_catalogo`, dos conexiones
+privadas en API y una exclusiva de Catálogo. La migración 06 conserva los datos,
+guarda el nombre de cadena y elimina las FK externas desde trabajos. El script 07
+provisiona contraseñas privadas distintas; no corre al iniciar los servicios.
+Consultar `GUIA_DATOS_Y_PERMISOS_BACKEND.md` antes de desplegar. El trabajo local
+no aplica migraciones, Secrets ni cambios en el clúster universitario.
+Validación inicial de SUP-271 (`4d019dd`): 200 resultados Go (199 unitarios y
+una integración con PostgreSQL real), 25 pruebas Python, 352 comprobaciones HTTP
+y 118 accesos SQL por rol aprobados. Veinte recursos Kubernetes válidos; bootstrap
+del script 07 sourceado con modo 0644 y rollback a SUP-270 y vuelta comprobados.
+Se usaron imágenes runtime verificadas con binarios nuevos; builders completos
+de producción y despliegue universitario quedan fuera de la comprobación local.
+
+
+Correcciones solicitadas en review de SUP-271 (H-01/H-02): API devuelve 503
+cuando falla cualquiera de sus dos pools, con liveness independiente en
+`/_api/live` y presupuesto compartido de 2 s. Catálogo valida permisos una vez,
+antes de abrir HTTP (5 s), y readiness queda limitado a Ping. Cada pool de API
+baja a cinco conexiones: ambos HPA al máximo suman 80 conexiones de runtime.
+No se amplían max_connections/recursos DB ni se modifica Keep-Alive en este fix.
+La prueba real de probes registra la caída/recuperación de DB sin reiniciar API
+ni Catálogo, cuenta consultas de permisos en PostgreSQL y verifica el rechazo
+al arrancar sin grants. Validación del fix: 212 resultados Go (211 unitarios y una integración PostgreSQL),
+25 pruebas Python, 413 comprobaciones HTTP y 118 controles SQL por rol.
+Veinte recursos Kubernetes válidos, workflows/sintaxis/Swagger/diff comprobados.
+Los recursos temporales se eliminaron. El autor autorizó publicar estas
+correcciones en la misma rama de SUP-271 y actualizar el PR #98 hacia
+`develop-refactor`, solicitando nuevamente revisión a Renato, Dani y Esban.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

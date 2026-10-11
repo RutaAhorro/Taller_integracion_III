@@ -1,5 +1,9 @@
 # SUP-266: módulos de Identidad y coordinación de scraping
 
+> SUP-271 consolida las conexiones y permisos por propietario. Esta guía conserva
+> el diseño histórico de SUP-266; consultar
+> [arquitectura y datos vigentes](GUIA_DATOS_Y_PERMISOS_BACKEND.md).
+
 > Estado posterior: SUP-267 extrajo Catálogo y SUP-268 retira su lector de la API.
 > `main.go` compone ahora únicamente Identidad y Scraping. Los paquetes antiguos
 > `domain`, `handlers`, `repositories`, `services` y `routes` de productos se

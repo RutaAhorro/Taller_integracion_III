@@ -18,12 +18,19 @@ compose() {
   env -u DB_USER -u DB_PASSWORD -u DB_NAME -u JWT_SECRET -u GOOGLE_CLIENT_ID \
     -u CATALOGO_CORS_ALLOWED_ORIGINS -u GATEWAY_TRUSTED_PROXIES -u SUP268_READER_PASSWORD \
     -u CATALOGO_INTERNAL_TOKEN -u SUP269_COORDINATOR_PASSWORD \
+    -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD \
     docker compose --project-name "$test_project" --env-file "$test_env" \
     -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.catalogo-routing-test.yml" "$@"
 }
 finish() {
   status=$?
-  if (( status != 0 )); then compose logs --no-color --tail 40 go_service catalogo gateway frontend || true; fi
+  if (( status != 0 )); then
+    compose logs --no-color --tail 40 go_service catalogo gateway frontend || true
+    # Diagnóstico de init sin volcar credenciales ni el log SQL completo.
+    compose exec -T db psql -X -U sup268 -d sup268 -tA -c \
+      "SELECT rolname,rolcanlogin,rolpassword IS NOT NULL FROM pg_authid WHERE rolname IN ('app_identity','app_scraping','app_catalogo');" || true
+    compose logs --no-color db | python3 -c 'import sys; print("".join(line for line in sys.stdin if "running /docker-entrypoint-initdb.d/" in line or "sourcing /docker-entrypoint-initdb.d/" in line or "ERROR:" in line or "debe contener al menos" in line or "contraseñas runtime deben" in line))' || true
+  fi
   compose down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$test_dir"
   if [[ -n "$test_ca" ]]; then rm -f "$test_ca"; fi
@@ -34,39 +41,31 @@ trap finish EXIT
 mkdir -p "$SUP268_INIT_DIR" "$SUP268_REFERENCE_API_DIR" "$SUP269_REFERENCE_API_DIR"
 git -C "$repo_root" archive "$reference_ref" backend/api | tar -x -C "$SUP268_REFERENCE_API_DIR" --strip-components=2
 git -C "$repo_root" archive "$ingesta_reference_ref" backend/api | tar -x -C "$SUP269_REFERENCE_API_DIR" --strip-components=2
+additional_builds=()
+if [[ "${SUP271_OWNERSHIP:-0}" == 1 ]]; then
+  export SUP271_REFERENCE_API_DIR="$test_dir/sup270-api"
+  mkdir -p "$SUP271_REFERENCE_API_DIR"
+  git -C "$repo_root" archive "${SUP271_REFERENCE_REF:-42b6ca448875f03e63e31d51f44fccc5cee3de91}" backend/api | tar -x -C "$SUP271_REFERENCE_API_DIR" --strip-components=2
+  additional_builds=(reference_permissions_api)
+fi
 chmod 755 "$test_dir" "$SUP268_INIT_DIR"
 cp "$repo_root"/infrastructure/db/*.sql "$SUP268_INIT_DIR/"
+cp "$repo_root/infrastructure/db/07_runtime_credentials.sh" "$SUP268_INIT_DIR/"
 cp "$repo_root/backend/catalogo/tests/fixtures.sql" "$SUP268_INIT_DIR/zz_sup268_fixtures.sql"
-python3 - "$test_env" "$SUP268_INIT_DIR/zzz_catalog_reader.sql" <<'PY'
+python3 - "$test_env" <<'PY'
 from pathlib import Path
 import secrets, sys
-password, reader, jwt, internal, coordinator = (secrets.token_hex(24) for _ in range(5))
+password, reader, jwt, internal, coordinator, identity = (secrets.token_hex(24) for _ in range(6))
 p = Path(sys.argv[1])
 p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_SECRET=' + jwt +
-    '\nSUP268_READER_PASSWORD=' + reader + '\nCATALOGO_INTERNAL_TOKEN=' + internal +
-    '\nSUP269_COORDINATOR_PASSWORD=' + coordinator + '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
+    '\nCATALOGO_DB_PASSWORD=' + reader + '\nCATALOGO_INTERNAL_TOKEN=' + internal +
+    '\nSCRAPING_DB_PASSWORD=' + coordinator + '\nIDENTITY_DB_PASSWORD=' + identity +
+    '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
     'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n')
 p.chmod(0o600)
-Path(sys.argv[2]).write_text("CREATE ROLE sup269_catalog_writer LOGIN PASSWORD '" + reader + "';\n"
-    "GRANT CONNECT ON DATABASE sup268 TO sup269_catalog_writer;\n"
-    "GRANT USAGE ON SCHEMA scraper TO sup269_catalog_writer;\n"
-    "GRANT SELECT ON scraper.productos_crudos, scraper.capturas_precios, "
-    "scraper.cadenas_supermercado, scraper.sucursales_supermercado TO sup269_catalog_writer;\n"
-    "GRANT INSERT, UPDATE ON scraper.productos_crudos, scraper.capturas_precios, "
-    "scraper.cadenas_supermercado, scraper.sucursales_supermercado TO sup269_catalog_writer;\n"
-    "GRANT SELECT, INSERT ON scraper.lotes_catalogo TO sup269_catalog_writer;\n"
-    "GRANT USAGE, SELECT ON SEQUENCE scraper.capturas_precios_id_seq, "
-    "scraper.cadenas_supermercado_id_seq, scraper.sucursales_supermercado_id_seq TO sup269_catalog_writer;\n"
-    "CREATE ROLE sup269_coordinator LOGIN PASSWORD '" + coordinator + "';\n"
-    "GRANT CONNECT ON DATABASE sup268 TO sup269_coordinator;\n"
-    "GRANT USAGE ON SCHEMA api, scraper TO sup269_coordinator;\n"
-    "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA api TO sup269_coordinator;\n"
-    "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO sup269_coordinator;\n"
-    "GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper, scraper.entregas_ingesta, "
-    "scraper.entregas_trabajos TO sup269_coordinator;\n"
-    "GRANT DELETE ON scraper.entregas_trabajos TO sup269_coordinator;\n")
 PY
 chmod 644 "$SUP268_INIT_DIR"/*.sql
+chmod 755 "$SUP268_INIT_DIR/07_runtime_credentials.sh"
 source_ca="${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
 if [[ ! -s "$source_ca" ]]; then echo 'SUP268_CA_BUNDLE debe ser un bundle CA no vacío.' >&2; exit 1; fi
 test_ca=$(mktemp "$repo_root/.sup268-ca.XXXXXXXX.crt")
@@ -77,9 +76,18 @@ compose config --quiet
 if [[ "${SUP268_SKIP_BUILD:-0}" != 1 ]]; then
   compose build --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY \
     --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy \
-    go_service catalogo gateway frontend reference_api reference_ingesta_api
+    go_service catalogo gateway frontend reference_api reference_ingesta_api "${additional_builds[@]}"
 fi
-compose up -d --wait --wait-timeout 180 db redis go_service catalogo gateway frontend reference_api
+compose up -d --wait --wait-timeout 180 db redis
+compose exec -T db psql -X -U sup268 -d sup268 -v ON_ERROR_STOP=1 <<'SQL'
+DO $$ BEGIN
+  IF (SELECT count(*) FROM pg_authid WHERE rolname IN ('app_identity','app_scraping','app_catalogo')
+      AND rolcanlogin AND rolpassword IS NOT NULL) <> 3 THEN
+    RAISE EXCEPTION 'La inicialización no provisionó los tres roles runtime: revisar scripts 06/07';
+  END IF;
+END $$;
+SQL
+compose up -d --wait --wait-timeout 180 go_service catalogo gateway frontend reference_api
 api_url="http://127.0.0.1:${SUP268_API_PORT:-18080}"
 gateway_url="http://127.0.0.1:${SUP268_GATEWAY_PORT:-18082}"
 frontend_url="http://127.0.0.1:${SUP268_FRONTEND_PORT:-13000}"
@@ -103,6 +111,10 @@ DROP TRIGGER sup269_fail_counter ON scraper.trabajos_scraper;
 DROP FUNCTION scraper.sup269_fail_counter();
 SQL
 compose exec -T db psql -U sup268 -d sup268 -v ON_ERROR_STOP=1 < "$repo_root/backend/catalogo/tests/verify_ingesta_ownership.sql"
+if [[ "${SUP271_OWNERSHIP:-0}" == 1 ]]; then
+  python3 "$repo_root/backend/api/tests/smoke_data_ownership.py" \
+    --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
+fi
 if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
   PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
     --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state"

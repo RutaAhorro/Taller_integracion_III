@@ -16,6 +16,7 @@ on:
       - 'scripts/smoke_catalogo_routing_compose.sh'
       - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - 'scripts/smoke_scraping_recovery_compose.sh'
+      - 'scripts/smoke_data_ownership_compose.sh'
       - '.github/workflows/**'
   push:
     branches: [develop-refactor]
@@ -32,6 +33,7 @@ on:
       - 'scripts/smoke_catalogo_routing_compose.sh'
       - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - 'scripts/smoke_scraping_recovery_compose.sh'
+      - 'scripts/smoke_data_ownership_compose.sh'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -97,8 +99,8 @@ jobs:
           pip install -r backend/scraper/requirements.txt
           cd backend/scraper
           python -m unittest research.test_api_pipeline research.test_recovery -v
-      - name: Compose routing, ingestion recovery, worker leases and rollback
-        run: bash scripts/smoke_scraping_recovery_compose.sh
+      - name: Compose data ownership, recovery, worker leases and rollback
+        run: bash scripts/smoke_data_ownership_compose.sh
 
   manifests:
     runs-on: ubuntu-latest
@@ -120,4 +122,5 @@ jobs:
             infrastructure/k8s/catalogo/ \
             infrastructure/k8s/api/ \
             infrastructure/k8s/scraper/ \
-            infrastructure/k8s/redis/
+            infrastructure/k8s/redis/ \
+            infrastructure/k8s/db/

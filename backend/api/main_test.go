@@ -37,6 +37,9 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		name, method, path, body, cookie string
 		status                           int
 	}{
+		{"liveness sin dependencias", "GET", "/_api/live", "", "", 200},
+		{"readiness sin bases", "GET", "/health", "", "", 503},
+		{"readiness v1 sin bases", "GET", "/api/v1/health", "", "", 503},
 		{"perfil sin sesión", "GET", "/api/v1/auth/me", "", "", 401},
 		{"actualización sin sesión", "PUT", "/api/v1/auth/me", "{}", "", 401},
 		{"admin fuera de API", "GET", "/api/v1/admin/productos", "", "", 404},

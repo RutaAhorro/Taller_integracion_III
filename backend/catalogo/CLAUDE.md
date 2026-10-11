@@ -2,9 +2,9 @@
 
 ## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su ingesta privada requiere CATALOGO_INTERNAL_TOKEN y deduplica lote_id en scraper.lotes_catalogo, en la misma transacción que las capturas. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
+Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**24 archivos .go** detectados
+**25 archivos .go** detectados
 
 
 ### `cmd/catalogo/main.go` (package main)
@@ -73,6 +73,10 @@ Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su inge
 - `(Repository).obtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*SucursalSupermercado, error)`
 - `(Repository).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*CadenaSupermercado, error)`
 - `(Repository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*SucursalSupermercado, error)`
+
+### `internal/ingesta/storage.go` (package ingesta)
+
+- `VerifyStorage(ctx context.Context, db *gorm.DB, writer bool) error`
 
 ### `internal/ingesta/types.go` (package ingesta)
 

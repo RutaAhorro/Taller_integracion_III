@@ -20,6 +20,21 @@ spec:
       - env:
         - name: PGDATA
           value: /var/lib/postgresql/data/pgdata
+        - name: IDENTITY_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-db-secret
+              key: DB_PASSWORD
+        - name: SCRAPING_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scraping-db-secret
+              key: DB_PASSWORD
+        - name: CATALOGO_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: catalogo-db-secret
+              key: DB_PASSWORD
         envFrom:
         - secretRef:
             name: db-secret
