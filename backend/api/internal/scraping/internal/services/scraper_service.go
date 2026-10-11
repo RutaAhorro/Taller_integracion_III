@@ -74,6 +74,7 @@ func (s *scraperService) IniciarTrabajo(ctx context.Context, input domain.Inicia
 	trabajo := &domain.TrabajoScraper{
 		ID:                    uuid.New(),
 		CadenaID:              cadena.ID,
+		CadenaNombre:          cadena.Nombre,
 		DisparadoPorUsuarioID: usuarioUUID,
 		Estado:                "en_progreso",
 		IniciadoEl:            time.Now(),
@@ -108,7 +109,7 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 	}
 	if existente.Estado == "completado" || existente.Estado == "fallido" {
 		if s.entregas != nil && existente.Estado == estado {
-			return s.mapearTrabajoDTO(existente, s.nombreCadena(ctx, existente.CadenaID)), nil
+			return s.mapearTrabajoDTO(existente, s.nombreTrabajo(ctx, existente)), nil
 		}
 		return nil, ErrTrabajoYaFinalizado
 	}
@@ -119,7 +120,7 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 	}
 
 	cadenaNombre := ""
-	cadenaNombre = s.nombreCadena(ctx, actualizado.CadenaID)
+	cadenaNombre = s.nombreTrabajo(ctx, actualizado)
 
 	return s.mapearTrabajoDTO(actualizado, cadenaNombre), nil
 }
@@ -140,7 +141,7 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	}
 
 	cadenaNombre := ""
-	cadenaNombre = s.nombreCadena(ctx, trabajo.CadenaID)
+	cadenaNombre = s.nombreTrabajo(ctx, trabajo)
 
 	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
 }
@@ -236,6 +237,15 @@ func (s *scraperService) mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre
 
 // El nombre es información auxiliar: consultar/finalizar un trabajo no debe
 // quedar bloqueado por una caída de Catálogo. El resto del DTO se conserva.
+func (s *scraperService) nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string {
+	if trabajo.CadenaNombre != "" {
+		return trabajo.CadenaNombre
+	}
+	// Compatibilidad con trabajos históricos cuyo origen ya no estaba presente
+	// al migrar. Ninguna lectura SQL cruza hacia tablas de Catálogo.
+	return s.nombreCadena(ctx, trabajo.CadenaID)
+}
+
 func (s *scraperService) nombreCadena(ctx context.Context, cadenaID int) string {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

@@ -10,11 +10,11 @@ BEGIN
         ON pc.id = cp.producto_crudo_id WHERE pc.sku = 'SUP269-COUNTER-PENDING') <> 1 THEN
         RAISE EXCEPTION 'El lote confirmado con contador pendiente no conservó una captura';
     END IF;
-    IF has_table_privilege('sup269_coordinator', 'scraper.productos_crudos', 'INSERT')
-       OR has_table_privilege('sup269_coordinator', 'scraper.capturas_precios', 'UPDATE')
-       OR has_table_privilege('sup269_coordinator', 'scraper.cadenas_supermercado', 'SELECT')
-       OR has_table_privilege('sup269_catalog_writer', 'scraper.trabajos_scraper', 'SELECT')
-       OR has_table_privilege('sup269_catalog_writer', 'api.usuarios', 'SELECT') THEN
+    IF has_table_privilege('app_scraping', 'scraper.productos_crudos', 'INSERT')
+       OR has_table_privilege('app_scraping', 'scraper.capturas_precios', 'UPDATE')
+       OR has_table_privilege('app_scraping', 'scraper.cadenas_supermercado', 'SELECT')
+       OR has_table_privilege('app_catalogo', 'scraper.trabajos_scraper', 'SELECT')
+       OR has_table_privilege('app_catalogo', 'api.usuarios', 'SELECT') THEN
         RAISE EXCEPTION 'Los roles del smoke permiten cruzar propietarios';
     END IF;
     IF NOT EXISTS (SELECT 1 FROM scraper.productos_crudos WHERE sku = 'SUP269-CONCURRENT')

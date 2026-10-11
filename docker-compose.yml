@@ -6,6 +6,10 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      # Sólo el operador/initializador recibe las contraseñas de todos los roles.
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Define una contraseña exclusiva para Identidad}
+      SCRAPING_DB_PASSWORD: ${SCRAPING_DB_PASSWORD:?Define una contraseña exclusiva para coordinación}
+      CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:?Define una contraseña exclusiva para Catálogo}
     ports:
       - 5432:5432
     volumes:
@@ -37,12 +41,8 @@ services:
       - "127.0.0.1:8080:8080" # API interna: Catálogo se consulta por Gateway (8082).
     environment:
       - PORT=8080
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      - IDENTITY_DB_URL=postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      - SCRAPING_DB_URL=postgres://app_scraping:${SCRAPING_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - JWT_SECRET=${JWT_SECRET:?Define JWT_SECRET en el entorno local}
@@ -80,7 +80,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PORT: '8080'
-      DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+      DB_URL: postgres://app_catalogo:${CATALOGO_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el entorno local}
       CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
       CORS_ALLOWED_ORIGINS: ${CATALOGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}

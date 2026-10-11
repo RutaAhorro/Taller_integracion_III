@@ -16,8 +16,6 @@ services:
       secrets: [network_ca]
     container_name: !reset null
     ports: !override ["127.0.0.1:${SUP268_API_PORT:-18080}:8080"]
-    environment:
-      DB_URL: postgres://sup269_coordinator:${SUP269_COORDINATOR_PASSWORD:?}@db:5432/sup268?sslmode=disable
     healthcheck:
       interval: 2s
   catalogo:
@@ -25,8 +23,6 @@ services:
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
-    environment:
-      DB_URL: postgres://sup269_catalog_writer:${SUP268_READER_PASSWORD:?}@db:5432/sup268?sslmode=disable
     healthcheck:
       interval: 2s
   gateway:
@@ -69,6 +65,14 @@ services:
     image: sup268-api:local
     build:
       context: ${SUP269_REFERENCE_API_DIR:?}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
+  reference_permissions_api:
+    # Imagen SUP-270: rollback de conexiones de SUP-271, sólo en el harness.
+    image: sup270-api:local
+    build:
+      context: ${SUP271_REFERENCE_API_DIR:-./backend/api}
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     profiles: [reference-build]

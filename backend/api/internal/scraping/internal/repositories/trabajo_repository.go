@@ -23,7 +23,7 @@ func (r *gormTrabajoRepository) CrearTrabajo(ctx context.Context, trabajo *domai
 	return r.db.WithContext(ctx).Create(trabajo).Error
 }
 
-// ObtenerTrabajoPorID busca un trabajo por su UUID e incluye los datos de la cadena
+// ObtenerTrabajoPorID lee únicamente el trabajo y su snapshot de auditoría.
 func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
 	err := r.db.WithContext(ctx).

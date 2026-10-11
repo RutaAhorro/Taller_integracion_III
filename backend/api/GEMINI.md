@@ -60,9 +60,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 ## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql y DELETE sólo en el outbox de ejecuciones terminales. El cierre fallido no espera entregas; su conciliación SQL continúa. El publisher no retiene locks SQL durante Redis. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
+Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio y permisos exclusivos. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**46 archivos .go** detectados
+**48 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -73,6 +73,17 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 ### `infrastructure/models.go` (package infrastructure)
 
 - Structs: Usuario, PreferencialDieteticaUsuario, DireccionUsuario, PerfilTransporteUsuario, TarjetaFidelidadUsuario, MisionValidacion, Categoria, Marca, ProductoNormalizado, EquivalenciaProducto, Receta, IngredienteReceta, MapeoProductoIA, CadenaSupermercado, SucursalSupermercado, TrabajoScraper, ProductoCrudo, CapturaPrecio, ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, DetalleArticuloParada
+
+### `internal/database/connections.go` (package database)
+
+- Structs: Config
+- `Load() (Config, error)`
+- `Open(ctx context.Context, dsn string) (*gorm.DB, error)`
+- `Close(db *gorm.DB)`
+
+### `internal/database/connections_test.go` (package database)
+
+- `TestRuntimeCredentials(t *testing.T)`
 
 ### `internal/identity/internal/domain/models.go` (package domain)
 
@@ -152,6 +163,7 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 - `(Module).RegisterRoutes(group *gin.RouterGroup)`
 - `(Module).RequireAuth() gin.HandlerFunc`
 - `(Module).RequireRole(roles ...string) gin.HandlerFunc`
+- `VerifyStorage(ctx context.Context, db *gorm.DB) error`
 
 ### `internal/identity/tests/auth_handler_test.go` (package tests)
 
@@ -301,6 +313,7 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 - `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
 - `(scraperService).mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
+- `(scraperService).nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string`
 - `(scraperService).nombreCadena(ctx context.Context, cadenaID int) string`
 
 ### `internal/scraping/module.go` (package scraping)
@@ -345,7 +358,7 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 
 ### `main.go` (package main)
 
-- `initDB()`
+- `initDB(ctx context.Context) error`
 - `initRedis()`
 - `setupRouter() (*gin.Engine, error)`
 - `setupApplication() (*gin.Engine, *scraping.Module, error)`

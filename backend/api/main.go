@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/api/docs"
+	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/database"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/middleware"
@@ -18,26 +19,28 @@ import (
 	"github.com/redis/go-redis/v9"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
-var DB *gorm.DB
+var IdentityDB *gorm.DB
+var ScrapingDB *gorm.DB
 var RDB *redis.Client
 
-func initDB() {
-	dsn := os.Getenv("DB_URL")
-	if dsn == "" {
-		log.Fatal("ERROR DE SEGURIDAD: No se encontró DB_URL en las variables de entorno. Abortando inicio.")
-	}
-
-	var err error
-	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+func initDB(ctx context.Context) error {
+	cfg, err := database.Load()
 	if err != nil {
-		log.Fatalf("Error conectando a la base de datos: %v", err)
+		return err
 	}
-
-	log.Println("Conexión a la base de datos establecida exitosamente.")
+	IdentityDB, err = database.Open(ctx, cfg.IdentityURL)
+	if err != nil {
+		return err
+	}
+	ScrapingDB, err = database.Open(ctx, cfg.ScrapingURL)
+	if err != nil {
+		database.Close(IdentityDB)
+		return err
+	}
+	return nil
 }
 
 func initRedis() {
@@ -124,8 +127,8 @@ func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	// Grupo de rutas de la API v1
 	v1 := r.Group("/api/v1")
 	v1.GET("/health", HealthHandler)
-	identidad := identity.New(DB, RDB)
-	coordinacion, err := scraping.New(DB, RDB)
+	identidad := identity.New(IdentityDB, RDB)
+	coordinacion, err := scraping.New(ScrapingDB, RDB)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,14 +160,25 @@ func RootHandler(c *gin.Context) {
 // @Success      200  {object}  map[string]interface{}
 // @Router       /health [get]
 func HealthHandler(c *gin.Context) {
-	dbStatus := "ok"
-	if DB != nil {
-		sqlDB, err := DB.DB()
-		if err != nil || sqlDB.Ping() != nil {
-			dbStatus = "error"
+	checkDB := func(db *gorm.DB) string {
+		if db == nil {
+			return "not_configured"
 		}
-	} else {
-		dbStatus = "not_configured"
+		ctx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+		defer cancel()
+		sqlDB, err := db.DB()
+		if err != nil || sqlDB.PingContext(ctx) != nil {
+			return "error"
+		}
+		return "ok"
+	}
+	identityStatus, scrapingStatus := checkDB(IdentityDB), checkDB(ScrapingDB)
+	dbStatus := "ok"
+	if identityStatus != "ok" || scrapingStatus != "ok" {
+		dbStatus = "error"
+		if identityStatus == "not_configured" && scrapingStatus == "not_configured" {
+			dbStatus = "not_configured"
+		}
 	}
 
 	redisStatus := "ok"
@@ -183,8 +197,10 @@ func HealthHandler(c *gin.Context) {
 		"service":   "api-gateway",
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"checks": gin.H{
-			"database": dbStatus,
-			"redis":    redisStatus,
+			"database":          dbStatus,
+			"identity_database": identityStatus,
+			"scraping_database": scrapingStatus,
+			"redis":             redisStatus,
 		},
 	})
 }
@@ -203,7 +219,14 @@ func main() {
 	// Permitir que Swagger se adapte dinámicamente a cualquier dominio o IP
 	docs.SwaggerInfo.Host = ""
 
-	initDB()
+	connectionCtx, connectionCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := initDB(connectionCtx); err != nil {
+		connectionCancel()
+		log.Fatal(err)
+	}
+	connectionCancel()
+	defer database.Close(IdentityDB)
+	defer database.Close(ScrapingDB)
 	initRedis()
 
 	r, coordinacion, err := setupApplication()
@@ -213,6 +236,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	storageCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if err := identity.VerifyStorage(storageCtx, IdentityDB); err != nil {
+		cancel()
+		log.Fatal(err)
+	}
 	if err := coordinacion.VerifyStorage(storageCtx); err != nil {
 		cancel()
 		log.Fatal(err)

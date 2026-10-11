@@ -3,6 +3,8 @@
 package identity
 
 import (
+	"context"
+	"errors"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity/internal/handlers"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity/internal/repositories"
@@ -34,4 +36,18 @@ func (m *Module) RequireAuth() gin.HandlerFunc {
 
 func (m *Module) RequireRole(roles ...string) gin.HandlerFunc {
 	return middleware.RequireRole(roles...)
+}
+
+// VerifyStorage comprueba únicamente la tabla que utiliza Identidad.
+func VerifyStorage(ctx context.Context, db *gorm.DB) error {
+	var permitted bool
+	err := db.WithContext(ctx).Raw(`SELECT
+        has_schema_privilege(current_user, 'api', 'USAGE') AND
+        has_table_privilege(current_user, 'api.usuarios', 'SELECT') AND
+        has_table_privilege(current_user, 'api.usuarios', 'INSERT') AND
+        has_table_privilege(current_user, 'api.usuarios', 'UPDATE')`).Scan(&permitted).Error
+	if err != nil || !permitted {
+		return errors.New("aplicar 06_propiedad_permisos.sql y permisos de Identidad antes de iniciar la API")
+	}
+	return nil
 }

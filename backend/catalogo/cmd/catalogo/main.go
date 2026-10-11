@@ -52,14 +52,7 @@ func run(log *slog.Logger) error {
 		if err := sqlDB.PingContext(ctx); err != nil {
 			return err
 		}
-		if cfg.InternalToken != "" {
-			rows, err := sqlDB.QueryContext(ctx, "SELECT id FROM scraper.lotes_catalogo LIMIT 0")
-			if err != nil {
-				return err
-			}
-			rows.Close()
-		}
-		return nil
+		return ingesta.VerifyStorage(ctx, db, cfg.InternalToken != "")
 	}
 	httpServer := &http.Server{
 		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,

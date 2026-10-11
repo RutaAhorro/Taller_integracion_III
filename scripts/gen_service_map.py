@@ -24,14 +24,14 @@ SERVICES = {
     "backend/catalogo": {
         "lang": "go",
         "name": "Catálogo y precios (Go + Gin)",
-        "notes": "Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su ingesta privada requiere CATALOGO_INTERNAL_TOKEN y deduplica lote_id en scraper.lotes_catalogo, en la misma transacción que las capturas. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
+        "notes": "Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Readiness verifica sus permisos. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
         "extensions": [".go"],
         "exclude": ["tmp"],
     },
     "backend/api": {
         "lang": "go",
         "name": "API de Identidad y Scraping (Go + Gin)",
-        "notes": "Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql y DELETE sólo en el outbox de ejecuciones terminales. El cierre fallido no espera entregas; su conciliación SQL continúa. El publisher no retiene locks SQL durante Redis. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
+        "notes": "Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio y permisos exclusivos. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },

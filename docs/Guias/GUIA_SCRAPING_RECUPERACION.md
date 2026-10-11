@@ -159,7 +159,8 @@ El registro SQL de entregas fallidas y el spool conservan el diagnóstico.
    `scraper.entregas_trabajos`, y DELETE **sólo** en `scraper.entregas_trabajos`
    para retirar ejecuciones terminales. Conservar los permisos de SUP-269.
    Ninguno necesita permisos en el ledger del otro. Los roles definitivos de
-   producción siguen correspondiendo a SUP-271.
+   producción y sus conexiones separadas se definen en SUP-271; consultar
+   [datos y permisos](GUIA_DATOS_Y_PERMISOS_BACKEND.md) al aplicar ambas tareas.
 4. Desplegar Catálogo, luego API. Readiness de Catálogo comprueba su ledger
    en modo escritor; API verifica sus tablas antes de iniciar. No usan AutoMigrate.
    Si falta la migración, API impide arrancar con un diagnóstico controlado;

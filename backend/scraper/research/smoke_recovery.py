@@ -39,7 +39,8 @@ passed = 0
 compose_env = {k:v for k,v in os.environ.items() if k not in {
     'DB_USER','DB_PASSWORD','DB_NAME','JWT_SECRET','GOOGLE_CLIENT_ID',
     'CATALOGO_CORS_ALLOWED_ORIGINS','GATEWAY_TRUSTED_PROXIES','SUP268_READER_PASSWORD',
-    'CATALOGO_INTERNAL_TOKEN','SUP269_COORDINATOR_PASSWORD'}}
+    'CATALOGO_INTERNAL_TOKEN','SUP269_COORDINATOR_PASSWORD',
+    'IDENTITY_DB_PASSWORD','SCRAPING_DB_PASSWORD','CATALOGO_DB_PASSWORD'}}
 
 
 def compose(*command, input=None):
@@ -196,7 +197,7 @@ request(path(work) + '/finalizar', {'estado':'fallido'}, method='PUT')
 # Redis bloqueado no puede mantener una transacción SQL ni impedir el cierre.
 test_env = dict(line.split('=', 1) for line in Path(args.env_file).read_text().splitlines() if '=' in line)
 go_env = dict(os.environ)
-go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://sup269_coordinator:' + test_env['SUP269_COORDINATOR_PASSWORD'] +
+go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://app_scraping:' + test_env['SCRAPING_DB_PASSWORD'] +
     '@127.0.0.1:' + os.getenv('SUP270_DB_PORT', '18078') + '/sup268?sslmode=disable')
 subprocess.run(['go', 'test', '-race', '-count=1', '-run', '^TestPublisherStalledRedisAllowsJobFinalization$', '-v',
                 './internal/scraping/internal/repositories'], cwd=root/'backend/api', env=go_env, check=True)
@@ -344,7 +345,7 @@ with patch('scraper_core.worker.ScrapyCommandExecutor') as executor:
 assert redis.xpending(QUEUE_NAME,GROUP)['pending']==0
 
 # El rol de cada servicio no puede leer el ledger del otro dominio.
-assert sql("SELECT has_table_privilege('sup269_coordinator','scraper.lotes_catalogo','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_ingesta','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_trabajos','SELECT');")=='f'
+assert sql("SELECT has_table_privilege('app_scraping','scraper.lotes_catalogo','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_ingesta','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_trabajos','SELECT');")=='f'
 # Tablas ausentes: API impide arrancar; Catálogo sigue vivo con readiness 503.
 compose('stop', 'go_service')
 sql('ALTER TABLE scraper.entregas_ingesta RENAME TO sup270_restore_ingesta; ALTER TABLE scraper.lotes_catalogo RENAME TO sup270_restore_catalogo;')
