@@ -7,3 +7,9 @@ services:
     environment:
       # El escritor anterior necesita permisos sobre trabajos y Catálogo.
       DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+  gateway:
+    environment:
+      IDENTIDAD_URL: ''
+    depends_on: !override
+      go_service: {condition: service_healthy}
+      catalogo: {condition: service_healthy}

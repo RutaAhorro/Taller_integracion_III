@@ -11,7 +11,6 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/api/docs"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/database"
-	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/identity"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/middleware"
 	"github.com/gin-gonic/gin"
@@ -22,7 +21,6 @@ import (
 	"gorm.io/gorm"
 )
 
-var IdentityDB *gorm.DB
 var ScrapingDB *gorm.DB
 var RDB *redis.Client
 
@@ -31,16 +29,8 @@ func initDB(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	IdentityDB, err = database.Open(ctx, cfg.IdentityURL)
-	if err != nil {
-		return err
-	}
 	ScrapingDB, err = database.Open(ctx, cfg.ScrapingURL)
-	if err != nil {
-		database.Close(IdentityDB)
-		return err
-	}
-	return nil
+	return err
 }
 
 func initRedis() {
@@ -77,7 +67,7 @@ func initRedis() {
 	defer cancel()
 
 	if err := RDB.Ping(ctx).Err(); err != nil {
-		log.Printf("Aviso: No se pudo conectar a Redis (%v). Rate limiting operará en modo fail-open.", err)
+		log.Printf("Aviso: No se pudo conectar a Redis (%v). La cola SQL conservará las ejecuciones hasta recuperar Redis.", err)
 	} else {
 		log.Println("Conexión a Redis establecida exitosamente.")
 	}
@@ -131,12 +121,10 @@ func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	// Grupo de rutas de la API v1
 	v1 := r.Group("/api/v1")
 	v1.GET("/health", HealthHandler)
-	identidad := identity.New(IdentityDB, RDB)
 	coordinacion, err := scraping.New(ScrapingDB, RDB)
 	if err != nil {
 		return nil, nil, err
 	}
-	identidad.RegisterRoutes(v1)
 	coordinacion.RegisterRoutes(v1)
 
 	return r, coordinacion, nil
@@ -158,7 +146,7 @@ func RootHandler(c *gin.Context) {
 
 // HealthHandler godoc
 // @Summary      Comprobación de salud del servicio (Healthcheck)
-// @Description  Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.
+// @Description  Readiness: requiere la conexión PostgreSQL de coordinación; Redis es diagnóstico y puede degradarse sin retirar la API.
 // @Tags         health
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -180,11 +168,11 @@ func HealthHandler(c *gin.Context) {
 		}
 		return "ok"
 	}
-	identityStatus, scrapingStatus := checkDB(IdentityDB), checkDB(ScrapingDB)
+	scrapingStatus := checkDB(ScrapingDB)
 	dbStatus := "ok"
-	if identityStatus != "ok" || scrapingStatus != "ok" {
+	if scrapingStatus != "ok" {
 		dbStatus = "error"
-		if identityStatus == "not_configured" && scrapingStatus == "not_configured" {
+		if scrapingStatus == "not_configured" {
 			dbStatus = "not_configured"
 		}
 	}
@@ -210,7 +198,6 @@ func HealthHandler(c *gin.Context) {
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 		"checks": gin.H{
 			"database":          dbStatus,
-			"identity_database": identityStatus,
 			"scraping_database": scrapingStatus,
 			"redis":             redisStatus,
 		},
@@ -248,7 +235,6 @@ func main() {
 		log.Fatal(err)
 	}
 	connectionCancel()
-	defer database.Close(IdentityDB)
 	defer database.Close(ScrapingDB)
 	initRedis()
 
@@ -259,10 +245,6 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	storageCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	if err := identity.VerifyStorage(storageCtx, IdentityDB); err != nil {
-		cancel()
-		log.Fatal(err)
-	}
 	if err := coordinacion.VerifyStorage(storageCtx); err != nil {
 		cancel()
 		log.Fatal(err)

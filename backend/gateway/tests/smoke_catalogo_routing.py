@@ -124,7 +124,7 @@ elif args.mode == 'api-down':
     catalog(args.frontend_url)
     check(args.gateway_url, '/api/v1/admin/productos', opener=admin_session())
     error, _ = check(args.gateway_url, '/api/v1/auth/me', 502)
-    assert error['error'] == 'backend_unavailable'
+    assert error['error'] == 'identidad_unavailable'
     check(args.gateway_url, '/_gateway/ready')
     health, _ = check(args.gateway_url, '/_gateway/dependencies', 503)
     assert health['checks']['catalogo'] == 'ok' and health['checks']['backend'] == 'error'

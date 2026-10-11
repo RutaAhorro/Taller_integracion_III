@@ -41,10 +41,8 @@ services:
       - "127.0.0.1:8080:8080" # API interna: Catálogo se consulta por Gateway (8082).
     environment:
       - PORT=8080
-      - IDENTITY_DB_URL=postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
       - SCRAPING_DB_URL=postgres://app_scraping:${SCRAPING_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
       - REDIS_URL=redis://redis:6379/0
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
       - JWT_SECRET=${JWT_SECRET:?Define JWT_SECRET en el entorno local}
       - CATALOGO_INTERNAL_URL=http://catalogo:8080
       - CATALOGO_INTERNAL_TOKEN=${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
@@ -74,6 +72,42 @@ services:
         limits:
           cpus: '0.3'
           memory: 500M
+  identidad:
+    build:
+      context: ./backend/identidad
+      dockerfile: Dockerfile
+    environment:
+      PORT: '8080'
+      IDENTITY_DB_URL: postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      CORS_ALLOWED_ORIGINS: ${IDENTIDAD_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # HTTP local; en Kubernetes se conserva el default Secure=true.
+      IDENTIDAD_COOKIE_SECURE: ${IDENTIDAD_COOKIE_SECURE:-false}
+      IDENTIDAD_TRUSTED_PROXIES: ${IDENTIDAD_GATEWAY_IP:-172.30.0.2}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+    stop_grace_period: 20s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/_identidad/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      microservices_net: {}
+      identidad_edge:
+        aliases: [identidad-upstream]
+    deploy:
+      resources:
+        reservations: {cpus: '0.1', memory: 64M}
+        limits: {cpus: '0.5', memory: 256M}
   catalogo:
     build:
       context: ./backend/catalogo
@@ -118,12 +152,15 @@ services:
     environment:
       BACKEND_URL: http://go_service:8080
       CATALOGO_URL: http://catalogo:8080
+      IDENTIDAD_URL: http://identidad-upstream:8080
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
     depends_on:
       go_service:
         condition: service_healthy
       catalogo:
+        condition: service_healthy
+      identidad:
         condition: service_healthy
     restart: unless-stopped
     read_only: true
@@ -141,6 +178,8 @@ services:
       microservices_net:
         aliases:
           - api
+      identidad_edge:
+        ipv4_address: ${IDENTIDAD_GATEWAY_IP:-172.30.0.2}
     deploy:
       resources:
         limits:
@@ -252,6 +291,12 @@ services:
 networks:
   microservices_net:
     driver: bridge
+  identidad_edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${IDENTIDAD_EDGE_SUBNET:-172.30.0.0/24}
+          ip_range: ${IDENTIDAD_EDGE_RANGE:-172.30.0.128/25}
 volumes:
   pgdata: null
   redisdata: null

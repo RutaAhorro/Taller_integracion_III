@@ -24,7 +24,8 @@ compose_args = ['docker', 'compose', '--project-name', args.project, '--env-file
 compose_env = {key: value for key, value in os.environ.items() if key not in {
     'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET', 'GOOGLE_CLIENT_ID',
     'CATALOGO_CORS_ALLOWED_ORIGINS', 'GATEWAY_TRUSTED_PROXIES',
-    'CATALOGO_INTERNAL_TOKEN', 'IDENTITY_DB_PASSWORD', 'SCRAPING_DB_PASSWORD', 'CATALOGO_DB_PASSWORD'}}
+    'CATALOGO_INTERNAL_TOKEN', 'IDENTITY_DB_PASSWORD', 'SCRAPING_DB_PASSWORD', 'CATALOGO_DB_PASSWORD', 'IDENTIDAD_EDGE_SUBNET','IDENTIDAD_EDGE_RANGE', 'IDENTIDAD_GATEWAY_IP',
+    'IDENTIDAD_CORS_ALLOWED_ORIGINS', 'IDENTIDAD_COOKIE_SECURE'}}
 http_passed = 0
 sql_passed = 0
 
@@ -146,7 +147,7 @@ runtime('app_scraping', 'SELECT count(*) FROM scraper.trabajos_scraper')
 runtime('app_catalogo', 'SELECT count(*) FROM scraper.productos_crudos')
 
 health = http('GET', '/health')
-assert all(health['checks'][key] == 'ok' for key in ('database', 'identity_database', 'scraping_database'))
+assert all(health['checks'][key] == 'ok' for key in ('database', 'scraping_database'))
 
 # H-01/H-02: probes reales contra los binarios y PostgreSQL del harness.
 def catalog_probe(path, status=200):
@@ -175,16 +176,20 @@ def wait_for(predicate, timeout=40):
 
 api_url = 'http://127.0.0.1:' + os.getenv('SUP268_API_PORT', '18080')
 before_api, before_catalog = container_state('go_service'), container_state('catalogo')
+before_identity = container_state('identidad')
 compose('stop', 'db')
 try:
     health = http('GET', '/health', status=503, base=api_url)
     assert health['status'] == 'error'
     assert all(health['checks'][key] == 'error' for key in
-               ('database', 'identity_database', 'scraping_database'))
+               ('database', 'scraping_database'))
     http('GET', '/api/v1/health', status=503, base=api_url)
     http('GET', '/_api/live', base=api_url)
     catalog_probe('/_catalogo/ready', 503)
     catalog_probe('/_catalogo/live')
+    identity_url = 'http://' + compose('port', 'identidad', '8080').stdout.strip()
+    http('GET', '/_identidad/ready', status=503, base=identity_url)
+    http('GET', '/_identidad/live', base=identity_url)
 finally:
     compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'db')
 http('GET', '/health', base=api_url)
@@ -192,6 +197,8 @@ http('GET', '/_api/live', base=api_url)
 catalog_probe('/_catalogo/ready')
 assert container_state('go_service') == before_api
 assert container_state('catalogo') == before_catalog
+assert container_state('identidad') == before_identity
+http('GET', '/_identidad/ready', base=identity_url)
 
 # Contar consultas reales en el log PostgreSQL del rol, no en un mock del probe.
 # log_statement se activa sólo para Catálogo en esta DB efímera; no para el
@@ -264,7 +271,7 @@ with tempfile.TemporaryDirectory(dir=Path(args.env_file).parent) as private_dir:
         compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'go_service')
 sql('DROP OWNED BY sup271_rollback_api; DROP ROLE sup271_rollback_api;')
 health = http('GET', '/health')
-assert all(health['checks'][key] == 'ok' for key in ('database', 'identity_database', 'scraping_database'))
+assert all(health['checks'][key] == 'ok' for key in ('database', 'scraping_database'))
 assert sql("SELECT count(*) FROM scraper.capturas_precios cp JOIN scraper.productos_crudos pc ON pc.id=cp.producto_crudo_id WHERE pc.sku='SUP271-ROLLBACK';") == '1'
 print(json.dumps({'task': 'SUP-271', 'passed': http_passed, 'failed': 0,
                   'sql_checks': sql_passed, 'roles': list(allowed), 'migration': 'idempotent',

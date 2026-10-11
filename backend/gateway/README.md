@@ -1,7 +1,7 @@
-# Gateway — SUP-264 a SUP-268
+# Gateway — SUP-264 a SUP-272
 
 Servicio Go independiente que enruta productos y administración de productos a
-Catálogo, y autenticación/scraping a la API. No incluye reglas de negocio.
+Catálogo, autenticación a Identidad y scraping a la API. No incluye reglas de negocio.
 La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
 
 ## Ejecutar
@@ -9,7 +9,7 @@ La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
 Requiere Go 1.26 y un backend en ejecución. Desde `backend/gateway`:
 
 ```bash
-BACKEND_URL=http://127.0.0.1:8080 CATALOGO_URL=http://127.0.0.1:8083 go run ./cmd/gateway
+BACKEND_URL=http://127.0.0.1:8080 CATALOGO_URL=http://127.0.0.1:8083 IDENTIDAD_URL=http://127.0.0.1:8084 go run ./cmd/gateway
 ```
 
 Escucha por defecto en el puerto 8082. Para validar localmente:
@@ -24,12 +24,13 @@ curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 
 `/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
 Las rutas `/api/v1/productos` y `/api/v1/admin/productos`, con sus subrutas, se
-envían a Catálogo para todos los métodos; el resto se envía a la API. No se
+envían a Catálogo para todos los métodos. `/api/v1/auth` y sus subrutas se envían
+a Identidad; el resto se envía a la API. No se
 normalizan rutas ni se hace fallback entre destinos. En `/api/v1/health`, verificar también los
-campos de PostgreSQL y Redis: un HTTP 200 no demuestra que esas dependencias estén
-disponibles.
+campos de PostgreSQL y Redis: SQL fallido produce 503, pero Redis degradado puede
+convivir con API lista por su outbox SQL.
 
-`/_gateway/dependencies` consulta en paralelo la salud de la API y de Catálogo,
+`/_gateway/dependencies` consulta en paralelo la salud de la API, Catálogo e Identidad,
 con un límite común y sin seguir redirects. Responde 503 si alguno falla. Este
 diagnóstico no es el readiness probe: retirar Gateway porque falla un dominio
 impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
@@ -40,6 +41,7 @@ impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
 |---|---|---|
 | `BACKEND_URL` | Obligatoria | Origen HTTP/HTTPS, por ejemplo `http://127.0.0.1:8080`; sin credenciales, prefijo de ruta, query o fragmento |
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; vacío sólo para rollback con una API anterior a SUP-268 que conserve el lector |
+| `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad; vacío sólo para rollback con API anterior a SUP-272 |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección de escucha; usar `127.0.0.1:8082` para restringirla a la máquina local |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo máximo de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el backend |
@@ -145,3 +147,17 @@ describe configuración, pruebas aisladas, orden de activación y rollback.
 El script prueba también el frontend tras detener Gateway y devolver el alias
 `api` a la API original. Los manifiestos no implican un despliegue automático en
 el clúster de la universidad.
+
+## Extracción de Identidad (SUP-272)
+
+`IDENTIDAD_URL` es un origen HTTP(S) interno, sin path/credenciales/query. Vacío
+permite rollback sólo junto a una API histórica que conserve auth. Con la API
+extraída, omitirlo deja auth sin propietario y devuelve 404. No hay fallback
+cuando el servicio se cae. Diagnóstico incluye `identidad`, `identidad_database`
+y `identidad_redis`; readiness de Gateway continúa local.
+
+Compose usa el alias exclusivo `identidad-upstream` en una red de entrada con
+IP de Gateway reservada fuera del rango dinámico. Identidad confía únicamente
+en esa IP para conservar el cliente real y su contador de login. En Kubernetes,
+configurar proxies reales y NetworkPolicy antes del corte. Procedimiento:
+`docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`.

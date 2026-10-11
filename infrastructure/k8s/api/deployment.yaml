@@ -18,11 +18,6 @@ spec:
       - env:
         - name: PORT
           value: '8080'
-        - name: IDENTITY_DB_URL
-          valueFrom:
-            secretKeyRef:
-              key: DB_URL
-              name: identity-db-secret
         - name: SCRAPING_DB_URL
           valueFrom:
             secretKeyRef:
@@ -44,8 +39,6 @@ spec:
             secretKeyRef:
               name: catalogo-internal-secret
               key: token
-        - name: GOOGLE_CLIENT_ID
-          value: "832261851860-a1pu1rj9hejrref2tjq15h4hh8rr4snr.apps.googleusercontent.com"
         image: ghcr.io/danirc2024/taller_integracion_iii-api:develop-refactor
         imagePullPolicy: Always
         name: api

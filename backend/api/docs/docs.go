@@ -208,6 +208,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/middleware.RespuestaError"
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/middleware.RespuestaError"
+                        }
                     }
                 }
             }
@@ -981,7 +987,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Readiness: requiere ambas conexiones PostgreSQL; Redis es diagnóstico y puede degradarse sin retirar la API.",
+                "description": "Readiness: requiere la conexión PostgreSQL de coordinación; Redis es diagnóstico y puede degradarse sin retirar la API.",
                 "produces": [
                     "application/json"
                 ],

@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identidad-ingress
+spec:
+  podSelector:
+    matchLabels: {app: identidad}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: gateway}
+      ports:
+        - {protocol: TCP, port: 8080}

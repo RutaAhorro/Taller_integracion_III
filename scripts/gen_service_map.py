@@ -30,10 +30,17 @@ SERVICES = {
     },
     "backend/api": {
         "lang": "go",
-        "name": "API de Identidad y Scraping (Go + Gin)",
-        "notes": "Estado vigente SUP-271 (prevalece sobre el contexto histórico anterior): un binario compone Identidad con IDENTITY_DB_URL/app_identity y Scraping con SCRAPING_DB_URL/app_scraping; no hay fallback a DB_URL. Cada módulo recibe un pool propio (máximo 5 conexiones) y permisos exclusivos. /health responde 503 si falla cualquiera; /_api/live no consulta dependencias. Scraping conserva trabajos/outboxes y snapshots de cadena sin FK hacia otros dominios; entrega lotes por HTTP y recupera ejecuciones/ingesta con los fixes aprobados SUP-270: cierre fallido sin bloqueo, conciliación posterior, publisher sin locks SQL durante Redis y DELETE sólo del outbox de ejecuciones terminales. Requiere migraciones 05/06 y credenciales privadas del script 07. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
+        "name": "Coordinación de scraping en API (Go + Gin)",
+        "notes": "Estado vigente SUP-272: API ya no importa ni registra Identidad; usa sólo SCRAPING_DB_URL/app_scraping y un pool de 5 conexiones. Conserva los outboxes y todas las correcciones SUP-270/271. /health comprueba sólo SQL de coordinación y diagnostica Redis; /_api/live no consulta dependencias. Auth pertenece al servicio backend/identidad. Ver GUIA_IDENTIDAD_DESACOPLADA.md y GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
+    },
+    "backend/identidad": {
+        "lang": "go",
+        "name": "Identidad (Go + Gin)",
+        "notes": "SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app_identity (pool 5), Redis para límite login y JWT_SECRET compartido por contrato con Catálogo. Cinco rutas /api/v1/auth/* conservadas. CORS allowlist, cookies Secure configurables, HS256 estricto y sin fallback de clave. Proxy Gateway explícito obligatorio para IP real. Storage una vez al arrancar; ready SQL/Redis y live independiente. No importa API/Catálogo/scraping. Ver docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md.",
+        "extensions": [".go"],
+        "exclude": ["tmp"],
     },
     "backend/ia_conversacional": {
         "lang": "python",

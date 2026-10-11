@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: identidad
+  labels: {app: identidad}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: identidad}
+  template:
+    metadata:
+      labels: {app: identidad}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: identidad
+          image: ghcr.io/danirc2024/taller_integracion_iii-identidad:develop-refactor
+          imagePullPolicy: Always
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: PORT, value: '8080'}
+            - name: IDENTITY_DB_URL
+              valueFrom:
+                secretKeyRef: {name: identity-db-secret, key: DB_URL}
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef: {name: db-secret, key: JWT_SECRET}
+            - {name: REDIS_URL, value: 'redis://redis:6379/0'}
+            - {name: GOOGLE_CLIENT_ID, value: '832261851860-a1pu1rj9hejrref2tjq15h4hh8rr4snr.apps.googleusercontent.com'}
+          envFrom:
+            - configMapRef: {name: identidad-config}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            httpGet: {path: /_identidad/live, port: http}
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet: {path: /_identidad/live, port: http}
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet: {path: /_identidad/ready, port: http}
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}

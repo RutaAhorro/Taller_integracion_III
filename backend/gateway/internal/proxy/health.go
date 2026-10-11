@@ -13,7 +13,7 @@ import (
 // Diagnostics are separate from readiness: an unavailable domain must not
 // withdraw Gateway endpoints for other domains from the Kubernetes Service.
 func dependencyChecks(ctx context.Context, client *http.Client, c config.Config, id string) map[string]string {
-	results := make(chan map[string]string, 2)
+	results := make(chan map[string]string, 3)
 	probe := func(origin *url.URL, path, service string, dependencies map[string]string) {
 		checks := map[string]string{service: "error"}
 		for _, output := range dependencies {
@@ -47,6 +47,11 @@ func dependencyChecks(ctx context.Context, client *http.Client, c config.Config,
 		count++
 		go probe(c.Catalogo, "/_catalogo/ready", "catalogo", map[string]string{"database": "catalogo_database"})
 	}
+	if c.Identidad != nil {
+		count++
+		go probe(c.Identidad, "/_identidad/ready", "identidad", map[string]string{"database": "identidad_database", "redis": "identidad_redis"})
+	}
+
 	checks := make(map[string]string)
 	for i := 0; i < count; i++ {
 		for key, value := range <-results {

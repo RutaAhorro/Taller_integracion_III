@@ -27,9 +27,8 @@ type healthConnector struct {
 
 func TestHealthRedisTimeoutDoesNotRemoveReadiness(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	oldIdentity, oldScraping, oldRedis := IdentityDB, ScrapingDB, RDB
-	t.Cleanup(func() { IdentityDB, ScrapingDB, RDB = oldIdentity, oldScraping, oldRedis })
-	IdentityDB = probeDatabase(t, &healthConnector{})
+	oldScraping, oldRedis := ScrapingDB, RDB
+	t.Cleanup(func() { ScrapingDB, RDB = oldScraping, oldRedis })
 	ScrapingDB = probeDatabase(t, &healthConnector{})
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -107,39 +106,32 @@ func probeDatabase(t *testing.T, connector *healthConnector) *gorm.DB {
 	return db
 }
 
-func TestHealthRequiresBothDatabasePools(t *testing.T) {
+func TestHealthRequiresScrapingDatabase(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	oldIdentity, oldScraping, oldRedis := IdentityDB, ScrapingDB, RDB
-	t.Cleanup(func() { IdentityDB, ScrapingDB, RDB = oldIdentity, oldScraping, oldRedis })
-	identity, scraping := &healthConnector{}, &healthConnector{}
-	identityDB, scrapingDB := probeDatabase(t, identity), probeDatabase(t, scraping)
+	oldScraping, oldRedis := ScrapingDB, RDB
+	t.Cleanup(func() { ScrapingDB, RDB = oldScraping, oldRedis })
+	scraping := &healthConnector{}
+	scrapingDB := probeDatabase(t, scraping)
 	RDB = nil // Redis no es requisito de readiness: la cola SQL sigue disponible.
 	router := gin.New()
 	router.GET("/health", HealthHandler)
 	router.GET("/_api/live", LivenessHandler)
 	for _, tc := range []struct {
-		name                             string
-		identityFailed, scrapingFailed   bool
-		identityMissing, scrapingMissing bool
-		status                           int
+		name            string
+		scrapingFailed  bool
+		scrapingMissing bool
+		status          int
 	}{
-		{"healthy", false, false, false, false, 200},
-		{"identity unavailable", true, false, false, false, 503},
-		{"scraping unavailable", false, true, false, false, 503},
-		{"both unavailable", true, true, false, false, 503},
-		{"identity not configured", false, false, true, false, 503},
-		{"both not configured", false, false, true, true, 503},
-		{"recovered", false, false, false, false, 200},
+		{"healthy", false, false, 200},
+		{"scraping unavailable", true, false, 503},
+		{"scraping not configured", false, true, 503},
+		{"recovered", false, false, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			IdentityDB, ScrapingDB = identityDB, scrapingDB
-			if tc.identityMissing {
-				IdentityDB = nil
-			}
+			ScrapingDB = scrapingDB
 			if tc.scrapingMissing {
 				ScrapingDB = nil
 			}
-			identity.failed.Store(tc.identityFailed)
 			scraping.failed.Store(tc.scrapingFailed)
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, httptest.NewRequest("GET", "/health", nil))
@@ -155,10 +147,10 @@ func TestHealthRequiresBothDatabasePools(t *testing.T) {
 			if (body.Status == "ok") != (tc.status == 200) {
 				t.Fatal("estado JSON contradice HTTP")
 			}
-			before := identity.pings.Load() + scraping.pings.Load()
+			before := scraping.pings.Load()
 			response = httptest.NewRecorder()
 			router.ServeHTTP(response, httptest.NewRequest("GET", "/_api/live", nil))
-			if response.Code != 200 || before != identity.pings.Load()+scraping.pings.Load() {
+			if response.Code != 200 || before != scraping.pings.Load() {
 				t.Fatal("liveness depende de PostgreSQL")
 			}
 		})

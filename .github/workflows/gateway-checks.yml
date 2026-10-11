@@ -7,6 +7,7 @@ on:
       - 'backend/gateway/**'
       - 'backend/catalogo/**'
       - 'backend/api/**'
+      - 'backend/identidad/**'
       - 'backend/scraper/**'
       - 'infrastructure/db/**'
       - 'frontend/web/**'
@@ -17,6 +18,7 @@ on:
       - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - 'scripts/smoke_scraping_recovery_compose.sh'
       - 'scripts/smoke_data_ownership_compose.sh'
+      - 'scripts/smoke_identity_compose.sh'
       - '.github/workflows/**'
   push:
     branches: [develop-refactor]
@@ -24,6 +26,7 @@ on:
       - 'backend/gateway/**'
       - 'backend/catalogo/**'
       - 'backend/api/**'
+      - 'backend/identidad/**'
       - 'backend/scraper/**'
       - 'infrastructure/db/**'
       - 'frontend/web/**'
@@ -34,6 +37,7 @@ on:
       - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - 'scripts/smoke_scraping_recovery_compose.sh'
       - 'scripts/smoke_data_ownership_compose.sh'
+      - 'scripts/smoke_identity_compose.sh'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -58,6 +62,26 @@ jobs:
           go test -race ./...
           go vet ./...
           go build -o /tmp/sup268-api .
+
+  identidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Identity tests, boundaries and build
+        working-directory: backend/identidad
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -o /tmp/identidad ./cmd/identidad
+      - name: Build identity runtime image
+        run: docker build -t sup272-identidad:local backend/identidad
 
   gateway:
     runs-on: ubuntu-latest
@@ -100,7 +124,7 @@ jobs:
           cd backend/scraper
           python -m unittest research.test_api_pipeline research.test_recovery -v
       - name: Compose data ownership, recovery, worker leases and rollback
-        run: bash scripts/smoke_data_ownership_compose.sh
+        run: bash scripts/smoke_identity_compose.sh
 
   manifests:
     runs-on: ubuntu-latest
@@ -119,6 +143,7 @@ jobs:
         run: |
           kubeconform -strict -summary -kubernetes-version 1.32.0 \
             infrastructure/k8s/gateway/ \
+            infrastructure/k8s/identidad/ \
             infrastructure/k8s/catalogo/ \
             infrastructure/k8s/api/ \
             infrastructure/k8s/scraper/ \

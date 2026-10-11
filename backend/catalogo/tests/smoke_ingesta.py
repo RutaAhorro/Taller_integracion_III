@@ -2,6 +2,8 @@
 import argparse
 import concurrent.futures
 import json
+import time
+from uuid import uuid4
 from pathlib import Path
 import urllib.error
 import urllib.request
@@ -16,19 +18,35 @@ passed = 0
 
 def request(base, path, status=200, method='GET', data=None):
     global passed
-    req = urllib.request.Request(base + path, method=method,
-        data=None if data is None else json.dumps(data).encode(),
-        headers={'Content-Type': 'application/json', 'X-Request-ID': 'sup269-contract'})
-    try:
-        response = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=20)
-    except urllib.error.HTTPError as error:
-        response = error
-    with response:
-        body = json.loads(response.read())
-        expected = {status} if isinstance(status, int) else set(status)
-        assert response.status in expected, (path, status, response.status, body)
-    passed += 1
-    return body
+    headers = {'Content-Type': 'application/json', 'X-Request-ID': 'sup269-contract'}
+    # SUP-270 permite 202 si recuperación tomó la lease antes del handler.
+    # Repetir sólo ese lote con una clave estable y exigir resultado final 200;
+    # las aserciones posteriores siguen exigiendo 12 capturas/contador exactos.
+    durable_ingest = status == 200 and method == 'POST' and path.endswith('/productos')
+    if durable_ingest:
+        headers['Idempotency-Key'] = str(uuid4())
+    deadline = time.monotonic() + 20
+    while True:
+        req = urllib.request.Request(base + path, method=method,
+            data=None if data is None else json.dumps(data).encode(), headers=headers)
+        try:
+            response = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=20)
+        except urllib.error.HTTPError as error:
+            response = error
+        with response:
+            body = json.loads(response.read())
+            expected = {status} if isinstance(status, int) else set(status)
+            if durable_ingest:
+                expected.add(202)
+            assert response.status in expected, (path, status, response.status, body)
+            pending = durable_ingest and response.status == 202
+            if pending:
+                assert body.get('codigo') == 'entrega_pendiente', body
+        passed += 1
+        if not pending:
+            return body
+        assert time.monotonic() < deadline, 'El lote aceptado no obtuvo confirmación dentro del plazo'
+        time.sleep(.05)
 
 def item(sku, **fields):
     return {'sku': sku, 'producto': 'Producto Ingesta SUP269', 'precio_normal': 1500, **fields}

@@ -14,6 +14,7 @@ type Config struct {
 	ListenAddr            string
 	Backend               *url.URL
 	Catalogo              *url.URL
+	Identidad             *url.URL
 	RequestTimeout        time.Duration
 	DialTimeout           time.Duration
 	ResponseHeaderTimeout time.Duration
@@ -46,6 +47,14 @@ func Load(getenv func(string) string) (Config, error) {
 	// Empty is an explicit legacy mode for rollback with a pre-cutover API image.
 	if value := getenv("CATALOGO_URL"); value != "" {
 		c.Catalogo, err = parseOrigin("CATALOGO_URL", value)
+		if err != nil {
+			return c, err
+		}
+	}
+
+	// Vacío sólo permite rollback a una API histórica que todavía aloje auth.
+	if value := getenv("IDENTIDAD_URL"); value != "" {
+		c.Identidad, err = parseOrigin("IDENTIDAD_URL", value)
 		if err != nil {
 			return c, err
 		}
