@@ -60,7 +60,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 ## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-**35 archivos .go** detectados
+Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping; setupRouter devuelve router y error. Scraping requiere CATALOGO_INTERNAL_URL y CATALOGO_INTERNAL_TOKEN, entrega lotes por HTTP y sólo persiste trabajos. Catálogo pertenece a otro proceso; las pruebas están activas. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.
+
+**37 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -202,14 +204,24 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `(ScraperHandler).IngestarProductosConTrabajo(c *gin.Context)`
 - `(ScraperHandler).IngestarProductosDirecto(c *gin.Context)`
 - `(ScraperHandler).manejarErrorIngesta(c *gin.Context, err error)`
+- `(ScraperHandler).responderErrorCatalogo(c *gin.Context, err error) bool`
 
-### `internal/scraping/internal/repositories/ingesta_legacy_repository.go` (package repositories)
+### `internal/scraping/internal/repositories/catalogo_client.go` (package repositories)
 
-- Structs: gormIngestaRepository
-- `NewIngestaLegacyRepository(db *gorm.DB) domain.IngestaRepository`
-- `(gormIngestaRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
-- `(gormIngestaRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
-- `(gormIngestaRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+- Structs: catalogoClient, requestIDKey
+- `NewCatalogoClient(origin, token string, timeout time.Duration) (domain.IngestaRepository, error)`
+- `(catalogoClient).call(ctx context.Context, path string, payload, result any) (bool, error)`
+- `WithRequestID(ctx context.Context, id string) context.Context`
+- `(catalogoClient).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)`
+- `(catalogoClient).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error)`
+- `(catalogoClient).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+
+### `internal/scraping/internal/repositories/catalogo_client_test.go` (package repositories)
+
+- `TestCatalogoClientContract(t *testing.T)`
+- `TestCatalogoClientFailuresAndNoRetry(t *testing.T)`
+- `TestCatalogoClientTimeoutAndCancellation(t *testing.T)`
+- `TestCatalogoClientInvalidConfiguration(t *testing.T)`
 
 ### `internal/scraping/internal/repositories/trabajo_repository.go` (package repositories)
 
@@ -217,6 +229,7 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `NewTrabajoRepository(db *gorm.DB) domain.TrabajoRepository`
 - `(gormTrabajoRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
 - `(gormTrabajoRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
+- `(gormTrabajoRepository).IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error`
 - `(gormTrabajoRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error)`
 
 ### `internal/scraping/internal/routes/scraper_routes.go` (package routes)
@@ -232,12 +245,20 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
 - `(scraperService).mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
+- `(scraperService).nombreCadena(ctx context.Context, cadenaID int) string`
 
 ### `internal/scraping/module.go` (package scraping)
 
 - Structs: Module
-- `New(db *gorm.DB, rdb *redis.Client) *Module`
+- `New(db *gorm.DB, rdb *redis.Client) (*Module, error)`
 - `(Module).RegisterRoutes(group *gin.RouterGroup)`
+
+### `internal/scraping/tests/ingesta_failures_test.go` (package tests)
+
+- Structs: failingCounter
+- `(failingCounter).IncrementarElementos(ctx context.Context, id uuid.UUID, n int) error`
+- `TestCatalogFailureDoesNotIncrementJob(t *testing.T)`
+- `TestCommittedCatalogBatchAndFailedCounterIsExplicit(t *testing.T)`
 
 ### `internal/scraping/tests/scraper_test.go` (package tests)
 
@@ -249,6 +270,7 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 - `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
 - `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
 - `(mockScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+- `(mockScraperRepository).IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error`
 - `TestScraperService_IniciarTrabajo_Exitoso(t *testing.T)`
 - `TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T)`
 - `TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T)`
@@ -259,7 +281,7 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 - `initDB()`
 - `initRedis()`
-- `setupRouter() *gin.Engine`
+- `setupRouter() (*gin.Engine, error)`
 - `RootHandler(c *gin.Context)`
 - `HealthHandler(c *gin.Context)`
 - `main()`

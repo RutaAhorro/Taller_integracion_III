@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping/internal/services"
 )
 
@@ -55,7 +57,7 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 	}
 
 	id := c.Param("id")
-	trabajo, err := h.service.ObtenerTrabajo(c.Request.Context(), id)
+	trabajo, err := h.service.ObtenerTrabajo(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), id)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrTrabajoNoEncontrado):
@@ -147,13 +149,17 @@ func (h *ScraperHandler) IniciarTrabajo(c *gin.Context) {
 		return
 	}
 
-	trabajo, err := h.service.IniciarTrabajo(c.Request.Context(), input)
+	trabajo, err := h.service.IniciarTrabajo(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), input)
 	if err != nil {
 		if errors.Is(err, services.ErrCadenaNoEncontrada) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al iniciar trabajo", "detalle": err.Error()})
+		if h.responderErrorCatalogo(c, err) {
+			return
+		}
+		slog.Error("scraper_start_error", "request_id", c.GetHeader("X-Request-ID"), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al iniciar trabajo"})
 		return
 	}
 
@@ -186,7 +192,7 @@ func (h *ScraperHandler) FinalizarTrabajo(c *gin.Context) {
 		return
 	}
 
-	trabajo, err := h.service.FinalizarTrabajo(c.Request.Context(), id, input)
+	trabajo, err := h.service.FinalizarTrabajo(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), id, input)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrTrabajoNoEncontrado):
@@ -218,7 +224,7 @@ func (h *ScraperHandler) FinalizarTrabajo(c *gin.Context) {
 func (h *ScraperHandler) ObtenerTrabajo(c *gin.Context) {
 	id := c.Param("id")
 
-	trabajo, err := h.service.ObtenerTrabajo(c.Request.Context(), id)
+	trabajo, err := h.service.ObtenerTrabajo(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), id)
 	if err != nil {
 		if errors.Is(err, services.ErrTrabajoNoEncontrado) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -261,7 +267,7 @@ func (h *ScraperHandler) IngestarProductosConTrabajo(c *gin.Context) {
 		return
 	}
 
-	resultado, err := h.service.IngestarProductos(c.Request.Context(), &id, input)
+	resultado, err := h.service.IngestarProductos(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), &id, input)
 	if err != nil {
 		h.manejarErrorIngesta(c, err)
 		return
@@ -292,7 +298,7 @@ func (h *ScraperHandler) IngestarProductosDirecto(c *gin.Context) {
 		return
 	}
 
-	resultado, err := h.service.IngestarProductos(c.Request.Context(), nil, input)
+	resultado, err := h.service.IngestarProductos(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), nil, input)
 	if err != nil {
 		h.manejarErrorIngesta(c, err)
 		return
@@ -302,7 +308,13 @@ func (h *ScraperHandler) IngestarProductosDirecto(c *gin.Context) {
 }
 
 func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
+	if h.responderErrorCatalogo(c, err) {
+		return
+	}
 	switch {
+	case errors.Is(err, services.ErrContadorPendiente):
+		slog.Error("scraper_counter_pending", "request_id", c.GetHeader("X-Request-ID"), "trabajo_id", c.Param("id"))
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "contador_pendiente", "catalogo_confirmado": true})
 	case errors.Is(err, services.ErrTrabajoNoEncontrado), errors.Is(err, services.ErrSucursalNoEncontrada):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrTrabajoYaFinalizado):
@@ -310,6 +322,22 @@ func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
 	case errors.Is(err, services.ErrLoteVacio), errors.Is(err, services.ErrLoteExcedeMaximo), errors.Is(err, services.ErrUUIDInvalido):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno durante la ingesta", "detalle": err.Error()})
+		slog.Error("scraper_ingesta_error", "request_id", c.GetHeader("X-Request-ID"), "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno durante la ingesta"})
 	}
+}
+
+func (h *ScraperHandler) responderErrorCatalogo(c *gin.Context, err error) bool {
+	status, code := 0, ""
+	if errors.Is(err, services.ErrCatalogoNoDisponible) {
+		status, code = http.StatusServiceUnavailable, "catalogo_unavailable"
+	}
+	if errors.Is(err, services.ErrCatalogoTimeout) {
+		status, code = http.StatusGatewayTimeout, "catalogo_timeout"
+	}
+	if status == 0 {
+		return false
+	}
+	c.JSON(status, gin.H{"error": err.Error(), "codigo": code})
+	return true
 }

@@ -24,12 +24,14 @@ SERVICES = {
     "backend/catalogo": {
         "lang": "go",
         "name": "Catálogo y precios (Go + Gin)",
+        "notes": "Estado vigente SUP-269: Catálogo consulta y persiste productos/precios. Su API de ingesta requiere CATALOGO_INTERNAL_TOKEN; no accede a usuarios ni trabajos. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.",
         "extensions": [".go"],
         "exclude": ["tmp"],
     },
     "backend/api": {
         "lang": "go",
         "name": "API de Identidad y Scraping (Go + Gin)",
+        "notes": "Estado vigente SUP-269 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping; setupRouter devuelve router y error. Scraping requiere CATALOGO_INTERNAL_URL y CATALOGO_INTERNAL_TOKEN, entrega lotes por HTTP y sólo persiste trabajos. Catálogo pertenece a otro proceso; las pruebas están activas. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },
@@ -304,6 +306,8 @@ def generate_go_map(service_path: Path, config: dict) -> str:
         return "_Sin archivos Go detectados._\n"
 
     lines = [f"\n## Mapa auto-generado: {config['name']}\n"]
+    if config.get("notes"):
+        lines.append(config["notes"] + "\n")
     lines.append(f"**{len(files)} archivos .go** detectados\n")
 
     for f in files:

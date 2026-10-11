@@ -10,21 +10,23 @@ services:
     container_name: !reset null
     ports: !reset []
   go_service:
-    image: sup268-api:local
+    image: sup269-api:local
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     container_name: !reset null
     ports: !override ["127.0.0.1:${SUP268_API_PORT:-18080}:8080"]
+    environment:
+      DB_URL: postgres://sup269_coordinator:${SUP269_COORDINATOR_PASSWORD:?}@db:5432/sup268?sslmode=disable
     healthcheck:
       interval: 2s
   catalogo:
-    image: sup268-catalogo:local
+    image: sup269-catalogo:local
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     environment:
-      DB_URL: postgres://sup268_catalog_reader:${SUP268_READER_PASSWORD:?}@db:5432/sup268?sslmode=disable
+      DB_URL: postgres://sup269_catalog_writer:${SUP268_READER_PASSWORD:?}@db:5432/sup268?sslmode=disable
     healthcheck:
       interval: 2s
   gateway:
@@ -61,6 +63,15 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  reference_ingesta_api:
+    # Sólo se construye para probar el rollback de SUP-269. No se inicia como
+    # servicio auxiliar: el override asigna esta imagen a go_service.
+    image: sup268-api:local
+    build:
+      context: ${SUP269_REFERENCE_API_DIR:?}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
 secrets:
   network_ca:
     file: ${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

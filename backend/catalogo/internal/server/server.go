@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/handlers"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
@@ -17,7 +18,7 @@ import (
 
 // NewRouter compone sólo las rutas de Catálogo. La verificación de JWT y rol
 // sucede en este servicio, incluso cuando se accede directamente sin Gateway.
-func NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string) *gin.Engine {
+func NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine {
 	r := gin.New()
 	_ = r.SetTrustedProxies(nil)
 	r.Use(observe(logger), middleware.ErrorHandler(logger), cors(allowedOrigins))
@@ -48,6 +49,9 @@ func NewRouter(service services.ProductoService, secret string, ping func(contex
 	admin := v1.Group("/admin/productos", middleware.RequireAuth(secret), middleware.RequireRole("admin"))
 	admin.GET("", handler.ObtenerProductosAdmin)
 	admin.GET("/", handler.ObtenerProductosAdmin)
+	if len(internal) > 0 {
+		ingesta.Register(r, internal[0], logger)
+	}
 	return r
 }
 

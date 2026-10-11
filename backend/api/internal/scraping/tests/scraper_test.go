@@ -131,9 +131,6 @@ func (m *mockScraperRepository) IngestarLote(ctx context.Context, trabajoID *uui
 	if trabajoID != nil {
 		str := trabajoID.String()
 		trabajoIDStr = &str
-		if t, ok := m.trabajos[*trabajoID]; ok {
-			t.ElementosExtraidos += len(productos)
-		}
 	}
 
 	return &domain.IngestaResultadoDTO{
@@ -145,6 +142,16 @@ func (m *mockScraperRepository) IngestarLote(ctx context.Context, trabajoID *uui
 		PreciosRegistrados: len(productos),
 		Mensaje:            "Lote procesado exitosamente",
 	}, nil
+}
+
+func (m *mockScraperRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
+	if m.err != nil {
+		return m.err
+	}
+	if t, ok := m.trabajos[id]; ok {
+		t.ElementosExtraidos += cantidad
+	}
+	return nil
 }
 
 // -------------------------------------------------------------

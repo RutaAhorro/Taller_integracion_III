@@ -2,7 +2,9 @@
 
 ## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-**19 archivos .go** detectados
+Estado vigente SUP-269: Catálogo consulta y persiste productos/precios. Su API de ingesta requiere CATALOGO_INTERNAL_TOKEN; no accede a usuarios ni trabajos. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.
+
+**24 archivos .go** detectados
 
 
 ### `cmd/catalogo/main.go` (package main)
@@ -24,6 +26,7 @@
 
 - `TestLoad(t *testing.T)`
 - `TestCORSOriginsConfiguration(t *testing.T)`
+- `TestInternalTokenConfiguration(t *testing.T)`
 
 ### `internal/domain/producto.go` (package domain)
 
@@ -40,6 +43,38 @@
 - `(ProductoHandler).ObtenerProductosAdmin(c *gin.Context)`
 - `(ProductoHandler).BuscarProductos(c *gin.Context)`
 - `(ProductoHandler).ObtenerDetalleProducto(c *gin.Context)`
+
+### `internal/ingesta/http.go` (package ingesta)
+
+- Structs: Config
+- `Register(r *gin.Engine, cfg Config, logger *slog.Logger)`
+- `decode(c *gin.Context, input any) bool`
+
+### `internal/ingesta/http_test.go` (package ingesta)
+
+- Structs: testStore
+- `(testStore).ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error)`
+- `(testStore).ObtenerSucursal(context.Context, int, *int, *string) (*SucursalSupermercado, error)`
+- `(testStore).IngestarLote(_ context.Context, input Request) (*IngestaResultadoDTO, error)`
+- `TestInternalIngestSecurityAndValidation(t *testing.T)`
+- `TestInternalIngestClosedAndGenericError(t *testing.T)`
+
+### `internal/ingesta/lote.go` (package ingesta)
+
+- `(Repository).IngestarLote(ctx context.Context, input Request) (*IngestaResultadoDTO, error)`
+
+### `internal/ingesta/repository.go` (package ingesta)
+
+- Structs: Repository
+- `NewRepository(db *gorm.DB) *Repository`
+- `(Repository).obtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*CadenaSupermercado, error)`
+- `(Repository).obtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*SucursalSupermercado, error)`
+- `(Repository).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*CadenaSupermercado, error)`
+- `(Repository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*SucursalSupermercado, error)`
+
+### `internal/ingesta/types.go` (package ingesta)
+
+- Structs: CadenaSupermercado, SucursalSupermercado, ProductoScrapeadoDTO, IngestaResultadoDTO, Request
 
 ### `internal/middleware/error_handler.go` (package middleware)
 
@@ -69,7 +104,7 @@
 
 ### `internal/server/server.go` (package server)
 
-- `NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string) *gin.Engine`
+- `NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine`
 - `cors(allowedOrigins []string) gin.HandlerFunc`
 - `observe(logger *slog.Logger) gin.HandlerFunc`
 

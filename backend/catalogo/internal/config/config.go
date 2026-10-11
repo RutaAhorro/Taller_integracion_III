@@ -13,6 +13,7 @@ type Config struct {
 	ListenAddr         string
 	DatabaseURL        string
 	JWTSecret          string
+	InternalToken      string
 	CORSAllowedOrigins []string
 	MaxOpenConns       int
 	MaxIdleConns       int
@@ -22,13 +23,17 @@ type Config struct {
 func Load() (Config, error) {
 	c := Config{
 		DatabaseURL: os.Getenv("DB_URL"), JWTSecret: os.Getenv("JWT_SECRET"),
-		MaxOpenConns: 10, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute,
+		InternalToken: os.Getenv("CATALOGO_INTERNAL_TOKEN"),
+		MaxOpenConns:  10, MaxIdleConns: 5, ConnMaxLifetime: 30 * time.Minute,
 	}
 	if c.DatabaseURL == "" {
 		return Config{}, errors.New("DB_URL es obligatorio")
 	}
 	if c.JWTSecret == "" {
 		return Config{}, errors.New("JWT_SECRET es obligatorio para verificar permisos administrativos")
+	}
+	if c.InternalToken != "" && (len(c.InternalToken) < 32 || strings.ContainsAny(c.InternalToken, " \t\r\n") || c.InternalToken == c.JWTSecret) {
+		return Config{}, errors.New("CATALOGO_INTERNAL_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET")
 	}
 	if raw := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS")); raw != "" {
 		for _, entry := range strings.Split(raw, ",") {

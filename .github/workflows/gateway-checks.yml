@@ -12,6 +12,7 @@ on:
       - 'infrastructure/k8s/**'
       - 'scripts/smoke_gateway_compose.sh'
       - 'scripts/smoke_catalogo_routing_compose.sh'
+      - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - '.github/workflows/**'
   push:
     branches: [develop-refactor]
@@ -24,6 +25,7 @@ on:
       - 'infrastructure/k8s/**'
       - 'scripts/smoke_gateway_compose.sh'
       - 'scripts/smoke_catalogo_routing_compose.sh'
+      - 'scripts/smoke_catalogo_ingesta_compose.sh'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -77,8 +79,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Compose smoke and rollback
-        run: bash scripts/smoke_catalogo_routing_compose.sh
+      - name: Compose routing, ingestion ownership, failures and rollback
+        run: bash scripts/smoke_catalogo_ingesta_compose.sh
 
   manifests:
     runs-on: ubuntu-latest

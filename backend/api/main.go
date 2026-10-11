@@ -75,7 +75,7 @@ func initRedis() {
 	}
 }
 
-func setupRouter() *gin.Engine {
+func setupRouter() (*gin.Engine, error) {
 	r := gin.New()
 
 	// Logger por defecto y Middleware Global de Errores
@@ -118,11 +118,14 @@ func setupRouter() *gin.Engine {
 	v1 := r.Group("/api/v1")
 	v1.GET("/health", HealthHandler)
 	identidad := identity.New(DB, RDB)
-	coordinacion := scraping.New(DB, RDB)
+	coordinacion, err := scraping.New(DB, RDB)
+	if err != nil {
+		return nil, err
+	}
 	identidad.RegisterRoutes(v1)
 	coordinacion.RegisterRoutes(v1)
 
-	return r
+	return r, nil
 }
 
 // RootHandler godoc
@@ -196,7 +199,10 @@ func main() {
 	initDB()
 	initRedis()
 
-	r := setupRouter()
+	r, err := setupRouter()
+	if err != nil {
+		log.Fatalf("Configuración de scraping inválida: %v", err)
+	}
 
 	port := os.Getenv("PORT")
 	if port == "" {

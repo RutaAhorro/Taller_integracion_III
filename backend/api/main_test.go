@@ -17,7 +17,13 @@ import (
 func TestModuleCompositionHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("JWT_SECRET", "sup266-test-only-key")
-	router := setupRouter()
+	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
+	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("CATALOGO_INGEST_TIMEOUT", "")
+	router, err := setupRouter()
+	if err != nil {
+		t.Fatal(err)
+	}
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id": "c14bd236-294a-41b8-8cbb-5473bb610415",
 		"rol":     "registrado", "provider": "local",

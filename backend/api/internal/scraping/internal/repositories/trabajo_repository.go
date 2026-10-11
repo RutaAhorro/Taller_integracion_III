@@ -25,7 +25,6 @@ func (r *gormTrabajoRepository) CrearTrabajo(ctx context.Context, trabajo *domai
 func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
 	err := r.db.WithContext(ctx).
-		Preload("Cadena").
 		Where("id = ?", id).
 		First(&trabajo).Error
 	if err != nil {
@@ -35,6 +34,20 @@ func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid
 		return nil, err
 	}
 	return &trabajo, nil
+}
+
+// IncrementarElementos mantiene las métricas bajo propiedad del coordinador.
+// Se ejecuta sólo después de confirmar el commit de Catálogo.
+func (r *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
+	result := r.db.WithContext(ctx).Model(&domain.TrabajoScraper{}).
+		Where("id = ?", id).Update("elementos_extraidos", gorm.Expr("elementos_extraidos + ?", cantidad))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("no se pudo actualizar el contador del trabajo")
+	}
+	return nil
 }
 
 // FinalizarTrabajo actualiza el estado, fecha fin, items extraídos y posibles errores

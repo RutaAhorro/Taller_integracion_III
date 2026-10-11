@@ -1,5 +1,10 @@
 # SUP-268: enrutamiento y despliegue independiente de Catálogo
 
+> SUP-269 amplía esta base: la ingesta ya se entrega a Catálogo por HTTP interno
+> autenticado. El harness usa un escritor de Catálogo y un coordinador con roles
+> separados. Ver [guía vigente de ingesta](GUIA_CATALOGO_INGESTA.md); los resultados
+> y la descripción de escritor transitorio de esta guía corresponden a SUP-268.
+
 La rama `backend/refactor/sup-268-enrutar-desplegar-catalogo-vmatus` parte del
 merge de SUP-267 en `develop-refactor`, `1ae1f86`. Esta etapa activa el proceso
 extraído; no traslada todavía la escritura de ingesta ni modifica tablas.
