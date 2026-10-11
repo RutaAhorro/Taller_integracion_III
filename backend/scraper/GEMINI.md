@@ -58,9 +58,9 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
 
 ## Mapa auto-generado: Scraper (Scrapy)
 
-Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
+Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote de trabajos activos. Limpia spools completados tras ACK; retiene fallidos 24h, con retirada terminal bajo presión y reserva de 64MiB. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
 
-**30 archivos .py** detectados
+**31 archivos .py** detectados
 
 
 ### `research/recovery_fixture.py`
@@ -207,6 +207,16 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `test_legacy_queue_not_removed_before_sql_acceptance()`
   - `test_legacy_queue_removed_after_sql_acceptance()`
   - `test_legacy_api_acceptance_does_not_prove_durable_queue()`
+  - `test_finalize_failed_deliveries_are_permanent_not_pending()`
+  - `test_terminal_job_can_be_acknowledged_without_opening_full_sqlite()`
+  - `test_completed_spool_deleted_only_after_successful_ack()`
+  - `test_gc_recovers_crash_after_ack_but_preserves_pending_job()`
+  - `test_gc_never_deletes_unacked_or_locked_spool()`
+  - `test_failed_spool_retention_and_pressure_cleanup()`
+  - `test_full_disk_does_not_delete_active_items_or_accept_new_ones()`
+  - `test_gc_dependency_failure_preserves_spool()`
+  - `test_sqlite_full_rolls_back_without_ack_or_losing_saved_items()`
+  - `test_legacy_duplicates_remove_tail_and_keep_fifo_order()`
 - **class Client**
   - `ingest_batch()`
 - **class Client**
@@ -227,6 +237,9 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
 - **class Redis**
   - `lindex()`
   - `lrem()`
+- **class Redis**
+  - `lindex(key, index)`
+  - `lrem(key, count, value)`
 
 ### `research/test_santa_isabel.py`
 
@@ -320,6 +333,7 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
 
 - **class Outbox**
   - `__init__(work_id: str, state_dir: ?)`
+  - `_initialize()`
   - `close()`
   - `add(product: dict, market: ?)`
   - `unbatched()`
@@ -470,6 +484,16 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `handle_error(failure)`
   - `_validate_category_url(url)`
 
+### `scraper_core/storage.py`
+
+- **class StoragePressure(OSError)**
+- **class SpoolCollector**
+  - `__init__(state_dir)`
+  - `collect(api_client, queue, limit)`
+- `reserve_bytes()`
+- `ensure_capacity(directory, extra_bytes)`
+- `cleanup_spool(state_dir, work_id)`
+
 ### `scraper_core/worker.py`
 
 - **class CrawlExhausted(RuntimeError)**
@@ -479,6 +503,7 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `receive()`
   - `renew(message_id)`
   - `ack(message_id, raw_job, work_id, reason)`
+  - `has_message(work_id)`
   - `heartbeat(message_id)`
 - `job_environment(work_id)`
 - `process_job(job: dict, api_client: ScraperAPIClient, cancelled) → dict`

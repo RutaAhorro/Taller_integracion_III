@@ -57,6 +57,10 @@ func (m *Module) VerifyStorage(ctx context.Context) error {
 		}
 		rows.Close()
 	}
+	var canDelete bool
+	if err := m.db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&canDelete).Error; err != nil || !canDelete {
+		return errors.New("conceder DELETE en scraper.entregas_trabajos al rol de coordinación antes de iniciar la API")
+	}
 	return nil
 }
 

@@ -6,14 +6,15 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/api/internal/scraping/internal/domain"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"time"
 )
 
 const JobStream = "scraper:jobs:stream"
 const JobIndex = "scraper:jobs:index"
+const JobClosedPrefix = "scraper:jobs:closed:"
 
 var publishJob = redis.NewScript(`
+if redis.call('EXISTS', KEYS[3]) == 1 then return false end
 local previous = redis.call('HGET', KEYS[2], ARGV[1])
 if previous and #redis.call('XRANGE', KEYS[1], previous, previous) > 0 then return previous end
 local id = redis.call('XADD', KEYS[1], '*', 'payload', ARGV[2])
@@ -50,17 +51,22 @@ func (p *jobPublisher) Publicar(ctx context.Context, e domain.Ejecucion) error {
 	if p.rdb == nil {
 		return errors.New("Redis no está disponible")
 	}
-	// Serializar publicación y cierre con la misma fila de coordinación.
-	// Un publisher que leyó una entrada antigua no la recrea después del ACK.
-	return p.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var job domain.TrabajoScraper
-		found := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id=? AND estado='en_progreso'", e.TrabajoID).Limit(1).Find(&job)
-		if found.Error != nil {
-			return found.Error
-		}
-		if found.RowsAffected == 0 {
-			return nil
-		}
-		return publishJob.Run(ctx, p.rdb, []string{JobStream, JobIndex}, e.TrabajoID.String(), e.Payload).Err()
-	})
+	// Leer SQL sin transacción ni FOR UPDATE; nunca retener locks durante Redis.
+	// El ACK instala una marca de cierre en Redis atómicamente. Esa marca evita
+	// republicar si el trabajo termina entre esta lectura y la publicación.
+	attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var job domain.TrabajoScraper
+	found := p.db.WithContext(attempt).Select("id").Where("id=? AND estado='en_progreso'", e.TrabajoID).Limit(1).Find(&job)
+	if found.Error != nil {
+		return found.Error
+	}
+	if found.RowsAffected == 0 {
+		return nil
+	}
+	err := publishJob.Run(attempt, p.rdb, []string{JobStream, JobIndex, JobClosedPrefix + e.TrabajoID.String()}, e.TrabajoID.String(), e.Payload).Err()
+	if errors.Is(err, redis.Nil) { // trabajo ya cerrado por el worker
+		return nil
+	}
+	return err
 }

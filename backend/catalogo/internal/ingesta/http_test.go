@@ -3,6 +3,7 @@ package ingesta
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -10,11 +11,37 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type testStore struct {
 	calls int
 	err   error
+}
+
+func TestInternalSQLDataErrorsArePermanentAndPrivate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		code   string
+		status int
+	}{
+		{"22001", 400}, {"22003", 400}, {"23502", 400}, {"23503", 400}, {"23505", 400}, {"23514", 400},
+		{"08006", 500}, {"40001", 500}, {"40P01", 500}, {"42P01", 500}, {"XX000", 500},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			token := strings.Repeat("t", 32)
+			err := fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: tc.code, Message: "secret SQL", TableName: "productos_crudos"})
+			r := gin.New()
+			Register(r, Config{Repository: &testStore{err: err}, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.status || strings.Contains(w.Body.String(), "secret") || strings.Contains(w.Body.String(), "productos_crudos") {
+				t.Fatal(w.Code, w.Body.String())
+			}
+		})
+	}
 }
 
 func (s *testStore) ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error) {

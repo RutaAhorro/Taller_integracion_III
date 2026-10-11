@@ -26,7 +26,7 @@ var (
 	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote y el contador está pendiente; conservar la clave del lote")
 	ErrIdempotencia          = errors.New("la clave ya fue utilizada con otro contenido")
 	ErrEntregaPendiente      = errors.New("el lote está registrado y pendiente de confirmación")
-	ErrEntregaFallida        = errors.New("el lote agotó sus reintentos; requiere revisión")
+	ErrEntregaFallida        = errors.New("hay una entrega fallida o rechazada; requiere revisión")
 	ErrCatalogoRechazo       = errors.New("Catálogo rechazó el lote")
 )
 

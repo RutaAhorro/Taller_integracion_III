@@ -53,6 +53,7 @@ Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su inge
 ### `internal/ingesta/http_test.go` (package ingesta)
 
 - Structs: testStore
+- `TestInternalSQLDataErrorsArePermanentAndPrivate(t *testing.T)`
 - `(testStore).ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error)`
 - `(testStore).ObtenerSucursal(context.Context, int, *int, *string) (*SucursalSupermercado, error)`
 - `(testStore).IngestarLote(_ context.Context, input Request) (*IngestaResultadoDTO, error)`

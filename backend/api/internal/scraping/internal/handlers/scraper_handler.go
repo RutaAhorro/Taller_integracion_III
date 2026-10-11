@@ -55,8 +55,8 @@ type ejecutarScraperRequest struct {
 // @Failure      503     {object}  map[string]interface{}
 // @Router       /api/v1/scraper/trabajos/{id}/ejecutar [post]
 func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
-	if h.queue == nil || h.rdb == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "La cola Redis no está disponible"})
+	if h.queue == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "La cola durable no está configurada"})
 		return
 	}
 
@@ -212,6 +212,8 @@ func (h *ScraperHandler) FinalizarTrabajo(c *gin.Context) {
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrEntregaPendiente):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "entregas_pendientes"})
+		case errors.Is(err, services.ErrEntregaFallida):
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "entregas_fallidas"})
 		case errors.Is(err, services.ErrEstadoTrabajoInvalido), errors.Is(err, services.ErrUUIDInvalido):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		default:

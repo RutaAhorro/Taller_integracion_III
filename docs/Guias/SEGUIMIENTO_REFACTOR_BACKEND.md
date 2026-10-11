@@ -152,8 +152,26 @@ tras cierre en API y conserva su spool en un volumen persistente. No tiene
 acceso a PostgreSQL. Ver `GUIA_SCRAPING_RECUPERACION.md` para migración,
 permisos, límites de reintentos, operación y rollback. Aplicar la migración y
 drenar la lista BRPOP anterior antes del corte; no desplegar sin autorización.
-Validación SUP-270: 175 resultados Go, 15 pruebas Python y 324 comprobaciones
-HTTP sin fallos; 16 recursos Kubernetes válidos.
+Correcciones de review en [PR #97](https://github.com/danirc2024/Taller_integracion_III/pull/97):
+- Se distinguen entregas pendientes/fallidas y se permite cerrar como fallido
+  sin detener la conciliación de entregas ya registradas.
+- El publisher no retiene locks SQL durante Redis; ACK coloca una marca de
+  cierre con TTL para impedir republicación tardía. Se purga el outbox de
+  ejecuciones terminales; coordinación requiere DELETE sólo en esa tabla.
+- Spools completados se borran tras ACK. Fallidos se retienen 24 h y pueden
+  retirarse antes bajo presión, sólo con estado terminal y sin mensaje.
+  Reserva de 64 MiB y GC conservan trabajos activos ante disco lleno.
+- Se corrigen clasificación SQL 400/500, prioridad tras reinicio y LREM
+  desde la cola. Se documenta y prueba el orden SQL/permisos antes del rollout.
+
+Validación SUP-270 tras el review: 194 resultados Go (193 unitarios más
+1 integración con PostgreSQL real), 25 pruebas Python y 338 comprobaciones
+HTTP sin fallos; 16 recursos Kubernetes válidos. API y Catálogo compilan y
+pasan race detector/vet. Los builders completos quedan en CI.
+
+SUP-271 permanece guardada sin commit mientras se corrige SUP-270. Al retomarla,
+incorporar estos fixes y conceder a `app_scraping` DELETE exclusivamente sobre
+`scraper.entregas_trabajos`, actualizando su verificación de permisos y rollback.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

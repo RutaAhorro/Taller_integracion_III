@@ -31,7 +31,7 @@ SERVICES = {
     "backend/api": {
         "lang": "go",
         "name": "API de Identidad y Scraping (Go + Gin)",
-        "notes": "Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
+        "notes": "Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql y DELETE sólo en el outbox de ejecuciones terminales. El cierre fallido no espera entregas; su conciliación SQL continúa. El publisher no retiene locks SQL durante Redis. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },
@@ -50,7 +50,7 @@ SERVICES = {
     "backend/scraper": {
         "lang": "python",
         "name": "Scraper (Scrapy)",
-        "notes": "Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
+        "notes": "Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote de trabajos activos. Limpia spools completados tras ACK; retiene fallidos 24h, con retirada terminal bajo presión y reserva de 64MiB. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".py"],
         "exclude": ["__pycache__"],
     },

@@ -2,7 +2,7 @@
 
 Rama `backend/refactor/sup-270-recuperacion-trabajos-ingesta-vmatus`, basada en
 SUP-269 ([PR #96](https://github.com/danirc2024/Taller_integracion_III/pull/96)).
-El usuario autorizó implementar la tarea; los cambios quedan sin commit ni push.
+Implementación y correcciones de resiliencia del [PR #97](https://github.com/danirc2024/Taller_integracion_III/pull/97).
 
 El objetivo es recuperar una entrega tras perder su respuesta, reiniciar un
 proceso o perder los datos de Redis, conservando sus capturas y contadores.
@@ -56,7 +56,11 @@ la compatibilidad de lotes internos sin clave para poder volver a SUP-269.
 La API confirma entrega y contador en una sola transacción propia. Aunque
 dos procesos hayan enviado el mismo lote, el contador se aplica una vez.
 Finalizar con `completado` exige que todas las entregas estén confirmadas;
-finalizar con `fallido` exige que ninguna siga pendiente. Los contadores de
+finalizar con `fallido` no espera los backoffs. Las entregas ya registradas
+continúan conciliándose por el loop SQL aunque el trabajo haya cerrado como
+fallido; así se recupera un commit remoto o contador pendiente. Su contador
+puede actualizarse posteriormente. No se admiten lotes nuevos para ese trabajo.
+Los contadores de
 trabajos con entregas durables no se sustituyen por el número que envíe el
 worker. Repetir el mismo estado terminal devuelve 200; cambiarlo devuelve 409.
 
@@ -70,7 +74,9 @@ worker. Repetir el mismo estado terminal devuelve 200; cambiarlo devuelve 409.
 | Capturas confirmadas pero falla el contador | 409 `contador_pendiente`, `catalogo_confirmado: true`; el loop recupera el contador reutilizando la clave |
 | Destino inválido / clave conflictiva / rechazo 400 | Entrega fallida para revisión, sin reintentar indefinidamente |
 | Se agotan 10 intentos de entrega | `fallida`, 409 `entrega_fallida`; se conserva payload y diagnóstico |
-| Se intenta completar con entregas pendientes o fallidas | 409 `entregas_pendientes` |
+| Se intenta completar con entregas pendientes | 409 `entregas_pendientes`, recuperable |
+| Se intenta completar con alguna entrega fallida | 409 `entregas_fallidas`, permanente; el worker cierra como fallido |
+| Dato inválido / constraint SQL (clases 22 y 23) | Catálogo responde 400 genérico; coordinación marca fallida en el primer intento |
 
 La API recupera una entrega por tick de un segundo. Las réplicas usan
 `FOR UPDATE SKIP LOCKED` y lease de 90 s; si un proceso muere, otro puede
@@ -92,8 +98,15 @@ responde 202 sin esperar a Redis. Repetir los mismos parámetros no duplica
 la ejecución; cambiarlos en el mismo trabajo devuelve 409.
 El publisher recorre trabajos activos cada 5 s, y vuelve a comprobarlos cada
 30 s. Usa un cliente Redis sin reintentos implícitos y timeouts de 1 s.
-Publicación y cierre se serializan en la fila del trabajo para impedir que
-un publisher atrasado lo recree después del ACK.
+El publisher comprueba SQL sin transacción ni bloqueo de fila y después llama
+a Redis. Cada publicación tiene un contexto máximo de 3 s. El ACK instala
+atómicamente una marca `scraper:jobs:closed:<UUID>` con TTL de 24 h; Lua comprueba
+esta marca antes de publicar, evitando que una lectura anterior al cierre recree
+el mensaje tras ACK. La marca vive mucho más que un intento de publicación.
+El cierre retira el outbox de ejecución en su transacción SQL; el publisher
+también limpia hasta 100 registros terminales antiguos por tick. Una pérdida
+completa de Redis elimina las marcas, pero SQL excluye trabajos terminales y
+el worker consulta el estado antes de ejecutar cualquier mensaje rezagado.
 La aceptación incluye `X-Scraper-Queue: durable-stream`, utilizado para comprobar
 que la migración está hablando con la API nueva y no con la versión BRPOP.
 
@@ -107,6 +120,9 @@ renueva cada tercio de la lease usando `JUSTID`, sin aumentar el número de
 entregas. Renovar y confirmar verifican el propietario atómicamente en Lua:
 un consumidor antiguo no puede confirmar el mensaje reclamado por otro.
 Si pierde la lease durante el crawl, el worker termina el subproceso Scrapy.
+Tras un reinicio espera la expiración de las leases pendientes antes de tomar
+trabajos nuevos. Esta prioridad corresponde al despliegue de un único worker
+y no es un algoritmo para escalar consumidores independientes.
 
 Antes del HTTP, cada item queda en SQLite con WAL y `synchronous=FULL`.
 El worker conserva el documento exacto y UUID de cada lote hasta recibir un
@@ -140,11 +156,16 @@ El registro SQL de entregas fallidas y el spool conservan el diagnóstico.
    existente, ejecutar esta migración expresamente con el operador de DB.
 3. Conceder a Catálogo SELECT e INSERT en `scraper.lotes_catalogo`; conceder
    a coordinación SELECT/INSERT/UPDATE en `scraper.entregas_ingesta` y
-   `scraper.entregas_trabajos`. Conservar los permisos de SUP-269.
+   `scraper.entregas_trabajos`, y DELETE **sólo** en `scraper.entregas_trabajos`
+   para retirar ejecuciones terminales. Conservar los permisos de SUP-269.
    Ninguno necesita permisos en el ledger del otro. Los roles definitivos de
    producción siguen correspondiendo a SUP-271.
 4. Desplegar Catálogo, luego API. Readiness de Catálogo comprueba su ledger
    en modo escritor; API verifica sus tablas antes de iniciar. No usan AutoMigrate.
+   Si falta la migración, API impide arrancar con un diagnóstico controlado;
+   Catálogo mantiene liveness 200 y readiness 503. No desplegar imágenes antes
+   de aplicar SQL y permisos. En una instalación ya migrada, este fix no añade
+   tablas: añadir el permiso DELETE al rol de coordinación antes del rollout.
 5. Migrar la lista anterior desde el entorno del scraper, con REDIS_URL y
    SCRAPER_API_URL apuntando a los servicios correspondientes:
 
@@ -179,10 +200,36 @@ Revisar SQL por `estado`, `intentos`, `ultimo_error`, antigüedad y lease de
 Los logs correlacionan `trabajo_id`, `lote_id` y `X-Request-ID`; la recuperación
 usa la clave del lote como request ID si no viene de una petición pública.
 
-No borrar recibos de Catálogo ni claves del spool mientras pueda haber un
-reintento. No se implementa TTL automático en esta etapa. Definir retención
-y archivo conjunto de registros terminales antes de limpiar esos datos;
-vigilar la capacidad de PVC, spool, dead-letter y ledgers SQL.
+El spool de un trabajo completado se elimina **después de confirmar el cierre
+en API y obtener ACK válido en Redis**, con sus conexiones SQLite cerradas y
+bloqueo exclusivo de ejecución. Un ACK perdido/fallido conserva el directorio.
+El recolector revisa hasta 20 directorios por turno, con presupuesto de 5 s y
+cliente HTTP de 2 s, cada 10 s. Sólo borra si API confirma estado terminal y
+Redis no conserva el mensaje; recupera también un crash entre ACK y borrado.
+Nunca borra trabajos activos, directorios bloqueados o mensajes sin ACK.
+Si API/Redis están caídos, conserva los archivos.
+
+Los spools fallidos se conservan 24 h (`SCRAPER_FAILED_RETENTION_SECONDS`).
+Bajo presión de almacenamiento pueden retirarse antes, exclusivamente si
+están terminales y sin mensaje pendiente. Esto puede eliminar items de un
+crawl fallido que nunca se enviaron: SQL conserva el diagnóstico del trabajo
+y los payloads de las entregas registradas, no esos items locales. Revisarlos
+o archivarlos antes del plazo si se necesitan para análisis. Cada retirada
+por esta política queda registrada en logs.
+
+Se reservan 64 MiB libres (`SCRAPER_STATE_MIN_FREE_BYTES`, mínimo 1 MiB).
+El worker revisa capacidad antes de consumir y el spool antes de escribir
+items/lotes. Si no puede recuperar espacio seguro, pausa y registra
+`worker_storage_pressure`, conservando los datos activos y el mensaje.
+Un ENOSPC inesperado también conserva el trabajo para recuperación. Aumentar
+el PVC si un trabajo activo por sí solo excede su capacidad; ningún recolector
+puede liberar esos datos sin perder la recuperación. El PVC de 1 Gi requiere
+medición de tamaño real por crawl, sin asumir cifras de 40–80 MB.
+
+No borrar recibos de Catálogo ni claves SQL mientras pueda haber reintentos.
+La purga del outbox de ejecución no afecta los ledgers de ingesta/idempotencia.
+La retención de esos ledgers y del dead-letter debe definirse por separado;
+vigilar capacidad y antigüedad además del espacio libre del PVC.
 
 Para volver a SUP-269: pausar productores, terminar o revisar las entregas
 pendientes con los componentes nuevos y drenar el stream. Verificar cero
@@ -216,11 +263,19 @@ desde fuente y `SUP268_SKIP_BUILD=1`; ese modo no valida los builders completos.
 
 Validación local completada en esta rama:
 
-- 79 resultados Go de API y 96 de Catálogo, sin fallos, con race detector,
-  vet y compilación `CGO_ENABLED=0` correctos.
-- 15 pruebas Python del cliente, spool, pipeline, recuperación y migración.
-- 324 comprobaciones HTTP: 255 heredadas y 69 nuevas (57 en los 11 escenarios
-  de recuperación y 12 enviando la misma clave a las tres réplicas de Catálogo).
+- 193 resultados Go unitarios (85 API, 108 Catálogo), sin fallos, con race
+  detector, vet y compilación `CGO_ENABLED=0` correctos. El escenario de
+  publisher con Redis detenido se omite sin DB en la suite unitaria y se
+  ejecuta expresamente en el harness con PostgreSQL real: 194 resultados Go
+  aprobados en total.
+- 25 pruebas Python del cliente, spool, pipeline, recuperación y migración,
+  incluyendo SQLITE_FULL real, reserva de espacio, limpieza tras ACK y
+  conservación de spools activos/bloqueados.
+- 338 comprobaciones HTTP: 255 heredadas y 83 de recuperación (71 en los 18
+  escenarios y 12 enviando la misma clave a tres réplicas de Catálogo).
+  Se incluyen cierre con lotes fallidos/pendientes, rechazo SQL inmediato,
+  reintentos transitorios, prioridad al reiniciar, marca de cierre ante
+  republicación tardía, GC y liveness/readiness con tablas ausentes.
   El recibo, captura y contador permanecieron únicos en los casos de reintento.
 - Pipeline y señales Scrapy reales sobre el fixture local, sin red externa;
   recuperación después de terminar abruptamente un proceso tras el commit HTTP.

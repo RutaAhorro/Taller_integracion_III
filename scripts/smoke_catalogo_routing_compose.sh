@@ -63,7 +63,8 @@ Path(sys.argv[2]).write_text("CREATE ROLE sup269_catalog_writer LOGIN PASSWORD '
     "GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA api TO sup269_coordinator;\n"
     "GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA api TO sup269_coordinator;\n"
     "GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper, scraper.entregas_ingesta, "
-    "scraper.entregas_trabajos TO sup269_coordinator;\n")
+    "scraper.entregas_trabajos TO sup269_coordinator;\n"
+    "GRANT DELETE ON scraper.entregas_trabajos TO sup269_coordinator;\n")
 PY
 chmod 644 "$SUP268_INIT_DIR"/*.sql
 source_ca="${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"

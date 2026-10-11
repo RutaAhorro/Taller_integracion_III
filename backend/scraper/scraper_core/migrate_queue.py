@@ -37,7 +37,7 @@ def migrate_one(redis, api, *, apply=False):
         except HTTPError as error:
             if error.code != 409 or api.get_work(work_id)['estado'] not in ('completado','fallido'):
                 raise
-        redis.lrem('scraper:jobs',1,raw)
+        redis.lrem('scraper:jobs',-1,raw)
     return work_id
 
 

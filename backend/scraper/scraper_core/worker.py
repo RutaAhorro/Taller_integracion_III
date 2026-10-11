@@ -17,10 +17,12 @@ from redis.exceptions import RedisError, ResponseError
 from scraper_core.api_client import ScraperAPIClient, ScraperAPIError
 from scraper_core.outbox import Outbox
 from scraper_core.runtime import ScrapyCommandExecutor
+from scraper_core.storage import SpoolCollector, StoragePressure, cleanup_spool, ensure_capacity
 
 QUEUE_NAME = "scraper:jobs:stream"
 GROUP = "scraper-workers"
 JOB_INDEX = "scraper:jobs:index"
+JOB_CLOSED_PREFIX = "scraper:jobs:closed:"
 DEAD_LETTER = "scraper:jobs:dead"
 ALLOWED_SPIDERS = {"jumbo_rsc", "santa_isabel_rsc", "cugat_rsc", "acuenta_rsc", "lider_rsc"}
 logger = logging.getLogger(__name__)
@@ -49,6 +51,11 @@ def process_job(job: dict, api_client: ScraperAPIClient, cancelled=None) -> dict
     if spider not in ALLOWED_SPIDERS or (job.get("product_id") and not job.get("product_url")):
         raise ValueError("Parámetros de spider inválidos")
     state_dir = os.environ.setdefault("SCRAPER_STATE_DIR", "/var/lib/scraper")
+    # Consultar antes de abrir SQLite permite retirar spools terminales aun
+    # cuando el volumen ya esté lleno.
+    status = api_client.get_work(work_id)
+    if status["estado"] in ("completado", "fallido"):
+        return status
     spool = Outbox(work_id, state_dir)
     try:
         # El volumen soporta un worker; flock impide un segundo proceso
@@ -77,7 +84,7 @@ def process_job(job: dict, api_client: ScraperAPIClient, cancelled=None) -> dict
             if cancelled and cancelled.is_set():
                 raise RuntimeError("Se perdió la lease del trabajo")
             # La API usa su ledger; no sobrescribirlo con len(items).
-            api_client.finalize_work(work_id, "completado")
+            result["estado"] = api_client.finalize_work(work_id, "completado")["estado"]
             return result
     finally:
         spool.close()
@@ -100,6 +107,7 @@ end
 redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
 redis.call('XDEL', KEYS[1], ARGV[2])
 if redis.call('HGET', KEYS[2], ARGV[6]) == ARGV[2] then redis.call('HDEL', KEYS[2], ARGV[6]) end
+if ARGV[6] ~= '' then redis.call('SET', KEYS[4], '1', 'EX', 86400) end
 return 1
 """
 
@@ -128,6 +136,10 @@ class ReliableQueue:
         self.cursor = claimed[0]
         if claimed[1]:
             return claimed[1][0]
+        # Un único worker con volumen RWO: esperar una lease reciente antes
+        # de tomar trabajo nuevo tras un reinicio. No se pierde su prioridad.
+        if self.client.xpending(QUEUE_NAME, GROUP)["pending"]:
+            return None
         messages = self.client.xreadgroup(GROUP, self.consumer, {QUEUE_NAME: ">"}, count=1, block=1000)
         return messages[0][1][0] if messages else None
 
@@ -135,8 +147,12 @@ class ReliableQueue:
         return bool(self.renew_script(keys=[QUEUE_NAME], args=[GROUP, message_id, self.consumer]))
 
     def ack(self, message_id, raw_job, work_id="", reason=""):
-        return bool(self.ack_script(keys=[QUEUE_NAME, JOB_INDEX, DEAD_LETTER],
+        return bool(self.ack_script(keys=[QUEUE_NAME, JOB_INDEX, DEAD_LETTER, JOB_CLOSED_PREFIX + work_id],
                                     args=[GROUP, message_id, self.consumer, raw_job, reason, work_id]))
+
+    def has_message(self, work_id):
+        message_id = self.client.hget(JOB_INDEX, work_id)
+        return bool(message_id and self.client.xrange(QUEUE_NAME, message_id, message_id, count=1))
 
     @contextmanager
     def heartbeat(self, message_id):
@@ -178,9 +194,10 @@ def handle_message(queue, message, api_client):
 
     with queue.heartbeat(message_id) as cancelled:
         try:
-            process_job(job, api_client, cancelled)
+            result = process_job(job, api_client, cancelled)
             if not cancelled.is_set():
-                queue.ack(message_id, raw, work_id)
+                if queue.ack(message_id, raw, work_id) and result.get("estado") == "completado":
+                    cleanup_spool(os.getenv("SCRAPER_STATE_DIR", "/var/lib/scraper"), work_id)
         except (CrawlExhausted, ScraperAPIError) as error:
             permanent = isinstance(error, CrawlExhausted) or error.permanent
             if permanent and not cancelled.is_set():
@@ -201,14 +218,29 @@ def run_worker():
     api_client = ScraperAPIClient(os.getenv("SCRAPER_API_URL", "http://localhost:8080/api/v1/scraper/productos"),
                                   timeout=float(os.getenv("SCRAPER_API_TIMEOUT", "30")))
     queue = ReliableQueue(client, lease_ms=int(os.getenv("SCRAPER_LEASE_MS", "60000")))
+    state_dir = os.environ.setdefault("SCRAPER_STATE_DIR", "/var/lib/scraper")
+    collector = SpoolCollector(state_dir)
+    gc_api = ScraperAPIClient(api_client.endpoint, timeout=2)
+    next_collection = 0
     logger.info("worker_started stream=%s consumer=%s", QUEUE_NAME, queue.consumer)
     while True:
         try:
             queue.ensure_group()
+            if time.monotonic() >= next_collection:
+                collector.collect(gc_api, queue)
+                next_collection = time.monotonic() + 10
+            # La limpieza puede liberar un PVC lleno sin recrear el pod.
+            # Si sólo quedan trabajos activos, pausar sin borrar datos.
+            ensure_capacity(state_dir)
             message = queue.receive()
             if message:
                 handle_message(queue, message, api_client)
-        except (RedisError, ScraperAPIError):
+            else:
+                time.sleep(.2)
+        except StoragePressure:
+            logger.error("worker_storage_pressure; sin espacio de reserva, se conservan trabajos activos")
+            time.sleep(5)
+        except (RedisError, ScraperAPIError, OSError, sqlite3.Error):
             logger.warning("worker_dependency_unavailable; se conserva el mensaje pendiente")
             time.sleep(5)
 

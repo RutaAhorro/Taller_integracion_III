@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -20,7 +21,8 @@ from redis import Redis
 from scraper_core.api_client import ScraperAPIClient
 from scraper_core.outbox import Outbox
 from scraper_core.migrate_queue import migrate_one
-from scraper_core.worker import ReliableQueue, QUEUE_NAME, GROUP, DEAD_LETTER, handle_message
+from scraper_core.worker import ReliableQueue, QUEUE_NAME, GROUP, DEAD_LETTER, JOB_CLOSED_PREFIX, handle_message
+from scraper_core.storage import SpoolCollector
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--project', required=True)
@@ -158,21 +160,46 @@ wait_for(lambda: sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + 
 assert captures('SUP270-CATALOG-RECOVERY') == 1
 assert request(path(work))['elementos_extraidos'] == 1
 
-# Fallo SQL revierte todo y al agotar reintentos queda registrado para revisión.
+# Un dato inválido revierte todo y queda fallido en el primer intento.
 work, key = job(), str(uuid4())
 bad = batch('SUP270-ATOMIC-FIRST')
 bad['productos'].append({'sku':'SUP270-ATOMIC-FAIL','producto':'x'*256,'precio_normal':1000})
-request(path(work) + '/productos', bad, 503, key=key)
+assert request(path(work) + '/productos', bad, 400, key=key)['codigo'] == 'lote_rechazado'
 assert captures('SUP270-ATOMIC-FIRST') == 0
 assert sql("SELECT count(*) FROM scraper.lotes_catalogo WHERE id='" + key + "';") == '0'
-# Adelantar sólo el reloj/contador de la entrada de prueba evita esperar todo
-# el backoff de 10 intentos. La transición la ejecuta el loop real de la API.
+assert sql("SELECT estado || ':' || intentos FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'fallida:1'
+assert request(path(work) + '/productos', bad, 409, key=key)['codigo'] == 'entrega_fallida'
+# Una entrega fallida y otra pendiente no impiden cerrar como fallido.
+pending_key = str(uuid4())
+compose('stop', 'catalogo')
+request(path(work) + '/productos', batch('SUP270-CLOSE-PENDING'), (503,504), key=pending_key)
+assert request(path(work) + '/finalizar', {'estado':'completado'}, 409, 'PUT')['codigo'] == 'entregas_fallidas'
+request(path(work) + '/finalizar', {'estado':'fallido'}, method='PUT')
+assert request(path(work))['estado'] == 'fallido'
+compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
+wait_for(lambda: sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + pending_key + "';") == 'confirmada')
+assert request(path(work))['elementos_extraidos'] == 1
+assert request(path(work) + '/productos', batch('SUP270-CLOSE-PENDING'), key=pending_key)['insertados'] == 1
+assert captures('SUP270-ATOMIC-FIRST') == 0
+
+# Un fallo realmente transitorio conserva backoff y presupuesto de 10 intentos.
+work, key = job(), str(uuid4())
+sql("CREATE FUNCTION scraper.sup270_transient_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.sku='SUP270-TRANSIENT' THEN RAISE EXCEPTION 'transient fixture' USING ERRCODE='40001'; END IF; RETURN NEW; END $$; CREATE TRIGGER sup270_transient_failure BEFORE INSERT ON scraper.productos_crudos FOR EACH ROW EXECUTE FUNCTION scraper.sup270_transient_failure();")
+request(path(work) + '/productos', batch('SUP270-TRANSIENT'), 503, key=key)
+assert sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'pendiente'
 sql("UPDATE scraper.entregas_ingesta SET intentos=9,proximo_intento=now(),lease_hasta=NULL WHERE id='" + key + "';")
 wait_for(lambda: sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'fallida')
-assert request(path(work) + '/productos', bad, 409, key=key)['codigo'] == 'entrega_fallida'
-request(path(work) + '/finalizar', {'estado':'completado'}, 409, 'PUT')
+assert sql("SELECT intentos FROM scraper.entregas_ingesta WHERE id='" + key + "';") == '10'
+sql('DROP TRIGGER sup270_transient_failure ON scraper.productos_crudos; DROP FUNCTION scraper.sup270_transient_failure();')
 request(path(work) + '/finalizar', {'estado':'fallido'}, method='PUT')
-assert captures('SUP270-ATOMIC-FIRST') == 0
+
+# Redis bloqueado no puede mantener una transacción SQL ni impedir el cierre.
+test_env = dict(line.split('=', 1) for line in Path(args.env_file).read_text().splitlines() if '=' in line)
+go_env = dict(os.environ)
+go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://sup269_coordinator:' + test_env['SUP269_COORDINATOR_PASSWORD'] +
+    '@127.0.0.1:' + os.getenv('SUP270_DB_PORT', '18078') + '/sup268?sslmode=disable')
+subprocess.run(['go', 'test', '-race', '-count=1', '-run', '^TestPublisherStalledRedisAllowsJobFinalization$', '-v',
+                './internal/scraping/internal/repositories'], cwd=root/'backend/api', env=go_env, check=True)
 
 # Cola SQL aceptada durante caída de Redis y reconstruida tras pérdida total.
 work = job()
@@ -194,6 +221,11 @@ first, second = ReliableQueue(redis, 'sup270-old', 10000), ReliableQueue(redis, 
 first.ensure_group()
 message = first.receive(); assert message
 message_id = message[0]
+# Un reinicio rápido conserva prioridad: no toma un trabajo nuevo mientras
+# el interrumpido todavía tiene lease. Después reclama el mensaje original.
+second_work = job(); request(path(second_work) + '/ejecutar', execution, 202)
+wait_for(lambda: redis.xlen(QUEUE_NAME) == 2)
+assert second.receive() is None
 redis.xclaim(QUEUE_NAME, GROUP, first.consumer, 0, [message_id], idle=11000, justid=True)
 reclaimed = second.receive(); assert reclaimed[0] == message_id
 assert not first.renew(message_id) and not first.ack(message_id, message[1]['payload'],work)
@@ -203,6 +235,16 @@ assert redis.xpending_range(QUEUE_NAME,GROUP,message_id,message_id,1)[0]['times_
 request(path(work) + '/finalizar', {'estado':'fallido'}, method='PUT')
 assert second.ack(message_id,message[1]['payload'],work,'lease_review')
 assert redis.xpending(QUEUE_NAME,GROUP)['pending'] == 0 and redis.xlen(DEAD_LETTER) == 1
+assert sql("SELECT count(*) FROM scraper.entregas_trabajos WHERE trabajo_id='" + work + "';") == '0'
+# El publisher que conservaba una lectura anterior no recrea el mensaje tras ACK.
+source = (root/'backend/api/internal/scraping/internal/repositories/job_publisher.go').read_text()
+publish_script = re.search(r'var publishJob = redis.NewScript\(`(.*?)`\)', source, re.S).group(1)
+assert redis.ttl(JOB_CLOSED_PREFIX + work) > 86000
+assert redis.eval(publish_script, 3, QUEUE_NAME, 'scraper:jobs:index', JOB_CLOSED_PREFIX + work, work, message[1]['payload']) is None
+assert redis.xlen(QUEUE_NAME) == 1
+new_message = second.receive(); assert json.loads(new_message[1]['payload'])['trabajo_id'] == second_work
+request(path(second_work) + '/finalizar', {'estado':'fallido'}, method='PUT')
+assert second.ack(new_message[0], new_message[1]['payload'], second_work)
 
 # Proceso muere después del commit HTTP y antes de marcar entregado/ACK.
 work = job()
@@ -241,6 +283,21 @@ with patch('scraper_core.worker.ScrapyCommandExecutor', return_value=recovered_c
 assert redis.xpending(QUEUE_NAME,GROUP)['pending'] == 0
 assert request(path(work))['estado'] == 'completado'
 assert request(path(work))['elementos_extraidos'] == 1 and captures('SUP270-KILL') == 1
+assert not (Path(args.state_dir)/work).exists(), 'spool exitoso debe retirarse después del ACK'
+
+# GC repara un crash posterior al ACK sin borrar un spool con mensaje pendiente.
+spool = Outbox(work, args.state_dir); spool.close()
+gc_work = job(); request(path(gc_work) + '/ejecutar', execution, 202)
+wait_for(lambda: redis.hget('scraper:jobs:index', gc_work))
+spool = Outbox(gc_work, args.state_dir); spool.close()
+api = ScraperAPIClient(args.gateway_url + '/api/v1/scraper/productos')
+collector = SpoolCollector(args.state_dir)
+assert collector.collect(api, queue) >= 1
+assert not (Path(args.state_dir)/work).exists()
+assert (Path(args.state_dir)/gc_work).exists()
+message = queue.receive(); assert json.loads(message[1]['payload'])['trabajo_id'] == gc_work
+request(path(gc_work) + '/finalizar', {'estado':'fallido'}, method='PUT')
+assert queue.ack(message[0], message[1]['payload'], gc_work)
 
 # Tres crawls agotados: confirmar fallo en API y guardar dead-letter una vez.
 work = job(); request(path(work)+'/ejecutar',execution,202)
@@ -288,4 +345,17 @@ assert redis.xpending(QUEUE_NAME,GROUP)['pending']==0
 
 # El rol de cada servicio no puede leer el ledger del otro dominio.
 assert sql("SELECT has_table_privilege('sup269_coordinator','scraper.lotes_catalogo','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_ingesta','SELECT') OR has_table_privilege('sup269_catalog_writer','scraper.entregas_trabajos','SELECT');")=='f'
-print(json.dumps({'task':'SUP-270','http_checks':passed,'recovery_scenarios':11,'failed':0}))
+# Tablas ausentes: API impide arrancar; Catálogo sigue vivo con readiness 503.
+compose('stop', 'go_service')
+sql('ALTER TABLE scraper.entregas_ingesta RENAME TO sup270_restore_ingesta; ALTER TABLE scraper.lotes_catalogo RENAME TO sup270_restore_catalogo;')
+compose('up', '-d', '--no-deps', 'go_service')
+wait_for(lambda: 'aplicar 05_recuperacion_scraping.sql' in compose('logs', '--no-color', 'go_service'))
+live = compose('exec','-T','catalogo','wget','-q','-O','-','http://127.0.0.1:8080/_catalogo/live')
+assert json.loads(live)['status'] == 'ok'
+ready = compose('exec','-T','catalogo','sh','-c','wget -S -O /dev/null http://127.0.0.1:8080/_catalogo/ready 2>&1 || true')
+assert '503 Service Unavailable' in ready
+sql('ALTER TABLE scraper.sup270_restore_ingesta RENAME TO entregas_ingesta; ALTER TABLE scraper.sup270_restore_catalogo RENAME TO lotes_catalogo;')
+compose('restart', 'go_service')
+compose('up','-d','--no-deps','--wait','--wait-timeout','90','go_service','catalogo')
+request('/health')
+print(json.dumps({'task':'SUP-270','http_checks':passed,'recovery_scenarios':18,'failed':0}))

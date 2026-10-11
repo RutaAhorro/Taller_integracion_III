@@ -12,13 +12,23 @@ import sqlite3
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from scraper_core.storage import ensure_capacity
+
 
 class Outbox:
     def __init__(self, work_id: str, state_dir: str | Path):
         self.work_id = str(UUID(work_id))
         self.directory = Path(state_dir) / self.work_id
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+        ensure_capacity(self.directory)
         self.db = sqlite3.connect(self.directory / "outbox.sqlite", timeout=30)
+        try:
+            self._initialize()
+        except BaseException:
+            self.db.close()
+            raise
+
+    def _initialize(self):
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript("""
@@ -36,6 +46,7 @@ class Outbox:
 
     def add(self, product: dict, market: str | None):
         data = json.dumps(product, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        ensure_capacity(self.directory, len(data.encode("utf-8")) * 4)
         fingerprint = hashlib.sha256(json.dumps([market, data]).encode()).hexdigest()
         with self.db:
             self.db.execute("INSERT OR IGNORE INTO items(fingerprint,market,product) VALUES (?,?,?)",
@@ -55,6 +66,7 @@ class Outbox:
                 market = first[0]
                 rows = self.db.execute("SELECT id,product FROM items WHERE batch_id IS NULL AND market IS ? ORDER BY id LIMIT ?",
                                        (market, batch_size)).fetchall()
+                ensure_capacity(self.directory, sum(len(row[1].encode("utf-8")) for row in rows) * 2)
                 payload = {"products": [json.loads(row[1]) for row in rows], "supermarket": market}
                 batch_id = str(uuid4())
                 self.db.execute("INSERT INTO batches(id,payload) VALUES (?,?)", (batch_id, json.dumps(payload, ensure_ascii=False)))

@@ -60,9 +60,9 @@ ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, Det
 
 ## Mapa auto-generado: API de Identidad y Scraping (Go + Gin)
 
-Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
+Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main compone Identidad y Scraping y arranca recuperación con cierre controlado. Scraping persiste trabajos y sus outboxes scraper.entregas_ingesta/entregas_trabajos; entrega lotes a Catálogo con clave estable y confirma contador+entrega juntos. Publica ejecuciones desde SQL a Redis Streams. No consulta/escribe productos ni recibos de Catálogo. Requiere migración 05_recuperacion_scraping.sql y DELETE sólo en el outbox de ejecuciones terminales. El cierre fallido no espera entregas; su conciliación SQL continúa. El publisher no retiene locks SQL durante Redis. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
 
-**44 archivos .go** detectados
+**46 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -253,6 +253,7 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 ### `internal/scraping/internal/repositories/idempotencia_test.go` (package repositories)
 
 - `TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T)`
+- `TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T)`
 
 ### `internal/scraping/internal/repositories/job_publisher.go` (package repositories)
 
@@ -260,6 +261,10 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 - `NewJobPublisher(rdb *redis.Client, db *gorm.DB) *jobPublisher`
 - `(jobPublisher).Close() error`
 - `(jobPublisher).Publicar(ctx context.Context, e domain.Ejecucion) error`
+
+### `internal/scraping/internal/repositories/job_publisher_test.go` (package repositories)
+
+- `TestPublisherStalledRedisAllowsJobFinalization(t *testing.T)`
 
 ### `internal/scraping/internal/repositories/trabajo_repository.go` (package repositories)
 
@@ -312,6 +317,14 @@ Estado vigente SUP-270 (prevalece sobre el contexto histórico anterior): main c
 - `(failingCounter).IncrementarElementos(ctx context.Context, id uuid.UUID, n int) error`
 - `TestCatalogFailureDoesNotIncrementJob(t *testing.T)`
 - `TestCommittedCatalogBatchAndFailedCounterIsExplicit(t *testing.T)`
+
+### `internal/scraping/tests/queue_test.go` (package tests)
+
+- Structs: sqlQueue
+- `(sqlQueue).RegistrarEjecucion(_ context.Context, e domain.Ejecucion) error`
+- `(sqlQueue).Pendientes(context.Context) ([]domain.Ejecucion, error)`
+- `(sqlQueue).PosponerPublicacion(context.Context, uuid.UUID) error`
+- `TestExecutionWithoutRedisClientStillPersistsSQL(t *testing.T)`
 
 ### `internal/scraping/tests/scraper_test.go` (package tests)
 

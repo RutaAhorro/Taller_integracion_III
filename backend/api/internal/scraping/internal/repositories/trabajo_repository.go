@@ -60,22 +60,28 @@ func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UU
 			return err
 		}
 		if trabajo.Estado == estado {
-			return nil
+			return tx.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, id).Error
 		}
 		if trabajo.Estado != "en_progreso" {
 			return services.ErrTrabajoYaFinalizado
 		}
-		var blocked int64
-		q := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='pendiente'", id)
 		if estado == "completado" {
-			q = tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado!='confirmada'", id)
+			var failed, pending int64
+			if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='fallida'", id).Count(&failed).Error; err != nil {
+				return err
+			}
+			if failed > 0 {
+				return services.ErrEntregaFallida
+			}
+			if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='pendiente'", id).Count(&pending).Error; err != nil {
+				return err
+			}
+			if pending > 0 {
+				return services.ErrEntregaPendiente
+			}
 		}
-		if err := q.Count(&blocked).Error; err != nil {
-			return err
-		}
-		if blocked > 0 {
-			return services.ErrEntregaPendiente
-		}
+		// Un cierre fallido no espera los backoffs ni cancela entregas ambiguas:
+		// su ledger sigue conciliándose, incluso si Catálogo ya hizo commit.
 		var managed int64
 		if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=?", id).Count(&managed).Error; err != nil {
 			return err
@@ -88,7 +94,10 @@ func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UU
 		if registroErrores != nil {
 			updates["registro_errores"] = *registroErrores
 		}
-		return tx.Model(&trabajo).Updates(updates).Error
+		if err := tx.Model(&trabajo).Updates(updates).Error; err != nil {
+			return err
+		}
+		return tx.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, id).Error
 	})
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil

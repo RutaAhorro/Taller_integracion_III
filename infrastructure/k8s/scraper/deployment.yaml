@@ -49,6 +49,10 @@ spec:
           value: /var/lib/scraper
         - name: SCRAPER_LEASE_MS
           value: '60000'
+        - name: SCRAPER_STATE_MIN_FREE_BYTES
+          value: '67108864'
+        - name: SCRAPER_FAILED_RETENTION_SECONDS
+          value: '86400'
         volumeMounts:
         - name: scraper-state
           mountPath: /var/lib/scraper

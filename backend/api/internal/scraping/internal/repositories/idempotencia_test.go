@@ -39,3 +39,24 @@ func TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T) {
 		t.Fatal(err, calls)
 	}
 }
+
+func TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T) {
+	for _, status := range []int{400, 413, 500, 503} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+			defer srv.Close()
+			client, err := NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.IngestarLote(context.Background(), nil, 1, []domain.ProductoScrapeadoDTO{{SKU: "sku"}})
+			want := services.ErrCatalogoNoDisponible
+			if status == 400 || status == 413 {
+				want = services.ErrCatalogoRechazo
+			}
+			if !errors.Is(err, want) {
+				t.Fatal(err)
+			}
+		})
+	}
+}

@@ -20,7 +20,7 @@ class ScraperAPIError(RuntimeError):
 
     @property
     def permanent(self):
-        return self.status in (400, 404, 413) or self.code in ("idempotency_conflict", "entrega_fallida", "lote_rechazado")
+        return self.status in (400, 404, 413) or self.code in ("idempotency_conflict", "entrega_fallida", "entregas_fallidas", "lote_rechazado")
 
 
 class ScraperAPIClient:
@@ -132,8 +132,12 @@ class ScraperAPIClient:
                 body = response.read().decode("utf-8")
         except HTTPError as error:
             detail = error.read().decode("utf-8", errors="replace")
+            try:
+                code = json.loads(detail).get("codigo")
+            except (json.JSONDecodeError, AttributeError):
+                code = None
             raise ScraperAPIError(
-                f"La API rechazó el cierre del trabajo ({error.code})", status=error.code
+                f"La API rechazó el cierre del trabajo ({error.code})", status=error.code, code=code
             ) from error
         except (URLError, TimeoutError, OSError) as error:
             raise ScraperAPIError("No se pudo conectar con la API") from error

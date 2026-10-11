@@ -39,6 +39,12 @@ func (r *ejecucionRepository) RegistrarEjecucion(ctx context.Context, e domain.E
 	})
 }
 func (r *ejecucionRepository) Pendientes(ctx context.Context) ([]domain.Ejecucion, error) {
+	// Retirar también outboxes terminales anteriores a este fix, en lotes acotados.
+	if err := r.db.WithContext(ctx).Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id IN (
+ SELECT et.trabajo_id FROM scraper.entregas_trabajos et JOIN scraper.trabajos_scraper t ON t.id=et.trabajo_id
+ WHERE t.estado IN ('completado','fallido') LIMIT 100)`).Error; err != nil {
+		return nil, err
+	}
 	var result []domain.Ejecucion
 	err := r.db.WithContext(ctx).Raw(`SELECT et.trabajo_id,et.payload_hash,et.payload::text FROM scraper.entregas_trabajos et
  JOIN scraper.trabajos_scraper t ON t.id=et.trabajo_id WHERE t.estado='en_progreso'
