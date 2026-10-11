@@ -1,0 +1,9 @@
+# SUP-269: restaurar el escritor SQL de API sin cambiar el enrutamiento de SUP-268.
+# La imagen debe ser la de SUP-268, con lector retirado e ingesta SQL presente.
+services:
+  go_service:
+    image: ${SUP269_LEGACY_API_IMAGE:?Define la imagen de API de SUP-268 para rollback de ingesta}
+    build: !reset null
+    environment:
+      # El escritor anterior necesita permisos sobre trabajos y Catálogo.
+      DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable

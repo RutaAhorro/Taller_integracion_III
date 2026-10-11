@@ -57,3 +57,22 @@ func TestCORSOriginsConfiguration(t *testing.T) {
 		t.Fatal("CORS no queda cerrado por defecto")
 	}
 }
+
+func TestInternalTokenConfiguration(t *testing.T) {
+	t.Setenv("DB_URL", "postgres://test-only")
+	t.Setenv("JWT_SECRET", "test-only")
+	for _, token := range []string{"short", "test-only", "012345678901234567890123456789012\n"} {
+		t.Setenv("CATALOGO_INTERNAL_TOKEN", token)
+		if _, err := Load(); err == nil {
+			t.Error("se aceptó token inválido")
+		}
+	}
+	t.Setenv("CATALOGO_INTERNAL_TOKEN", "0123456789012345678901234567890123")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CATALOGO_INTERNAL_TOKEN", "")
+	if cfg, err := Load(); err != nil || cfg.InternalToken != "" {
+		t.Fatal("modo lector no disponible", err)
+	}
+}

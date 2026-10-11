@@ -106,7 +106,8 @@ la comprobación de `PasswordHash` nulo/vacío estaba conservada en `390a2bd`, c
 prueba de regresión aprobada. No fue necesario modificar la lógica de login.
 
 SUP-267 está integrada: Catálogo tiene módulo, proceso, imagen y pruebas propios.
-La tarea en curso es SUP-268, en
+SUP-268 se publicó en [PR #95](https://github.com/danirc2024/Taller_integracion_III/pull/95),
+commit `e6c73ac`, pendiente de integración al comenzar SUP-269, en
 `backend/refactor/sup-268-enrutar-desplegar-catalogo-vmatus`, desde `1ae1f86`.
 Activa las consultas en Gateway, incorpora Compose/Kubernetes/HPA y elimina
 el lector duplicado de API. Consultar `GUIA_CATALOGO_ENRUTAMIENTO.md` para
@@ -126,6 +127,17 @@ el bundle recibido y eliminando sólo archivos propios. Las observaciones de
 SUP-264/265 anteriores son históricas.
 Los squashes ya incorporaron el contenido de las ramas anteriores; evitar
 reintroducir sus commits históricos al preparar la siguiente tarea.
+
+La tarea en curso es SUP-269, en
+`backend/refactor/sup-269-transferir-ingesta-catalogo-vmatus`, creada desde
+`e6c73ac` por autorización del usuario para continuar mientras se revisa PR #95.
+Scraping entrega los lotes mediante HTTP autenticado a Catálogo; no escribe
+productos ni precios. El contador se actualiza en coordinación después del
+commit de Catálogo. Conservar el manejo explícito de `contador_pendiente` y
+no habilitar reintentos de lotes antes de SUP-270. Ver `GUIA_CATALOGO_INGESTA.md`.
+Incorporar futuras correcciones de SUP-268 en esta rama y, tras su squash,
+actualizar la base antes de preparar el siguiente PR. El usuario autorizó
+commit y push de SUP-269 sin abrir PR, y continuar SUP-270 desde estos cambios.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

@@ -1,7 +1,8 @@
 # Catálogo y precios
 
 Servicio Go independiente para consultar productos, precios, historial y catálogo
-administrativo. No requiere Redis ni importa paquetes de `backend/api`.
+administrativo, y persistir lotes enviados por coordinación de scraping mediante
+una API interna autenticada. No requiere Redis ni importa paquetes de `backend/api`.
 
 ```bash
 cd backend/catalogo
@@ -34,7 +35,13 @@ Desde la raíz del repositorio:
 ```bash
 docker build -t catalogo:local backend/catalogo
 bash scripts/smoke_catalogo_compose.sh
+bash scripts/smoke_catalogo_ingesta_compose.sh
 ```
 
 Consulta la [guía de SUP-267](../../docs/Guias/GUIA_CATALOGO_INDEPENDIENTE.md)
 para rutas, permisos, pruebas, límites de compatibilidad y activación en SUP-268.
+
+La [guía de ingesta SUP-269](../../docs/Guias/GUIA_CATALOGO_INGESTA.md) describe
+el token privado, la propiedad de escrituras, las ventanas de fallo entre
+Catálogo y el contador del trabajo, el despliegue y el rollback. Con
+`CATALOGO_INTERNAL_TOKEN` vacío, el servicio conserva el modo de sólo lectura.

@@ -56,6 +56,11 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: JWT_SECRET
+            - name: CATALOGO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: catalogo-internal-secret
+                  key: token
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

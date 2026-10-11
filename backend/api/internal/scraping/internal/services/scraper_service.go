@@ -21,6 +21,9 @@ var (
 	ErrLoteExcedeMaximo      = errors.New("el lote excede el tamaño máximo permitido de 1000 productos")
 	ErrEstadoTrabajoInvalido = errors.New("el estado debe ser 'completado' o 'fallido'")
 	ErrUUIDInvalido          = errors.New("el identificador proporcionado no es un UUID válido")
+	ErrCatalogoNoDisponible  = errors.New("Catálogo no está disponible")
+	ErrCatalogoTimeout       = errors.New("Catálogo no respondió a tiempo")
+	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote, pero no se pudo actualizar el contador del trabajo; no reenviar el lote")
 )
 
 // ScraperService define la lógica de negocio para auditar trabajos e ingestar catálogos
@@ -104,9 +107,7 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 	}
 
 	cadenaNombre := ""
-	if actualizado.Cadena != nil {
-		cadenaNombre = actualizado.Cadena.Nombre
-	}
+	cadenaNombre = s.nombreCadena(ctx, actualizado.CadenaID)
 
 	return s.mapearTrabajoDTO(actualizado, cadenaNombre), nil
 }
@@ -127,9 +128,7 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	}
 
 	cadenaNombre := ""
-	if trabajo.Cadena != nil {
-		cadenaNombre = trabajo.Cadena.Nombre
-	}
+	cadenaNombre = s.nombreCadena(ctx, trabajo.CadenaID)
 
 	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
 }
@@ -170,19 +169,34 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	// Si no vino cadenaID por trabajo, resolver por nombre de supermercado si está disponible
 	if cadenaID == 0 && input.Supermercado != nil && strings.TrimSpace(*input.Supermercado) != "" {
 		cadena, err := s.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
-		if err == nil && cadena != nil {
+		if err != nil {
+			return nil, err
+		}
+		if cadena != nil {
 			cadenaID = cadena.ID
 		}
 	}
 
 	// Obtener la sucursal de destino
 	sucursal, err := s.ingesta.ObtenerSucursal(ctx, cadenaID, input.SucursalID, input.CodigoSucursal)
-	if err != nil || sucursal == nil {
+	if err != nil {
+		return nil, err
+	}
+	if sucursal == nil {
 		return nil, ErrSucursalNoEncontrada
 	}
 
 	// Ejecutar la persistencia en lote
-	return s.ingesta.IngestarLote(ctx, parsedTrabajoUUID, sucursal.ID, input.Productos)
+	resultado, err := s.ingesta.IngestarLote(ctx, parsedTrabajoUUID, sucursal.ID, input.Productos)
+	if err != nil {
+		return nil, err
+	}
+	if parsedTrabajoUUID != nil && resultado.Insertados+resultado.Actualizados > 0 {
+		if err := s.trabajos.IncrementarElementos(ctx, *parsedTrabajoUUID, resultado.Insertados+resultado.Actualizados); err != nil {
+			return nil, ErrContadorPendiente
+		}
+	}
+	return resultado, nil
 }
 
 func (s *scraperService) mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO {
@@ -203,4 +217,15 @@ func (s *scraperService) mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre
 		ElementosExtraidos: t.ElementosExtraidos,
 		RegistroErrores:    t.RegistroErrores,
 	}
+}
+
+// El nombre es información auxiliar: consultar/finalizar un trabajo no debe
+// quedar bloqueado por una caída de Catálogo. El resto del DTO se conserva.
+func (s *scraperService) nombreCadena(ctx context.Context, cadenaID int) string {
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if cadena, err := s.ingesta.ObtenerCadena(ctx, cadenaID, ""); err == nil && cadena != nil {
+		return cadena.Nombre
+	}
+	return ""
 }

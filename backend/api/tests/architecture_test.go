@@ -38,8 +38,7 @@ func TestModuleDependencies(t *testing.T) {
 					}
 					if strings.HasPrefix(dependency, api) {
 						allowed := strings.HasPrefix(dependency, own) || dependency == api+"utils" || dependency == api+"middleware"
-						legacyAdapter := module == "scraping" && filepath.Base(path) == "ingesta_legacy_repository.go" && dependency == api+"infrastructure"
-						if !allowed && !legacyAdapter {
+						if !allowed {
 							t.Errorf("%s depende de código de otro dominio: %s", path, dependency)
 						}
 					}

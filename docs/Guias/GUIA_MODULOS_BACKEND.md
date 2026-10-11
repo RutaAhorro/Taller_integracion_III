@@ -4,7 +4,10 @@
 > `main.go` compone ahora únicamente Identidad y Scraping. Los paquetes antiguos
 > `domain`, `handlers`, `repositories`, `services` y `routes` de productos se
 > eliminan; sus pruebas de negocio permanecen en Catálogo. La persistencia de
-> ingesta y los modelos heredados continúan hasta SUP-269/SUP-271.
+> ingesta pasa a Catálogo por HTTP interno en SUP-269. Los modelos del sembrador
+> permanecen, pero scraping ya no los importa; se elimina la excepción de
+> dependencia del adaptador legado en las pruebas de arquitectura.
+> Ver [ingesta SUP-269](GUIA_CATALOGO_INGESTA.md).
 > Ver [procedimiento vigente](GUIA_CATALOGO_ENRUTAMIENTO.md).
 
 ## Alcance y resultado
