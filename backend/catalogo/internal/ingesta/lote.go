@@ -2,17 +2,50 @@ package ingesta
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"gorm.io/gorm"
 	"strings"
 	"time"
 )
 
+var ErrIdempotencia = errors.New("la clave del lote ya se utilizó con otro contenido")
+
 // IngestarLote confirma productos y precios juntos. Un error SQL revierte el lote
 // completo; nunca se continúa con una transacción PostgreSQL ya abortada.
 func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaResultadoDTO, error) {
 	result := &IngestaResultadoDTO{SucursalID: input.SucursalID, TotalRecibidos: len(input.Productos)}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		data, err := json.Marshal(input)
+		if err != nil {
+			return err
+		}
+		hash := sha256.Sum256(data)
+		fingerprint := hex.EncodeToString(hash[:])
+		if input.LoteID != "" {
+			// El recibo y las capturas comparten transacción. El lock sólo vive
+			// en Catálogo y serializa la misma clave entre sus réplicas.
+			if err := tx.Exec(`SELECT pg_advisory_xact_lock(2701, hashtext(?))`, input.LoteID).Error; err != nil {
+				return err
+			}
+			var receipt struct {
+				PayloadHash string
+				Resultado   string
+			}
+			query := tx.Raw(`SELECT payload_hash, resultado::text FROM scraper.lotes_catalogo WHERE id = ?`, input.LoteID).Scan(&receipt)
+			if query.Error != nil {
+				return query.Error
+			}
+			if query.RowsAffected > 0 {
+				if receipt.PayloadHash != fingerprint {
+					return ErrIdempotencia
+				}
+				return json.Unmarshal([]byte(receipt.Resultado), result)
+			}
+		}
 		ahora := time.Now()
 		for i, p := range input.Productos {
 			sku, titulo := strings.TrimSpace(p.SKU), strings.TrimSpace(p.Producto)
@@ -72,6 +105,14 @@ func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaR
 				return err
 			}
 			result.PreciosRegistrados++
+		}
+		result.Mensaje = fmt.Sprintf("Lote procesado: %d insertados, %d actualizados, %d precios guardados", result.Insertados, result.Actualizados, result.PreciosRegistrados)
+		if input.LoteID != "" {
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				return err
+			}
+			return tx.Exec(`INSERT INTO scraper.lotes_catalogo (id,payload_hash,resultado) VALUES (?,?,?::jsonb)`, input.LoteID, fingerprint, string(encoded)).Error
 		}
 		return nil
 	})

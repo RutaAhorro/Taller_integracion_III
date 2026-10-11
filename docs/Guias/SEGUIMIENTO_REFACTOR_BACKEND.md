@@ -128,7 +128,7 @@ SUP-264/265 anteriores son históricas.
 Los squashes ya incorporaron el contenido de las ramas anteriores; evitar
 reintroducir sus commits históricos al preparar la siguiente tarea.
 
-La tarea en curso es SUP-269, en
+SUP-269 se implementó en
 `backend/refactor/sup-269-transferir-ingesta-catalogo-vmatus`, creada desde
 `e6c73ac` por autorización del usuario para continuar mientras se revisa PR #95.
 Scraping entrega los lotes mediante HTTP autenticado a Catálogo; no escribe
@@ -139,8 +139,39 @@ SUP-268 ya se integró mediante el squash `b465d0a`, con el mismo contenido que
 la base original `e6c73ac`. Se incorporó `develop-refactor` en SUP-269 y se
 actualizó la referencia de rollback al commit integrado. El usuario autorizó
 abrir el PR de SUP-269 hacia `develop-refactor`.
-SUP-270 está creada desde SUP-269, sin cambios propios; su implementación
-continúa pausada hasta que el usuario indique retomarla.
+SUP-269 se integró mediante [PR #96](https://github.com/danirc2024/Taller_integracion_III/pull/96),
+con el squash `fc2b1c2`, cuyo contenido coincide con la base de trabajo `d45650a`.
+La tarea en curso es SUP-270, en
+`backend/refactor/sup-270-recuperacion-trabajos-ingesta-vmatus`, preparada
+sobre `fc2b1c2` de `develop-refactor` para incluir sólo los cambios de SUP-270.
+El usuario autorizó commit, push y PR hacia `develop-refactor`, con revisión
+de Renato (`RCarrascoO`) y Dani (`danirc2024`).
+La API recupera entregas y ejecuciones desde outboxes SQL; Catálogo confirma
+recibos idempotentes junto con capturas. El worker confirma Redis Streams sólo
+tras cierre en API y conserva su spool en un volumen persistente. No tiene
+acceso a PostgreSQL. Ver `GUIA_SCRAPING_RECUPERACION.md` para migración,
+permisos, límites de reintentos, operación y rollback. Aplicar la migración y
+drenar la lista BRPOP anterior antes del corte; no desplegar sin autorización.
+Correcciones de review en [PR #97](https://github.com/danirc2024/Taller_integracion_III/pull/97):
+- Se distinguen entregas pendientes/fallidas y se permite cerrar como fallido
+  sin detener la conciliación de entregas ya registradas.
+- El publisher no retiene locks SQL durante Redis; ACK coloca una marca de
+  cierre con TTL para impedir republicación tardía. Se purga el outbox de
+  ejecuciones terminales; coordinación requiere DELETE sólo en esa tabla.
+- Spools completados se borran tras ACK. Fallidos se retienen 24 h y pueden
+  retirarse antes bajo presión, sólo con estado terminal y sin mensaje.
+  Reserva de 64 MiB y GC conservan trabajos activos ante disco lleno.
+- Se corrigen clasificación SQL 400/500, prioridad tras reinicio y LREM
+  desde la cola. Se documenta y prueba el orden SQL/permisos antes del rollout.
+
+Validación SUP-270 tras el review: 194 resultados Go (193 unitarios más
+1 integración con PostgreSQL real), 25 pruebas Python y 338 comprobaciones
+HTTP sin fallos; 16 recursos Kubernetes válidos. API y Catálogo compilan y
+pasan race detector/vet. Los builders completos quedan en CI.
+
+SUP-271 permanece guardada sin commit mientras se corrige SUP-270. Al retomarla,
+incorporar estos fixes y conceder a `app_scraping` DELETE exclusivamente sobre
+`scraper.entregas_trabajos`, actualizando su verificación de permisos y rollback.
 
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.

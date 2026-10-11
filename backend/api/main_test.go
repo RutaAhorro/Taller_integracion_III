@@ -54,7 +54,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		{"finalización inválida", "PUT", "/api/v1/scraper/trabajos/invalid/finalizar", "{}", "", 400},
 		{"ingesta con trabajo inválida", "POST", "/api/v1/scraper/trabajos/invalid/productos", "{}", "", 400},
 		{"ingesta directa inválida", "POST", "/api/v1/scraper/productos", "{}", "", 400},
-		{"ejecución sin Redis", "POST", "/api/v1/scraper/trabajos/invalid/ejecutar", "{}", "", 503},
+		{"ejecución con ID inválido sin Redis", "POST", "/api/v1/scraper/trabajos/invalid/ejecutar", "{}", "", 400},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

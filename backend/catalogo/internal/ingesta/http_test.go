@@ -3,6 +3,7 @@ package ingesta
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http/httptest"
@@ -10,11 +11,37 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type testStore struct {
 	calls int
 	err   error
+}
+
+func TestInternalSQLDataErrorsArePermanentAndPrivate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		code   string
+		status int
+	}{
+		{"22001", 400}, {"22003", 400}, {"23502", 400}, {"23503", 400}, {"23505", 400}, {"23514", 400},
+		{"08006", 500}, {"40001", 500}, {"40P01", 500}, {"42P01", 500}, {"XX000", 500},
+	} {
+		t.Run(tc.code, func(t *testing.T) {
+			token := strings.Repeat("t", 32)
+			err := fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: tc.code, Message: "secret SQL", TableName: "productos_crudos"})
+			r := gin.New()
+			Register(r, Config{Repository: &testStore{err: err}, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+			if w.Code != tc.status || strings.Contains(w.Body.String(), "secret") || strings.Contains(w.Body.String(), "productos_crudos") {
+				t.Fatal(w.Code, w.Body.String())
+			}
+		})
+	}
 }
 
 func (s *testStore) ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error) {
@@ -43,6 +70,7 @@ func TestInternalIngestSecurityAndValidation(t *testing.T) {
 		{"JSON inválido", "ingestas", `{`, "Bearer " + token, "", 400, 0},
 		{"dos documentos", "ingestas", `{} {}`, "Bearer " + token, "", 400, 0},
 		{"lote vacío", "ingestas", `{"sucursal_id":1,"productos":[]}`, "Bearer " + token, "", 400, 0},
+		{"clave inválida", "ingestas", `{"lote_id":"invalid","sucursal_id":1,"productos":[{"sku":"SKU"}]}`, "Bearer " + token, "", 400, 0},
 		{"trabajo fuera de dominio", "ingestas", `{"trabajo_id":"x","sucursal_id":1,"productos":[]}`, "Bearer " + token, "", 400, 0},
 		{"body excesivo", "ingestas", `{"productos":"` + strings.Repeat("x", MaxBodyBytes) + `"}`, "Bearer " + token, "", 413, 0},
 		{"ingesta válida", "ingestas", `{"sucursal_id":1,"productos":[{"sku":"SKU","producto":"Leche","precio_normal":1000,"en_stock":false}]}`, "Bearer " + token, "", 200, 1},
@@ -63,6 +91,20 @@ func TestInternalIngestSecurityAndValidation(t *testing.T) {
 				t.Fatalf("status=%d calls=%d body=%s", response.Code, store.calls, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestInternalBatchConflictIsControlled(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	token := strings.Repeat("t", 32)
+	r := gin.New()
+	Register(r, Config{Repository: &testStore{err: ErrIdempotencia}, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"lote_id":"00000000-0000-4000-8000-000000000270","sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "idempotency_conflict") {
+		t.Fatal(w.Code, w.Body.String())
 	}
 }
 

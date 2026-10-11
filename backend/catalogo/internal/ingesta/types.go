@@ -75,6 +75,7 @@ type IngestaResultadoDTO struct {
 
 // Request contiene únicamente referencias de Catálogo; ningún trabajo se escribe aquí.
 type Request struct {
+	LoteID     string                 `json:"lote_id,omitempty"`
 	SucursalID int                    `json:"sucursal_id"`
 	Productos  []ProductoScrapeadoDTO `json:"productos"`
 }

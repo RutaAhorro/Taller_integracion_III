@@ -2,15 +2,15 @@
 services:
   db:
     container_name: !reset null
-    ports: !reset []
+    ports: !override ["127.0.0.1:${SUP270_DB_PORT:-18078}:5432"]
     volumes: !override
       - pgdata:/var/lib/postgresql/data
       - ${SUP268_INIT_DIR:?}:/docker-entrypoint-initdb.d:ro
   redis:
     container_name: !reset null
-    ports: !reset []
+    ports: !override ["127.0.0.1:${SUP270_REDIS_PORT:-18079}:6379"]
   go_service:
-    image: sup269-api:local
+    image: ${SUP269_API_TEST_IMAGE:-sup269-api:local}
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
@@ -21,7 +21,7 @@ services:
     healthcheck:
       interval: 2s
   catalogo:
-    image: sup269-catalogo:local
+    image: ${SUP269_CATALOGO_TEST_IMAGE:-sup269-catalogo:local}
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]

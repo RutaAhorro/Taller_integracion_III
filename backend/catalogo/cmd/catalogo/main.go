@@ -48,8 +48,21 @@ func run(log *slog.Logger) error {
 	// El proceso puede arrancar durante una indisponibilidad de PostgreSQL;
 	// readiness impide aceptar tráfico hasta que la conexión funcione.
 	service := services.NewProductoService(repositories.NewProductoRepository(db))
+	ready := func(ctx context.Context) error {
+		if err := sqlDB.PingContext(ctx); err != nil {
+			return err
+		}
+		if cfg.InternalToken != "" {
+			rows, err := sqlDB.QueryContext(ctx, "SELECT id FROM scraper.lotes_catalogo LIMIT 0")
+			if err != nil {
+				return err
+			}
+			rows.Close()
+		}
+		return nil
+	}
 	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, cfg.JWTSecret, sqlDB.PingContext, log, cfg.CORSAllowedOrigins,
+		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
 			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,

@@ -5,6 +5,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/api/docs"
@@ -76,6 +78,11 @@ func initRedis() {
 }
 
 func setupRouter() (*gin.Engine, error) {
+	r, _, err := setupApplication()
+	return r, err
+}
+
+func setupApplication() (*gin.Engine, *scraping.Module, error) {
 	r := gin.New()
 
 	// Logger por defecto y Middleware Global de Errores
@@ -120,12 +127,12 @@ func setupRouter() (*gin.Engine, error) {
 	identidad := identity.New(DB, RDB)
 	coordinacion, err := scraping.New(DB, RDB)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	identidad.RegisterRoutes(v1)
 	coordinacion.RegisterRoutes(v1)
 
-	return r, nil
+	return r, coordinacion, nil
 }
 
 // RootHandler godoc
@@ -199,10 +206,19 @@ func main() {
 	initDB()
 	initRedis()
 
-	r, err := setupRouter()
+	r, coordinacion, err := setupApplication()
 	if err != nil {
 		log.Fatalf("Configuración de scraping inválida: %v", err)
 	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	storageCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	if err := coordinacion.VerifyStorage(storageCtx); err != nil {
+		cancel()
+		log.Fatal(err)
+	}
+	cancel()
+	coordinacion.Start(ctx)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -210,7 +226,17 @@ func main() {
 	}
 
 	log.Printf("Iniciando servidor en el puerto %s...", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Error al iniciar el servidor: %v", err)
+	server := &http.Server{Addr: ":" + port, Handler: r, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 60 * time.Second}
+	done := make(chan error, 1)
+	go func() { done <- server.ListenAndServe() }()
+	select {
+	case err := <-done:
+		if err != http.ErrServerClosed {
+			log.Printf("Error al iniciar el servidor: %v", err)
+		}
+	case <-ctx.Done():
+		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
 	}
 }

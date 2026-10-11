@@ -2,7 +2,7 @@
 
 ## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-Estado vigente SUP-269: Catálogo consulta y persiste productos/precios. Su API de ingesta requiere CATALOGO_INTERNAL_TOKEN; no accede a usuarios ni trabajos. Ver docs/Guias/GUIA_CATALOGO_INGESTA.md.
+Estado vigente SUP-270: Catálogo consulta y persiste productos/precios. Su ingesta privada requiere CATALOGO_INTERNAL_TOKEN y deduplica lote_id en scraper.lotes_catalogo, en la misma transacción que las capturas. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
 
 **24 archivos .go** detectados
 
@@ -53,10 +53,12 @@ Estado vigente SUP-269: Catálogo consulta y persiste productos/precios. Su API 
 ### `internal/ingesta/http_test.go` (package ingesta)
 
 - Structs: testStore
+- `TestInternalSQLDataErrorsArePermanentAndPrivate(t *testing.T)`
 - `(testStore).ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error)`
 - `(testStore).ObtenerSucursal(context.Context, int, *int, *string) (*SucursalSupermercado, error)`
 - `(testStore).IngestarLote(_ context.Context, input Request) (*IngestaResultadoDTO, error)`
 - `TestInternalIngestSecurityAndValidation(t *testing.T)`
+- `TestInternalBatchConflictIsControlled(t *testing.T)`
 - `TestInternalIngestClosedAndGenericError(t *testing.T)`
 
 ### `internal/ingesta/lote.go` (package ingesta)

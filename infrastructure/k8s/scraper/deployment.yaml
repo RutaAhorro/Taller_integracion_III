@@ -6,6 +6,8 @@ metadata:
   name: scraper
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: scraper
@@ -43,7 +45,18 @@ spec:
           value: redis://redis:6379/0
         - name: SCRAPER_API_URL
           value: http://api:8080/api/v1/scraper/productos
-        image: ghcr.io/danirc2024/taller_integracion_iii-scraper:develop
+        - name: SCRAPER_STATE_DIR
+          value: /var/lib/scraper
+        - name: SCRAPER_LEASE_MS
+          value: '60000'
+        - name: SCRAPER_STATE_MIN_FREE_BYTES
+          value: '67108864'
+        - name: SCRAPER_FAILED_RETENTION_SECONDS
+          value: '86400'
+        volumeMounts:
+        - name: scraper-state
+          mountPath: /var/lib/scraper
+        image: ghcr.io/danirc2024/taller_integracion_iii-scraper:develop-refactor
         imagePullPolicy: Always
         name: scraper
         resources:
@@ -53,3 +66,7 @@ spec:
           requests:
             cpu: 50m
             memory: 64Mi
+      volumes:
+      - name: scraper-state
+        persistentVolumeClaim:
+          claimName: scraper-state

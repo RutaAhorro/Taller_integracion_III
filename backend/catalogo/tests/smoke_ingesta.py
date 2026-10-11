@@ -56,8 +56,8 @@ if args.mode == 'normal':
     batch(args.gateway_url, '/api/v1/scraper/productos', [item('SUP269-STOCK', en_stock=False, precio=1000)])
     result = batch(args.gateway_url, '/api/v1/scraper/productos', [item('  ', producto='  '), item('SUP269-SKIP')])
     assert result['insertados'] == 1 and result['precios_registrados'] == 1 and len(result['errores']) == 1
-    result = batch(args.gateway_url, current + '/productos', [item('SUP269-ROLLBACK-FIRST'), item('SUP269-ROLLBACK-FAIL', producto='x' * 256)], 503)
-    assert result['codigo'] == 'catalogo_unavailable' and 'detalle' not in result
+    result = batch(args.gateway_url, current + '/productos', [item('SUP269-ROLLBACK-FIRST'), item('SUP269-ROLLBACK-FAIL', producto='x' * 256)], 400)
+    assert result['codigo'] == 'lote_rechazado' and 'detalle' not in result
     assert request(args.gateway_url, current)['elementos_extraidos'] == 2
     request(args.gateway_url, '/internal/v1/ingestas', 404, 'POST', {})
     batch(args.gateway_url, current + '/productos', [item('SUP269-NO-BRANCH')], 404, sucursal_id=999999)
