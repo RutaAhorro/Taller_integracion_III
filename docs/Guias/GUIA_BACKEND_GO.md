@@ -111,7 +111,7 @@ En el entorno de producción/staging en Kubernetes:
 La API expone documentación viva auto-generada compatible con OpenAPI 2.0 / 3.0:
 
 1. **Ruta en navegador:**
-   👉 `http://localhost:8080/swagger/index.html`
+   👉 `http://localhost:8082/swagger/index.html` (Gateway; Swagger lo sirve Control de scraping)
 
 2. **Actualización de Documentación:**
    Al agregar o modificar anotaciones `@Summary`, `@Tags`, `@Param` o `@Router` en `handlers/`, regenerar los archivos estáticos ejecutando en `backend/api/`:

@@ -215,7 +215,7 @@ def run_worker():
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
     client = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_timeout=5, socket_connect_timeout=5, socket_keepalive=True)
-    api_client = ScraperAPIClient(os.getenv("SCRAPER_API_URL", "http://localhost:8080/api/v1/scraper/productos"),
+    api_client = ScraperAPIClient(os.getenv("SCRAPER_API_URL", "http://localhost:8082/api/v1/scraper/productos"),
                                   timeout=float(os.getenv("SCRAPER_API_TIMEOUT", "30")))
     queue = ReliableQueue(client, lease_ms=int(os.getenv("SCRAPER_LEASE_MS", "60000")))
     state_dir = os.environ.setdefault("SCRAPER_STATE_DIR", "/var/lib/scraper")

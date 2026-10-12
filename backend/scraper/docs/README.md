@@ -19,14 +19,14 @@ La API y el worker se conectan mediante Redis. Primero se inicia el worker desde
 ```bash
 REDIS_URL=redis://localhost:6379/0 \
 SCRAPING_SERVICE_TOKEN="$SCRAPING_SERVICE_TOKEN" \
-SCRAPER_API_URL=http://localhost:8080/api/v1/scraper/productos \
+SCRAPER_API_URL=http://localhost:8082/api/v1/scraper/productos \
 .venv/bin/python -m scraper_core.worker
 ```
 
 En otra terminal, se registra y encola un trabajo:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/scraper/trabajos \
+curl -X POST http://localhost:8082/api/v1/scraper/trabajos \
 	-H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
 	-H "Content-Type: application/json" \
 	-d '{"cadena_id":1}'
@@ -35,7 +35,7 @@ curl -X POST http://localhost:8080/api/v1/scraper/trabajos \
 Con el `id` devuelto, se dispara el spider:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/scraper/trabajos/{ID}/ejecutar \
+curl -X POST http://localhost:8082/api/v1/scraper/trabajos/{ID}/ejecutar \
 	-H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
 	-H "Content-Type: application/json" \
 	-d '{"spider":"jumbo_rsc"}'
