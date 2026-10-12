@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/database"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/identity"
@@ -66,7 +67,7 @@ func run(log *slog.Logger) error {
 	select {
 	case err := <-done:
 		if !errors.Is(err, http.ErrServerClosed) {
-			return errors.New("no se pudo iniciar HTTP de Identidad")
+			return fmt.Errorf("no se pudo iniciar HTTP de Identidad: %w", err)
 		}
 	case <-ctx.Done():
 		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
