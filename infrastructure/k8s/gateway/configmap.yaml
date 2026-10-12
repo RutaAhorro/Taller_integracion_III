@@ -3,5 +3,4 @@ kind: ConfigMap
 metadata:
   name: gateway-config
 data:
-  # Set only the actual trusted ingress/frontend proxy IPs or CIDRs before cutover.
-  GATEWAY_TRUSTED_PROXIES: ""
+  GATEWAY_TRUSTED_PROXIES: "10.42.0.0/16,10.43.0.0/16,127.0.0.1"

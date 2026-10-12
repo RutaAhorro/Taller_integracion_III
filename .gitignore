@@ -4,6 +4,7 @@
 .env
 .env.*
 !.env.example
+docs/CREDENTIALS_CLUSTER.md
 
 # ===============================
 # Frontend (Node.js / React / Vite)
@@ -71,3 +72,4 @@ backend/motor_rutas/data/
 backend/control_scraping/tmp/
 backend/control_scraping/control_scraping
 backend/bot_discord/bot_discord
+backend/api/tmp/
