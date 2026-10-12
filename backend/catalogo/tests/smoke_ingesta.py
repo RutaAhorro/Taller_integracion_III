@@ -2,6 +2,7 @@
 import argparse
 import concurrent.futures
 import json
+import os
 import time
 from uuid import uuid4
 from pathlib import Path
@@ -16,9 +17,13 @@ parser.add_argument('--mode', choices=['normal', 'counter-failure', 'catalog-dow
 args = parser.parse_args()
 passed = 0
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def request(base, path, status=200, method='GET', data=None):
     global passed
-    headers = {'Content-Type': 'application/json', 'X-Request-ID': 'sup269-contract'}
+    headers = {'Content-Type': 'application/json', 'X-Request-ID': 'sup269-contract', **scraper_auth(path)}
     # SUP-270 permite 202 si recuperación tomó la lease antes del handler.
     # Repetir sólo ese lote con una clave estable y exigir resultado final 200;
     # las aserciones posteriores siguen exigiendo 12 capturas/contador exactos.

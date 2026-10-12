@@ -39,6 +39,8 @@ services:
       CATALOGO_INTERNAL_URL: http://catalogo:8080
       CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
       CATALOGO_INGEST_TIMEOUT: 10s
+      # Worker y bot lo envían como Bearer; sin él /api/v1/scraper/* responde 401.
+      SCRAPING_SERVICE_TOKEN: ${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
       SCRAPING_CORS_ALLOWED_ORIGINS: ${SCRAPING_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     depends_on:
       db: {condition: service_healthy}
@@ -232,6 +234,7 @@ services:
       - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID:-missing}
       - DISCORD_PUSH_CHANNEL_ID=${DISCORD_PUSH_CHANNEL_ID:-}
       - SCRAPER_API_BASE_URL=http://api:8080/api/v1/scraper/trabajos
+      - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
     depends_on:
       gateway:
         condition: service_healthy
@@ -257,6 +260,7 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - SCRAPER_API_URL=http://api:8080/api/v1/scraper/productos
+      - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
       - SCRAPER_STATE_DIR=/var/lib/scraper
       - SCRAPER_LEASE_MS=60000
       - SCRAPER_STATE_MIN_FREE_BYTES=67108864

@@ -34,6 +34,10 @@ spec:
             - name: CATALOGO_INTERNAL_TOKEN
               valueFrom:
                 secretKeyRef: {name: catalogo-internal-secret, key: token}
+            # Token de servicio exigido en /api/v1/scraper/* (worker y bot).
+            - name: SCRAPING_SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef: {name: scraping-service-secret, key: token}
           envFrom:
             - configMapRef: {name: control-scraping-config}
           securityContext:

@@ -13,6 +13,7 @@ import (
 func TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T) {
 	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
 	router, err := setupRouter()
 	if err != nil {
 		t.Fatal(err)

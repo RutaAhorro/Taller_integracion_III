@@ -53,9 +53,13 @@ def sql(query):
     return compose('exec', '-T', 'db', 'psql', '-U', 'sup268', '-d', 'sup268', '-At', '-v', 'ON_ERROR_STOP=1', input=query).strip()
 
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def request(path, data=None, status=200, method=None, key=None):
     global passed
-    headers = {'Content-Type': 'application/json', 'X-Request-ID': 'sup270-recovery'}
+    headers = {'Content-Type': 'application/json', 'X-Request-ID': 'sup270-recovery', **scraper_auth(path)}
     if key: headers['Idempotency-Key'] = key
     req = urllib.request.Request(args.gateway_url + path, data=None if data is None else json.dumps(data).encode(),
                                  method=method or ('POST' if data is not None else 'GET'), headers=headers)

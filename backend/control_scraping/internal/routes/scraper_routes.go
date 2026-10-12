@@ -7,9 +7,9 @@ import (
 )
 
 // RegistrarRutasScraper configura los endpoints de ingesta de datos y ciclo de vida de arañas
-// bajo el prefijo /api/v1/scraper
-func RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler) {
-	scraper := rg.Group("/scraper")
+// bajo el prefijo /api/v1/scraper. auth se aplica a todo el grupo (token de servicio).
+func RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler, auth ...gin.HandlerFunc) {
+	scraper := rg.Group("/scraper", auth...)
 	{
 		// Auditoría y ciclo de vida de arañas
 		scraper.POST("/trabajos", scraperHandler.IniciarTrabajo)

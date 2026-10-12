@@ -47,12 +47,16 @@ def sql(statement):
 def client():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}), urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def request(path, status=200, method='GET', data=None, opener=None, headers=None, base=None):
     global passed
     if base == identity_url: base = 'http://' + compose('port','identidad','8080').strip()
     req = urllib.request.Request((base or args.gateway_url)+path,method=method,
         data=json.dumps(data).encode() if data is not None else None,
-        headers={'Content-Type':'application/json',**(headers or {})})
+        headers={'Content-Type':'application/json',**scraper_auth(path),**(headers or {})})
     try: response = (opener or client()).open(req,timeout=15)
     except urllib.error.HTTPError as e: response = e
     with response:

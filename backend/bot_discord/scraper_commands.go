@@ -22,6 +22,31 @@ func getApiURL() string {
 	return url
 }
 
+// Control de scraping exige el token de servicio en todas sus rutas.
+var scraperHTTP = &http.Client{Timeout: 15 * time.Second}
+
+func scraperRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token := os.Getenv("SCRAPING_SERVICE_TOKEN"); token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return scraperHTTP.Do(req)
+}
+
+func scraperPost(url string, body io.Reader) (*http.Response, error) {
+	return scraperRequest(http.MethodPost, url, body)
+}
+
+func scraperGet(url string) (*http.Response, error) {
+	return scraperRequest(http.MethodGet, url, nil)
+}
+
 func sendScraperMenu(s *discordgo.Session, channelID string) {
 	msg := &discordgo.MessageSend{
 		Content: "🤖 **Menú de Scraping**\nSelecciona el supermercado que deseas scrapear:",
@@ -149,7 +174,7 @@ func handleScrapeStart(s *discordgo.Session, i *discordgo.InteractionCreate) {
 				"disparado_por_usuario_id": userID,
 			}
 			createBytes, _ := json.Marshal(createPayload)
-			resp, err := http.Post(getApiURL(), "application/json", bytes.NewBuffer(createBytes))
+			resp, err := scraperPost(getApiURL(), bytes.NewBuffer(createBytes))
 			if err != nil { continue }
 			
 			if resp.StatusCode == http.StatusCreated {
@@ -160,7 +185,7 @@ func handleScrapeStart(s *discordgo.Session, i *discordgo.InteractionCreate) {
 
 				startPayload := map[string]interface{}{ "spider": c.spider }
 				startBytes, _ := json.Marshal(startPayload)
-				respStart, errStart := http.Post(fmt.Sprintf("%s/%s/ejecutar", getApiURL(), trabajoID), "application/json", bytes.NewBuffer(startBytes))
+				respStart, errStart := scraperPost(fmt.Sprintf("%s/%s/ejecutar", getApiURL(), trabajoID), bytes.NewBuffer(startBytes))
 				if errStart == nil && respStart.StatusCode == http.StatusAccepted {
 					trabajosExitosos = append(trabajosExitosos, struct{ id string; nombre string }{id: trabajoID, nombre: c.nombre})
 					go monitorJobAndNotify(s, i.ChannelID, trabajoID, c.nombre, userID)
@@ -206,7 +231,7 @@ func handleScrapeStart(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 	createBytes, _ := json.Marshal(createPayload)
 
-	resp, err := http.Post(getApiURL(), "application/json", bytes.NewBuffer(createBytes))
+	resp, err := scraperPost(getApiURL(), bytes.NewBuffer(createBytes))
 	if err != nil {
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Error de red al crear trabajo para %s: %v", nombre, err),
@@ -233,7 +258,7 @@ func handleScrapeStart(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 	startBytes, _ := json.Marshal(startPayload)
 
-	respStart, err := http.Post(fmt.Sprintf("%s/%s/ejecutar", getApiURL(), trabajoID), "application/json", bytes.NewBuffer(startBytes))
+	respStart, err := scraperPost(fmt.Sprintf("%s/%s/ejecutar", getApiURL(), trabajoID), bytes.NewBuffer(startBytes))
 	if err != nil {
 		s.FollowupMessageCreate(i.Interaction, true, &discordgo.WebhookParams{
 			Content: fmt.Sprintf("❌ Error de red al iniciar spider %s: %v", spider, err),
@@ -277,7 +302,7 @@ func monitorJobAndNotify(s *discordgo.Session, channelID, trabajoID, nombre, use
 	for {
 		time.Sleep(5 * time.Second)
 
-		resp, err := http.Get(fmt.Sprintf("%s/%s", getApiURL(), trabajoID))
+		resp, err := scraperGet(fmt.Sprintf("%s/%s", getApiURL(), trabajoID))
 		if err != nil {
 			continue // reintentar
 		}
@@ -322,7 +347,7 @@ func handleRefresh(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	trabajoID := strings.TrimPrefix(customID, "refresh_")
 
 	// Obtener estado
-	resp, err := http.Get(fmt.Sprintf("%s/%s", getApiURL(), trabajoID))
+	resp, err := scraperGet(fmt.Sprintf("%s/%s", getApiURL(), trabajoID))
 	if err != nil {
 		s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 			Type: discordgo.InteractionResponseChannelMessageWithSource,

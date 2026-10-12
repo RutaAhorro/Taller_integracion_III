@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/handlers"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/routes"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
@@ -19,6 +20,7 @@ import (
 type Module struct {
 	db      *gorm.DB
 	handler *handlers.ScraperHandler
+	auth    gin.HandlerFunc
 	recover func(context.Context)
 	queue   *services.QueueService
 	close   func() error
@@ -27,6 +29,10 @@ type Module struct {
 
 func New(db *gorm.DB, rdb *redis.Client) (*Module, error) {
 	token := os.Getenv("CATALOGO_INTERNAL_TOKEN")
+	serviceToken := os.Getenv("SCRAPING_SERVICE_TOKEN")
+	if err := middleware.ValidarTokenServicio(serviceToken, token); err != nil {
+		return nil, err
+	}
 	timeout := 10 * time.Second
 	if raw := os.Getenv("CATALOGO_INGEST_TIMEOUT"); raw != "" {
 		var err error
@@ -45,7 +51,7 @@ func New(db *gorm.DB, rdb *redis.Client) (*Module, error) {
 	queue := services.NewQueueService(repositories.NewEjecucionRepository(db), publisher)
 	handler := handlers.NewScraperHandler(service, rdb)
 	handler.SetQueue(queue)
-	return &Module{db: db, handler: handler, queue: queue, close: publisher.Close, recover: service.(interface{ Recuperar(context.Context) }).Recuperar}, nil
+	return &Module{db: db, handler: handler, auth: middleware.RequireServiceToken(serviceToken), queue: queue, close: publisher.Close, recover: service.(interface{ Recuperar(context.Context) }).Recuperar}, nil
 }
 
 func (m *Module) VerifyStorage(ctx context.Context) error {
@@ -124,5 +130,5 @@ func (m *Module) Wait(ctx context.Context) error {
 }
 
 func (m *Module) RegisterRoutes(group *gin.RouterGroup) {
-	routes.RegistrarRutasScraper(group, m.handler)
+	routes.RegistrarRutasScraper(group, m.handler, m.auth)
 }
