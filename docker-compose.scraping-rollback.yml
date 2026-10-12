@@ -1,0 +1,11 @@
+# SUP-273 -> SUP-272: misma propiedad de datos, restaurar imagen y modo legacy de Gateway.
+services:
+  control_scraping:
+    image: ${SUP273_LEGACY_API_IMAGE:?Define una imagen aprobada de API SUP-272}
+    build: !reset null
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+  gateway:
+    environment:
+      SCRAPING_URL: ''
+      BACKEND_URL: http://control_scraping:8080

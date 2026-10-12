@@ -7,7 +7,7 @@ on:
       - develop
       - develop-refactor
     paths:
-      - 'backend/api/**'
+      - 'backend/control_scraping/**'
       - 'backend/identidad/**'
       - 'backend/catalogo/**'
       - 'backend/gateway/**'
@@ -19,7 +19,7 @@ on:
 env:
   REGISTRY: ghcr.io
   # GitHub convierte automáticamente esto al formato: ghcr.io/danirc2024/taller_integracion_iii
-  IMAGE_NAME_API: ${{ github.repository }}-api
+  IMAGE_NAME_CONTROL_SCRAPING: ${{ github.repository }}-control-scraping
   IMAGE_NAME_IDENTIDAD: ${{ github.repository }}-identidad
   IMAGE_NAME_CATALOGO: ${{ github.repository }}-catalogo
   IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
@@ -69,24 +69,31 @@ jobs:
           tags: ${{ steps.meta-gateway.outputs.tags }}
           labels: ${{ steps.meta-gateway.outputs.labels }}
 
-      # ==== BUILD API ====
-      - name: Extract metadata for API
-        id: meta-api
+      # ==== BUILD CONTROL DE SCRAPING ====
+      - name: Extract metadata for Control de scraping
+        id: meta-control-scraping
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_CONTROL_SCRAPING }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=sha
 
-      - name: Build and push API image
+      - name: Test Control de scraping image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend/api
+          context: ./backend/control_scraping
+          target: test
+          push: false
+
+      - name: Build and push Control de scraping image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/control_scraping
           push: true
-          tags: ${{ steps.meta-api.outputs.tags }}
-          labels: ${{ steps.meta-api.outputs.labels }}
+          tags: ${{ steps.meta-control-scraping.outputs.tags }}
+          labels: ${{ steps.meta-control-scraping.outputs.labels }}
 
       # ==== BUILD IDENTIDAD ====
       - name: Extract metadata for Identidad

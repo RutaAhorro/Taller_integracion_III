@@ -1,15 +1,15 @@
-# Gateway — SUP-264 a SUP-272
+# Gateway — SUP-264 a SUP-273
 
 Servicio Go independiente que enruta productos y administración de productos a
-Catálogo, autenticación a Identidad y scraping a la API. No incluye reglas de negocio.
+Catálogo, autenticación a Identidad y scraping a Control de scraping. No incluye reglas de negocio.
 La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
 
 ## Ejecutar
 
-Requiere Go 1.26 y un backend en ejecución. Desde `backend/gateway`:
+Requiere Go 1.26 y los servicios de dominio en ejecución. Desde `backend/gateway`:
 
 ```bash
-BACKEND_URL=http://127.0.0.1:8080 CATALOGO_URL=http://127.0.0.1:8083 IDENTIDAD_URL=http://127.0.0.1:8084 go run ./cmd/gateway
+SCRAPING_URL=http://127.0.0.1:8080 CATALOGO_URL=http://127.0.0.1:8083 IDENTIDAD_URL=http://127.0.0.1:8084 go run ./cmd/gateway
 ```
 
 Escucha por defecto en el puerto 8082. Para validar localmente:
@@ -25,12 +25,13 @@ curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 `/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
 Las rutas `/api/v1/productos` y `/api/v1/admin/productos`, con sus subrutas, se
 envían a Catálogo para todos los métodos. `/api/v1/auth` y sus subrutas se envían
-a Identidad; el resto se envía a la API. No se
-normalizan rutas ni se hace fallback entre destinos. En `/api/v1/health`, verificar también los
+a Identidad. `/api/v1/scraper/*`, health, raíz y Swagger se envían a Control.
+En modo final no hay API residual; rutas ajenas/probes privados devuelven 404.
+No se normalizan rutas ni se hace fallback entre destinos. En `/api/v1/health`, verificar también los
 campos de PostgreSQL y Redis: SQL fallido produce 503, pero Redis degradado puede
-convivir con API lista por su outbox SQL.
+convivir con Control listo por su outbox SQL.
 
-`/_gateway/dependencies` consulta en paralelo la salud de la API, Catálogo e Identidad,
+`/_gateway/dependencies` consulta en paralelo la salud de Control, Catálogo e Identidad,
 con un límite común y sin seguir redirects. Responde 503 si alguno falla. Este
 diagnóstico no es el readiness probe: retirar Gateway porque falla un dominio
 impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
@@ -39,7 +40,8 @@ impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
 
 | Variable | Valor por defecto | Uso |
 |---|---|---|
-| `BACKEND_URL` | Obligatoria | Origen HTTP/HTTPS, por ejemplo `http://127.0.0.1:8080`; sin credenciales, prefijo de ruta, query o fragmento |
+| `SCRAPING_URL` | Vacío en modo legado; configurada en despliegue final | Origen de Control; sin credenciales, ruta, query o fragmento |
+| `BACKEND_URL` | Obligatoria sólo sin SCRAPING_URL | Origen HTTP/HTTPS, por ejemplo `http://127.0.0.1:8080`; sin credenciales, prefijo de ruta, query o fragmento |
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; vacío sólo para rollback con una API anterior a SUP-268 que conserve el lector |
 | `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad; vacío sólo para rollback con API anterior a SUP-272 |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección de escucha; usar `127.0.0.1:8082` para restringirla a la máquina local |
@@ -54,7 +56,7 @@ impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
 
 Los timeouts deben ser duraciones positivas de Go, como `500ms` o `30s`. Una
 configuración inválida impide el arranque. El servidor también limita la lectura
-del request completo al tiempo configurado de solicitud. No apuntar `BACKEND_URL`
+del request completo al tiempo configurado de solicitud. No apuntar un upstream
 a la propia Gateway. Los HTTPS del backend conservan verificación TLS; las
 conexiones internas no usan automáticamente el proxy de salida de la máquina.
 
@@ -139,8 +141,8 @@ añaden filesystem de solo lectura, recursos y probes. Gateway no recibe secreto
 JWT, acceso Redis ni credenciales PostgreSQL.
 
 Los clientes usan `api:8080`. Desde SUP-268, Gateway reenvía consultas de productos
-a `catalogo:8080`; autenticación/scraping van a `go_service:8080` en Compose y
-`api-backend:8080` en Kubernetes. API ya no contiene el lector de Catálogo.
+a `catalogo:8080`; Identidad y Control de scraping tienen sus upstreams propios.
+La API heredada está retirada. Consultar la guía SUP-273 para el corte y rollback.
 
 La [guía de SUP-268](../../docs/Guias/GUIA_CATALOGO_ENRUTAMIENTO.md)
 describe configuración, pruebas aisladas, orden de activación y rollback.
@@ -161,3 +163,5 @@ IP de Gateway reservada fuera del rango dinámico. Identidad confía únicamente
 en esa IP para conservar el cliente real y su contador de login. En Kubernetes,
 configurar proxies reales y NetworkPolicy antes del corte. Procedimiento:
 `docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`.
+
+Estado final y operación: [SUP-273](../../docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md).

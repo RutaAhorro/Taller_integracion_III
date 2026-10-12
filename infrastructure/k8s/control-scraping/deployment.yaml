@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control-scraping
+  labels: {app: control-scraping}
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: control-scraping}
+  template:
+    metadata:
+      labels: {app: control-scraping}
+    spec:
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: control-scraping
+          image: ghcr.io/danirc2024/taller_integracion_iii-control-scraping:develop-refactor
+          imagePullPolicy: Always
+          ports:
+            - {name: http, containerPort: 8080}
+          env:
+            - {name: PORT, value: '8080'}
+            - name: SCRAPING_DB_URL
+              valueFrom:
+                secretKeyRef: {name: scraping-db-secret, key: DB_URL}
+            - {name: REDIS_URL, value: 'redis://redis:6379/0'}
+            - {name: CATALOGO_INTERNAL_URL, value: 'http://catalogo:8080'}
+            - {name: CATALOGO_INGEST_TIMEOUT, value: '10s'}
+            - name: CATALOGO_INTERNAL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: catalogo-internal-secret, key: token}
+          envFrom:
+            - configMapRef: {name: control-scraping-config}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          startupProbe:
+            # Ejecutar dentro del contenedor evita depender del filtrado host -> pod del CNI.
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "1", "http://127.0.0.1:8080/_scraping/live"]
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "1", "http://127.0.0.1:8080/_scraping/live"]
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "2", "http://127.0.0.1:8080/_scraping/ready"]
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}

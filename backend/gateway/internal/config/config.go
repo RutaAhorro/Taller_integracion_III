@@ -15,6 +15,7 @@ type Config struct {
 	Backend               *url.URL
 	Catalogo              *url.URL
 	Identidad             *url.URL
+	Scraping              *url.URL
 	RequestTimeout        time.Duration
 	DialTimeout           time.Duration
 	ResponseHeaderTimeout time.Duration
@@ -40,9 +41,17 @@ func Load(getenv func(string) string) (Config, error) {
 		return c, fmt.Errorf("GATEWAY_LISTEN_ADDR must have a port between 1 and 65535")
 	}
 
-	c.Backend, err = parseOrigin("BACKEND_URL", getenv("BACKEND_URL"))
-	if err != nil {
-		return c, err
+	if value := getenv("SCRAPING_URL"); value != "" {
+		c.Scraping, err = parseOrigin("SCRAPING_URL", value)
+		if err != nil {
+			return c, err
+		}
+	}
+	if value := getenv("BACKEND_URL"); value != "" || c.Scraping == nil {
+		c.Backend, err = parseOrigin("BACKEND_URL", value)
+		if err != nil {
+			return c, err
+		}
 	}
 	// Empty is an explicit legacy mode for rollback with a pre-cutover API image.
 	if value := getenv("CATALOGO_URL"); value != "" {

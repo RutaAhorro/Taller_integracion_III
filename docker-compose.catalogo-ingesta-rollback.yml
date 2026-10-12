@@ -1,15 +1,20 @@
 # SUP-269: restaurar el escritor SQL de API sin cambiar el enrutamiento de SUP-268.
 # La imagen debe ser la de SUP-268, con lector retirado e ingesta SQL presente.
 services:
-  go_service:
+  control_scraping:
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
     image: ${SUP269_LEGACY_API_IMAGE:?Define la imagen de API de SUP-268 para rollback de ingesta}
     build: !reset null
     environment:
+      JWT_SECRET: ${JWT_SECRET:?}
       # El escritor anterior necesita permisos sobre trabajos y Catálogo.
       DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
   gateway:
     environment:
+      SCRAPING_URL: ''
+      BACKEND_URL: http://control_scraping:8080
       IDENTIDAD_URL: ''
     depends_on: !override
-      go_service: {condition: service_healthy}
+      control_scraping: {condition: service_healthy}
       catalogo: {condition: service_healthy}

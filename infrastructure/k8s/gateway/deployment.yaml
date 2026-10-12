@@ -28,8 +28,8 @@ spec:
             - name: http
               containerPort: 8080
           env:
-            - name: BACKEND_URL
-              value: http://api-backend:8080
+            - name: SCRAPING_URL
+              value: http://control-scraping:8080
             - name: CATALOGO_URL
               value: http://catalogo:8080
             - name: IDENTIDAD_URL

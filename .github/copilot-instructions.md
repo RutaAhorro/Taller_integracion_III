@@ -11,7 +11,10 @@ frontend/web/       → React 19 + Vite + TypeScript (Accesible vía Zapto)
 backend/bot_discord/→ Go Discord Bot (Se conecta a la API K8s)
 
 === Clúster Kubernetes UCT ===
-backend/api/        → Go 1.26 + Gin + GORM (API Gateway, expuesto vía Ingress/Port-Forward)
+backend/gateway/    → Go 1.26, proxy público sin SQL
+backend/identidad/  → Go 1.26 + Gin + GORM, usuarios/login/SSO
+backend/catalogo/   → Go 1.26 + Gin + GORM, productos/precios/ingesta
+backend/control_scraping/ → Go 1.26 + Gin + GORM, trabajos/outboxes/coordinar worker
 backend/scraper/    → Python + Scrapy (Standby worker)
 PostgreSQL / Redis  → Pods dedicados en el clúster
 ```
@@ -23,7 +26,8 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - `api.*`: usuarios, categorías, marcas, productos_normalizados, recetas, misiones_validacion, mapeos_productos_ia
 - `scraper.*`: cadenas_supermercado, sucursales (geolocalización), trabajos_scraper, productos_crudos, capturas_precios
 - `rutas.*`: listas_compras, articulos_lista_compras, ejecuciones_optimizacion, paradas_optimizacion, detalle_articulos_parada
-- Modelos GORM: `backend/api/infrastructure/models.go` (23 modelos)
+- Modelos GORM privados por dominio; no hay modelos globales ni biblioteca que reúna servicios.
+- SUP-273 retira backend/api. Consultar docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.
 - DDL SQL: `infrastructure/db/` (init.sql, 01_schema_api.sql, 02_schema_scraper.sql, 03_schema_rutas.sql)
 
 ## Convenciones de Git (OBLIGATORIO)

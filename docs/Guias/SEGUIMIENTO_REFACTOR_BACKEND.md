@@ -318,3 +318,76 @@ Identidad construida desde el Dockerfile real, Swagger/workflows/sintaxis/diff
 comprobados. Los recursos temporales se eliminaron. No se desplegó en el clúster
 ni se verificó allí el CNI o el HPA; Google real desde navegador sigue fuera de
 esta comprobación. Las cifras anteriores corresponden a la validación inicial.
+
+
+## SUP-273: extracción final de Control de scraping
+
+SUP-272 se integró por squash `45aed821b76cd3179092fe9b686671da7700f05b` en
+PR #99. La rama `backend/refactor/sup-273-extraer-coordinacion-scraping-vmatus`
+parte de ese HEAD de develop-refactor. El usuario autorizó completar la tarea,
+hacer commit/push y abrir PR con revisión de Renato, Dani y Esban.
+
+El último dominio de backend/api pasa a backend/control_scraping. Tiene módulo,
+cmd/control_scraping, imagen, despliegue, HPA y probes propios. Se retira el
+servidor API heredado y sus modelos globales/utilidades sin uso. El seeder de
+productos se conserva como comando de desarrollo de Catálogo, sin modificar
+permisos runtime ni ejecutarlo contra datos de la sesión.
+
+Gateway usa SCRAPING_URL sin BACKEND_URL en modo final; enruta las rutas scraper,
+health, raíz y Swagger. Control caído devuelve 502/504 sin fallback. Se conservan
+los alias de diagnóstico previos y se bloquean los probes privados desde la
+entrada pública. BACKEND_URL y las imágenes históricas se usan sólo para rollback.
+Los overrides restauran expresamente probes, DSN y JWT de las imágenes antiguas.
+Service/api permanece como alias de Gateway; se retiran Deployment/HPA/api y
+Service/api-backend de los manifiestos nuevos. No borrar Service/api en el clúster.
+
+Control conserva todas las correcciones de recuperación/idempotencia de SUP-270/271
+sin migración de tablas, nombres de cola, claves de lote ni spools. Sólo recibe
+app_scraping (pool 5), Redis y token de Catálogo; no recibe JWT_SECRET, DSN de
+Identidad ni Google. Catálogo conserva la comprobación token interno distinto de
+JWT. El worker continúa sin acceso SQL. HPA Control 1–4, CPU 70%, requests
+100m/64Mi y límites 500m/256Mi; el presupuesto total de pools sigue en 80 al máximo.
+
+CORS allowlist, cuerpo 8MiB, contextos/timeouts acotados, logs correlacionados y
+500 sin trazas para fallos internos. Redis requiere URL válida sin fallback;
+su caída de red puede degradarse manteniendo readiness SQL y outbox durable.
+SIGTERM drena HTTP y termina los dos loops antes de cerrar sus conexiones.
+Runtime no root/read-only; los tres probes Kubernetes son exec por loopback.
+No se amplía la NetworkPolicy a todo el namespace o a CIDRs de nodos.
+
+Validación Go: 533 resultados unitarios (81 Control, 201 Gateway, 108 Catálogo,
+143 Identidad); race/vet aprobados en los tres módulos modificados. Identidad
+se comprueba también en modo readonly durante la validación de las nuevas
+instrucciones de instalación. Una prueba del publisher omitida en el suite
+unitario se ejecutó explícitamente con PostgreSQL real: 534 resultados Go
+incluyendo esa integración, sin paquetes fallidos pendientes.
+
+El harness completo pasó 563 comprobaciones funcionales (530 HTTP y 33 exec de
+probes), 118 controles SQL por rol y los rollbacks de las etapas anteriores.
+Tras los últimos ajustes de Swagger/headers se construyó la imagen de Control
+desde su Dockerfile real y pasó nuevamente su tramo: 47 comprobaciones HTTP y
+18 probes, incluido un chequeo adicional de Swagger. Estas corridas se solapan;
+no se suman como si fueran pruebas diferentes. Tres procesos de Control recibieron
+18 entregas simultáneas del mismo lote: una captura, un contador y confirmación
+final por Gateway; Identidad/Catálogo/Gateway no se recrearon al escalar Control.
+
+Veinticinco pruebas Python del worker aprobadas. Veintisiete recursos Kubernetes
+válidos; workflows, Compose, sintaxis, Swagger
+y diff comprobados. Gateway se probó con binario nuevo sobre runtime verificado;
+su builder completo queda para CI. Se conservaron TLS y sumas en descargas. Los
+intentos iniciales detectaron permiso del binario del runtime local y un campo
+renombrado accidentalmente en el seeder; ambos se corrigieron y se revalidaron.
+Los recursos efímeros se eliminaron, conservando DB/Redis originales y stashes.
+No se desplegó en el clúster ni se probó allí CNI/HPA; tampoco Google real desde
+navegador, scraping externo o Discord. No se publicaron imágenes durante el test.
+
+Guía operativa final: GUIA_CONTROL_SCRAPING_DESACOPLADO.md. El borrador de entorno
+actualiza install_script/start_skill para los módulos nuevos, conservando el
+flujo de ramas anteriores, configuraciones y credenciales existentes. Se verifican
+los comandos Go del nuevo bloque y el arranque funcional mediante el harness;
+el guardado del borrador no publica una nueva versión del entorno.
+
+Esta tarea completa la extracción de los tres dominios planificados. Autorización
+propia del worker, quotas/reglas nuevas, refresh/revocación, firma asimétrica e
+IA/rutas siguen siendo backlog de producto/hardening, sin ampliar este PR.
+La autorización de publicación no incluye merge ni despliegue universitario.

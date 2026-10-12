@@ -5,7 +5,7 @@ on:
     branches: [main, develop, develop-refactor]
     paths:
       - 'backend/catalogo/**'
-      - 'backend/api/**'
+      - 'backend/control_scraping/**'
       - 'infrastructure/db/**'
       - 'docker-compose.catalogo-test.yml'
       - 'scripts/smoke_catalogo_compose.sh'
@@ -14,7 +14,7 @@ on:
     branches: [develop-refactor]
     paths:
       - 'backend/catalogo/**'
-      - 'backend/api/**'
+      - 'backend/control_scraping/**'
       - 'infrastructure/db/**'
       - 'docker-compose.catalogo-test.yml'
       - 'scripts/smoke_catalogo_compose.sh'

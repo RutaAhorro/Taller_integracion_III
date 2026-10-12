@@ -5,8 +5,8 @@ SUP-271 parte del merge aprobado de SUP-270 (`42b6ca4`, PR #97) en
 runtime y quita las referencias SQL que cruzaban desde trabajos a otros dominios.
 No crea bases nuevas: la separación corresponde al propietario de cada tabla.
 
-SUP-272 conserva esta propiedad de datos y separa Identidad en un proceso propio.
-Ver `GUIA_IDENTIDAD_DESACOPLADA.md` para el corte, IP real y rollback.
+SUP-272 separa Identidad; SUP-273 conserva estos mismos grants y extrae Control.
+Ver `GUIA_CONTROL_SCRAPING_DESACOPLADO.md` para la arquitectura final y rollback.
 
 ## Arquitectura vigente
 
@@ -14,9 +14,8 @@ Ver `GUIA_IDENTIDAD_DESACOPLADA.md` para el corte, IP real y rollback.
 flowchart LR
     Clientes[Frontend, bot y worker] --> Gateway
     Gateway -->|auth| Identidad[Identidad: servicio]
-    Gateway -->|scraper| API[API de coordinación]
+    Gateway -->|scraper| Scraping[Control de scraping: servicio]
     Gateway -->|productos y admin/productos| Catalogo[Catálogo]
-    API --> Scraping[Coordinación: módulo privado]
     Identidad -->|app_identity| Usuarios[(api.usuarios)]
     Scraping -->|app_scraping| Trabajos[(Trabajos y outboxes)]
     Scraping -->|HTTP + token interno| Catalogo
@@ -31,8 +30,8 @@ nombres físicos heredados; `scraper` contiene tanto tablas de Catálogo como de
 coordinación. Un esquema no equivale automáticamente a un servicio. No se copian
 datos ni se introducen vistas compartidas, joins externos o entidades comunes.
 
-Identidad tiene proceso, imagen, Deployment y HPA propios en SUP-272. La API
-conserva coordinación hasta SUP-273. Cada uno recibe sólo su credencial SQL;
+Identidad, Catálogo y Control tienen proceso, imagen, Deployment y HPA propios.
+La API heredada se retiró en SUP-273. Cada uno recibe sólo su credencial SQL;
 no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 
 ## Matriz de runtime

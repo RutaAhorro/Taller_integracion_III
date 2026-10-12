@@ -34,6 +34,12 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"IDENTIDAD_URL", "http://user:password@identidad:8080"},
 		{"IDENTIDAD_URL", "http://identidad:8080/api/v1/auth"},
 		{"IDENTIDAD_URL", "http://identidad:70000"},
+		{"SCRAPING_URL", "ftp://control:8080"},
+		{"SCRAPING_URL", "http://user:password@control:8080"},
+		{"SCRAPING_URL", "http://control:8080/api"},
+		{"SCRAPING_URL", "http://control:8080?token=private"},
+		{"SCRAPING_URL", "http://control:8080#fragment"},
+		{"SCRAPING_URL", "http://control:70000"},
 		{"CATALOGO_URL", "ftp://catalogo:8080"},
 		{"CATALOGO_URL", "http://user:password@catalogo:8080"},
 		{"CATALOGO_URL", "http://catalogo:8080/api"},
@@ -65,6 +71,14 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 				t.Fatalf("error exposes supplied credentials: %v", err)
 			}
 		})
+	}
+}
+
+func TestFinalTopologyDoesNotRequireLegacyBackend(t *testing.T) {
+	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080"}
+	c, err := Load(func(key string) string { return env[key] })
+	if err != nil || c.Backend != nil || c.Scraping == nil || c.Identidad == nil || c.Catalogo == nil {
+		t.Fatalf("topología final inválida: %v %v", c, err)
 	}
 }
 
