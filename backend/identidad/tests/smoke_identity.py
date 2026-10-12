@@ -178,6 +178,21 @@ for name,expected in [('a'*99+'ñ'+'z','a'*99+'ñ'), ('áéíóúñ'*20,('áéí
     assert body['nombre_completo']==expected
     assert sql("SELECT nombre_completo FROM api.usuarios WHERE correo='sup272.profile@example.test';")==expected
 request('/api/v1/admin/productos',403,opener=registered)
+# Cambiar contraseña o correo exige la contraseña actual (una cookie robada no basta).
+request('/api/v1/auth/me',403,method='PUT',data={'password':'Sup272NewPassword123!'},opener=registered)
+request('/api/v1/auth/me',403,method='PUT',data={'correo':'sup272.hijack@example.test','current_password':'WrongPassword123!'},opener=registered)
+assert sql("SELECT count(*) FROM api.usuarios WHERE correo='sup272.hijack@example.test';")=='0'
+request('/api/v1/auth/me',method='PUT',data={'password':'Sup272NewPassword123!','current_password':'Sup272FixturePassword123!'},opener=registered)
+reset_login_counters()
+request('/api/v1/auth/login',method='POST',data={'correo':'sup272.profile@example.test','password':'Sup272NewPassword123!'})
+# Los inicios de sesión correctos no consumen el límite: un NAT compartido no bloquea a usuarios legítimos.
+reset_login_counters()
+for _ in range(8): request('/api/v1/auth/login',method='POST',data={'correo':'admin.sup267@example.test','password':'Sup267FixturePassword123!'})
+assert compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:login:*').split()==[] or all(
+    compose('exec','-T','redis','redis-cli','--raw','GET',key).strip()=='0' for key in compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:login:*').split())
+# Registro y Google también quedan limitados por IP.
+assert compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:register:*').split(), 'registro sin rate limit'
+assert compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:google:*').split(), 'Google sin rate limit'
 # Real SSO row: password nil cannot panic at local login.
 sql("INSERT INTO api.usuarios(correo,nombre_completo,google_id,password_hash,rol,esta_activo,cuota_tokens_ia) VALUES ('sup272.sso@example.test','SSO Fixture','google-fixture',NULL,'registrado',true,1000);")
 reset_login_counters()

@@ -20,7 +20,22 @@ if n == 1 or redis.call('PTTL', KEYS[1]) < 0 then
 end
 return n`)
 
+// Devuelve el intento de una respuesta exitosa sin recrear una clave ya expirada.
+var refundAttempt = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 1 and tonumber(redis.call('GET', KEYS[1])) > 0 then
+ return redis.call('DECR', KEYS[1])
+end
+return 0`)
+
+// RateLimiterIP cuenta todas las peticiones por IP (registro, Google).
 func RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc {
+	return rateLimiter(rdb, prefijo, maxIntentos, ventana, false)
+}
+
+// rateLimiter incrementa antes del handler para que la cuenta sea atómica bajo
+// concurrencia. Con soloFallidos, una respuesta 2xx devuelve su intento: varios
+// usuarios legítimos tras un mismo NAT no se bloquean por iniciar sesión bien.
+func rateLimiter(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration, soloFallidos bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if rdb == nil {
 			httperrors.ResponderError(c, 500, "Servicio temporalmente no disponible", errors.New("rate limiter no configurado"))
@@ -35,12 +50,30 @@ func RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana
 			return
 		}
 		if attempts > maxIntentos {
-			httperrors.ResponderError(c, http.StatusTooManyRequests, "Demasiados intentos de acceso. Por favor, espere 15 minutos antes de volver a intentar.", errors.New("límite de peticiones excedido (máximo 5 intentos cada 15 minutos)"))
+			httperrors.ResponderError(c, http.StatusTooManyRequests, "Demasiados intentos de acceso. Por favor, espere 15 minutos antes de volver a intentar.", fmt.Errorf("límite de peticiones excedido (máximo %d cada %s)", maxIntentos, ventana))
 			return
 		}
 		c.Next()
+		if soloFallidos && c.Writer.Status() >= 200 && c.Writer.Status() < 300 {
+			refundCtx, refundCancel := context.WithTimeout(context.Background(), time.Second)
+			defer refundCancel()
+			_ = refundAttempt.Run(refundCtx, rdb, []string{key}).Err()
+		}
 	}
 }
+
+// RateLimitLogin: 5 intentos fallidos por IP cada 15 minutos.
 func RateLimitLogin(rdb *redis.Client) gin.HandlerFunc {
-	return RateLimiterIP(rdb, "login", 5, 15*time.Minute)
+	return rateLimiter(rdb, "login", 5, 15*time.Minute, true)
+}
+
+// RateLimitRegistro limita registros por IP: bcrypt cuesta CPU y el 409 permite
+// enumerar correos. Holgado para una clase registrándose tras el mismo NAT.
+func RateLimitRegistro(rdb *redis.Client) gin.HandlerFunc {
+	return RateLimiterIP(rdb, "register", 30, 15*time.Minute)
+}
+
+// RateLimitGoogle limita la verificación de tokens Google por IP.
+func RateLimitGoogle(rdb *redis.Client) gin.HandlerFunc {
+	return RateLimiterIP(rdb, "google", 30, 15*time.Minute)
 }

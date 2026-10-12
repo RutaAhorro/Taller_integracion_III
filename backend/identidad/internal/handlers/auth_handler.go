@@ -20,13 +20,12 @@ type RegistroRequest struct {
 
 // RegistroResponse DTO de salida sin exponer credenciales
 type RegistroResponse struct {
-	ID                string `json:"id" example:"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"`
-	Correo            string `json:"correo" example:"usuario.test@uct.cl"`
-	NombreCompleto    string `json:"nombre_completo" example:"Vicente Matu"`
-	Rol               string `json:"rol" example:"registrado"`
-	EstaActivo        bool   `json:"esta_activo" example:"true"`
-	TokenVerificacion string `json:"token_verificacion" example:"f81d4fae-7dec-11d0-a765-00a0c91e6bf6"`
-	Mensaje           string `json:"mensaje" example:"Usuario registrado con éxito. Se requiere confirmar el correo electrónico antes de iniciar sesión."`
+	ID             string `json:"id" example:"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"`
+	Correo         string `json:"correo" example:"usuario.test@uct.cl"`
+	NombreCompleto string `json:"nombre_completo" example:"Vicente Matu"`
+	Rol            string `json:"rol" example:"registrado"`
+	EstaActivo     bool   `json:"esta_activo" example:"true"`
+	Mensaje        string `json:"mensaje" example:"Usuario registrado con éxito."`
 }
 
 // LoginRequest DTO de entrada para autenticación de usuario
@@ -110,13 +109,12 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 	c.SetCookie("jwt", tokenString, 86400, "/", "", h.secureCookie, true)
 
 	c.JSON(http.StatusCreated, RegistroResponse{
-		ID:                creado.ID.String(),
-		Correo:            creado.Correo,
-		NombreCompleto:    creado.NombreCompleto,
-		Rol:               creado.Rol,
-		EstaActivo:        creado.EstaActivo,
-		TokenVerificacion: creado.TokenVerificacion.String(),
-		Mensaje:           creado.Mensaje,
+		ID:             creado.ID.String(),
+		Correo:         creado.Correo,
+		NombreCompleto: creado.NombreCompleto,
+		Rol:            creado.Rol,
+		EstaActivo:     creado.EstaActivo,
+		Mensaje:        creado.Mensaje,
 	})
 }
 
@@ -239,6 +237,8 @@ func (h *AuthHandler) ActualizarPerfil(c *gin.Context) {
 			middleware.ResponderError(c, http.StatusConflict, err.Error(), err)
 		case errors.Is(err, services.ErrUsuarioNoEncontrado):
 			middleware.ResponderError(c, http.StatusNotFound, err.Error(), err)
+		case errors.Is(err, services.ErrReautenticacionRequerida):
+			middleware.ResponderError(c, http.StatusForbidden, err.Error(), err)
 		default:
 			middleware.ResponderError(c, http.StatusInternalServerError, "Error interno al actualizar perfil.", err)
 		}
