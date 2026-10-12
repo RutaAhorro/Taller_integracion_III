@@ -17,7 +17,7 @@ ingesta_reference_ref="${SUP269_REFERENCE_REF:-b465d0ad278830a47a0c84a532e7d3f8a
 compose() {
   env -u DB_USER -u DB_PASSWORD -u DB_NAME -u JWT_SECRET -u GOOGLE_CLIENT_ID \
     -u CATALOGO_CORS_ALLOWED_ORIGINS -u GATEWAY_TRUSTED_PROXIES -u SUP268_READER_PASSWORD \
-    -u CATALOGO_INTERNAL_TOKEN -u SUP269_COORDINATOR_PASSWORD \
+    -u CATALOGO_INTERNAL_TOKEN -u SCRAPING_SERVICE_TOKEN -u SUP269_COORDINATOR_PASSWORD \
     -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD \
     -u IDENTIDAD_EDGE_SUBNET -u IDENTIDAD_EDGE_RANGE -u IDENTIDAD_GATEWAY_IP -u IDENTIDAD_CORS_ALLOWED_ORIGINS -u IDENTIDAD_COOKIE_SECURE \
     docker compose --project-name "$test_project" --env-file "$test_env" \
@@ -69,10 +69,11 @@ cp "$repo_root/backend/catalogo/tests/fixtures.sql" "$SUP268_INIT_DIR/zz_sup268_
 python3 - "$test_env" <<'PY'
 from pathlib import Path
 import secrets, sys
-password, reader, jwt, internal, coordinator, identity = (secrets.token_hex(24) for _ in range(6))
+password, reader, jwt, internal, coordinator, identity, service = (secrets.token_hex(24) for _ in range(7))
 p = Path(sys.argv[1])
 p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_SECRET=' + jwt +
     '\nCATALOGO_DB_PASSWORD=' + reader + '\nCATALOGO_INTERNAL_TOKEN=' + internal +
+    '\nSCRAPING_SERVICE_TOKEN=' + service +
     '\nSCRAPING_DB_PASSWORD=' + coordinator + '\nIDENTITY_DB_PASSWORD=' + identity +
     '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
     'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
@@ -81,6 +82,9 @@ p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_
 p.chmod(0o600)
 PY
 chmod 644 "$SUP268_INIT_DIR"/*.sql
+# Los smokes llaman /api/v1/scraper/* como lo haría el worker: con el token de servicio.
+SCRAPING_SERVICE_TOKEN=$(sed -n 's/^SCRAPING_SERVICE_TOKEN=//p' "$test_env")
+export SCRAPING_SERVICE_TOKEN
 chmod 755 "$SUP268_INIT_DIR/07_runtime_credentials.sh"
 source_ca="${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
 if [[ ! -s "$source_ca" ]]; then echo 'SUP268_CA_BUNDLE debe ser un bundle CA no vacío.' >&2; exit 1; fi

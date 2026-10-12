@@ -13,6 +13,8 @@ import (
 func TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T) {
 	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
+	t.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
 	router, err := setupRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -47,4 +49,33 @@ func TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T) {
 			}
 		}
 	}
+}
+
+// SUP-274: sin habilitarlo explícitamente, el contrato no se publica.
+func TestSwaggerDisabledByDefault(t *testing.T) {
+	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
+	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
+	for _, value := range []string{"", "false"} {
+		t.Run("valor "+value, func(t *testing.T) {
+			t.Setenv("SCRAPING_SWAGGER_ENABLED", value)
+			router, err := setupRouter()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range []string{"/swagger/doc.json", "/swagger/index.html"} {
+				response := httptest.NewRecorder()
+				router.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
+				if response.Code != 404 {
+					t.Fatalf("%s publicado sin habilitar: %d", path, response.Code)
+				}
+			}
+		})
+	}
+	t.Run("valor inválido", func(t *testing.T) {
+		t.Setenv("SCRAPING_SWAGGER_ENABLED", "yes")
+		if _, err := setupRouter(); err == nil {
+			t.Fatal("un valor ambiguo debe impedir el arranque")
+		}
+	})
 }

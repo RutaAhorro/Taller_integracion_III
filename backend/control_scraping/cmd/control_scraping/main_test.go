@@ -14,6 +14,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
 	t.Setenv("CATALOGO_INGEST_TIMEOUT", "")
 	router, err := setupRouter()
 	if err != nil {
@@ -51,6 +52,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+testServiceToken)
 			if tc.cookie != "" {
 				req.AddCookie(&http.Cookie{Name: "jwt", Value: tc.cookie})
 			}

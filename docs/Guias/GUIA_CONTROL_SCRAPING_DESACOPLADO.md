@@ -91,10 +91,22 @@ sano: el trabajo puede permanecer durable hasta que se recupere Redis.
 
 CORS usa `SCRAPING_CORS_ALLOWED_ORIGINS`, con orígenes HTTP(S) exactos. Rechaza un
 Origin ajeno antes de ejecutar handlers y conserva Idempotency-Key en preflight.
-Vacío admite clientes sin Origin y bloquea navegadores de otros sitios. No se
-añade una nueva autorización a las rutas de scraping: conservan su política
-de acceso existente. Permisos de usuario, cuotas y credencial propia del worker
-requieren una tarea de hardening con migración coordinada de clientes.
+Vacío admite clientes sin Origin y bloquea navegadores de otros sitios.
+
+Todas las rutas `/api/v1/scraper/*` exigen `Authorization: Bearer
+<SCRAPING_SERVICE_TOKEN>`. Gateway es público (por `api-ingress` y por
+`frontend-ingress` en `/api/v1`), así que sin este token cualquiera podía crear
+trabajos, lanzar spiders, cerrar trabajos ajenos o inyectar precios que Control
+entrega a Catálogo con su token interno. Sus únicos clientes son el worker y el
+bot; el frontend no consume estas rutas. Control compara hashes SHA-256 en
+tiempo constante, responde 401 con `WWW-Authenticate` y no arranca si el token
+está vacío, tiene menos de 32 caracteres, contiene espacios o coincide con
+`CATALOGO_INTERNAL_TOKEN`. Los probes no lo exigen. Swagger publica el contrato
+completo, así que sólo se sirve con `SCRAPING_SWAGGER_ENABLED=true` (Compose local
+y CI); en Kubernetes el ConfigMap lo deja en `false` y `/swagger` responde 404.
+Cualquier otro valor impide el arranque. El worker (incluidos
+los procesos Scrapy que lanza) y el bot leen el mismo `SCRAPING_SERVICE_TOKEN`.
+Permisos por usuario y cuotas siguen fuera de alcance.
 
 Errores internos, panics y errores del contexto devuelven 500 genérico, sin
 trazas SQL. Se registran localmente con slog y X-Request-ID; los logs HTTP usan
@@ -131,7 +143,13 @@ Gateway no tiene pool SQL. Las réplicas del worker conservan su política propi
 Orden de corte para el operador:
 
 1. Registrar imágenes inmutables aprobadas, comprobar roles/grants de SUP-271,
-   Secrets existentes y orígenes reales del frontend.
+   Secrets existentes y orígenes reales del frontend. Provisionar el Secret
+   `scraping-service-secret` (clave `token`) antes del rollout: Control, worker
+   y bot lo referencian y no arrancan sin él. Igual que `catalogo-internal-secret`,
+   no se versiona; crearlo desde un archivo privado
+   (`kubectl create secret generic scraping-service-secret --from-file=token=<archivo>`)
+   con un valor de `openssl rand -hex 32` distinto del token interno de Catálogo.
+   Desplegar Control junto con worker y bot: una versión sin token recibe 401.
 2. Aplicar los manifiestos de Control y verificar readiness, permisos y conectividad
    interna desde Gateway. Conservar temporalmente API SUP-272 durante este paso.
 3. Actualizar Gateway con SCRAPING_URL y retirar BACKEND_URL. Verificar el flujo

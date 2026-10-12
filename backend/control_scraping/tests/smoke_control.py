@@ -42,6 +42,10 @@ def sql(statement):
                    '-v', 'ON_ERROR_STOP=1', '-tA', '-c', statement).strip()
 
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def client():
     return urllib.request.build_opener(urllib.request.ProxyHandler({}),
         urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
@@ -52,7 +56,7 @@ def request(path, status=200, method='GET', data=None, opener=None, headers=None
     base = 'http://' + compose('port', 'control_scraping', '8080').strip() if direct else args.gateway_url
     req = urllib.request.Request(base+path, method=method,
         data=json.dumps(data).encode() if data is not None else None,
-        headers={'Content-Type': 'application/json', **(headers or {})})
+        headers={'Content-Type': 'application/json', **scraper_auth(path), **(headers or {})})
     try:
         response = (opener or client()).open(req, timeout=15)
     except urllib.error.HTTPError as e:
@@ -103,6 +107,11 @@ for origin in ['https://evil.example', 'null', 'https://frontend.example.evil.te
     _, headers = request('/api/v1/scraper/trabajos', 403, method='POST', data={'cadena_id': 1},
                          headers={'Origin': origin})
     assert headers.get('Access-Control-Allow-Origin') is None
+for invalid in ('', 'Bearer ' + 'x' * 48, os.environ['SCRAPING_SERVICE_TOKEN']):
+    for direct in (False, True):
+        _, headers = request('/api/v1/scraper/trabajos', 401, method='POST', data={'cadena_id': 1},
+                             headers={'Authorization': invalid}, direct=direct)
+        assert headers.get('WWW-Authenticate', '').startswith('Bearer')
 _, headers = request('/api/v1/scraper/trabajos', 204, method='OPTIONS',
     headers={'Origin': 'https://frontend.example'})
 assert headers.get('Access-Control-Allow-Origin') == 'https://frontend.example'
@@ -166,7 +175,7 @@ with tempfile.TemporaryDirectory(dir=Path(args.env_file).parent) as private_dir:
         def deliver(index):
             base = args.gateway_url if index is None else replica_urls[index % 3]
             req = urllib.request.Request(base+path+'/productos', method='POST',
-                headers={'Content-Type': 'application/json', 'Idempotency-Key': key},
+                headers={'Content-Type': 'application/json', 'Idempotency-Key': key, **scraper_auth(path)},
                 data=json.dumps(payload).encode())
             try:
                 response = client().open(req, timeout=20)

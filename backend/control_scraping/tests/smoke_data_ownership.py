@@ -57,11 +57,15 @@ def runtime(role, statement, success=True):
     return result.stdout.strip()
 
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def http(method, path, payload=None, status=200, headers=None, base=None):
     global http_passed
     req = urllib.request.Request((base or args.gateway_url) + path, method=method,
                                  data=json.dumps(payload).encode() if payload is not None else None,
-                                 headers={'Content-Type': 'application/json', **(headers or {})})
+                                 headers={'Content-Type': 'application/json', **scraper_auth(path), **(headers or {})})
     try:
         response = urllib.request.build_opener(urllib.request.ProxyHandler({})).open(req, timeout=20)
     except urllib.error.HTTPError as error:

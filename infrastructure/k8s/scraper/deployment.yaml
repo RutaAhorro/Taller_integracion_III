@@ -45,6 +45,11 @@ spec:
           value: redis://redis:6379/0
         - name: SCRAPER_API_URL
           value: http://api:8080/api/v1/scraper/productos
+        - name: SCRAPING_SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: scraping-service-secret
+              key: token
         - name: SCRAPER_STATE_DIR
           value: /var/lib/scraper
         - name: SCRAPER_LEASE_MS

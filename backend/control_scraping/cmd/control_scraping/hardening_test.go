@@ -10,6 +10,7 @@ func TestScrapingCORSRejectsBeforeBusinessHandler(t *testing.T) {
 	t.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
 	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
+	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
 	r, err := setupRouter()
 	if err != nil {
 		t.Fatal(err)
@@ -25,6 +26,7 @@ func TestScrapingCORSRejectsBeforeBusinessHandler(t *testing.T) {
 			req := httptest.NewRequest("POST", "/api/v1/scraper/trabajos", strings.NewReader(`{}`))
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer "+testServiceToken)
 			response := httptest.NewRecorder()
 			r.ServeHTTP(response, req)
 			if response.Code != tc.status {

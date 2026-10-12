@@ -80,7 +80,7 @@ JOBDIR = os.getenv("SCRAPY_JOBDIR")
 # See https://docs.scrapy.org/en/latest/topics/item-pipeline.html
 SCRAPER_API_URL = os.getenv(
 	"SCRAPER_API_URL",
-	"http://localhost:8080/api/v1/scraper/productos",
+	"http://localhost:8082/api/v1/scraper/productos",
 )
 SCRAPER_API_TIMEOUT = float(os.getenv("SCRAPER_API_TIMEOUT", "30"))
 SCRAPER_API_BATCH_SIZE = int(os.getenv("SCRAPER_API_BATCH_SIZE", "100"))

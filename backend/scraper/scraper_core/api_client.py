@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, HTTPRedirectHandler, build_opener
 
@@ -24,12 +25,26 @@ class ScraperAPIError(RuntimeError):
 
 
 class ScraperAPIClient:
-    """Cliente HTTP síncrono para enviar lotes al API Gateway."""
+    """Cliente HTTP síncrono para enviar lotes al API Gateway.
 
-    def __init__(self, endpoint: str, timeout: float = 30.0, opener=None):
+    Control de scraping exige un token de servicio (Bearer). Si no se entrega
+    explícitamente, se toma de SCRAPING_SERVICE_TOKEN, que el worker hereda a
+    los procesos de Scrapy.
+    """
+
+    def __init__(self, endpoint: str, timeout: float = 30.0, opener=None, token: str | None = None):
         self.endpoint = endpoint.rstrip("/")
         self.timeout = timeout
         self.opener = opener or build_opener(NoRedirect()).open
+        self.token = token if token is not None else os.getenv("SCRAPING_SERVICE_TOKEN", "")
+
+    def _headers(self, content_type: bool = True) -> dict:
+        headers = {"Accept": "application/json"}
+        if content_type:
+            headers["Content-Type"] = "application/json"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        return headers
 
     def ingest_batch(
         self,
@@ -56,10 +71,7 @@ class ScraperAPIClient:
         request = Request(
             endpoint,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             method="POST",
         )
 
@@ -121,10 +133,7 @@ class ScraperAPIClient:
         request = Request(
             endpoint,
             data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-            },
+            headers=self._headers(),
             method="PUT",
         )
         try:
@@ -162,7 +171,7 @@ class ScraperAPIClient:
 
     def get_work(self, work_id: str) -> dict:
         endpoint = self.endpoint.removesuffix("/productos")
-        request = Request(f"{endpoint}/trabajos/{work_id}", headers={"Accept": "application/json"})
+        request = Request(f"{endpoint}/trabajos/{work_id}", headers=self._headers(content_type=False))
         try:
             with self.opener(request, timeout=self.timeout) as response:
                 result = json.loads(response.read().decode("utf-8"))

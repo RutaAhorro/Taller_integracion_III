@@ -3,6 +3,7 @@ import argparse
 import concurrent.futures
 import http.cookiejar
 import json
+import os
 import urllib.error
 import urllib.request
 import uuid
@@ -25,8 +26,12 @@ def admin_session():
     jar.load(ignore_discard=True, ignore_expires=True)
     return client(jar)
 
+# Control exige el token de servicio que usan worker y bot (SCRAPING_SERVICE_TOKEN).
+def scraper_auth(path):
+    return {'Authorization': 'Bearer ' + os.environ['SCRAPING_SERVICE_TOKEN']} if '/api/v1/scraper' in path else {}
+
 def request(base, path, status=200, method='GET', data=None, opener=None, headers=None):
-    headers = dict(headers or {})
+    headers = {**scraper_auth(path), **(headers or {})}
     if data is not None:
         headers['Content-Type'] = 'application/json'
     req = urllib.request.Request(base + path, method=method, headers=headers,
