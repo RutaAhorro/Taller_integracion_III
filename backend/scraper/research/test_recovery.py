@@ -173,6 +173,24 @@ class RecoveryTest(unittest.TestCase):
         migrate_one(Redis(),api,apply=True)
         self.assertEqual(sent[0].get_header('Authorization'),'Bearer '+'s'*32)
 
+    def test_rejected_credential_keeps_job_pending_and_logs_error(self):
+        # 401/403 suele ser configuración (Secret ausente o rotado): no se descarta el
+        # trabajo, se registra un error visible y se reanuda al corregir el token.
+        for status in (401, 403):
+            acks, finalized = [], []
+            queue = SimpleNamespace(heartbeat=lambda _: nullcontext(threading.Event()), ack=lambda *a: acks.append(a))
+            api = SimpleNamespace(finalize_work=lambda *a, **kw: finalized.append(a))
+            message = ("1-0", {"payload": json.dumps({"trabajo_id": self.id})})
+            with patch("scraper_core.worker.process_job", side_effect=ScraperAPIError("rechazado", status=status)),                     self.assertLogs("scraper_core.worker", "ERROR") as logs:
+                handle_message(queue, message, api)
+            self.assertEqual((acks, finalized), ([], []))
+            self.assertIn("SCRAPING_SERVICE_TOKEN", logs.output[0])
+
+    def test_worker_refuses_to_start_without_service_token(self):
+        from scraper_core.worker import run_worker
+        with patch.dict(os.environ, {"SCRAPING_SERVICE_TOKEN": ""}), self.assertRaises(SystemExit):
+            run_worker()
+
     def test_legacy_api_acceptance_does_not_prove_durable_queue(self):
         raw=json.dumps({'trabajo_id':self.id,'spider':'jumbo_rsc'})
         class Redis:

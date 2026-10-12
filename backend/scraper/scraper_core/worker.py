@@ -205,6 +205,11 @@ def handle_message(queue, message, api_client):
                 if not (isinstance(error, ScraperAPIError) and error.status == 404):
                     api_client.finalize_work(work_id, "fallido", error_message="Trabajo enviado a revisión; consultar spool y entregas")
                 queue.ack(message_id, raw, work_id, reason="attempts_exhausted" if isinstance(error, CrawlExhausted) else "delivery_rejected")
+            elif isinstance(error, ScraperAPIError) and error.status in (401, 403):
+                # No es permanente: descartar el trabajo perdería todo lo pendiente por un
+                # error de configuración. Se conserva y se reanuda al corregir el token.
+                logger.error("worker_auth_rejected trabajo_id=%s status=%s: revisar SCRAPING_SERVICE_TOKEN",
+                             work_id, error.status)
             else:
                 logger.warning("worker_delivery_pending trabajo_id=%s", work_id)
         except (RuntimeError, OSError, sqlite3.Error):
@@ -213,6 +218,8 @@ def handle_message(queue, message, api_client):
 
 def run_worker():
     logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+    if not os.getenv("SCRAPING_SERVICE_TOKEN"):
+        raise SystemExit("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
     client = Redis.from_url(os.getenv("REDIS_URL", "redis://localhost:6379/0"), decode_responses=True,
                             socket_timeout=5, socket_connect_timeout=5, socket_keepalive=True)
     api_client = ScraperAPIClient(os.getenv("SCRAPER_API_URL", "http://localhost:8082/api/v1/scraper/productos"),
