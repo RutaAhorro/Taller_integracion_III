@@ -9,13 +9,15 @@ services:
   redis:
     container_name: !reset null
     ports: !override ["127.0.0.1:${SUP270_REDIS_PORT:-18079}:6379"]
-  go_service:
-    image: ${SUP269_API_TEST_IMAGE:-sup272-api:local}
+  control_scraping:
+    image: ${SUP269_API_TEST_IMAGE:-sup273-control:local}
     build:
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     container_name: !reset null
     ports: !override ["127.0.0.1:${SUP268_API_PORT:-18080}:8080"]
+    environment:
+      SCRAPING_CORS_ALLOWED_ORIGINS: https://frontend.example,http://localhost:3000
     healthcheck:
       interval: 2s
   identidad:
@@ -36,7 +38,7 @@ services:
     healthcheck:
       interval: 2s
   gateway:
-    image: sup272-gateway:local
+    image: sup273-gateway:local
     ports: !override ["127.0.0.1:${SUP268_GATEWAY_PORT:-18082}:8080"]
     healthcheck:
       interval: 2s
@@ -71,7 +73,7 @@ services:
       retries: 30
   reference_ingesta_api:
     # Sólo se construye para probar el rollback de SUP-269. No se inicia como
-    # servicio auxiliar: el override asigna esta imagen a go_service.
+    # servicio auxiliar: el override asigna esta imagen a control_scraping.
     image: sup268-api:local
     build:
       context: ${SUP269_REFERENCE_API_DIR:?}
@@ -82,14 +84,14 @@ services:
     # Imagen SUP-270: rollback de conexiones de SUP-271, sólo en el harness.
     image: sup270-api:local
     build:
-      context: ${SUP271_REFERENCE_API_DIR:-./backend/api}
+      context: ${SUP271_REFERENCE_API_DIR:-./backend/control_scraping}
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     profiles: [reference-build]
   reference_identity_api:
     image: sup271-api:reference
     build:
-      context: ${SUP272_REFERENCE_API_DIR:-./backend/api}
+      context: ${SUP272_REFERENCE_API_DIR:-./backend/control_scraping}
       network: ${SUP268_BUILD_NETWORK:-default}
       secrets: [network_ca]
     environment:
@@ -109,6 +111,13 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
+  reference_control_api:
+    image: sup272-api:reference
+    build:
+      context: ${SUP273_REFERENCE_API_DIR:-./backend/control_scraping}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
 secrets:
   network_ca:
     file: ${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

@@ -143,9 +143,9 @@ sql("CREATE FUNCTION scraper.sup270_counter_failure() RETURNS trigger LANGUAGE p
 assert request(path(work) + '/productos', payload, 409, key=key)['catalogo_confirmado'] is True
 assert captures('SUP270-COUNTER-RECOVERY') == 1
 assert request(path(work) + '/finalizar', {'estado':'completado'}, 409, 'PUT')['codigo'] == 'entregas_pendientes'
-compose('stop', 'go_service')
+compose('stop', 'control_scraping')
 sql('DROP TRIGGER sup270_counter_failure ON scraper.trabajos_scraper; DROP FUNCTION scraper.sup270_counter_failure();')
-compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'go_service')
+compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'control_scraping')
 wait_for(lambda: sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'confirmada')
 assert request(path(work))['elementos_extraidos'] == 1
 assert captures('SUP270-COUNTER-RECOVERY') == 1
@@ -156,8 +156,8 @@ work, key = job(), str(uuid4())
 compose('stop', 'catalogo')
 request(path(work) + '/productos', batch('SUP270-CATALOG-RECOVERY'), (503,504), key=key)
 assert sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'pendiente'
-compose('restart', 'go_service')
-compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo', 'go_service')
+compose('restart', 'control_scraping')
+compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo', 'control_scraping')
 wait_for(lambda: sql("SELECT estado FROM scraper.entregas_ingesta WHERE id='" + key + "';") == 'confirmada')
 assert captures('SUP270-CATALOG-RECOVERY') == 1
 assert request(path(work))['elementos_extraidos'] == 1
@@ -201,7 +201,7 @@ go_env = dict(os.environ)
 go_env['SUP270_PUBLISHER_TEST_DB_URL'] = ('postgres://app_scraping:' + test_env['SCRAPING_DB_PASSWORD'] +
     '@127.0.0.1:' + os.getenv('SUP270_DB_PORT', '18078') + '/sup268?sslmode=disable')
 subprocess.run(['go', 'test', '-race', '-count=1', '-run', '^TestPublisherStalledRedisAllowsJobFinalization$', '-v',
-                './internal/scraping/internal/repositories'], cwd=root/'backend/api', env=go_env, check=True)
+                './internal/repositories'], cwd=root/'backend/control_scraping', env=go_env, check=True)
 
 # Cola SQL aceptada durante caída de Redis y reconstruida tras pérdida total.
 work = job()
@@ -215,7 +215,7 @@ compose('up', '-d', '--wait', '--wait-timeout', '90', 'redis')
 redis = Redis.from_url('redis://127.0.0.1:' + os.getenv('SUP270_REDIS_PORT','18079'), decode_responses=True)
 wait_for(lambda: redis.xlen(QUEUE_NAME) == 1)
 redis.flushdb()  # Sólo Redis propio del proyecto efímero.
-compose('restart', 'go_service')
+compose('restart', 'control_scraping')
 wait_for(lambda: redis.xlen(QUEUE_NAME) == 1)
 
 # Recuperación por lease; propietario antiguo no puede renovar ni hacer ACK.
@@ -239,7 +239,7 @@ assert second.ack(message_id,message[1]['payload'],work,'lease_review')
 assert redis.xpending(QUEUE_NAME,GROUP)['pending'] == 0 and redis.xlen(DEAD_LETTER) == 1
 assert sql("SELECT count(*) FROM scraper.entregas_trabajos WHERE trabajo_id='" + work + "';") == '0'
 # El publisher que conservaba una lectura anterior no recrea el mensaje tras ACK.
-source = (root/'backend/api/internal/scraping/internal/repositories/job_publisher.go').read_text()
+source = (root/'backend/control_scraping/internal/repositories/job_publisher.go').read_text()
 publish_script = re.search(r'var publishJob = redis.NewScript\(`(.*?)`\)', source, re.S).group(1)
 assert redis.ttl(JOB_CLOSED_PREFIX + work) > 86000
 assert redis.eval(publish_script, 3, QUEUE_NAME, 'scraper:jobs:index', JOB_CLOSED_PREFIX + work, work, message[1]['payload']) is None
@@ -349,13 +349,13 @@ assert redis.xpending(QUEUE_NAME,GROUP)['pending']==0
 assert sql("SELECT has_table_privilege('app_scraping','scraper.lotes_catalogo','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_ingesta','SELECT') OR has_table_privilege('app_catalogo','scraper.entregas_trabajos','SELECT');")=='f'
 # Tablas ausentes: ambos binarios impiden arrancar antes de exponer HTTP.
 catalog_logs_before = len(compose('logs', '--no-color', 'catalogo'))
-compose('stop', 'go_service', 'catalogo')
+compose('stop', 'control_scraping', 'catalogo')
 sql('ALTER TABLE scraper.entregas_ingesta RENAME TO sup270_restore_ingesta; ALTER TABLE scraper.lotes_catalogo RENAME TO sup270_restore_catalogo;')
-compose('up', '-d', '--no-deps', 'go_service', 'catalogo')
-wait_for(lambda: 'aplicar 05_recuperacion_scraping.sql' in compose('logs', '--no-color', 'go_service'))
+compose('up', '-d', '--no-deps', 'control_scraping', 'catalogo')
+wait_for(lambda: 'aplicar 05_recuperacion_scraping.sql' in compose('logs', '--no-color', 'control_scraping'))
 wait_for(lambda: 'catalogo_storage_invalid' in compose('logs', '--no-color', 'catalogo')[catalog_logs_before:])
-compose('stop', 'go_service', 'catalogo')
+compose('stop', 'control_scraping', 'catalogo')
 sql('ALTER TABLE scraper.sup270_restore_ingesta RENAME TO entregas_ingesta; ALTER TABLE scraper.sup270_restore_catalogo RENAME TO lotes_catalogo;')
-compose('up','-d','--no-deps','--wait','--wait-timeout','90','go_service','catalogo')
+compose('up','-d','--no-deps','--wait','--wait-timeout','90','control_scraping','catalogo')
 request('/health')
 print(json.dumps({'task':'SUP-270','http_checks':passed,'recovery_scenarios':18,'failed':0}))

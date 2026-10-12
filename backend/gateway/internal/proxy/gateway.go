@@ -54,6 +54,9 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		if upstream == "catalogo" {
 			unavailableMessage, timeoutMessage = "Catálogo no está disponible.", "Catálogo no respondió a tiempo."
 		}
+		if upstream == "scraping" {
+			unavailableMessage, timeoutMessage = "Control de scraping no está disponible.", "Control de scraping no respondió a tiempo."
+		}
 		return &httputil.ReverseProxy{
 			Transport: methodTransport{reads: reads, writes: writes},
 			Rewrite: func(pr *httputil.ProxyRequest) {
@@ -99,7 +102,13 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			},
 		}
 	}
-	backendProxy := newProxy(c.Backend, "backend")
+	var backendProxy, scrapingProxy *httputil.ReverseProxy
+	if c.Backend != nil {
+		backendProxy = newProxy(c.Backend, "backend")
+	}
+	if c.Scraping != nil {
+		scrapingProxy = newProxy(c.Scraping, "scraping")
+	}
 	var catalogProxy *httputil.ReverseProxy
 	if c.Catalogo != nil {
 		catalogProxy = newProxy(c.Catalogo, "catalogo")
@@ -171,11 +180,28 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			identityProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if catalogProxy != nil && isCatalogPath(r.URL.Path) {
 			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
-		} else {
+		} else if scrapingProxy != nil && isScrapingPath(r.URL.Path) {
+			scrapingProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else if backendProxy != nil {
 			backendProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else {
+			response.Header().Set("Content-Type", "application/json; charset=utf-8")
+			response.WriteHeader(http.StatusNotFound)
+			_ = json.NewEncoder(response).Encode(map[string]any{"estado": 404, "mensaje": "La ruta o recurso solicitado no existe."})
 		}
 	})
 	return &Gateway{handler: handler, reads: reads, writes: writes}
+}
+
+func isScrapingPath(path string) bool {
+	if path == "/api/v1/scraper" || strings.HasPrefix(path, "/api/v1/scraper/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") {
+		return true
+	}
+	switch path {
+	case "/", "/health", "/health/", "/api/v1/health", "/api/v1/health/":
+		return true
+	}
+	return false
 }
 
 func isIdentityPath(path string) bool {

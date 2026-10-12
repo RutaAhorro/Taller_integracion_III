@@ -41,7 +41,11 @@ func dependencyChecks(ctx context.Context, client *http.Client, c config.Config,
 		}
 		results <- checks
 	}
-	go probe(c.Backend, "/api/v1/health", "backend", map[string]string{"database": "database", "redis": "redis"})
+	if c.Scraping != nil {
+		go probe(c.Scraping, "/_scraping/ready", "scraping", map[string]string{"database": "scraping_database", "redis": "scraping_redis"})
+	} else {
+		go probe(c.Backend, "/api/v1/health", "backend", map[string]string{"database": "database", "redis": "redis"})
+	}
 	count := 1
 	if c.Catalogo != nil {
 		count++
@@ -57,6 +61,10 @@ func dependencyChecks(ctx context.Context, client *http.Client, c config.Config,
 		for key, value := range <-results {
 			checks[key] = value
 		}
+	}
+	// Alias de diagnóstico conservados para clientes anteriores al corte.
+	if c.Scraping != nil {
+		checks["backend"], checks["database"], checks["redis"] = checks["scraping"], checks["scraping_database"], checks["scraping_redis"]
 	}
 	return checks
 }

@@ -199,14 +199,14 @@ request('/api/v1/auth/login',429,method='POST',data={'correo':'unknown@example.t
 assert int(compose('exec','-T','redis','redis-cli','PTTL',keys[0])) > 0, 'Una clave sin TTL quedó bloqueada para siempre'
 reset_login_counters()
 # Otro contenedor de Compose no es Gateway y no puede falsificar su IP.
-result=subprocess.run(compose_args+['exec','-T','go_service','wget','-S','-O','/dev/null',
+result=subprocess.run(compose_args+['exec','-T','control_scraping','wget','-S','-O','/dev/null',
     '--header','Content-Type: application/json','--header','X-Forwarded-For: 203.0.113.99',
     '--post-data',json.dumps({'correo':'unknown@example.test','password':'WrongPassword123!'}),
     'http://identidad:8080/api/v1/auth/login'],env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
 assert result.returncode != 0 and re.search(r'HTTP/1\.1 401\b',result.stderr), result.stderr
 passed += 1
 assert compose('exec','-T','redis','redis-cli','--raw','GET','rate_limit:login:203.0.113.99').strip() == ''
-api_id=compose('ps','-q','go_service').strip()
+api_id=compose('ps','-q','control_scraping').strip()
 api_inspect=json.loads(subprocess.run(['docker','inspect',api_id],check=True,text=True,stdout=subprocess.PIPE).stdout)[0]
 api_ips={v['IPAddress'] for v in api_inspect['NetworkSettings']['Networks'].values()}
 assert any(compose('exec','-T','redis','redis-cli','--raw','GET','rate_limit:login:'+ip).strip() == '1' for ip in api_ips)
@@ -265,19 +265,19 @@ try:
     body,_=request('/_gateway/dependencies',503); assert body['checks']['backend']=='ok' and body['checks']['catalogo']=='ok' and body['checks']['identidad']=='error'
 finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad')
 request('/api/v1/auth/me',opener=new_client)
-compose('stop','go_service')
+compose('stop','control_scraping')
 try:
     request('/api/v1/auth/me',opener=new_client)
     request('/api/v1/admin/productos',opener=new_client)
     request('/_gateway/ready')
     body,_=request('/_gateway/dependencies',503); assert body['checks']['identidad']=='ok' and body['checks']['backend']=='error'
-finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','go_service')
+finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','control_scraping')
 
 # Independent replicas: only Identity is recreated/scaled; sessions survive.
-api_state,gateway_state=state('go_service'),state('gateway')
+api_state,gateway_state=state('control_scraping'),state('gateway')
 compose('up','-d','--no-deps','--scale','identidad=3','--wait','--wait-timeout','90','identidad')
 assert len(compose('ps','-q','identidad').split())==3
-assert state('go_service')==api_state and state('gateway')==gateway_state
+assert state('control_scraping')==api_state and state('gateway')==gateway_state
 for _ in range(12): request('/api/v1/auth/me',opener=new_client)
 reset_login_counters()
 def concurrent_login(_):
@@ -294,14 +294,14 @@ compose('up','-d','--no-deps','--scale','identidad=1','--wait','--wait-timeout',
 
 # Rollback to approved SUP-271 requires old image plus DSN and route switch.
 env['SUP272_LEGACY_API_IMAGE'] = 'sup271-api:reference'
-compose('-f',str(root/'docker-compose.identidad-rollback.yml'),'up','-d','--no-deps','--wait','--wait-timeout','90','go_service','gateway')
+compose('-f',str(root/'docker-compose.identidad-rollback.yml'),'up','-d','--no-deps','--wait','--wait-timeout','90','control_scraping','gateway')
 compose('stop','identidad')
 try:
     request('/api/v1/auth/me',opener=new_client)
     request('/api/v1/admin/productos',opener=new_client)
     request('/api/v1/auth/register',201,method='POST',data={'correo':'sup272.rollback@example.test','password':'Sup272FixturePassword123!','nombre_completo':'Rollback Fixture'})
 finally:
-    compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad','go_service','gateway')
+    compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad','control_scraping','gateway')
 request('/api/v1/auth/me',opener=new_client)
 
 # La configuración de cookie Secure también se verifica con el proceso real.
@@ -330,7 +330,7 @@ request('/_identidad/ready',base=identity_url)
 request('/api/v1/auth/me',opener=new_client)
 
 # Runtime separation: inspect only environment variable NAMES.
-for service,forbidden in [('go_service',{'IDENTITY_DB_URL','IDENTITY_DB_PASSWORD','GOOGLE_CLIENT_ID'}),('identidad',{'SCRAPING_DB_URL','CATALOGO_INTERNAL_TOKEN','DB_URL','DB_PASSWORD'})]:
+for service,forbidden in [('control_scraping',{'IDENTITY_DB_URL','IDENTITY_DB_PASSWORD','GOOGLE_CLIENT_ID','JWT_SECRET'}),('identidad',{'SCRAPING_DB_URL','CATALOGO_INTERNAL_TOKEN','DB_URL','DB_PASSWORD'})]:
     identifier=compose('ps','-q',service).strip()
     names=json.loads(subprocess.run(['docker','inspect',identifier],check=True,text=True,stdout=subprocess.PIPE).stdout)[0]['Config']['Env']
     assert not forbidden.intersection(value.split('=',1)[0] for value in names), 'Credencial de otro dominio en runtime'

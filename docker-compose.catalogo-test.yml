@@ -24,7 +24,7 @@ services:
   api:
     image: sup267-api:local
     build:
-      context: ${SUP267_REFERENCE_API_DIR:-./backend/api}
+      context: ${SUP267_REFERENCE_API_DIR:-./backend/control_scraping}
       secrets: [network_ca]
     environment:
       PORT: '8080'

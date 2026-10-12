@@ -9,7 +9,7 @@ Usa SOLO stdlib de Python — cero dependencias externas.
 
 Uso:
     python3 scripts/gen_service_map.py              # Regenera todos los servicios
-    python3 scripts/gen_service_map.py backend/api   # Regenera solo un servicio
+    python3 scripts/gen_service_map.py backend/control_scraping   # Regenera solo un servicio
 """
 
 import ast
@@ -28,10 +28,10 @@ SERVICES = {
         "extensions": [".go"],
         "exclude": ["tmp"],
     },
-    "backend/api": {
+    "backend/control_scraping": {
         "lang": "go",
-        "name": "Coordinación de scraping en API (Go + Gin)",
-        "notes": "Estado vigente SUP-272: API ya no importa ni registra Identidad; usa sólo SCRAPING_DB_URL/app_scraping y un pool de 5 conexiones. Conserva los outboxes y todas las correcciones SUP-270/271. /health comprueba sólo SQL de coordinación y diagnostica Redis; /_api/live no consulta dependencias. Auth pertenece al servicio backend/identidad. Ver GUIA_IDENTIDAD_DESACOPLADA.md y GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
+        "name": "Control de scraping independiente (Go + Gin)",
+        "notes": "SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, pool 5. /_scraping/live independiente y /_scraping/ready SQL con Redis diagnóstico. Conserva recuperación SUP-270/271, ingesta HTTP idempotente a Catálogo y contrato worker. Sin JWT_SECRET, modelos de usuarios ni persistencia de catálogo. Gateway usa SCRAPING_URL; no existe servicio backend/api. Ver docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
     },

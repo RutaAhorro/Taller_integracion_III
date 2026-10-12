@@ -26,7 +26,7 @@ compose() {
 finish() {
   status=$?
   if (( status != 0 )); then
-    compose logs --no-color --tail 40 go_service identidad catalogo gateway frontend || true
+    compose logs --no-color --tail 40 control_scraping identidad catalogo gateway frontend || true
     # Diagnóstico de init sin volcar credenciales ni el log SQL completo.
     compose exec -T db psql -X -U sup268 -d sup268 -tA -c \
       "SELECT rolname,rolcanlogin,rolpassword IS NOT NULL FROM pg_authid WHERE rolname IN ('app_identity','app_scraping','app_catalogo');" || true
@@ -54,6 +54,12 @@ if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then
   mkdir -p "$SUP272_REFERENCE_API_DIR"
   git -C "$repo_root" archive "${SUP272_REFERENCE_REF:-49770b335aa6e6998cbbfd23df8b8868ff1c26f4}" backend/api | tar -x -C "$SUP272_REFERENCE_API_DIR" --strip-components=2
   additional_builds+=(reference_identity_api)
+fi
+if [[ "${SUP273_CONTROL:-0}" == 1 ]]; then
+  export SUP273_REFERENCE_API_DIR="$test_dir/sup272-api"
+  mkdir -p "$SUP273_REFERENCE_API_DIR"
+  git -C "$repo_root" archive "${SUP273_REFERENCE_REF:-45aed821b76cd3179092fe9b686671da7700f05b}" backend/api | tar -x -C "$SUP273_REFERENCE_API_DIR" --strip-components=2
+  additional_builds+=(reference_control_api)
 fi
 
 chmod 755 "$test_dir" "$SUP268_INIT_DIR"
@@ -86,7 +92,7 @@ compose config --quiet
 if [[ "${SUP268_SKIP_BUILD:-0}" != 1 ]]; then
   compose build --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY \
     --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy \
-    go_service identidad catalogo gateway frontend reference_api reference_ingesta_api "${additional_builds[@]}"
+    control_scraping identidad catalogo gateway frontend reference_api reference_ingesta_api "${additional_builds[@]}"
 fi
 compose up -d --wait --wait-timeout 180 db redis
 compose exec -T db psql -X -U sup268 -d sup268 -v ON_ERROR_STOP=1 <<'SQL'
@@ -97,7 +103,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 SQL
-compose up -d --wait --wait-timeout 180 go_service identidad catalogo gateway frontend reference_api
+compose up -d --wait --wait-timeout 180 control_scraping identidad catalogo gateway frontend reference_api
 # Confiar sólo en el Nginx real de este proyecto para preservar la IP del
 # navegador. No admitir headers falsificados de un cliente directo.
 frontend_proxy_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q frontend)")
@@ -115,11 +121,16 @@ gateway_url="http://127.0.0.1:${SUP268_GATEWAY_PORT:-18082}"
 frontend_url="http://127.0.0.1:${SUP268_FRONTEND_PORT:-13000}"
 reference_url="http://127.0.0.1:${SUP268_REFERENCE_PORT:-18084}"
 smoke="$repo_root/backend/gateway/tests/smoke_catalogo_routing.py"
-if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then
+if [[ "${SUP272_IDENTITY:-0}" == 1 && "${SUP273_CONTROL_ONLY:-0}" != 1 ]]; then
   compose --profile identity-reference up -d --no-deps --wait --wait-timeout 90 reference_identity_api
   python3 "$repo_root/backend/identidad/tests/smoke_identity.py" --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
   compose --profile identity-reference stop reference_identity_api
   if [[ "${SUP272_IDENTITY_ONLY:-0}" == 1 ]]; then exit 0; fi
+fi
+
+if [[ "${SUP273_CONTROL:-0}" == 1 ]]; then
+  python3 "$repo_root/backend/control_scraping/tests/smoke_control.py" --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
+  if [[ "${SUP273_CONTROL_ONLY:-0}" == 1 ]]; then exit 0; fi
 fi
 
 python3 "$repo_root/backend/catalogo/tests/smoke_contracts.py" --api-url "$reference_url" --catalogo-url "$gateway_url"
@@ -143,7 +154,7 @@ DROP FUNCTION scraper.sup269_fail_counter();
 SQL
 compose exec -T db psql -U sup268 -d sup268 -v ON_ERROR_STOP=1 < "$repo_root/backend/catalogo/tests/verify_ingesta_ownership.sql"
 if [[ "${SUP271_OWNERSHIP:-0}" == 1 ]]; then
-  python3 "$repo_root/backend/api/tests/smoke_data_ownership.py" \
+  python3 "$repo_root/backend/control_scraping/tests/smoke_data_ownership.py" \
     --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
 fi
 if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
@@ -151,11 +162,11 @@ if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
     --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state"
 fi
 
-api_before=$(compose ps -q go_service)
+api_before=$(compose ps -q control_scraping)
 gateway_before=$(compose ps -q gateway)
 compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
 test "$(compose ps -q catalogo | wc -l)" -eq 3
-test "$(compose ps -q go_service)" = "$api_before"
+test "$(compose ps -q control_scraping)" = "$api_before"
 test "$(compose ps -q gateway)" = "$gateway_before"
 if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
   PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
@@ -177,13 +188,13 @@ python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gatewa
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode catalog-down
 compose start catalogo >/dev/null
 compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
-compose stop go_service identidad reference_api redis >/dev/null
+compose stop control_scraping identidad reference_api redis >/dev/null
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode api-down
 
 compose up -d --wait --wait-timeout 90 redis
-compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 go_service gateway
+compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode ingesta-rollback
-compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 go_service gateway
+compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
 compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --no-deps --force-recreate --wait --wait-timeout 60 frontend
 compose stop catalogo >/dev/null
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode rollback

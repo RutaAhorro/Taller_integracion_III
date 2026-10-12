@@ -4,13 +4,22 @@
 
 Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**25 archivos .go** detectados
+**27 archivos .go** detectados
 
 
 ### `cmd/catalogo/main.go` (package main)
 
 - `main()`
 - `run(log *slog.Logger) error`
+
+### `cmd/seed_productos/main.go` (package main)
+
+- Structs: productoSemilla
+- `main()`
+
+### `cmd/seed_productos/models.go` (package main)
+
+- Structs: productoCrudoSemilla, capturaPrecioSemilla
 
 ### `internal/auth/jwt.go` (package auth)
 
