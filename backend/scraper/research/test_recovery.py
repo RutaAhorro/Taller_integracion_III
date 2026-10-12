@@ -159,6 +159,20 @@ class RecoveryTest(unittest.TestCase):
         migrate_one(redis,api,apply=True)
         self.assertTrue(redis.removed)
 
+    def test_legacy_queue_migration_sends_service_token(self):
+        raw=json.dumps({'trabajo_id':self.id,'spider':'jumbo_rsc'})
+        class Redis:
+            def lindex(self,*args): return raw
+            def lrem(self,*args): pass
+        sent=[]
+        response=Response({'trabajo_id':self.id}); response.status=202; response.headers={'X-Scraper-Queue':'durable-stream'}
+        def opener(request,timeout):
+            sent.append(request)
+            return response
+        api=ScraperAPIClient('http://api/api/v1/scraper/productos',opener=opener,token='s'*32)
+        migrate_one(Redis(),api,apply=True)
+        self.assertEqual(sent[0].get_header('Authorization'),'Bearer '+'s'*32)
+
     def test_legacy_api_acceptance_does_not_prove_durable_queue(self):
         raw=json.dumps({'trabajo_id':self.id,'spider':'jumbo_rsc'})
         class Redis:

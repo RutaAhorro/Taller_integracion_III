@@ -28,7 +28,7 @@ def migrate_one(redis, api, *, apply=False):
         if old in job: data[new]=job[old]
     if apply:
         request = Request(api.endpoint.removesuffix('/productos') + '/trabajos/' + work_id + '/ejecutar',
-                          data=json.dumps(data).encode(),method='POST',headers={'Content-Type':'application/json'})
+                          data=json.dumps(data).encode(),method='POST',headers=api._headers())
         try:
             with api.opener(request,timeout=api.timeout) as response:
                 result=json.loads(response.read().decode('utf-8'))
