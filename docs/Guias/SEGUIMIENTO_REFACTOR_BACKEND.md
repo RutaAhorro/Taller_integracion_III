@@ -175,7 +175,7 @@ de errores, retención del spool, recuperación de leases y publisher sin locks 
 El rol `app_scraping` tiene DELETE exclusivamente sobre `scraper.entregas_trabajos`,
 comprobado al arrancar y también en el rollback a la imagen aprobada de SUP-270.
 
-La tarea en curso es SUP-271, en
+SUP-271 se implementó en
 `backend/refactor/sup-271-separar-permisos-datos-vmatus`, basada en `42b6ca4`
 de `develop-refactor`.
 El usuario autorizó commit, push y apertura del PR de SUP-271 hacia
@@ -213,3 +213,108 @@ correcciones en la misma rama de SUP-271 y actualizar el PR #98 hacia
 Autor de commits: Vicente Sebastian Matus Mora, `vmatus2024@alu.uct.cl`.
 No hacer nuevos commits ni push sin autorización para la tarea correspondiente.
 El autor abre los PR manualmente salvo autorización expresa para crearlos.
+
+
+## SUP-272: extracción de Identidad
+
+SUP-271 fue integrada en PR #98 por squash `49770b335aa6e6998cbbfd23df8b8868ff1c26f4`.
+La rama local `backend/refactor/sup-272-extraer-identidad-vmatus` se creó desde
+ese HEAD actualizado de `develop-refactor`. Tras revisar el resumen, el usuario
+autorizó commit, push y apertura del PR hacia `develop-refactor`, con revisión
+de Renato (`RCarrascoO`), Dani (`danirc2024`) y Esban (`EsbanV`).
+
+Identidad se mueve a `backend/identidad` con módulo/binario/imagen propios.
+La API sólo compone coordinación y sólo recibe su DSN; Gateway conserva auth
+mediante IDENTIDAD_URL. Hay Deployment, Service, HPA, configuración y política
+de entrada propios. No se migran usuarios ni se amplían sus grants.
+Se conservan las cookies/JWT existentes, con validación HS256/expiración estricta,
+clave obligatoria, CORS por allowlist, cookies Secure configurables, contador
+Redis atómico y manejo seguro de claims Google/SSO y conflictos concurrentes.
+Google distingue autenticación rechazada, configuración ausente y fallo interno;
+`detalle` queda sólo para validación 400, sin SQL en errores de autenticación.
+Ver `GUIA_IDENTIDAD_DESACOPLADA.md` para contratos, configuración y rollback.
+
+La revisión comprueba sesiones antiguas en ambos sentidos, ruta real del frontend,
+IP de cliente ante spoofing de forwarding, TTL reparado, registros/login
+concurrentes, caída independiente de cada dominio, Redis/SQL, arranque sin grants,
+cookies Secure y tres réplicas de Identidad sin recrear API/Gateway.
+Los rollbacks históricos actualizan también la configuración de Gateway para
+no consultar una Identidad detenida. La suite de ingesta reconoce 202 pendientes
+con clave estable y exige confirmación final, contador y capturas exactos.
+
+Configuración obligatoria previa al despliegue: proxies Gateway reales en
+Identidad, proxies Nginx/Ingress reales en Gateway, allowlist de frontend y Secrets
+existentes. No dejar IPs/CIDRs genéricos ni confiar en cualquier cliente.
+La imagen corre sin privilegios; el clúster exige CNI con NetworkPolicy.
+La firma asimétrica, revocación/refresh, verificación de correo y nuevas cuotas
+son tareas distintas; las limitaciones heredadas están registradas en la guía.
+
+Validación inicial de SUP-272 (`185e5e3`): 479 resultados Go (64 API, 124 Identidad, 182 Gateway,
+108 Catálogo y 1 integración del publisher con PostgreSQL real), con race
+detector y vet. La integración omitida por el suite unitario se ejecutó
+explícitamente en el harness. Veinticinco pruebas Python, 478 comprobaciones
+HTTP (110 específicas de Identidad y 368 de regresiones), 118 controles SQL
+por rol y 25 recursos Kubernetes válidos, sin fallos pendientes.
+Fuzzing del parser JWT: 45.909 entradas durante 15 segundos, sin fallos.
+La referencia aprobada SUP-271 y sus cookies se probaron en ambos sentidos.
+
+Se construyó la imagen de Identidad desde su Dockerfile real; también se
+comprobaron las pruebas y vet en el target test y los binarios con build estático.
+Los últimos cambios de recuperación de errores/logs se comprobaron con el
+suite Go y la imagen final, seguida de las 110 pruebas de Identidad. Las otras
+regresiones se ejecutaron en el harness completo; no se cuentan dos veces.
+API y Gateway usan binarios nuevos sobre runtimes verificados en la integración
+local; sus builders completos quedan para CI. El acceso real a Google desde
+el navegador, HPA en el clúster y aplicación de NetworkPolicy no se probaron.
+Se conservaron TLS y sumas verificadas en las descargas: el DNS de Docker cloud
+necesitó network host y resolución explícita del proxy, sin modificar la imagen
+publicada ni sus CA. Los recursos de prueba y certificados temporales se
+eliminaron; sólo quedaron los servicios originales de la sesión.
+Los intentos de prueba fallidos se diagnosticaron y corrigieron: IP reservada
+que entraba en el rango dinámico, puerto fijo al escalar el harness, cleanup de
+profile de referencia, aceptación concurrente 202 con confirmación pendiente,
+comprobación de outage duplicada y actualización de Gateway en rollback histórico.
+No se aplicaron migraciones/Secrets en el clúster ni se publicaron imágenes.
+El usuario autorizó publicar los cambios en la rama de SUP-272 y abrir el PR;
+esa autorización no incluye integrar el PR ni desplegar el clúster.
+
+
+### Correcciones del review de PR #99 (SUP-272)
+
+H-01 se resuelve usando probes exec por loopback dentro de la imagen Alpine,
+con wget y timeouts acotados. NetworkPolicy conserva exclusivamente los pods
+Gateway del mismo namespace en 8080. No se agregan CIDRs de nodos ni se abre el
+namespace completo. La especificación Kubernetes permite el tráfico del nodo
+local; la caída indicada no es una consecuencia inevitable de NetworkPolicy.
+Se documenta ese matiz y la independencia de ingress de los probes locales.
+La aplicación real de políticas de host/CNI requiere comprobarse en el clúster.
+
+H-02 incorpora ErrNombreInvalido y respuesta 400 en perfil y registro, sin
+persistir nombres vacíos tras sanitizar. H-03 omite el avatar opcional de Google
+cuando excede 500 caracteres o tiene UTF-8 inválido; mantiene el login y no
+trunca URLs. H-11 aplica límite de 100 runas y regexp compilada una vez, con
+pruebas de límites de tildes/ñ y persistencia real en PostgreSQL.
+
+H-10 regenera docs.go, swagger.json y swagger.yaml con swag init --parseInternal.
+Swagger publica sólo operaciones existentes en el router de coordinación y
+salud; retira Identidad/Catálogo de esta especificación. Las rutas funcionales
+públicas continúan por Gateway. El alcance de /swagger/* queda explícito y se
+verifica automáticamente que cada operación publicada existe en el router.
+Los humos históricos conservan su contrato integrado cuando usan imágenes
+anteriores; SUP-272 comprueba explícitamente la especificación por servicio.
+
+El usuario autorizó commit y push de estas correcciones en la misma rama,
+actualizando PR #99 hacia develop-refactor. Esa autorización no incluye merge
+ni despliegue del clúster.
+
+Validación de las correcciones: 208 resultados Go de los módulos afectados
+(65 API y 143 Identidad) con race detector, y 1 integración adicional del
+publisher con PostgreSQL real; vet aprobado. El harness completo pasó 499
+comprobaciones: 484 HTTP y 15 ejecuciones de los comandos exactos de probes,
+además de 118 controles SQL por rol. Incluye 131 comprobaciones de Identidad
+(116 HTTP y 15 probes), recuperación de scraping, carga con tres réplicas de
+Catálogo y rollbacks. Veinticinco manifiestos Kubernetes válidos; imagen de
+Identidad construida desde el Dockerfile real, Swagger/workflows/sintaxis/diff
+comprobados. Los recursos temporales se eliminaron. No se desplegó en el clúster
+ni se verificó allí el CNI o el HPA; Google real desde navegador sigue fuera de
+esta comprobación. Las cifras anteriores corresponden a la validación inicial.

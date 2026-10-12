@@ -5,14 +5,17 @@ SUP-271 parte del merge aprobado de SUP-270 (`42b6ca4`, PR #97) en
 runtime y quita las referencias SQL que cruzaban desde trabajos a otros dominios.
 No crea bases nuevas: la separación corresponde al propietario de cada tabla.
 
+SUP-272 conserva esta propiedad de datos y separa Identidad en un proceso propio.
+Ver `GUIA_IDENTIDAD_DESACOPLADA.md` para el corte, IP real y rollback.
+
 ## Arquitectura vigente
 
 ```mermaid
 flowchart LR
     Clientes[Frontend, bot y worker] --> Gateway
-    Gateway -->|auth y scraper| API[API: un binario]
+    Gateway -->|auth| Identidad[Identidad: servicio]
+    Gateway -->|scraper| API[API de coordinación]
     Gateway -->|productos y admin/productos| Catalogo[Catálogo]
-    API --> Identidad[Identidad: módulo privado]
     API --> Scraping[Coordinación: módulo privado]
     Identidad -->|app_identity| Usuarios[(api.usuarios)]
     Scraping -->|app_scraping| Trabajos[(Trabajos y outboxes)]
@@ -28,11 +31,9 @@ nombres físicos heredados; `scraper` contiene tanto tablas de Catálogo como de
 coordinación. Un esquema no equivale automáticamente a un servicio. No se copian
 datos ni se introducen vistas compartidas, joins externos o entidades comunes.
 
-Identidad y coordinación conservan el mismo proceso/Deployment de API, con
-dos pools GORM separados. El proceso tiene ambas credenciales: esta etapa
-impide que cada adaptador use el rol del otro, pero no aísla una vulneración
-completa del proceso. SUP-272/273 pueden separar esos procesos si el equipo
-decide avanzar. Catálogo ya tiene proceso, imagen, Deployment y HPA propios.
+Identidad tiene proceso, imagen, Deployment y HPA propios en SUP-272. La API
+conserva coordinación hasta SUP-273. Cada uno recibe sólo su credencial SQL;
+no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 
 ## Matriz de runtime
 
@@ -87,17 +88,17 @@ esta tarea. Evitar crear nuevas dependencias de runtime hacia ellas.
 
 ## Configuración
 
-API requiere `IDENTITY_DB_URL` con usuario `app_identity` y `SCRAPING_DB_URL`
-con usuario `app_scraping`, base y contraseña explícitos. No utiliza `DB_URL`
-como fallback. Los errores de configuración/conexión no incluyen el DSN.
-Cada pool de API tiene máximo 5 conexiones, 2 inactivas y vida máxima de 30
-minutos. Al iniciar se verifican migración/tablas y permisos mínimos de ambos
-módulos. `/health` y `/api/v1/health` conservan `checks.database` y los estados
-individuales: responden 503 y `status: error` si alguna conexión falla o falta.
-El handler comparte un presupuesto de 2 s, inferior al timeout de readiness
-Kubernetes (3 s). El cliente Redis habilita `ContextTimeoutEnabled` para que
-sus sockets respeten el deadline del comando. Redis continúa como diagnóstico: su caída no retira la API,
-porque el outbox SQL acepta ejecuciones y el rate limiter conserva fail-open.
+Desde SUP-272, Identidad requiere `IDENTITY_DB_URL` con usuario `app_identity`
+y API sólo `SCRAPING_DB_URL` con `app_scraping`, base y contraseña explícitos.
+No hay fallback a DB_URL/administrador. Los errores no incluyen el DSN.
+Cada proceso dispone de un pool con máximo 5 conexiones, 2 inactivas y vida
+máxima de 30 minutos. Cada uno verifica sólo sus tablas/grants al arrancar.
+`/health` y `/api/v1/health` de API conservan `checks.database` y
+`checks.scraping_database`; ya no comprueban Identidad. Responden 503 si falla
+SQL y tienen un presupuesto de 2 s. Redis es diagnóstico de coordinación,
+porque el outbox SQL acepta ejecuciones durante su caída.
+Identidad usa `/_identidad/ready` con Ping SQL y Redis; login falla cerrado sin
+Redis. Su liveness es independiente, y no repite verificaciones de permisos.
 
 El liveness de Kubernetes usa `/_api/live`, que responde sin consultar PostgreSQL
 ni Redis. Readiness sigue usando `/health`: una caída de DB retira el endpoint
@@ -114,12 +115,11 @@ y `/_catalogo/live` no consulta SQL. Si DB cae y vuelve, el mismo proceso recupe
 readiness. Cambios posteriores de permisos/tablas requieren un rollout/reinicio
 para volver a validar storage; los probes periódicos no auditan privilegios.
 
-Ambos HPA permiten hasta cuatro réplicas. El techo de los pools nuevos es
-`4 × (5 + 5) + 4 × 10 = 80` conexiones. Una API y cuatro Catálogo requieren hasta
-50. Contar además operadores, migraciones, bot/IA/rutas y otros consumidores:
-80 es un máximo configurado de estos servicios, no un consumo medido ni una
-garantía de capacidad. Si cambia el HPA o `DB_MAX_OPEN_CONNS` de Catálogo,
-recalcular el presupuesto antes de desplegar.
+Los HPA de Identidad, API y Catálogo permiten hasta cuatro réplicas por servicio.
+El techo de los pools es `4 × 5 + 4 × 5 + 4 × 10 = 80` conexiones. Contar además
+operadores, migraciones, bot/IA/rutas y otros consumidores: 80 es un máximo
+configurado, no un consumo medido ni una garantía de capacidad. Si cambian HPA
+o pools, recalcular antes de desplegar.
 
 Esta corrección no aumenta `max_connections` ni los recursos del pod DB. Sus
 300 MiB de límite de memoria deben contrastarse con carga real de PostGIS y
@@ -132,8 +132,8 @@ Compose recibe `IDENTITY_DB_PASSWORD`, `SCRAPING_DB_PASSWORD` y
 `CATALOGO_DB_PASSWORD` por `.env` privado. Generar cada valor por separado con
 `openssl rand -hex 32`; no reutilizar el de PostgreSQL administrador. El formato
 hexadecimal permite construir las URL sin caracteres que necesiten escape.
-Sólo DB recibe las tres contraseñas para inicializar roles; API recibe las dos
-URL de sus módulos y Catálogo la suya. Gateway/worker no reciben estos valores.
+Sólo DB recibe las tres contraseñas para inicializar roles; Identidad y API reciben sus
+URL exclusivas y Catálogo la suya. Gateway/worker no reciben estos valores.
 
 Kubernetes requiere tres Secrets privados, cada uno con claves `DB_URL` y
 `DB_PASSWORD` consistentes: `identity-db-secret`, `scraping-db-secret` y
@@ -146,6 +146,10 @@ entorno. No imprimir Secrets ni usar `docker compose config` sin `--quiet` al
 diagnosticar credenciales.
 
 ## Migración y corte
+
+Este procedimiento corresponde a la migración inicial SUP-271. Para el corte
+de procesos/credenciales de SUP-272, seguir `GUIA_IDENTIDAD_DESACOPLADA.md`;
+la API extraída ya no recibe IDENTITY_DB_URL.
 
 1. Integrar y verificar SUP-270 antes de desplegar SUP-271. Conservar imágenes
    de rollback, respaldo PostgreSQL y un inventario de permisos/constraints.

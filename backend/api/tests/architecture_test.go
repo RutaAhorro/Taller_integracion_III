@@ -15,7 +15,7 @@ import (
 // global o que su negocio importe sus adaptadores de persistencia/HTTP.
 func TestModuleDependencies(t *testing.T) {
 	const api = "github.com/danirc2024/Taller_integracion_III/backend/api/"
-	for _, module := range []string{"identity", "scraping"} {
+	for _, module := range []string{"scraping"} {
 		t.Run(module, func(t *testing.T) {
 			root := filepath.Join("..", "internal", module, "internal")
 			own := api + "internal/" + module + "/internal/"

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,8 +11,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// Comprueba la composición real: no sustituye los interceptores de Identidad
-// por mocks ni necesita PostgreSQL para probar rechazos previos a persistencia.
+// Comprueba la composición real y que la API ya no aloje Identidad ni Catálogo.
 func TestModuleCompositionHTTP(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("JWT_SECRET", "sup266-test-only-key")
@@ -40,15 +38,15 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		{"liveness sin dependencias", "GET", "/_api/live", "", "", 200},
 		{"readiness sin bases", "GET", "/health", "", "", 503},
 		{"readiness v1 sin bases", "GET", "/api/v1/health", "", "", 503},
-		{"perfil sin sesión", "GET", "/api/v1/auth/me", "", "", 401},
-		{"actualización sin sesión", "PUT", "/api/v1/auth/me", "{}", "", 401},
+		{"perfil fuera de API", "GET", "/api/v1/auth/me", "", "", 404},
+		{"actualización fuera de API", "PUT", "/api/v1/auth/me", "{}", "", 404},
 		{"admin fuera de API", "GET", "/api/v1/admin/productos", "", "", 404},
 		{"admin fuera de API con cookie", "GET", "/api/v1/admin/productos", "", token, 404},
 		{"admin barra fuera de API", "GET", "/api/v1/admin/productos/", "", token, 404},
-		{"perfil con sesión", "GET", "/api/v1/auth/me", "", token, 200},
-		{"login sin Redis falla cerrado", "POST", "/api/v1/auth/login", "{}", "", 500},
-		{"registro inválido", "POST", "/api/v1/auth/register", "{}", "", 400},
-		{"google inválido", "POST", "/api/v1/auth/google", "{}", "", 400},
+		{"perfil con cookie fuera de API", "GET", "/api/v1/auth/me", "", token, 404},
+		{"login fuera de API", "POST", "/api/v1/auth/login", "{}", "", 404},
+		{"registro fuera de API", "POST", "/api/v1/auth/register", "{}", "", 404},
+		{"google fuera de API", "POST", "/api/v1/auth/google", "{}", "", 404},
 		{"búsqueda fuera de API", "GET", "/api/v1/productos/buscar?q=le", "", "", 404},
 		{"catálogo fuera de API", "GET", "/api/v1/productos", "", "", 404},
 		{"detalle fuera de API", "GET", "/api/v1/productos/product-id", "", "", 404},
@@ -71,15 +69,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 			if response.Code != tc.status {
 				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
 			}
-			if tc.name == "perfil con sesión" {
-				var body map[string]any
-				if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-					t.Fatal(err)
-				}
-				if body["user_id"] != "c14bd236-294a-41b8-8cbb-5473bb610415" || body["rol"] != "registrado" || body["provider"] != "local" {
-					t.Fatalf("claims de sesión alterados: %v", body)
-				}
-			}
+
 		})
 	}
 }

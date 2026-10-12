@@ -1,0 +1,15 @@
+# SUP-272 -> SUP-271: restaurar primero API con ambos DSN, luego Gateway.
+# Usar una imagen aprobada de SUP-271, no la API extraída de SUP-272.
+services:
+  go_service:
+    image: ${SUP272_LEGACY_API_IMAGE:?Define una imagen aprobada de API SUP-271}
+    build: !reset null
+    environment:
+      IDENTITY_DB_URL: postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+  gateway:
+    environment:
+      IDENTIDAD_URL: ''
+    depends_on: !override
+      go_service: {condition: service_healthy}
+      catalogo: {condition: service_healthy}

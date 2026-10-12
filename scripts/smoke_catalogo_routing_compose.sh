@@ -19,19 +19,20 @@ compose() {
     -u CATALOGO_CORS_ALLOWED_ORIGINS -u GATEWAY_TRUSTED_PROXIES -u SUP268_READER_PASSWORD \
     -u CATALOGO_INTERNAL_TOKEN -u SUP269_COORDINATOR_PASSWORD \
     -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD \
+    -u IDENTIDAD_EDGE_SUBNET -u IDENTIDAD_EDGE_RANGE -u IDENTIDAD_GATEWAY_IP -u IDENTIDAD_CORS_ALLOWED_ORIGINS -u IDENTIDAD_COOKIE_SECURE \
     docker compose --project-name "$test_project" --env-file "$test_env" \
     -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.catalogo-routing-test.yml" "$@"
 }
 finish() {
   status=$?
   if (( status != 0 )); then
-    compose logs --no-color --tail 40 go_service catalogo gateway frontend || true
+    compose logs --no-color --tail 40 go_service identidad catalogo gateway frontend || true
     # Diagnóstico de init sin volcar credenciales ni el log SQL completo.
     compose exec -T db psql -X -U sup268 -d sup268 -tA -c \
       "SELECT rolname,rolcanlogin,rolpassword IS NOT NULL FROM pg_authid WHERE rolname IN ('app_identity','app_scraping','app_catalogo');" || true
     compose logs --no-color db | python3 -c 'import sys; print("".join(line for line in sys.stdin if "running /docker-entrypoint-initdb.d/" in line or "sourcing /docker-entrypoint-initdb.d/" in line or "ERROR:" in line or "debe contener al menos" in line or "contraseñas runtime deben" in line))' || true
   fi
-  compose down --volumes --remove-orphans >/dev/null 2>&1 || true
+  compose --profile identity-reference down --volumes --remove-orphans >/dev/null 2>&1 || true
   rm -rf "$test_dir"
   if [[ -n "$test_ca" ]]; then rm -f "$test_ca"; fi
   exit "$status"
@@ -46,8 +47,15 @@ if [[ "${SUP271_OWNERSHIP:-0}" == 1 ]]; then
   export SUP271_REFERENCE_API_DIR="$test_dir/sup270-api"
   mkdir -p "$SUP271_REFERENCE_API_DIR"
   git -C "$repo_root" archive "${SUP271_REFERENCE_REF:-42b6ca448875f03e63e31d51f44fccc5cee3de91}" backend/api | tar -x -C "$SUP271_REFERENCE_API_DIR" --strip-components=2
-  additional_builds=(reference_permissions_api)
+  additional_builds+=(reference_permissions_api)
 fi
+if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then
+  export SUP272_REFERENCE_API_DIR="$test_dir/sup271-api"
+  mkdir -p "$SUP272_REFERENCE_API_DIR"
+  git -C "$repo_root" archive "${SUP272_REFERENCE_REF:-49770b335aa6e6998cbbfd23df8b8868ff1c26f4}" backend/api | tar -x -C "$SUP272_REFERENCE_API_DIR" --strip-components=2
+  additional_builds+=(reference_identity_api)
+fi
+
 chmod 755 "$test_dir" "$SUP268_INIT_DIR"
 cp "$repo_root"/infrastructure/db/*.sql "$SUP268_INIT_DIR/"
 cp "$repo_root/infrastructure/db/07_runtime_credentials.sh" "$SUP268_INIT_DIR/"
@@ -61,7 +69,9 @@ p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_
     '\nCATALOGO_DB_PASSWORD=' + reader + '\nCATALOGO_INTERNAL_TOKEN=' + internal +
     '\nSCRAPING_DB_PASSWORD=' + coordinator + '\nIDENTITY_DB_PASSWORD=' + identity +
     '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
-    'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n')
+    'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
+    'IDENTIDAD_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
+    'IDENTIDAD_EDGE_SUBNET=172.31.253.0/24\nIDENTIDAD_EDGE_RANGE=172.31.253.128/25\nIDENTIDAD_GATEWAY_IP=172.31.253.2\n')
 p.chmod(0o600)
 PY
 chmod 644 "$SUP268_INIT_DIR"/*.sql
@@ -76,7 +86,7 @@ compose config --quiet
 if [[ "${SUP268_SKIP_BUILD:-0}" != 1 ]]; then
   compose build --build-arg HTTP_PROXY --build-arg HTTPS_PROXY --build-arg NO_PROXY \
     --build-arg http_proxy --build-arg https_proxy --build-arg no_proxy \
-    go_service catalogo gateway frontend reference_api reference_ingesta_api "${additional_builds[@]}"
+    go_service identidad catalogo gateway frontend reference_api reference_ingesta_api "${additional_builds[@]}"
 fi
 compose up -d --wait --wait-timeout 180 db redis
 compose exec -T db psql -X -U sup268 -d sup268 -v ON_ERROR_STOP=1 <<'SQL'
@@ -87,14 +97,35 @@ DO $$ BEGIN
   END IF;
 END $$;
 SQL
-compose up -d --wait --wait-timeout 180 go_service catalogo gateway frontend reference_api
+compose up -d --wait --wait-timeout 180 go_service identidad catalogo gateway frontend reference_api
+# Confiar sólo en el Nginx real de este proyecto para preservar la IP del
+# navegador. No admitir headers falsificados de un cliente directo.
+frontend_proxy_ip=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$(compose ps -q frontend)")
+python3 - "$test_env" "$frontend_proxy_ip" <<'PYPROXY'
+from pathlib import Path
+import ipaddress, sys
+p=Path(sys.argv[1]); proxy=str(ipaddress.ip_address(sys.argv[2]))
+p.write_text('\n'.join('GATEWAY_TRUSTED_PROXIES='+proxy if line.startswith('GATEWAY_TRUSTED_PROXIES=') else line for line in p.read_text().splitlines())+'\n')
+PYPROXY
+compose up -d --no-deps --wait --wait-timeout 90 gateway
+compose exec -T frontend nginx -s reload
+
 api_url="http://127.0.0.1:${SUP268_API_PORT:-18080}"
 gateway_url="http://127.0.0.1:${SUP268_GATEWAY_PORT:-18082}"
 frontend_url="http://127.0.0.1:${SUP268_FRONTEND_PORT:-13000}"
 reference_url="http://127.0.0.1:${SUP268_REFERENCE_PORT:-18084}"
 smoke="$repo_root/backend/gateway/tests/smoke_catalogo_routing.py"
+if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then
+  compose --profile identity-reference up -d --no-deps --wait --wait-timeout 90 reference_identity_api
+  python3 "$repo_root/backend/identidad/tests/smoke_identity.py" --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
+  compose --profile identity-reference stop reference_identity_api
+  if [[ "${SUP272_IDENTITY_ONLY:-0}" == 1 ]]; then exit 0; fi
+fi
+
 python3 "$repo_root/backend/catalogo/tests/smoke_contracts.py" --api-url "$reference_url" --catalogo-url "$gateway_url"
-python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode normal
+swagger_scope=integrated
+if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then swagger_scope=scraping; fi
+python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode normal --swagger-scope "$swagger_scope"
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --reference-url "$reference_url" --state-file "$test_dir/ingesta.json" --mode normal
 compose exec -T db psql -U sup268 -d sup268 -v ON_ERROR_STOP=1 <<'SQL'
 CREATE FUNCTION scraper.sup269_fail_counter() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -146,11 +177,11 @@ python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gatewa
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode catalog-down
 compose start catalogo >/dev/null
 compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
-compose stop go_service reference_api redis >/dev/null
+compose stop go_service identidad reference_api redis >/dev/null
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode api-down
 
 compose up -d --wait --wait-timeout 90 redis
-compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 go_service
+compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 go_service gateway
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode ingesta-rollback
 compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 go_service gateway
 compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --no-deps --force-recreate --wait --wait-timeout 60 frontend

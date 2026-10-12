@@ -18,12 +18,12 @@ func TestRuntimeCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, dsn := range []string{
-		"postgres://postgres:do-not-leak@db/test", "postgres://app_scraping:do-not-leak@db/test",
-		"postgres://app_identity@db/test", "postgres://app_identity:do-not-leak@db/",
-		"postgres://app_identity:do-not-leak@bad host/test",
+		"postgres://postgres:do-not-leak@db/test", "postgres://app_identity:do-not-leak@db/test",
+		"postgres://app_scraping@db/test", "postgres://app_scraping:do-not-leak@db/",
+		"postgres://app_scraping:do-not-leak@bad host/test",
 	} {
 		t.Run(dsn, func(t *testing.T) {
-			t.Setenv("IDENTITY_DB_URL", dsn)
+			t.Setenv("SCRAPING_DB_URL", dsn)
 			_, err := Load()
 			if err == nil || strings.Contains(err.Error(), "do-not-leak") || strings.Contains(err.Error(), "old-admin-secret") {
 				t.Fatal("credencial inválida aceptada o expuesta", err)

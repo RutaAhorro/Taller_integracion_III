@@ -32,6 +32,8 @@ spec:
               value: http://api-backend:8080
             - name: CATALOGO_URL
               value: http://catalogo:8080
+            - name: IDENTIDAD_URL
+              value: http://identidad:8080
             - name: GATEWAY_LISTEN_ADDR
               value: :8080
           envFrom:

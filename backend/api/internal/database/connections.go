@@ -14,15 +14,13 @@ import (
 )
 
 type Config struct {
-	IdentityURL string
 	ScrapingURL string
 }
 
 // No hay fallback a DB_URL ni al administrador de PostgreSQL.
 func Load() (Config, error) {
-	cfg := Config{IdentityURL: os.Getenv("IDENTITY_DB_URL"), ScrapingURL: os.Getenv("SCRAPING_DB_URL")}
+	cfg := Config{ScrapingURL: os.Getenv("SCRAPING_DB_URL")}
 	for _, entry := range []struct{ name, dsn, role string }{
-		{"IDENTITY_DB_URL", cfg.IdentityURL, "app_identity"},
 		{"SCRAPING_DB_URL", cfg.ScrapingURL, "app_scraping"},
 	} {
 		if entry.dsn == "" {
@@ -48,7 +46,7 @@ func Open(ctx context.Context, dsn string) (*gorm.DB, error) {
 	if err != nil {
 		return nil, errors.New("no se pudo obtener la conexión PostgreSQL")
 	}
-	// Dos pools por API: con 4 API y 4 Catálogo (10 cada uno), techo runtime 80.
+	// Un pool por API de coordinación; Identidad mantiene su pool independiente.
 	sqlDB.SetMaxOpenConns(5)
 	sqlDB.SetMaxIdleConns(2)
 	sqlDB.SetConnMaxLifetime(30 * time.Minute)

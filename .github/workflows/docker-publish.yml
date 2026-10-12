@@ -8,6 +8,7 @@ on:
       - develop-refactor
     paths:
       - 'backend/api/**'
+      - 'backend/identidad/**'
       - 'backend/catalogo/**'
       - 'backend/gateway/**'
       - 'backend/bot_discord/**'
@@ -19,6 +20,7 @@ env:
   REGISTRY: ghcr.io
   # GitHub convierte automáticamente esto al formato: ghcr.io/danirc2024/taller_integracion_iii
   IMAGE_NAME_API: ${{ github.repository }}-api
+  IMAGE_NAME_IDENTIDAD: ${{ github.repository }}-identidad
   IMAGE_NAME_CATALOGO: ${{ github.repository }}-catalogo
   IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
   IMAGE_NAME_SCRAPER: ${{ github.repository }}-scraper
@@ -85,6 +87,32 @@ jobs:
           push: true
           tags: ${{ steps.meta-api.outputs.tags }}
           labels: ${{ steps.meta-api.outputs.labels }}
+
+      # ==== BUILD IDENTIDAD ====
+      - name: Extract metadata for Identidad
+        id: meta-identidad
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_IDENTIDAD }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Identidad image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/identidad
+          target: test
+          push: false
+
+      - name: Build and push Identidad image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/identidad
+          push: true
+          tags: ${{ steps.meta-identidad.outputs.tags }}
+          labels: ${{ steps.meta-identidad.outputs.labels }}
 
       # ==== BUILD CATALOGO ====
       - name: Extract metadata for Catalogo

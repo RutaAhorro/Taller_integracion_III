@@ -10,6 +10,7 @@ services:
   gateway:
     environment:
       CATALOGO_URL: ''
+      IDENTIDAD_URL: ''
     depends_on: !override
       go_service:
         condition: service_healthy

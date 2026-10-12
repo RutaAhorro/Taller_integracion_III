@@ -48,6 +48,9 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 
 	newProxy := func(target *url.URL, upstream string) *httputil.ReverseProxy {
 		unavailableMessage, timeoutMessage := "El backend no está disponible.", "El backend no respondió a tiempo."
+		if upstream == "identidad" {
+			unavailableMessage, timeoutMessage = "Identidad no está disponible.", "Identidad no respondió a tiempo."
+		}
 		if upstream == "catalogo" {
 			unavailableMessage, timeoutMessage = "Catálogo no está disponible.", "Catálogo no respondió a tiempo."
 		}
@@ -100,6 +103,11 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 	var catalogProxy *httputil.ReverseProxy
 	if c.Catalogo != nil {
 		catalogProxy = newProxy(c.Catalogo, "catalogo")
+	}
+
+	var identityProxy *httputil.ReverseProxy
+	if c.Identidad != nil {
+		identityProxy = newProxy(c.Identidad, "identidad")
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -159,13 +167,19 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), c.RequestTimeout)
 		defer cancel()
-		if catalogProxy != nil && isCatalogPath(r.URL.Path) {
+		if identityProxy != nil && isIdentityPath(r.URL.Path) {
+			identityProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else if catalogProxy != nil && isCatalogPath(r.URL.Path) {
 			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else {
 			backendProxy.ServeHTTP(response, r.WithContext(ctx))
 		}
 	})
 	return &Gateway{handler: handler, reads: reads, writes: writes}
+}
+
+func isIdentityPath(path string) bool {
+	return path == "/api/v1/auth" || strings.HasPrefix(path, "/api/v1/auth/")
 }
 
 func isCatalogPath(path string) bool {

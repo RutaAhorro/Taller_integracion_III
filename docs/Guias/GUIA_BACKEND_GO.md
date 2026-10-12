@@ -115,7 +115,7 @@ La API expone documentación viva auto-generada compatible con OpenAPI 2.0 / 3.0
 2. **Actualización de Documentación:**
    Al agregar o modificar anotaciones `@Summary`, `@Tags`, `@Param` o `@Router` en `handlers/`, regenerar los archivos estáticos ejecutando en `backend/api/`:
    ```bash
-   swag init
+   swag init --parseInternal
    ```
    Air detectará los cambios en `docs/docs.go` y actualizará Swagger UI automáticamente.
 
