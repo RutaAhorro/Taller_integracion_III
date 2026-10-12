@@ -41,6 +41,8 @@ services:
       CATALOGO_INGEST_TIMEOUT: 10s
       # Worker y bot lo envían como Bearer; sin él /api/v1/scraper/* responde 401.
       SCRAPING_SERVICE_TOKEN: ${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
+      # Swagger expone el contrato completo: sólo en desarrollo local y CI.
+      SCRAPING_SWAGGER_ENABLED: ${SCRAPING_SWAGGER_ENABLED:-true}
       SCRAPING_CORS_ALLOWED_ORIGINS: ${SCRAPING_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     depends_on:
       db: {condition: service_healthy}

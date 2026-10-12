@@ -109,7 +109,15 @@ func setupApplication() (*gin.Engine, *control.Module, error) {
 	r.GET("/_scraping/ready", ReadinessHandler)
 	r.GET("/health", HealthHandler)
 
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	// Swagger describe todo el contrato de coordinación. Sólo se publica si se
+	// habilita explícitamente (Compose local y CI); en Kubernetes queda apagado.
+	switch os.Getenv("SCRAPING_SWAGGER_ENABLED") {
+	case "true":
+		r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	case "", "false":
+	default:
+		return nil, nil, errors.New("SCRAPING_SWAGGER_ENABLED debe ser true o false")
+	}
 
 	// Grupo de rutas de la API v1
 	v1 := r.Group("/api/v1")

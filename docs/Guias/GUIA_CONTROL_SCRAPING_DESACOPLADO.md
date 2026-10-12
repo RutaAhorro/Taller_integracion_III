@@ -101,7 +101,10 @@ entrega a Catálogo con su token interno. Sus únicos clientes son el worker y e
 bot; el frontend no consume estas rutas. Control compara hashes SHA-256 en
 tiempo constante, responde 401 con `WWW-Authenticate` y no arranca si el token
 está vacío, tiene menos de 32 caracteres, contiene espacios o coincide con
-`CATALOGO_INTERNAL_TOKEN`. Probes y Swagger no lo exigen. El worker (incluidos
+`CATALOGO_INTERNAL_TOKEN`. Los probes no lo exigen. Swagger publica el contrato
+completo, así que sólo se sirve con `SCRAPING_SWAGGER_ENABLED=true` (Compose local
+y CI); en Kubernetes el ConfigMap lo deja en `false` y `/swagger` responde 404.
+Cualquier otro valor impide el arranque. El worker (incluidos
 los procesos Scrapy que lanza) y el bot leen el mismo `SCRAPING_SERVICE_TOKEN`.
 Permisos por usuario y cuotas siguen fuera de alcance.
 
