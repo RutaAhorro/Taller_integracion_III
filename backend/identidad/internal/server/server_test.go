@@ -31,7 +31,7 @@ func TestHTTPBoundariesCorsAndJWT(t *testing.T) {
 		{"allowed CORS", "GET", "/api/v1/auth/me", "https://frontend.example", "", token, 200}, {"hostile CORS", "GET", "/api/v1/auth/me", "https://evil.example", "", token, 403},
 		{"hostile mutation", "PUT", "/api/v1/auth/me", "https://evil.example", `{"nombre_completo":"forged"}`, token, 403},
 		{"allowed preflight", "OPTIONS", "/api/v1/auth/me", "https://frontend.example", "", "", 204}, {"hostile preflight", "OPTIONS", "/api/v1/auth/me", "https://evil.example", "", "", 403},
-		{"invalid registration", "POST", "/api/v1/auth/register", "", `{}`, "", 400}, {"fail closed login", "POST", "/api/v1/auth/login", "", `{}`, "", 500}, {"invalid google", "POST", "/api/v1/auth/google", "", `{}`, "", 400},
+		{"fail closed registration", "POST", "/api/v1/auth/register", "", `{}`, "", 500}, {"fail closed login", "POST", "/api/v1/auth/login", "", `{}`, "", 500}, {"fail closed google", "POST", "/api/v1/auth/google", "", `{}`, "", 500},
 		{"catalog not owned", "GET", "/api/v1/productos", "", "", "", 404}, {"scraping not owned", "POST", "/api/v1/scraper/trabajos", "", `{}`, "", 404}, {"method not allowed", "DELETE", "/api/v1/auth/me", "", "", "", 405},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

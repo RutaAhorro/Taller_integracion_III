@@ -74,6 +74,11 @@ func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 	}
 	if pwd, ok := datos["password_hash"].(string); ok {
 		target.PasswordHash = &pwd
+	} else if value, ok := datos["password_hash"]; ok && value == nil {
+		target.PasswordHash = nil
+	}
+	if googleID, ok := datos["google_id"].(string); ok {
+		target.GoogleID = &googleID
 	}
 	return nil
 }
@@ -292,9 +297,11 @@ func TestAuthService_ActualizarPerfil(t *testing.T) {
 	})
 
 	t.Run("Actualizacion de contraseña con validacion", func(t *testing.T) {
+		actual := "Password123#"
 		passInvalida := "corta"
 		_, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
-			Password: &passInvalida,
+			Password:       &passInvalida,
+			PasswordActual: &actual,
 		})
 		if !errors.Is(err, services.ErrPasswordInvalido) {
 			t.Errorf("Esperaba ErrPasswordInvalido, obtuve %v", err)
@@ -302,7 +309,8 @@ func TestAuthService_ActualizarPerfil(t *testing.T) {
 
 		passValida := "NuevaClaveSegura2026!"
 		res, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
-			Password: &passValida,
+			Password:       &passValida,
+			PasswordActual: &actual,
 		})
 		if err != nil {
 			t.Fatalf("Actualizacion con clave valida falló: %v", err)
@@ -320,8 +328,10 @@ func TestAuthService_ActualizarPerfil(t *testing.T) {
 
 	t.Run("Conflicto al intentar cambiar a correo existente", func(t *testing.T) {
 		correoTomado := "otro@uct.cl"
+		actual := "NuevaClaveSegura2026!"
 		_, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
-			Correo: &correoTomado,
+			Correo:         &correoTomado,
+			PasswordActual: &actual,
 		})
 		if !errors.Is(err, services.ErrCorreoDuplicado) {
 			t.Errorf("Esperaba ErrCorreoDuplicado, obtuve %v", err)

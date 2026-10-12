@@ -33,6 +33,9 @@ var (
 	// ErrCorreoInvalido se emite cuando el correo no tiene un formato válido
 	ErrCorreoInvalido = errors.New("el formato del correo electrónico es inválido")
 	ErrNombreInvalido = errors.New("el nombre completo no puede quedar vacío")
+	// ErrReautenticacionRequerida se emite al cambiar correo o contraseña sin
+	// confirmar la contraseña actual (o en cuentas sin contraseña local).
+	ErrReautenticacionRequerida = errors.New("se requiere la contraseña actual para cambiar el correo o la contraseña")
 )
 
 // RegistroDTO contiene los parámetros requeridos para el registro de un usuario
@@ -171,7 +174,7 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 		Rol:               nuevoUsuario.Rol,
 		EstaActivo:        nuevoUsuario.EstaActivo,
 		TokenVerificacion: tokenVerificacion,
-		Mensaje:           "Usuario registrado con éxito. Se requiere confirmar el correo electrónico antes de iniciar sesión.",
+		Mensaje:           "Usuario registrado con éxito.",
 	}, nil
 }
 
@@ -273,7 +276,7 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 			if usuario == nil {
 				return nil, ErrCredencialesInvalidas
 			}
-			return validateGoogleAccount(usuario, googleID)
+			return s.validateGoogleAccount(ctx, usuario, googleID)
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error al registrar usuario con Google: %w", err)
@@ -281,7 +284,7 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 		return nuevoUsuario, nil
 	}
 
-	return validateGoogleAccount(usuario, googleID)
+	return s.validateGoogleAccount(ctx, usuario, googleID)
 }
 
 // ActualizarPerfil procesa las actualizaciones parciales del perfil de usuario
@@ -301,6 +304,17 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 	}
 
 	datos := make(map[string]interface{})
+
+	// Cambiar correo o contraseña exige reautenticación con la contraseña actual.
+	// Las cuentas sin contraseña local (Google) no pueden hacerlo aquí hasta que
+	// exista la confirmación por correo.
+	cambiaCorreo := input.Correo != nil && strings.ToLower(strings.TrimSpace(*input.Correo)) != usuarioActual.Correo
+	if cambiaCorreo || input.Password != nil {
+		if usuarioActual.PasswordHash == nil || *usuarioActual.PasswordHash == "" ||
+			input.PasswordActual == nil || !security.CheckPasswordHash(*input.PasswordActual, *usuarioActual.PasswordHash) {
+			return nil, ErrReautenticacionRequerida
+		}
+	}
 
 	// 2. Procesar NombreCompleto si viene presente
 	if input.NombreCompleto != nil {
@@ -391,12 +405,35 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 func NewAuthServiceWithGoogleValidator(repo domain.UsuarioRepository, validate func(context.Context, string, string) (*idtoken.Payload, error)) AuthService {
 	return &authService{usuarioRepo: repo, validateGoogle: validate}
 }
-func validateGoogleAccount(user *domain.Usuario, subject string) (*domain.Usuario, error) {
+
+// validateGoogleAccount acepta el login con Google sobre una cuenta existente.
+//
+// MEDIDA PROVISORIA (hasta implementar la confirmación de correo): hoy el
+// registro local no verifica el correo, así que cualquiera puede registrar el
+// correo de otra persona antes que ella (pre-account hijacking). Como Google sí
+// verificó el correo (email_verified), en la primera vinculación se guarda el
+// google_id y se invalida la contraseña local, que nunca demostró ser del dueño.
+// Cuando exista `correo_verificado`, la contraseña debe conservarse si el correo
+// local ya estaba verificado, y ambos métodos de acceso pueden convivir.
+func (s *authService) validateGoogleAccount(ctx context.Context, user *domain.Usuario, subject string) (*domain.Usuario, error) {
 	if !user.EstaActivo {
 		return nil, ErrCuentaInactiva
 	}
-	if user.GoogleID != nil && *user.GoogleID != subject {
-		return nil, ErrCredencialesInvalidas
+	if user.GoogleID != nil {
+		if *user.GoogleID != subject {
+			return nil, ErrCredencialesInvalidas
+		}
+		return user, nil
 	}
+	datos := map[string]interface{}{"google_id": subject, "password_hash": nil, "actualizado_el": time.Now()}
+	if err := s.usuarioRepo.Actualizar(ctx, user.ID.String(), datos); err != nil {
+		if errors.Is(err, ErrCorreoDuplicado) {
+			// google_id es único: ya está vinculado a otra cuenta.
+			return nil, ErrCredencialesInvalidas
+		}
+		return nil, fmt.Errorf("error al vincular cuenta con Google: %w", err)
+	}
+	user.GoogleID = &subject
+	user.PasswordHash = nil
 	return user, nil
 }

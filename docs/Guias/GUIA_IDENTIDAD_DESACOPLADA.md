@@ -111,7 +111,15 @@ para impedir que los clientes terminen agregados por IP de Gateway.
 No configurar `0.0.0.0/0` ni toda la red sin ese aislamiento de entrada.
 
 El contador conserva `rate_limit:login:<IP>` y la ventana de 5 intentos cada
-15 minutos. Un script Lua realiza INCR y expiración juntos, y repara TTL ausente.
+15 minutos, pero sólo cuentan los intentos fallidos: el intento se incrementa
+antes del handler (atómico bajo concurrencia) y una respuesta 2xx lo devuelve.
+Así varios usuarios legítimos tras un mismo NAT (Wi-Fi de la universidad, una
+demo en clase) no se bloquean por iniciar sesión correctamente. Registro
+(`rate_limit:register:<IP>`) y Google (`rate_limit:google:<IP>`) también tienen
+límite: 30 peticiones por IP cada 15 minutos, contando todas, porque bcrypt
+cuesta CPU y el 409 del registro permite enumerar correos. Igual que el login,
+fallan cerrados con 500 si Redis no responde.
+Un script Lua realiza INCR y expiración juntos, y repara TTL ausente.
 Las réplicas comparten la ventana. Redis debe permitir EVAL/EVALSHA e INCR,
 PTTL y PEXPIRE para ese namespace. Si Redis falla, login permanece cerrado
 con 500 genérico; no se ejecutan comprobaciones de contraseña sin límite.
@@ -127,6 +135,18 @@ Los comandos respetan un presupuesto de 1 segundo y no reintentan escrituras.
 - Google conserva el validador criptográfico oficial y audience; se exige issuer
   de Google, email verificado y subject. Claims opcionales no causan panic;
   cuentas inactivas o vinculadas a otro subject no obtienen sesión.
+- Vinculación con Google (medida provisoria hasta implementar la confirmación
+  de correo): el registro local aún no verifica el correo, así que alguien podría
+  pre-registrar el correo de otra persona. Por eso, el primer login con Google
+  sobre una cuenta local sin `google_id` guarda el subject e invalida
+  `password_hash`. Cuando exista la verificación de correo, la contraseña debe
+  conservarse si el correo local estaba verificado y ambos métodos convivirán.
+- `PUT /auth/me` exige `current_password` para cambiar `correo` o `password`
+  (403 si falta o no coincide); nombre, teléfono y dirección no la requieren.
+  Las cuentas sin contraseña local (Google) no pueden cambiar correo ni definir
+  contraseña por esta vía hasta que exista la confirmación por correo.
+- El registro ya no devuelve `token_verificacion` al cliente: cuando exista la
+  verificación de correo, ese token sólo debe viajar por correo.
   Avatares opcionales con UTF-8 inválido o más de 500 caracteres se omiten;
   no se corta una URL ni se bloquea el login por ese dato opcional.
 - Conflictos únicos en PostgreSQL se traducen a conflicto de correo; carreras de

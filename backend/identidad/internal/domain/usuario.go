@@ -7,6 +7,9 @@ type ActualizarPerfilDTO struct {
 	Telefono       *string `json:"telefono,omitempty"`
 	Direccion      *string `json:"direccion,omitempty"`
 	Password       *string `json:"password,omitempty"`
+	// PasswordActual es obligatoria para cambiar correo o contraseña: una cookie
+	// robada no basta para tomar la cuenta de forma permanente.
+	PasswordActual *string `json:"current_password,omitempty"`
 }
 
 // PerfilUsuarioDTO representa la respuesta con los datos del usuario tras la actualización o consulta
