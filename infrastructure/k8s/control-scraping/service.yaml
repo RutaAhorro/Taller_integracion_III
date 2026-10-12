@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: control-scraping
+  labels: {app: control-scraping}
+spec:
+  selector: {app: control-scraping}
+  ports:
+    - {name: http, port: 8080, targetPort: http}

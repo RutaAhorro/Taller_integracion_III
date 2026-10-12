@@ -4,8 +4,12 @@
 FROM node:22-alpine AS development
 WORKDIR /app
 COPY package*.json ./
-RUN npm install -g npm@latest
-RUN npm install
+RUN --mount=type=secret,id=network_ca,target=/run/secrets/network_ca \
+    if [ -f /run/secrets/network_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/network_ca; fi; \
+    npm install -g npm@latest
+RUN --mount=type=secret,id=network_ca,target=/run/secrets/network_ca \
+    if [ -f /run/secrets/network_ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/network_ca; fi; \
+    npm ci
 COPY . .
 # Exponer el puerto de Vite y arrancar el dev server (Hot Reloading)
 EXPOSE 3000
@@ -27,7 +31,9 @@ RUN npm run build
 # =========================================================
 FROM nginx:alpine AS production
 # Instalar sed (aunque Alpine ya lo trae en busybox, nos aseguramos)
-RUN apk add --no-cache bash
+RUN --mount=type=secret,id=network_ca,target=/run/secrets/network_ca \
+    if [ -f /run/secrets/network_ca ]; then export SSL_CERT_FILE=/run/secrets/network_ca; fi; \
+    apk add --no-cache bash
 # Copiar el build compilado desde la etapa anterior al root de Nginx
 COPY --from=build /app/dist /usr/share/nginx/html
 # Copiar configuración personalizada de Nginx (para soporte SPA/React Router)

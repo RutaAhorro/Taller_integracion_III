@@ -1,5 +1,12 @@
 # Guía de Arquitectura y Uso del Backend en Go (API Gateway y Servicios de Dominio)
 
+> Estado vigente SUP-273: Gateway, Identidad, Catálogo y Control de scraping
+> son servicios Go independientes. `backend/api` y su despliegue fueron retirados.
+> Consulta [la arquitectura final y operación](GUIA_CONTROL_SCRAPING_DESACOPLADO.md).
+> Las secciones sobre API, Air y modelos globales de esta guía describen el diseño
+> anterior; no usar sus comandos de `backend/api` en el checkout actual.
+
+
 Esta guía documenta la estructura, el rol arquitectónico y las convenciones del backend en **Go (Golang)** dentro de la plataforma de comparación de precios y optimización de rutas, adaptado a la arquitectura de **Microservicios** contenerizada en Kubernetes y Docker Compose.
 
 ---
@@ -104,12 +111,12 @@ En el entorno de producción/staging en Kubernetes:
 La API expone documentación viva auto-generada compatible con OpenAPI 2.0 / 3.0:
 
 1. **Ruta en navegador:**
-   👉 `http://localhost:8080/swagger/index.html`
+   👉 `http://localhost:8082/swagger/index.html` (Gateway; Swagger lo sirve Control de scraping)
 
 2. **Actualización de Documentación:**
    Al agregar o modificar anotaciones `@Summary`, `@Tags`, `@Param` o `@Router` en `handlers/`, regenerar los archivos estáticos ejecutando en `backend/api/`:
    ```bash
-   swag init
+   swag init --parseInternal
    ```
    Air detectará los cambios en `docs/docs.go` y actualizará Swagger UI automáticamente.
 

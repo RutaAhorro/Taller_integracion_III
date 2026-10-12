@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+data:
+  # Set only the actual trusted ingress/frontend proxy IPs or CIDRs before cutover.
+  GATEWAY_TRUSTED_PROXIES: ""

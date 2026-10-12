@@ -6,12 +6,21 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
+      # Sólo el operador/initializador recibe las contraseñas de todos los roles.
+      IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Define una contraseña exclusiva para Identidad}
+      SCRAPING_DB_PASSWORD: ${SCRAPING_DB_PASSWORD:?Define una contraseña exclusiva para coordinación}
+      CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:?Define una contraseña exclusiva para Catálogo}
     ports:
       - 5432:5432
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./infrastructure/db:/docker-entrypoint-initdb.d
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - microservices_net
     deploy:
@@ -19,49 +28,156 @@ services:
         limits:
           cpus: '0.5'
           memory: 300M
-  go_service:
+  control_scraping:
     build:
-      context: ./backend/api
+      context: ./backend/control_scraping
       dockerfile: Dockerfile
-      # [!] EQUIPO BACKEND: Descomentar estas lineas para usar Hot-Reload (Air) en local
-      # target: builder
-      # command:
-      # - air
-    container_name: go_service_api
-    ports:
-      - 8080:8080
     environment:
-      - PORT=8080
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
-      - DB_URL=postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
-      - REDIS_URL=redis://redis:6379/0
-      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      PORT: '8080'
+      SCRAPING_DB_URL: postgres://app_scraping:${SCRAPING_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      CATALOGO_INTERNAL_URL: http://catalogo:8080
+      CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
+      CATALOGO_INGEST_TIMEOUT: 10s
+      # Worker y bot lo envían como Bearer; sin él /api/v1/scraper/* responde 401.
+      SCRAPING_SERVICE_TOKEN: ${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
+      # Swagger expone el contrato completo: sólo en desarrollo local y CI.
+      SCRAPING_SWAGGER_ENABLED: ${SCRAPING_SWAGGER_ENABLED:-true}
+      SCRAPING_CORS_ALLOWED_ORIGINS: ${SCRAPING_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
     depends_on:
-      - db
-      # [!] EQUIPO BACKEND: Descomentar los volumenes para desarrollo local
-      # volumes:
-      # - ./backend/api:/app
-      # - /app/tmp
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
     restart: unless-stopped
+    stop_grace_period: 20s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
     healthcheck:
-      test: [ "CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1" ]
-      interval: 60s
-      timeout: 5s
+      test: [CMD, wget, '-q', '--spider', '-T', '2', 'http://127.0.0.1:8080/_scraping/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      microservices_net:
+        aliases: [control-scraping]
+    deploy:
+      resources:
+        reservations: {cpus: '0.1', memory: 64M}
+        limits: {cpus: '0.5', memory: 256M}
+  identidad:
+    build:
+      context: ./backend/identidad
+      dockerfile: Dockerfile
+    environment:
+      PORT: '8080'
+      IDENTITY_DB_URL: postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      CORS_ALLOWED_ORIGINS: ${IDENTIDAD_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # HTTP local; en Kubernetes se conserva el default Secure=true.
+      IDENTIDAD_COOKIE_SECURE: ${IDENTIDAD_COOKIE_SECURE:-false}
+      IDENTIDAD_TRUSTED_PROXIES: ${IDENTIDAD_GATEWAY_IP:-172.30.0.2}
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+    stop_grace_period: 20s
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/_identidad/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      microservices_net: {}
+      identidad_edge:
+        aliases: [identidad-upstream]
+    deploy:
+      resources:
+        reservations: {cpus: '0.1', memory: 64M}
+        limits: {cpus: '0.5', memory: 256M}
+  catalogo:
+    build:
+      context: ./backend/catalogo
+      dockerfile: Dockerfile
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://app_catalogo:${CATALOGO_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el entorno local}
+      CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: ${CATALOGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      DB_MAX_OPEN_CONNS: '10'
+      DB_MAX_IDLE_CONNS: '5'
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/_catalogo/ready']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - microservices_net
+    deploy:
+      resources:
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+        limits:
+          cpus: '0.5'
+          memory: 256M
+  gateway:
+    build:
+      context: ./backend/gateway
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8082:8080"
+    environment:
+      SCRAPING_URL: http://control-scraping:8080
+      CATALOGO_URL: http://catalogo:8080
+      IDENTIDAD_URL: http://identidad-upstream:8080
+      GATEWAY_LISTEN_ADDR: :8080
+      GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
+    depends_on:
+      control_scraping:
+        condition: service_healthy
+      catalogo:
+        condition: service_healthy
+      identidad:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/_gateway/ready"]
+      interval: 10s
+      timeout: 3s
       retries: 3
       start_period: 10s
     networks:
       microservices_net:
         aliases:
           - api
+      identidad_edge:
+        ipv4_address: ${IDENTIDAD_GATEWAY_IP:-172.30.0.2}
     deploy:
       resources:
         limits:
-          cpus: '0.3'
-          memory: 500M
+          cpus: '0.2'
+          memory: 128M
   frontend:
     build:
       context: ./frontend/web
@@ -73,10 +189,13 @@ services:
       - 3000:3000
     environment:
       - VITE_API_URL=/api/v1
-      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - VITE_GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
     volumes:
       - ./frontend/web:/app
       - /app/node_modules
+    depends_on:
+      gateway:
+        condition: service_healthy
     restart: unless-stopped
     networks:
       - microservices_net
@@ -87,10 +206,18 @@ services:
           memory: 250M
   redis:
     image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes', --appendfsync, everysec]
+    volumes:
+      - redisdata:/data
     container_name: redis_broker
     ports:
       - 6379:6379
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     networks:
       - microservices_net
     deploy:
@@ -108,7 +235,11 @@ services:
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-missing}
       - DISCORD_CHANNEL_ID=${DISCORD_CHANNEL_ID:-missing}
       - DISCORD_PUSH_CHANNEL_ID=${DISCORD_PUSH_CHANNEL_ID:-}
-      - SCRAPER_API_BASE_URL=http://go_service_api:8080/api/v1/scraper/trabajos
+      - SCRAPER_API_BASE_URL=http://api:8080/api/v1/scraper/trabajos
+      - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
+    depends_on:
+      gateway:
+        condition: service_healthy
     ports:
       - 8081:8081
     deploy:
@@ -130,12 +261,20 @@ services:
       - scraper_core.worker
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - SCRAPER_API_URL=http://go_service:8080/api/v1/scraper/productos
+      - SCRAPER_API_URL=http://api:8080/api/v1/scraper/productos
+      - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
+      - SCRAPER_STATE_DIR=/var/lib/scraper
+      - SCRAPER_LEASE_MS=60000
+      - SCRAPER_STATE_MIN_FREE_BYTES=67108864
+      - SCRAPER_FAILED_RETENTION_SECONDS=86400
     depends_on:
-      - redis
-      - go_service
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
     volumes:
       - ./backend/scraper:/app
+      - scraperdata:/var/lib/scraper
     restart: unless-stopped
     networks:
       - microservices_net
@@ -147,5 +286,13 @@ services:
 networks:
   microservices_net:
     driver: bridge
+  identidad_edge:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${IDENTIDAD_EDGE_SUBNET:-172.30.0.0/24}
+          ip_range: ${IDENTIDAD_EDGE_RANGE:-172.30.0.128/25}
 volumes:
   pgdata: null
+  redisdata: null
+  scraperdata: null

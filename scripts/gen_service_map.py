@@ -9,7 +9,7 @@ Usa SOLO stdlib de Python — cero dependencias externas.
 
 Uso:
     python3 scripts/gen_service_map.py              # Regenera todos los servicios
-    python3 scripts/gen_service_map.py backend/api   # Regenera solo un servicio
+    python3 scripts/gen_service_map.py backend/control_scraping   # Regenera solo un servicio
 """
 
 import ast
@@ -21,11 +21,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 SERVICES = {
-    "backend/api": {
+    "backend/catalogo": {
         "lang": "go",
-        "name": "API Gateway (Go + Gin)",
+        "name": "Catálogo y precios (Go + Gin)",
+        "notes": "Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.",
+        "extensions": [".go"],
+        "exclude": ["tmp"],
+    },
+    "backend/control_scraping": {
+        "lang": "go",
+        "name": "Control de scraping independiente (Go + Gin)",
+        "notes": "SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, pool 5. /_scraping/live independiente y /_scraping/ready SQL con Redis diagnóstico. Conserva recuperación SUP-270/271, ingesta HTTP idempotente a Catálogo y contrato worker. Sin JWT_SECRET, modelos de usuarios ni persistencia de catálogo. Gateway usa SCRAPING_URL; no existe servicio backend/api. Ver docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.",
         "extensions": [".go"],
         "exclude": ["tmp", "docs/docs.go"],
+    },
+    "backend/identidad": {
+        "lang": "go",
+        "name": "Identidad (Go + Gin)",
+        "notes": "SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app_identity (pool 5), Redis para límite login y JWT_SECRET compartido por contrato con Catálogo. Cinco rutas /api/v1/auth/* conservadas. CORS allowlist, cookies Secure configurables, HS256 estricto y sin fallback de clave. Proxy Gateway explícito obligatorio para IP real. Storage una vez al arrancar; ready SQL/Redis y live independiente. No importa API/Catálogo/scraping. Ver docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md.",
+        "extensions": [".go"],
+        "exclude": ["tmp"],
     },
     "backend/ia_conversacional": {
         "lang": "python",
@@ -42,6 +57,7 @@ SERVICES = {
     "backend/scraper": {
         "lang": "python",
         "name": "Scraper (Scrapy)",
+        "notes": "Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote de trabajos activos. Limpia spools completados tras ACK; retiene fallidos 24h, con retirada terminal bajo presión y reserva de 64MiB. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
         "extensions": [".py"],
         "exclude": ["__pycache__"],
     },
@@ -262,6 +278,8 @@ def generate_python_map(service_path: Path, config: dict) -> str:
         return "_Sin archivos Python detectados._\n"
 
     lines = [f"\n## Mapa auto-generado: {config['name']}\n"]
+    if config.get("notes"):
+        lines.append(config["notes"] + "\n")
     lines.append(f"**{len(files)} archivos .py** detectados\n")
 
     for f in files:
@@ -298,6 +316,8 @@ def generate_go_map(service_path: Path, config: dict) -> str:
         return "_Sin archivos Go detectados._\n"
 
     lines = [f"\n## Mapa auto-generado: {config['name']}\n"]
+    if config.get("notes"):
+        lines.append(config["notes"] + "\n")
     lines.append(f"**{len(files)} archivos .go** detectados\n")
 
     for f in files:

@@ -6,6 +6,19 @@ Este directorio contiene las definiciones DDL del esquema PostgreSQL (PostGIS) e
 
 ## 📁 Estructura de Archivos
 
+Las migraciones recientes de la refactorización se aplican expresamente a
+volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
+
+| Archivo | Uso |
+| --- | --- |
+| [05_recuperacion_scraping.sql](05_recuperacion_scraping.sql) | Recibos idempotentes de Catálogo y outboxes de coordinación (SUP-270). |
+| [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). |
+| [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los tres roles mediante variables privadas; no se ejecuta automáticamente sobre un volumen existente. |
+
+Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
+para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para
+migraciones ni recrear el volumen para aplicar estos scripts.
+
 | Archivo | Descripción | Cuándo usar |
 |---|---|---|
 | [`init.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/init.sql) | Script completo de inicialización con esquemas y datos seed de prueba (Jumbo, Lider, Santa Isabel, A Cuenta, Cugat). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |
@@ -65,3 +78,22 @@ SELECT id, nombre, url_sitio_web, esta_activa FROM scraper.cadenas_supermercado 
 - ID 4: Santa Isabel
 - ID 5: A Cuenta
 - ID 6: Cugat
+
+## SUP-270: recuperación y permisos antes del despliegue
+
+Para una base existente, aplicar `05_recuperacion_scraping.sql` mediante el
+operador de PostgreSQL **antes** de desplegar las imágenes nuevas. Los scripts
+de inicialización de Compose sólo se ejecutan al crear un volumen vacío.
+
+Coordinación necesita SELECT/INSERT/UPDATE en sus dos outboxes y DELETE
+**únicamente** en `scraper.entregas_trabajos`, para retirar ejecuciones terminales.
+Si la migración ya está aplicada, el fix del PR #97 sólo requiere este permiso
+adicional en el rol de coordinación; no agrega nuevas tablas. Catálogo conserva
+SELECT/INSERT en `scraper.lotes_catalogo`, sin acceso al ledger de coordinación.
+
+La API verifica tablas y permiso DELETE al arrancar. Si falta SQL o permisos,
+impide iniciar con un diagnóstico controlado. Catálogo sigue vivo y devuelve
+readiness 503 si falta su tabla; no sirve tráfico hasta completar la migración.
+Orden del rollout: SQL y permisos, Catálogo, API, migración de cola, worker.
+
+Ver [procedimiento, retención y rollback](../../docs/Guias/GUIA_SCRAPING_RECUPERACION.md).

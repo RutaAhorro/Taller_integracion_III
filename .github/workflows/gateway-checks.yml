@@ -1,0 +1,155 @@
+name: Gateway checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+    paths:
+      - 'backend/gateway/**'
+      - 'backend/catalogo/**'
+      - 'backend/control_scraping/**'
+      - 'backend/identidad/**'
+      - 'backend/scraper/**'
+      - 'infrastructure/db/**'
+      - 'frontend/web/**'
+      - 'docker-compose*.yml'
+      - 'infrastructure/k8s/**'
+      - 'scripts/smoke_gateway_compose.sh'
+      - 'scripts/smoke_catalogo_routing_compose.sh'
+      - 'scripts/smoke_catalogo_ingesta_compose.sh'
+      - 'scripts/smoke_scraping_recovery_compose.sh'
+      - 'scripts/smoke_data_ownership_compose.sh'
+      - 'scripts/smoke_identity_compose.sh'
+      - 'scripts/smoke_control_scraping_compose.sh'
+      - '.github/workflows/**'
+  push:
+    branches: [develop-refactor]
+    paths:
+      - 'backend/gateway/**'
+      - 'backend/catalogo/**'
+      - 'backend/control_scraping/**'
+      - 'backend/identidad/**'
+      - 'backend/scraper/**'
+      - 'infrastructure/db/**'
+      - 'frontend/web/**'
+      - 'docker-compose*.yml'
+      - 'infrastructure/k8s/**'
+      - 'scripts/smoke_gateway_compose.sh'
+      - 'scripts/smoke_catalogo_routing_compose.sh'
+      - 'scripts/smoke_catalogo_ingesta_compose.sh'
+      - 'scripts/smoke_scraping_recovery_compose.sh'
+      - 'scripts/smoke_data_ownership_compose.sh'
+      - 'scripts/smoke_identity_compose.sh'
+      - 'scripts/smoke_control_scraping_compose.sh'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  control-scraping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Control de scraping tests, boundaries and build
+        working-directory: backend/control_scraping
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -o /tmp/control-scraping ./cmd/control_scraping
+      - name: Build Control runtime image
+        run: docker build -t sup273-control:local backend/control_scraping
+
+  identidad:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Identity tests, boundaries and build
+        working-directory: backend/identidad
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -o /tmp/identidad ./cmd/identidad
+      - name: Build identity runtime image
+        run: docker build -t sup272-identidad:local backend/identidad
+
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Gateway tests and build
+        working-directory: backend/gateway
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build ./cmd/gateway
+      - name: Build runtime image
+        run: docker build -t sup265-gateway:local backend/gateway
+
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Install scraper dependencies and test durable spool
+        run: |
+          pip install -r backend/scraper/requirements.txt
+          cd backend/scraper
+          python -m unittest research.test_api_pipeline research.test_recovery -v
+      - name: Compose data ownership, recovery, worker leases and rollback
+        run: bash scripts/smoke_control_scraping_compose.sh
+
+  manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Install schema validator
+        run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+      - name: Validate Gateway Kubernetes manifests
+        run: |
+          kubeconform -strict -summary -kubernetes-version 1.32.0 \
+            infrastructure/k8s/gateway/ \
+            infrastructure/k8s/identidad/ \
+            infrastructure/k8s/catalogo/ \
+            infrastructure/k8s/control-scraping/ \
+            infrastructure/k8s/scraper/ \
+            infrastructure/k8s/redis/ \
+            infrastructure/k8s/db/

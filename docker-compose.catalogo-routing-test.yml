@@ -1,0 +1,123 @@
+# SUP-268: aplica el Compose real sobre recursos aislados, sin bot ni worker.
+services:
+  db:
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP270_DB_PORT:-18078}:5432"]
+    volumes: !override
+      - pgdata:/var/lib/postgresql/data
+      - ${SUP268_INIT_DIR:?}:/docker-entrypoint-initdb.d:ro
+  redis:
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP270_REDIS_PORT:-18079}:6379"]
+  control_scraping:
+    image: ${SUP269_API_TEST_IMAGE:-sup273-control:local}
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP268_API_PORT:-18080}:8080"]
+    environment:
+      SCRAPING_CORS_ALLOWED_ORIGINS: https://frontend.example,http://localhost:3000
+    healthcheck:
+      interval: 2s
+  identidad:
+    image: sup272-identidad:local
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    environment:
+      CORS_ALLOWED_ORIGINS: https://frontend.example,http://localhost:3000
+    ports: ["127.0.0.1::8080"] # Puerto efímero por réplica: permite escalar el harness.
+    healthcheck:
+      interval: 2s
+  catalogo:
+    image: ${SUP269_CATALOGO_TEST_IMAGE:-sup271-catalogo:local}
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    healthcheck:
+      interval: 2s
+  gateway:
+    image: sup273-gateway:local
+    ports: !override ["127.0.0.1:${SUP268_GATEWAY_PORT:-18082}:8080"]
+    healthcheck:
+      interval: 2s
+  frontend:
+    image: sup265-frontend:local
+    build:
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    container_name: !reset null
+    ports: !override ["127.0.0.1:${SUP268_FRONTEND_PORT:-13000}:3000"]
+    volumes: !reset []
+  reference_api:
+    image: sup267-api:local
+    build:
+      context: ${SUP268_REFERENCE_API_DIR:?}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://sup268:${DB_PASSWORD}@db:5432/sup268?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?}
+      REDIS_URL: redis://redis:6379/0
+    ports: ["127.0.0.1:${SUP268_REFERENCE_PORT:-18084}:8080"]
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    networks: [microservices_net]
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  reference_ingesta_api:
+    # Sólo se construye para probar el rollback de SUP-269. No se inicia como
+    # servicio auxiliar: el override asigna esta imagen a control_scraping.
+    image: sup268-api:local
+    build:
+      context: ${SUP269_REFERENCE_API_DIR:?}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
+  reference_permissions_api:
+    # Imagen SUP-270: rollback de conexiones de SUP-271, sólo en el harness.
+    image: sup270-api:local
+    build:
+      context: ${SUP271_REFERENCE_API_DIR:-./backend/control_scraping}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
+  reference_identity_api:
+    image: sup271-api:reference
+    build:
+      context: ${SUP272_REFERENCE_API_DIR:-./backend/control_scraping}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    environment:
+      PORT: '8080'
+      IDENTITY_DB_URL: postgres://app_identity:${IDENTITY_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      SCRAPING_DB_URL: postgres://app_scraping:${SCRAPING_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?}
+      CATALOGO_INTERNAL_URL: http://catalogo:8080
+      CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?}
+      GOOGLE_CLIENT_ID: ''
+    ports: ["127.0.0.1:${SUP272_REFERENCE_PORT:-18087}:8080"]
+    networks: [microservices_net]
+    profiles: [identity-reference]
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  reference_control_api:
+    image: sup272-api:reference
+    build:
+      context: ${SUP273_REFERENCE_API_DIR:-./backend/control_scraping}
+      network: ${SUP268_BUILD_NETWORK:-default}
+      secrets: [network_ca]
+    profiles: [reference-build]
+secrets:
+  network_ca:
+    file: ${SUP268_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

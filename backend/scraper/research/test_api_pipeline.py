@@ -1,5 +1,6 @@
 import json
 import unittest
+import unittest.mock
 from urllib.request import Request
 
 from scraper_core.api_client import ScraperAPIClient
@@ -51,6 +52,36 @@ class APIPipelineTest(unittest.TestCase):
                 ],
             },
         )
+
+    def test_client_sends_service_token_on_every_call(self):
+        requests = []
+
+        def opener(request, timeout):
+            requests.append(request)
+            if request.get_method() == "PUT":
+                return FakeResponse({"id": "w1", "estado": "completado"})
+            if request.get_method() == "GET":
+                return FakeResponse({"id": "w1", "estado": "en_progreso"})
+            return FakeResponse({"insertados": 1})
+
+        client = ScraperAPIClient("http://api.test/api/v1/scraper/productos", opener=opener, token="s" * 32)
+        client.ingest_batch([{"sku": "sku-1"}], supermarket="Jumbo")
+        client.finalize_work("w1", "completado")
+        client.get_work("w1")
+
+        self.assertEqual(len(requests), 3)
+        for request in requests:
+            self.assertEqual(request.get_header("Authorization"), "Bearer " + "s" * 32)
+
+    def test_client_reads_token_from_environment(self):
+        with unittest.mock.patch.dict("os.environ", {"SCRAPING_SERVICE_TOKEN": "e" * 32}):
+            client = ScraperAPIClient("http://api.test/api/v1/scraper/productos")
+        self.assertEqual(client._headers()["Authorization"], "Bearer " + "e" * 32)
+
+    def test_client_without_token_sends_no_authorization(self):
+        with unittest.mock.patch.dict("os.environ", {}, clear=True):
+            client = ScraperAPIClient("http://api.test/api/v1/scraper/productos")
+        self.assertNotIn("Authorization", client._headers())
 
     def test_pipeline_flushes_batches(self):
         sent = []

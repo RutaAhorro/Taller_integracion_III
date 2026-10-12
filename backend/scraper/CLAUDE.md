@@ -58,8 +58,28 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
 
 ## Mapa auto-generado: Scraper (Scrapy)
 
-**24 archivos .py** detectados
+Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote de trabajos activos. Limpia spools completados tras ACK; retiene fallidos 24h, con retirada terminal bajo presión y reserva de 64MiB. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.
 
+**31 archivos .py** detectados
+
+
+### `research/recovery_fixture.py`
+
+- **class RecoveryFixture(Spider)**
+  - `parse(response)`
+
+### `research/smoke_recovery.py`
+
+- `compose()`
+- `sql(query)`
+- `request(path, data, status, method, key)`
+- `wait_for(predicate, timeout)`
+- `job()`
+- `batch(sku)`
+- `path(work_id)`
+- `captures(sku)`
+- `recovered_crawl(job, cancelled)`
+- `fixture_crawl(job, cancelled)`
 
 ### `research/test_acuenta.py`
 
@@ -164,6 +184,63 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
   - `test_normalizes_ean_without_losing_leading_zeroes()`
   - `test_normalizes_whitespace_in_text()`
 
+### `research/test_recovery.py`
+
+- **class Response**
+  - `__init__(data)`
+  - `__enter__()`
+  - `__exit__()`
+  - `read()`
+- **class RecoveryTest(unittest.TestCase)**
+  - `setUp()`
+  - `spool()`
+  - `test_item_survives_restart_before_batch_is_sealed()`
+  - `test_lost_response_replays_exact_key_and_payload()`
+  - `test_repeated_crawl_items_are_not_batched_again()`
+  - `test_pipeline_keeps_batches_when_api_is_down()`
+  - `test_cancelled_lease_does_not_send_pending_batch()`
+  - `test_client_preserves_key_and_marks_counter_pending_retryable()`
+  - `test_accepted_pending_is_not_considered_delivered()`
+  - `test_finished_job_does_not_rerun_crawl()`
+  - `test_finished_crawl_retries_finalization_without_scraping()`
+  - `test_three_crawl_attempts_require_review()`
+  - `test_legacy_queue_not_removed_before_sql_acceptance()`
+  - `test_legacy_queue_removed_after_sql_acceptance()`
+  - `test_legacy_api_acceptance_does_not_prove_durable_queue()`
+  - `test_finalize_failed_deliveries_are_permanent_not_pending()`
+  - `test_terminal_job_can_be_acknowledged_without_opening_full_sqlite()`
+  - `test_completed_spool_deleted_only_after_successful_ack()`
+  - `test_gc_recovers_crash_after_ack_but_preserves_pending_job()`
+  - `test_gc_never_deletes_unacked_or_locked_spool()`
+  - `test_failed_spool_retention_and_pressure_cleanup()`
+  - `test_full_disk_does_not_delete_active_items_or_accept_new_ones()`
+  - `test_gc_dependency_failure_preserves_spool()`
+  - `test_sqlite_full_rolls_back_without_ack_or_losing_saved_items()`
+  - `test_legacy_duplicates_remove_tail_and_keep_fifo_order()`
+- **class Client**
+  - `ingest_batch()`
+- **class Client**
+  - `ingest_batch()`
+- **class Client**
+  - `get_work(work_id)`
+- **class Client**
+  - `get_work(work_id)`
+  - `finalize_work(work_id, status)`
+- **class Client**
+  - `get_work(work_id)`
+- **class Redis**
+  - `lindex()`
+  - `lrem()`
+- **class Redis**
+  - `lindex()`
+  - `lrem()`
+- **class Redis**
+  - `lindex()`
+  - `lrem()`
+- **class Redis**
+  - `lindex(key, index)`
+  - `lrem(key, count, value)`
+
 ### `research/test_santa_isabel.py`
 
 - **class SantaIsabelExtractionTest(unittest.TestCase)**
@@ -175,12 +252,25 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
 
 ### `scraper_core/api_client.py`
 
+- **class NoRedirect(HTTPRedirectHandler)**
+  - `redirect_request(req, fp, code, msg, headers, newurl)`
 - **class ScraperAPIError(RuntimeError)**
+  - `__init__(message)`
+  - `permanent()`
 - **class ScraperAPIClient**
   - `__init__(endpoint: str, timeout: float, opener)`
-  - `ingest_batch(products: ?, supermarket: ?, branch_id: ?, branch_code: ?, work_id: ?) → dict`
-  - `finalize_work(work_id: str, status: str, extracted_items: int, error_message: ?) → dict`
+  - `ingest_batch(products: ?, supermarket: ?, branch_id: ?, branch_code: ?, work_id: ?, batch_id: ?) → dict`
+  - `finalize_work(work_id: str, status: str, extracted_items: ?, error_message: ?) → dict`
   - `_ingestion_endpoint(work_id: ?) → str`
+  - `get_work(work_id: str) → dict`
+
+### `scraper_core/extensions.py`
+
+- **class DurableCrawlExtension**
+  - `__init__(crawler)`
+  - `from_crawler(cls, crawler)`
+  - `on_error()`
+  - `closed(spider, reason)`
 
 ### `scraper_core/freshness.py`
 
@@ -227,12 +317,30 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
   - `process_exception(request, exception, spider)`
   - `spider_opened(spider)`
 
+### `scraper_core/migrate_queue.py`
+
+- `migrate_one(redis, api)`
+- `main()`
+
 ### `scraper_core/normalization.py`
 
 - `normalizar_precio_clp(value)`
 - `_uses_thousands_groups(parts)`
 - `normalizar_ean_gtin(value)`
 - `normalizar_texto(value)`
+
+### `scraper_core/outbox.py`
+
+- **class Outbox**
+  - `__init__(work_id: str, state_dir: ?)`
+  - `_initialize()`
+  - `close()`
+  - `add(product: dict, market: ?)`
+  - `unbatched()`
+  - `seal(batch_size)`
+  - `replay(client, cancelled)`
+  - `progress(key)`
+  - `set_progress(key, value)`
 
 ### `scraper_core/output.py`
 
@@ -253,7 +361,7 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
 
 - **class ScrapyCommandExecutor**
   - `__init__(command_runner, spider_name)`
-  - `__call__(job)`
+  - `__call__(job, cancelled)`
 - `main()`
 
 ### `scraper_core/settings.py`
@@ -376,7 +484,28 @@ docker compose exec web_scraper_alimentos scrapy crawl jumbo_rsc -O /tmp/jumbo.j
   - `handle_error(failure)`
   - `_validate_category_url(url)`
 
+### `scraper_core/storage.py`
+
+- **class StoragePressure(OSError)**
+- **class SpoolCollector**
+  - `__init__(state_dir)`
+  - `collect(api_client, queue, limit)`
+- `reserve_bytes()`
+- `ensure_capacity(directory, extra_bytes)`
+- `cleanup_spool(state_dir, work_id)`
+
 ### `scraper_core/worker.py`
 
-- `process_job(job: dict, api_client: ScraperAPIClient) → dict`
+- **class CrawlExhausted(RuntimeError)**
+- **class ReliableQueue**
+  - `__init__(client, consumer, lease_ms)`
+  - `ensure_group()`
+  - `receive()`
+  - `renew(message_id)`
+  - `ack(message_id, raw_job, work_id, reason)`
+  - `has_message(work_id)`
+  - `heartbeat(message_id)`
+- `job_environment(work_id)`
+- `process_job(job: dict, api_client: ScraperAPIClient, cancelled) → dict`
+- `handle_message(queue, message, api_client)`
 - `run_worker()`

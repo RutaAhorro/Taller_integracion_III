@@ -1,0 +1,21 @@
+# Restaurar una imagen verificada de API anterior a SUP-268, con el lector.
+# La Gateway conserva api:8080 y deja de enviar consultas a Catálogo.
+services:
+  control_scraping:
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?}
+      # La imagen histórica vuelve a consultar tablas de Catálogo.
+      DB_URL: postgres://${DB_USER}:${DB_PASSWORD}@db:5432/${DB_NAME}?sslmode=disable
+    image: ${SUP268_LEGACY_API_IMAGE:?Define una imagen de API anterior a SUP-268}
+    build: !reset null
+  gateway:
+    environment:
+      SCRAPING_URL: ''
+      BACKEND_URL: http://control_scraping:8080
+      CATALOGO_URL: ''
+      IDENTIDAD_URL: ''
+    depends_on: !override
+      control_scraping:
+        condition: service_healthy
