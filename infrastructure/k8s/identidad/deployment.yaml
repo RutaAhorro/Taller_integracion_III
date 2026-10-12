@@ -39,16 +39,20 @@ spec:
             readOnlyRootFilesystem: true
             capabilities: {drop: [ALL]}
           startupProbe:
-            httpGet: {path: /_identidad/live, port: http}
+            # Ejecutar dentro del contenedor evita depender del filtrado host -> pod del CNI.
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "1", "http://127.0.0.1:8080/_identidad/live"]
             periodSeconds: 2
             timeoutSeconds: 2
             failureThreshold: 30
           livenessProbe:
-            httpGet: {path: /_identidad/live, port: http}
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "1", "http://127.0.0.1:8080/_identidad/live"]
             periodSeconds: 10
             timeoutSeconds: 2
           readinessProbe:
-            httpGet: {path: /_identidad/ready, port: http}
+            exec:
+              command: ["wget", "-q", "--spider", "-T", "2", "http://127.0.0.1:8080/_identidad/ready"]
             periodSeconds: 5
             timeoutSeconds: 3
           resources:

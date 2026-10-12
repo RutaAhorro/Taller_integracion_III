@@ -11,7 +11,7 @@ extraídos ni credenciales SQL de otro propietario.
 
 Estado vigente SUP-272: API ya no importa ni registra Identidad; usa sólo SCRAPING_DB_URL/app_scraping y un pool de 5 conexiones. Conserva los outboxes y todas las correcciones SUP-270/271. /health comprueba sólo SQL de coordinación y diagnostica Redis; /_api/live no consulta dependencias. Auth pertenece al servicio backend/identidad. Ver GUIA_IDENTIDAD_DESACOPLADA.md y GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**32 archivos .go** detectados
+**33 archivos .go** detectados
 
 
 ### `cmd/seed_productos/main.go` (package main)
@@ -228,6 +228,10 @@ Estado vigente SUP-272: API ya no importa ni registra Identidad; usa sólo SCRAP
 - `NotFoundHandler() gin.HandlerFunc`
 - `MethodNotAllowedHandler() gin.HandlerFunc`
 - `ResponderError(c *gin.Context, estado int, mensaje string, err error)`
+
+### `swagger_test.go` (package main)
+
+- `TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T)`
 
 ### `tests/architecture_test.go` (package tests)
 

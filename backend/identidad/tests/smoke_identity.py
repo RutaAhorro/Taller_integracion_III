@@ -72,6 +72,18 @@ def state(service):
     return subprocess.run(['docker','inspect','--format','{{.Id}} {{.State.StartedAt}} {{.RestartCount}}',*ids],
         check=True,text=True,stdout=subprocess.PIPE).stdout.strip()
 
+def check_kubernetes_probes(ready=True):
+    global passed
+    # Ejecutar los comandos del Deployment, no una copia, en la imagen runtime.
+    manifest=root/'infrastructure/k8s/identidad/deployment.yaml'
+    commands=[json.loads(line.split('command:',1)[1]) for line in manifest.read_text().splitlines()
+              if line.strip().startswith('command:')]
+    assert len(commands)==3 and sum(command[-1].endswith('/ready') for command in commands)==1
+    for command in commands:
+        assert command[-1].startswith('http://127.0.0.1:8080/_identidad/')
+        compose('exec','-T','identidad',*command,success=ready or command[-1].endswith('/live'))
+        passed+=1
+
 def wait(predicate, timeout=30):
     end=time.monotonic()+timeout
     while time.monotonic()<end:
@@ -107,6 +119,7 @@ request('/api/v1/scraper/trabajos',404,method='POST',data={},base=identity_url)
 request('/_identidad/ready',404) # Probes privados no se exponen por Gateway.
 request('/_identidad/ready',base=identity_url)
 request('/_identidad/live',base=identity_url)
+check_kubernetes_probes()
 
 # Firma, algoritmo y expiración. No se imprimen la clave ni los tokens.
 fixture_env=dict(line.split('=',1) for line in Path(args.env_file).read_text().splitlines() if '=' in line)
@@ -155,6 +168,15 @@ registered=client()
 request('/api/v1/auth/register',201,method='POST',data={'correo':'sup272.profile@example.test','password':'Sup272FixturePassword123!','nombre_completo':'Profile'},opener=registered)
 body,_=request('/api/v1/auth/me',method='PUT',data={'nombre_completo':'Updated Profile','rol':'admin','esta_activo':False,'cuota_tokens_ia':999999,'user_id':old_body['id']},opener=registered)
 assert body['rol']=='registrado' and body['esta_activo'] is True and body['nombre_completo']=='Updated Profile'
+for name in ('@@@;;;', ' \t ', '@ @'):
+    request('/api/v1/auth/me',400,method='PUT',data={'nombre_completo':name},opener=registered)
+    assert sql("SELECT nombre_completo FROM api.usuarios WHERE correo='sup272.profile@example.test';")=='Updated Profile'
+request('/api/v1/auth/register',400,method='POST',data={'correo':'sup272.empty-name@example.test','password':'Sup272FixturePassword123!','nombre_completo':'@@@;;;'})
+assert sql("SELECT count(*) FROM api.usuarios WHERE correo='sup272.empty-name@example.test';")=='0'
+for name,expected in [('a'*99+'ñ'+'z','a'*99+'ñ'), ('áéíóúñ'*20,('áéíóúñ'*20)[:100])]:
+    body,_=request('/api/v1/auth/me',method='PUT',data={'nombre_completo':name},opener=registered)
+    assert body['nombre_completo']==expected
+    assert sql("SELECT nombre_completo FROM api.usuarios WHERE correo='sup272.profile@example.test';")==expected
 request('/api/v1/admin/productos',403,opener=registered)
 # Real SSO row: password nil cannot panic at local login.
 sql("INSERT INTO api.usuarios(correo,nombre_completo,google_id,password_hash,rol,esta_activo,cuota_tokens_ia) VALUES ('sup272.sso@example.test','SSO Fixture','google-fixture',NULL,'registrado',true,1000);")
@@ -213,6 +235,7 @@ compose('stop','redis')
 try:
     request('/_identidad/ready',503,base=identity_url)
     request('/_identidad/live',base=identity_url)
+    check_kubernetes_probes(ready=False)
     start=time.monotonic()
     body,_=request('/api/v1/auth/login',500,method='POST',data={'correo':'admin.sup267@example.test','password':'Sup267FixturePassword123!'})
     assert time.monotonic()-start<4 and 'detalle' not in body
@@ -221,6 +244,15 @@ try:
     request('/_gateway/ready')
 finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','redis')
 request('/_identidad/ready',base=identity_url)
+check_kubernetes_probes()
+assert state('identidad')==before
+
+# Los mismos comandos distinguen caída SQL de caída del proceso y se recuperan.
+compose('stop','db')
+try:
+    check_kubernetes_probes(ready=False)
+finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','db')
+check_kubernetes_probes()
 assert state('identidad')==before
 
 # Single-domain outages never cause fallback or withdraw the edge Gateway.

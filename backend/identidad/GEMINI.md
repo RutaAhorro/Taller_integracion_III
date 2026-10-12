@@ -10,7 +10,7 @@ y rutas públicas conservados. Ver `docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`.
 
 SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app_identity (pool 5), Redis para límite login y JWT_SECRET compartido por contrato con Catálogo. Cinco rutas /api/v1/auth/* conservadas. CORS allowlist, cookies Secure configurables, HS256 estricto y sin fallback de clave. Proxy Gateway explícito obligatorio para IP real. Storage una vez al arrancar; ready SQL/Redis y live independiente. No importa API/Catálogo/scraping. Ver docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md.
 
-**31 archivos .go** detectados
+**32 archivos .go** detectados
 
 
 ### `cmd/identidad/main.go` (package main)
@@ -201,6 +201,12 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 ### `internal/tests/rbac_test.go` (package tests)
 
 - `TestRequireRole(t *testing.T)`
+
+### `internal/tests/review_regressions_test.go` (package tests)
+
+- `TestProfileNameValidationPreservesStoredName(t *testing.T)`
+- `TestNameSanitizationPreservesUnicodeBoundaries(t *testing.T)`
+- `TestGoogleAvatarFitsPostgresWithoutBreakingLogin(t *testing.T)`
 
 ### `internal/utils/security.go` (package utils)
 

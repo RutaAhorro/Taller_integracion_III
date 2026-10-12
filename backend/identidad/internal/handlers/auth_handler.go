@@ -89,7 +89,7 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 	creado, err := h.authService.Registrar(c.Request.Context(), dto)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrPasswordInvalido):
+		case errors.Is(err, services.ErrPasswordInvalido), errors.Is(err, services.ErrNombreInvalido):
 			middleware.ResponderError(c, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrCorreoDuplicado):
 			middleware.ResponderError(c, http.StatusConflict, err.Error(), err)
@@ -233,7 +233,7 @@ func (h *AuthHandler) ActualizarPerfil(c *gin.Context) {
 	perfil, err := h.authService.ActualizarPerfil(c.Request.Context(), userID, req)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrPasswordInvalido), errors.Is(err, services.ErrCorreoInvalido):
+		case errors.Is(err, services.ErrPasswordInvalido), errors.Is(err, services.ErrCorreoInvalido), errors.Is(err, services.ErrNombreInvalido):
 			middleware.ResponderError(c, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrCorreoDuplicado):
 			middleware.ResponderError(c, http.StatusConflict, err.Error(), err)

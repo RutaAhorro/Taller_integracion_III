@@ -249,7 +249,7 @@ La imagen corre sin privilegios; el clúster exige CNI con NetworkPolicy.
 La firma asimétrica, revocación/refresh, verificación de correo y nuevas cuotas
 son tareas distintas; las limitaciones heredadas están registradas en la guía.
 
-Validación local final: 479 resultados Go (64 API, 124 Identidad, 182 Gateway,
+Validación inicial de SUP-272 (`185e5e3`): 479 resultados Go (64 API, 124 Identidad, 182 Gateway,
 108 Catálogo y 1 integración del publisher con PostgreSQL real), con race
 detector y vet. La integración omitida por el suite unitario se ejecutó
 explícitamente en el harness. Veinticinco pruebas Python, 478 comprobaciones
@@ -277,3 +277,44 @@ comprobación de outage duplicada y actualización de Gateway en rollback histó
 No se aplicaron migraciones/Secrets en el clúster ni se publicaron imágenes.
 El usuario autorizó publicar los cambios en la rama de SUP-272 y abrir el PR;
 esa autorización no incluye integrar el PR ni desplegar el clúster.
+
+
+### Correcciones del review de PR #99 (SUP-272)
+
+H-01 se resuelve usando probes exec por loopback dentro de la imagen Alpine,
+con wget y timeouts acotados. NetworkPolicy conserva exclusivamente los pods
+Gateway del mismo namespace en 8080. No se agregan CIDRs de nodos ni se abre el
+namespace completo. La especificación Kubernetes permite el tráfico del nodo
+local; la caída indicada no es una consecuencia inevitable de NetworkPolicy.
+Se documenta ese matiz y la independencia de ingress de los probes locales.
+La aplicación real de políticas de host/CNI requiere comprobarse en el clúster.
+
+H-02 incorpora ErrNombreInvalido y respuesta 400 en perfil y registro, sin
+persistir nombres vacíos tras sanitizar. H-03 omite el avatar opcional de Google
+cuando excede 500 caracteres o tiene UTF-8 inválido; mantiene el login y no
+trunca URLs. H-11 aplica límite de 100 runas y regexp compilada una vez, con
+pruebas de límites de tildes/ñ y persistencia real en PostgreSQL.
+
+H-10 regenera docs.go, swagger.json y swagger.yaml con swag init --parseInternal.
+Swagger publica sólo operaciones existentes en el router de coordinación y
+salud; retira Identidad/Catálogo de esta especificación. Las rutas funcionales
+públicas continúan por Gateway. El alcance de /swagger/* queda explícito y se
+verifica automáticamente que cada operación publicada existe en el router.
+Los humos históricos conservan su contrato integrado cuando usan imágenes
+anteriores; SUP-272 comprueba explícitamente la especificación por servicio.
+
+El usuario autorizó commit y push de estas correcciones en la misma rama,
+actualizando PR #99 hacia develop-refactor. Esa autorización no incluye merge
+ni despliegue del clúster.
+
+Validación de las correcciones: 208 resultados Go de los módulos afectados
+(65 API y 143 Identidad) con race detector, y 1 integración adicional del
+publisher con PostgreSQL real; vet aprobado. El harness completo pasó 499
+comprobaciones: 484 HTTP y 15 ejecuciones de los comandos exactos de probes,
+además de 118 controles SQL por rol. Incluye 131 comprobaciones de Identidad
+(116 HTTP y 15 probes), recuperación de scraping, carga con tres réplicas de
+Catálogo y rollbacks. Veinticinco manifiestos Kubernetes válidos; imagen de
+Identidad construida desde el Dockerfile real, Swagger/workflows/sintaxis/diff
+comprobados. Los recursos temporales se eliminaron. No se desplegó en el clúster
+ni se verificó allí el CNI o el HPA; Google real desde navegador sigue fuera de
+esta comprobación. Las cifras anteriores corresponden a la validación inicial.

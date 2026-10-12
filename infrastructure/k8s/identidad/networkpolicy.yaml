@@ -6,6 +6,7 @@ spec:
   podSelector:
     matchLabels: {app: identidad}
   policyTypes: [Ingress]
+  # Los probes exec del Deployment usan loopback; no necesitan ampliar este ingreso.
   ingress:
     - from:
         - podSelector:

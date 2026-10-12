@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
@@ -31,6 +32,7 @@ var (
 	ErrUsuarioNoEncontrado = errors.New("usuario no encontrado")
 	// ErrCorreoInvalido se emite cuando el correo no tiene un formato válido
 	ErrCorreoInvalido = errors.New("el formato del correo electrónico es inválido")
+	ErrNombreInvalido = errors.New("el nombre completo no puede quedar vacío")
 )
 
 // RegistroDTO contiene los parámetros requeridos para el registro de un usuario
@@ -123,6 +125,9 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 	// 2. Normalizar y sanitizar entradas
 	correoNormalizado := strings.ToLower(strings.TrimSpace(input.Correo))
 	nombreSanitizado := utils.SanitizarInputBusqueda(input.NombreCompleto)
+	if nombreSanitizado == "" {
+		return nil, ErrNombreInvalido
+	}
 
 	// 3. Comprobar unicidad del correo electrónico
 	existente, err := s.usuarioRepo.FindByEmail(ctx, correoNormalizado)
@@ -235,7 +240,9 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 		name = strings.SplitN(email, "@", 2)[0]
 	}
 	var picture *string
-	if pic, ok := payload.Claims["picture"].(string); ok {
+	// El avatar es opcional. Omitir valores incompatibles con VARCHAR(500)
+	// conserva el login sin persistir una URL cortada o UTF-8 inválido.
+	if pic, ok := payload.Claims["picture"].(string); ok && utf8.ValidString(pic) && utf8.RuneCountInString(pic) <= 500 {
 		picture = &pic
 	}
 
@@ -299,7 +306,7 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 	if input.NombreCompleto != nil {
 		nombreSanitizado := utils.SanitizarInputBusqueda(*input.NombreCompleto)
 		if nombreSanitizado == "" {
-			return nil, errors.New("el nombre completo no puede quedar vacío")
+			return nil, ErrNombreInvalido
 		}
 		datos["nombre_completo"] = nombreSanitizado
 	}

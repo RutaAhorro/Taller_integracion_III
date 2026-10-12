@@ -123,7 +123,9 @@ if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then
 fi
 
 python3 "$repo_root/backend/catalogo/tests/smoke_contracts.py" --api-url "$reference_url" --catalogo-url "$gateway_url"
-python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode normal
+swagger_scope=integrated
+if [[ "${SUP272_IDENTITY:-0}" == 1 ]]; then swagger_scope=scraping; fi
+python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode normal --swagger-scope "$swagger_scope"
 python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --reference-url "$reference_url" --state-file "$test_dir/ingesta.json" --mode normal
 compose exec -T db psql -U sup268 -d sup268 -v ON_ERROR_STOP=1 <<'SQL'
 CREATE FUNCTION scraper.sup269_fail_counter() RETURNS trigger LANGUAGE plpgsql AS $$

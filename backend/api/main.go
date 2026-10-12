@@ -215,9 +215,9 @@ func LivenessHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "api-gateway"})
 }
 
-// @title           API Gateway de Supermercados
+// @title           API de Coordinación de Scraping
 // @version         1.0
-// @description     API Gateway construida en Go con Gin
+// @description     Contrato del servicio de coordinación. Identidad y Catálogo se atienden por Gateway y no forman parte de esta especificación.
 // @host            localhost:8080
 // @BasePath        /
 func main() {

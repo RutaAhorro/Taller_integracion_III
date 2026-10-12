@@ -13,6 +13,7 @@ parser.add_argument('--gateway-url', default='http://127.0.0.1:18082')
 parser.add_argument('--frontend-url', default='http://127.0.0.1:13000')
 parser.add_argument('--mode', choices=['normal', 'load', 'catalog-down', 'api-down', 'rollback'], required=True)
 parser.add_argument('--session-file', required=True, help='Archivo temporal privado para reutilizar una sesión real.')
+parser.add_argument('--swagger-scope', choices=['integrated', 'scraping'], default='integrated')
 args = parser.parse_args()
 checks = []
 
@@ -101,7 +102,11 @@ if args.mode == 'normal':
     check(args.gateway_url, '/api/v1/scraper/productos', method='POST', data={'sucursal_id':1, 'supermercado':'Jumbo',
         'productos':[{'sku':'SUP268-DIRECT', 'producto':'Leche Directa SUP268', 'precio_normal':1200, 'en_stock':True}]})
     swagger, _ = check(args.gateway_url, '/swagger/doc.json')
-    assert all(p in swagger['paths'] for p in ['/api/v1/productos','/api/v1/admin/productos','/api/v1/auth/login'])
+    if args.swagger_scope == 'scraping':
+        assert '/api/v1/scraper/trabajos' in swagger['paths']
+        assert not any(p.startswith(('/api/v1/auth', '/api/v1/productos', '/api/v1/admin/productos')) for p in swagger['paths'])
+    else:
+        assert all(p in swagger['paths'] for p in ['/api/v1/productos','/api/v1/admin/productos','/api/v1/auth/login'])
 elif args.mode == 'load':
     def hit(i):
         body, headers = request(args.gateway_url, '/api/v1/productos?q=Contrato&limit=5',

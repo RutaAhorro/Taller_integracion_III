@@ -29,7 +29,7 @@ flowchart LR
 | `/api/v1/auth/me` | GET | Identidad, claims de sesión |
 | `/api/v1/auth/me` | PUT | Identidad, actualización del usuario de la sesión |
 | `/health`, `/api/v1/health` | GET | API, sólo conexión SQL de coordinación y diagnóstico Redis |
-| `/swagger/*` | GET | API, documentación integrada de contratos públicos |
+| `/swagger/*` | GET | API, documentación de sus rutas de coordinación y salud |
 
 La API ya no registra auth: llamarla directamente devuelve 404. Gateway conserva
 ruta, query, cuerpo, cookie y `Set-Cookie`; sanitiza los headers de identidad y
@@ -38,6 +38,12 @@ no hace fallback cuando Identidad falla. Un fallo de conexión produce
 Las rutas desconocidas dentro de `/api/v1/auth/` siguen perteneciendo a Identidad;
 los prefijos parecidos, como `/api/v1/authentication`, no se enrutan allí.
 Los probes de Identidad son internos y no se reenvían por la entrada pública.
+
+Swagger de API se regenera con `swag init --parseInternal` en `backend/api`.
+Ya no publica operaciones de Identidad o Catálogo que ese contenedor devuelve
+como 404. Gateway sigue sirviendo esa UI por `/swagger/*`, con el mismo alcance
+de coordinación; las cinco rutas auth públicas siguen funcionando por Gateway
+y están descritas arriba. Esta especificación no es un agregador de servicios.
 
 Los JWT mantienen HS256, `user_id`, `rol`, `provider` y expiración de 24 horas.
 Las cookies conservan nombre `jwt`, HttpOnly, Path `/` y duración. Se explicita
@@ -121,6 +127,8 @@ Los comandos respetan un presupuesto de 1 segundo y no reintentan escrituras.
 - Google conserva el validador criptográfico oficial y audience; se exige issuer
   de Google, email verificado y subject. Claims opcionales no causan panic;
   cuentas inactivas o vinculadas a otro subject no obtienen sesión.
+  Avatares opcionales con UTF-8 inválido o más de 500 caracteres se omiten;
+  no se corta una URL ni se bloquea el login por ese dato opcional.
 - Conflictos únicos en PostgreSQL se traducen a conflicto de correo; carreras de
   registro no devuelven errores internos. SSO concurrente vuelve a leer la cuenta
   y verifica su asociación antes de aceptarla.
@@ -132,6 +140,9 @@ Los comandos respetan un presupuesto de 1 segundo y no reintentan escrituras.
   y duración, sin cuerpos ni cookies. Hay límite de cuerpo de 64 KiB, contexto
   de petición de 10 s, Google de 5 s y límites HTTP de cabeceras/lectura/escritura.
 - Contraseñas de más de 72 bytes se rechazan como validación antes de bcrypt.
+- Nombres vacíos tras sanitizar se rechazan con 400 en registro y actualización,
+  antes de persistir. El límite es de 100 caracteres Unicode, sin cortar tildes
+  o ñ; la expresión regular se compila una vez y admite uso concurrente.
 
 HS256 mantiene una clave compartida con Catálogo por compatibilidad. Una
 migración futura a firma asimétrica requerirá despliegue coordinado y pruebas de
@@ -152,6 +163,21 @@ comparte un presupuesto de 2 s para Ping SQL y Redis, sin repetir consultas de
 permisos. Ambos son requisitos de disponibilidad del login. Una caída posterior
 no reinicia el proceso por liveness; las conexiones recuperan readiness cuando
 las dependencias vuelven. Cambiar grants después exige rollout para reauditarlos.
+
+Los tres probes Kubernetes son `exec`: BusyBox `wget`, incluido en Alpine,
+consulta HTTP en `127.0.0.1` dentro del contenedor. Startup/liveness consultan
+`live` con timeout de 1 s y readiness consulta `ready` con timeout de 2 s;
+los presupuestos kubelet siguen en 2/2/3 s. No requieren shell, privilegios,
+escritura ni otra imagen. La NetworkPolicy continúa admitiendo únicamente
+pods Gateway del mismo namespace en 8080; no se abre ese puerto al namespace
+completo ni se agregan CIDRs de nodos que también habilitarían rutas auth.
+
+El contrato estándar de NetworkPolicy exceptúa el tráfico del nodo local del
+pod; el DROP descrito en H-01 no es inevitable por esa política Kubernetes
+sola. Políticas de host adicionales y comportamiento del CNI deben comprobarse
+en el clúster. Ejecutar los probes por loopback elimina esa dependencia de
+ingress host → pod. Referencia normativa:
+https://kubernetes.io/docs/concepts/services-networking/network-policies/
 
 Gateway mantiene readiness local. `/_gateway/dependencies` diagnostica los tres
 upstreams y sus dependencias, pero no retira rutas sanas porque otro dominio
@@ -199,6 +225,10 @@ contadores por cliente, reparación de TTL, spoofing directo y vía Gateway,
 Redis caído, cookies Secure, procesos que recuperan sin
 reinicio, caída de cada upstream, tres réplicas de Identidad con login concurrente,
 permisos ausentes al arranque y rollback a SUP-271 y vuelta.
+También ejecuta los comandos exactos del Deployment dentro del contenedor
+runtime: startup/liveness conservan éxito cuando Redis o SQL caen, readiness
+falla, y los tres recuperan sin reiniciar Identidad. Se comprueba persistencia
+real de nombres con tildes/ñ y rechazo 400 sin modificar el perfil existente.
 Pruebas Go adicionales usan el validador oficial de Google, RSA y una fixture
 JWKS para probar firma, audience, issuer y expiración; no sustituyen un login
 real de Google en el navegador ni habilitan TLS inseguro en producción.
