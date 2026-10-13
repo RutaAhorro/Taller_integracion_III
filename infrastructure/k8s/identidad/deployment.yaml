@@ -5,6 +5,8 @@ metadata:
   labels: {app: identidad}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels: {app: identidad}
   template:
@@ -18,7 +20,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: identidad
-          image: ghcr.io/danirc2024/taller_integracion_iii-identidad:develop-refactor
+          image: ghcr.io/danirc2024/taller_integracion_iii-identidad:develop
           imagePullPolicy: Always
           ports:
             - {name: http, containerPort: 8080}
@@ -56,5 +58,5 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
           resources:
-            requests: {cpu: 100m, memory: 64Mi}
-            limits: {cpu: 500m, memory: 256Mi}
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 160Mi}

@@ -5,6 +5,8 @@ metadata:
   labels: {app: control-scraping}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels: {app: control-scraping}
   template:
@@ -19,7 +21,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: control-scraping
-          image: ghcr.io/danirc2024/taller_integracion_iii-control-scraping:develop-refactor
+          image: ghcr.io/danirc2024/taller_integracion_iii-control-scraping:develop
           imagePullPolicy: Always
           ports:
             - {name: http, containerPort: 8080}
@@ -62,5 +64,5 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
           resources:
-            requests: {cpu: 100m, memory: 64Mi}
-            limits: {cpu: 500m, memory: 256Mi}
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 200m, memory: 160Mi}

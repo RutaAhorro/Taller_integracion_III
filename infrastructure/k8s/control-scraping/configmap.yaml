@@ -3,7 +3,6 @@ kind: ConfigMap
 metadata:
   name: control-scraping-config
 data:
-  # Completar los orígenes HTTPS reales del frontend antes del corte.
-  SCRAPING_CORS_ALLOWED_ORIGINS: ""
+  SCRAPING_CORS_ALLOWED_ORIGINS: "http://miweb-vmatus.dev.censei.cl,https://miweb-vmatus.dev.censei.cl"
   # El clúster es público: no publicar el contrato de coordinación (SUP-274).
   SCRAPING_SWAGGER_ENABLED: "false"

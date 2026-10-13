@@ -1,18 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: gateway
+  name: api-gateway
   labels:
-    app: gateway
+    app: api-gateway
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
-      app: gateway
+      app: api-gateway
   template:
     metadata:
       labels:
-        app: gateway
+        app: api-gateway
     spec:
       securityContext:
         runAsNonRoot: true
@@ -21,8 +23,8 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       containers:
-        - name: gateway
-          image: ghcr.io/danirc2024/taller_integracion_iii-gateway:develop-refactor
+        - name: api-gateway
+          image: ghcr.io/danirc2024/taller_integracion_iii-gateway:develop
           imagePullPolicy: Always
           ports:
             - name: http
@@ -64,8 +66,8 @@ spec:
             timeoutSeconds: 3
           resources:
             requests:
-              cpu: 50m
+              cpu: 30m
               memory: 64Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
+              cpu: 150m
+              memory: 96Mi

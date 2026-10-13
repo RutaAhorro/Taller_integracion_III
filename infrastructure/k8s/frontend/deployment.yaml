@@ -6,6 +6,8 @@ metadata:
   name: frontend
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: frontend
@@ -30,7 +32,7 @@ spec:
         resources:
           limits:
             cpu: 100m
-            memory: 300Mi
+            memory: 150Mi
           requests:
             cpu: 30m
             memory: 64Mi

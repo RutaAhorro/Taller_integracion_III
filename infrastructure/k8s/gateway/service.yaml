@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: gateway
+  name: api-gateway
   labels:
-    app: gateway
+    app: api-gateway
 spec:
   type: ClusterIP
   ports:
@@ -11,4 +11,4 @@ spec:
       port: 8080
       targetPort: http
   selector:
-    app: gateway
+    app: api-gateway

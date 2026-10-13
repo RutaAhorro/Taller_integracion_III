@@ -6,6 +6,8 @@ metadata:
     app: bot
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: bot
@@ -14,24 +16,10 @@ spec:
       labels:
         app: bot
     spec:
-      initContainers:
-      - name: git-clone
-        image: alpine/git
-        args:
-        - clone
-        - --single-branch
-        - --branch=develop
-        - https://github.com/danirc2024/Taller_integracion_III.git
-        - /app
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
       containers:
       - name: bot
-        image: golang:alpine
-        workingDir: /app/backend/bot_discord
-        command: ["/bin/sh", "-c"]
-        args: ["apk add --no-cache git && go run ."]
+        image: ghcr.io/danirc2024/taller_integracion_iii-bot:develop
+        imagePullPolicy: Always
         env:
         - name: DISCORD_BOT_TOKEN
           valueFrom:
@@ -50,16 +38,10 @@ spec:
             secretKeyRef:
               name: scraping-service-secret
               key: token
-        volumeMounts:
-        - name: app-code
-          mountPath: /app
         resources:
           limits:
             cpu: 100m
-            memory: 512Mi
+            memory: 128Mi
           requests:
             cpu: 50m
-            memory: 128Mi
-      volumes:
-      - name: app-code
-        emptyDir: {}
+            memory: 64Mi
