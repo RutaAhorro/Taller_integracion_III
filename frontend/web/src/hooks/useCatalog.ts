@@ -1,7 +1,28 @@
-import { useState, useEffect, useMemo } from 'react';
-import { supermarkets } from '@/lib/constants';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useLayoutContext } from '@/layouts/MainLayout';
 import { getProducts } from '@/lib/products-api';
+import { calculateDiscountPct } from '@/lib/formatters';
 import type { UiProduct as Product } from '@/types';
+
+const PAGE_SIZE = 24;
+
+// Filtros virtuales de "Destacados": no existen como categoría en la API,
+// se resuelven en el frontend con datos reales del catálogo.
+const FEATURED_IDS = new Set(['ofertas', 'descuentos', 'marcas']);
+
+// Marcas propias de las cadenas chilenas (para el filtro "Marcas blancas").
+const STORE_BRAND_TERMS = [
+  'lider',
+  'acuenta',
+  'ekono',
+  'jumbo',
+  'santa isabel',
+  'tottus',
+  'unimarc',
+  'cugat',
+  'great value',
+  'mi marca',
+];
 
 function normalizeCategoryTerm(term: string) {
   const normalized = term.trim().toLowerCase()
@@ -22,45 +43,63 @@ function productMatchesCategoryTerm(product: Product, term: string) {
   return product.name.toLowerCase().includes(term)
 }
 
+function isStoreBrand(product: Product) {
+  const brand = product.brand.toLowerCase();
+  return STORE_BRAND_TERMS.some((term) => brand.includes(term));
+}
+
 export function useCatalog(query: string, category: string | null, activeMarket: string | null) {
+  const { markets } = useLayoutContext();
   const [isLoading, setIsLoading] = useState(true)
   const [products, setProducts] = useState<Product[]>([])
   const [error, setError] = useState<string | null>(null)
-  
-  const [visibleCount, setVisibleCount] = useState(12)
-  const [isFetchingMore, setIsFetchingMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
-  // Fetch from API
+  const [isFetchingMore, setIsFetchingMore] = useState(false)
+  const requestId = useRef(0)
+
+  // Nombre real de la cadena (desde el catálogo scrapeado) para el
+  // parámetro `supermercado` de la API. Sin lista hardcodeada.
+  const marketName = activeMarket
+    ? markets.find((item) => item.id === activeMarket)?.name ?? null
+    : null;
+
+  // Carga una página del catálogo. Con replace=true reinicia el acumulado
+  // (cambio de filtros); si no, agrega (scroll infinito).
   useEffect(() => {
-    const controller = new AbortController()
+    const current = ++requestId.current
+    const replace = true
     setIsLoading(true)
     setError(null)
-    const market = supermarkets.find((item) => item.id === activeMarket)?.name
     const search = query.trim()
-    const params = new URLSearchParams({ limit: '100', en_stock: 'true' })
+    const params = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE), en_stock: 'true' })
     if (search.length >= 3) params.set('q', search)
-    if (category) params.set('categoria', category)
-    if (market) params.set('supermercado', market)
+    // Los filtros de Destacados son virtuales: no se envían a la API,
+    // se aplican localmente sobre el catálogo con datos reales.
+    if (category && !FEATURED_IDS.has(category)) params.set('categoria', category)
+    if (marketName) params.set('supermercado', marketName)
 
     getProducts(`?${params.toString()}`)
-      .then(({ products: result }) => {
-        if (!controller.signal.aborted) setProducts(result)
+      .then((result) => {
+        if (requestId.current !== current) return
+        setProducts(result.products)
+        setPage(result.page)
+        setTotalPages(result.totalPages)
       })
       .catch(() => {
-        if (!controller.signal.aborted) setError('No se pudo cargar el catálogo desde la base de datos.')
+        if (requestId.current !== current) return
+        if (replace) setProducts([])
+        setError('No se pudo cargar el catálogo desde la base de datos.')
       })
       .finally(() => {
-        if (!controller.signal.aborted) setIsLoading(false)
+        if (requestId.current !== current) return
+        setIsLoading(false)
       })
-    return () => controller.abort()
-  }, [query, category, activeMarket])
+  }, [query, category, marketName])
 
-  // Reset pagination on filter change
-  useEffect(() => {
-    setVisibleCount(12)
-  }, [query, category, activeMarket])
-
-  // Filter local logic
+  // Filter local logic (red de seguridad sobre lo que devuelve la API,
+  // más los filtros virtuales de Destacados).
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const baseProducts = products.filter((p) => {
@@ -71,6 +110,24 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     })
 
     if (!category) return baseProducts
+
+    // Destacados con datos reales del catálogo.
+    if (category === 'ofertas' || category === 'descuentos') {
+      const onSale = baseProducts.filter(
+        (product) => calculateDiscountPct(product.originalPrice, product.price) > 0,
+      );
+      // "Mejores ofertas": ordenadas por ahorro absoluto ($).
+      // "Mayor descuento": ordenadas por porcentaje de descuento.
+      return onSale.sort((a, b) =>
+        category === 'descuentos'
+          ? calculateDiscountPct(b.originalPrice, b.price) -
+            calculateDiscountPct(a.originalPrice, a.price)
+          : b.originalPrice - b.price - (a.originalPrice - a.price),
+      );
+    }
+    if (category === 'marcas') {
+      return baseProducts.filter(isStoreBrand);
+    }
 
     const categoryTerms = getCategoryTerms(category)
     return baseProducts.filter((product) =>
@@ -83,23 +140,42 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     return ids.size
   }, [filtered])
 
-  const displayedProducts = filtered.slice(0, visibleCount);
-
   const fetchMore = () => {
-    if (visibleCount < filtered.length && !isFetchingMore) {
-      setIsFetchingMore(true);
-      setTimeout(() => {
-        setVisibleCount(prev => prev + 12);
+    if (isFetchingMore || isLoading || page >= totalPages) return;
+    const current = ++requestId.current
+    const nextPage = page + 1
+    setIsFetchingMore(true);
+    const search = query.trim()
+    const params = new URLSearchParams({ page: String(nextPage), limit: String(PAGE_SIZE), en_stock: 'true' })
+    if (search.length >= 3) params.set('q', search)
+    if (category && !FEATURED_IDS.has(category)) params.set('categoria', category)
+    if (marketName) params.set('supermercado', marketName)
+
+    getProducts(`?${params.toString()}`)
+      .then((result) => {
+        if (requestId.current !== current) return
+        setProducts((prev) => {
+          const seen = new Set(prev.map((p) => p.id))
+          return [...prev, ...result.products.filter((p) => !seen.has(p.id))]
+        })
+        setPage(result.page)
+        setTotalPages(result.totalPages)
+      })
+      .catch(() => {
+        if (requestId.current !== current) return
+        setError('No se pudieron cargar más productos.')
+      })
+      .finally(() => {
+        if (requestId.current !== current) return
         setIsFetchingMore(false);
-      }, 1000);
-    }
+      })
   }
 
   return {
     isLoading,
     error,
     filtered,
-    displayedProducts,
+    displayedProducts: filtered,
     supermarketCount,
     isFetchingMore,
     fetchMore

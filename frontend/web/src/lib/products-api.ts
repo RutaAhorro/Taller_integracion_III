@@ -1,5 +1,5 @@
-import { supermarkets } from './constants'
-import type { UiProduct as Product } from '@/types'
+import { supermarkets as fallbackMarkets } from './constants';
+import type { UiProduct as Product, UiSupermarket } from '@/types';
 
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
@@ -31,10 +31,35 @@ export type ApiProductDetail = ApiProduct & {
 type ProductPage = {
   data: ApiProduct[]
   total_registros: number
+  pagina_actual?: number
+  total_paginas?: number
+}
+
+export function slugifyMarket(name: string) {
+  return name
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 function supermarketId(name: string) {
-  return supermarkets.find((market) => market.name.toLowerCase() === name.toLowerCase())?.id || name.toLowerCase()
+  return slugifyMarket(name);
+}
+
+// Metadatos visuales (logo/color/coords) para una cadena scrapeada.
+// Usa la lista fija solo como respaldo: si la cadena no está ahí,
+// devuelve valores neutros en vez de romper el filtro.
+export function marketMeta(name: string): Pick<UiSupermarket, 'logo' | 'color' | 'coords'> {
+  const found = fallbackMarkets.find(
+    (market) => slugifyMarket(market.name) === slugifyMarket(name),
+  );
+  return {
+    logo: found?.logo ?? '/placeholder.svg',
+    color: found?.color ?? 'oklch(0.5 0 0)',
+    coords: found?.coords ?? [0, 0],
+  };
 }
 
 export function toUiProduct(product: ApiProduct): Product {
@@ -61,7 +86,12 @@ async function request<T>(path: string): Promise<T> {
 
 export async function getProducts(params = '') {
   const page = await request<ProductPage>(`/productos${params}`)
-  return { products: page.data.map(toUiProduct), total: page.total_registros }
+  return {
+    products: page.data.map(toUiProduct),
+    total: page.total_registros,
+    page: page.pagina_actual ?? 1,
+    totalPages: page.total_paginas ?? 1,
+  }
 }
 
 export async function getProductDetail(id: string) {

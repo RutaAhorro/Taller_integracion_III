@@ -6,7 +6,7 @@ import landingData from "@/data/landing.json";
 export function LandingSavings() {
   return (
     <section id="ahorro" className="py-[3.5rem] md:py-[5rem]">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-[2rem] md:gap-[3rem] items-center bg-card border-2 border-border rounded-[var(--radius)] p-[2rem] md:p-[3rem] shadow-[8px_8px_0_var(--color-border)]">
           <div>
             <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Caso real</span>

@@ -4,7 +4,7 @@ import { TopNav } from "@/components/TopNav";
 import { SideBar } from "@/components/Sidebar";
 import { CartSidebar } from "@/components/CartSidebar";
 import BottomNav from "@/components/BottomNav";
-import { getProducts } from "@/lib/products-api";
+import { getProducts, marketMeta, slugifyMarket } from "@/lib/products-api";
 import type { UiSupermarket } from "@/types";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
@@ -12,6 +12,7 @@ type LayoutContextType = {
   query: string;
   activeMarket: string | null;
   category: string;
+  markets: UiSupermarket[];
 };
 
 export function useLayoutContext() {
@@ -41,6 +42,8 @@ export function MainLayout() {
       .then(({ products }) => {
         if (!isMounted) return;
 
+        // Cadenas obtenidas del catálogo scrapeado (no hardcodeadas):
+        // cada producto trae su supermercado real y aquí solo se deducen.
         const markets = new Map<string, UiSupermarket>();
         products.forEach((product) => {
           if (!product.supermarketName || markets.has(product.supermarketId)) return;
@@ -49,9 +52,7 @@ export function MainLayout() {
             id: product.supermarketId,
             dbId: 0,
             name: product.supermarketName,
-            logo: '/placeholder.svg',
-            color: 'oklch(0.5 0 0)',
-            coords: [0, 0],
+            ...marketMeta(product.supermarketName),
           });
         });
         setAvailableMarkets(Array.from(markets.values()));
@@ -99,7 +100,7 @@ export function MainLayout() {
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
         {/* Main Content Area */}
-        <Outlet context={{ query, activeMarket, category } satisfies LayoutContextType} />
+        <Outlet context={{ query, activeMarket, category, markets: availableMarkets } satisfies LayoutContextType} />
       </div>
 
       {totalItems > 0 && (

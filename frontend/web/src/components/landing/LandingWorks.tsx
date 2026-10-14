@@ -10,7 +10,7 @@ export function LandingHowItWorks() {
 
   return (
     <section id="como-funciona" className="py-[3.5rem] md:py-[5rem] bg-card border-y-2 border-border">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6">
         <div className="max-w-[680px] mx-auto mb-[3.5rem] text-center">
           <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Metodología</span>
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3.2vw,2.4rem)] font-bold text-foreground mb-[0.875rem] leading-[1.15]">No es magia, es optimización matemática</h2>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { User, ShieldAlert, CreditCard, Car, Bus, Apple, Leaf, Utensils, TrendingUp, Save, Zap, Settings, BarChart2, Key, Activity } from 'lucide-react';
+import { User, ShieldAlert, CreditCard, Car, Bus, Apple, Leaf, Utensils, TrendingUp, Save, Zap, Settings, Key } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Link, Navigate } from 'react-router-dom';
 import MockShell from '@/pages/mocks/MockShell';
@@ -10,7 +10,7 @@ export default function Profile() {
     const [budget, setBudget] = useState(50000);
     const [transportMode, setTransportMode] = useState<'car' | 'bus'>('car');
     const [diet, setDiet] = useState<string[]>(['none']);
-    const [activeTab, setActiveTab] = useState<'cuenta' | 'preferencias'>('preferencias');
+    const [activeTab, setActiveTab] = useState<'cuenta' | 'preferencias'>('cuenta');
 
     if (isGuest || !user) {
         return <Navigate to="/login" replace />;
