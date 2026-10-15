@@ -62,8 +62,10 @@ export function marketMeta(name: string): Pick<UiSupermarket, 'logo' | 'color' |
   };
 }
 
+export const FALLBACK_MARKET_NAME = 'Sin supermercado';
+
 export function toUiProduct(product: ApiProduct): Product {
-  const marketName = product.supermercado || 'Sin supermercado';
+  const marketName = product.supermercado || FALLBACK_MARKET_NAME;
   return {
     id: product.id,
     name: product.nombre,

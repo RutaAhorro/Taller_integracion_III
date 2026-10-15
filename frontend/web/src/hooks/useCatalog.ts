@@ -13,6 +13,7 @@ const FEATURED_IDS = new Set(['ofertas', 'descuentos', 'marcas']);
 // Marcas propias de las cadenas chilenas (para el filtro "Marcas blancas").
 const STORE_BRAND_TERMS = [
   'lider',
+  'a cuenta',
   'acuenta',
   'ekono',
   'jumbo',
@@ -106,6 +107,11 @@ export function useCatalog(query: string, category: string | null, activeMarket:
         if (requestId.current !== current) return
         setIsLoading(false)
       })
+
+    // Invalida la petición si el usuario cambia de ruta con ella en vuelo.
+    return () => {
+      requestId.current++;
+    };
   }, [query, category, marketName])
 
   // Filter local logic (red de seguridad sobre lo que devuelve la API,
@@ -177,6 +183,23 @@ export function useCatalog(query: string, category: string | null, activeMarket:
         setIsFetchingMore(false);
       })
   }
+
+  // "Marcas blancas" es el único filtro sin equivalente en la API: se
+  // aplica en memoria sobre los lotes ya cargados. Si el lote acumulado
+  // trae pocas coincidencias, se sigue pidiendo la siguiente página hasta
+  // poblar la grilla o agotar el catálogo (si no, la vista queda vacía
+  // sin scrollbar y el scroll infinito jamás se activa).
+  useEffect(() => {
+    if (
+      category === 'marcas' &&
+      filtered.length < PAGE_SIZE / 2 &&
+      page < totalPages &&
+      !isLoading &&
+      !isFetchingMore
+    ) {
+      fetchMore();
+    }
+  }, [category, filtered.length, page, totalPages, isLoading, isFetchingMore])
 
   return {
     isLoading,

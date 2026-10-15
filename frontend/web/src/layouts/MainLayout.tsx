@@ -4,7 +4,7 @@ import { TopNav } from "@/components/TopNav";
 import { SideBar } from "@/components/Sidebar";
 import { CartSidebar } from "@/components/CartSidebar";
 import BottomNav from "@/components/BottomNav";
-import { getProducts, marketMeta, slugifyMarket } from "@/lib/products-api";
+import { getProducts, marketMeta, FALLBACK_MARKET_NAME } from "@/lib/products-api";
 import type { UiSupermarket } from "@/types";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
@@ -46,7 +46,9 @@ export function MainLayout() {
         // cada producto trae su supermercado real y aquí solo se deducen.
         const markets = new Map<string, UiSupermarket>();
         products.forEach((product) => {
-          if (!product.supermarketName || markets.has(product.supermarketId)) return;
+          // Se descartan productos sin cadena real para no generar un
+          // botón de filtro ("Sin supermercado") que retorna 0 productos.
+          if (!product.supermarketName || product.supermarketName === FALLBACK_MARKET_NAME || markets.has(product.supermarketId)) return;
 
           markets.set(product.supermarketId, {
             id: product.supermarketId,
