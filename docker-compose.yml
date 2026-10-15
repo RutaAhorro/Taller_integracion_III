@@ -183,7 +183,7 @@ services:
       context: ./frontend/web
       dockerfile: Dockerfile
       # [!] EQUIPO FRONTEND: Para desarrollar localmente con Hot-Reload, cambien esta línea a: "target: development"
-      target: production
+      target: development
     container_name: frontend_web
     ports:
       - 3000:3000
