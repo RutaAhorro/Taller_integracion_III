@@ -65,22 +65,32 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     ? markets.find((item) => item.id === activeMarket)?.name ?? null
     : null;
 
+  const buildParams = (pageNum: number) => {
+    const search = query.trim()
+    const params = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE), en_stock: 'true' })
+    if (search.length >= 3) params.set('q', search)
+    // Ofertas se delegan al backend (filtro nativo indexado `en_oferta`).
+    // El orden (por $ o por %) se aplica localmente sobre cada lote.
+    // "Marcas blancas" sigue siendo virtual: no tiene equivalente en la API.
+    if (category === 'ofertas' || category === 'descuentos') {
+      params.set('en_oferta', 'true')
+    } else if (category && !FEATURED_IDS.has(category)) {
+      params.set('categoria', category)
+    }
+    if (marketName) params.set('supermercado', marketName)
+    return params
+  };
+
   // Carga una página del catálogo. Con replace=true reinicia el acumulado
   // (cambio de filtros); si no, agrega (scroll infinito).
   useEffect(() => {
     const current = ++requestId.current
     const replace = true
     setIsLoading(true)
+    setIsFetchingMore(false)
     setError(null)
-    const search = query.trim()
-    const params = new URLSearchParams({ page: '1', limit: String(PAGE_SIZE), en_stock: 'true' })
-    if (search.length >= 3) params.set('q', search)
-    // Los filtros de Destacados son virtuales: no se envían a la API,
-    // se aplican localmente sobre el catálogo con datos reales.
-    if (category && !FEATURED_IDS.has(category)) params.set('categoria', category)
-    if (marketName) params.set('supermercado', marketName)
 
-    getProducts(`?${params.toString()}`)
+    getProducts(`?${buildParams(1).toString()}`)
       .then((result) => {
         if (requestId.current !== current) return
         setProducts(result.products)
@@ -145,13 +155,8 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     const current = ++requestId.current
     const nextPage = page + 1
     setIsFetchingMore(true);
-    const search = query.trim()
-    const params = new URLSearchParams({ page: String(nextPage), limit: String(PAGE_SIZE), en_stock: 'true' })
-    if (search.length >= 3) params.set('q', search)
-    if (category && !FEATURED_IDS.has(category)) params.set('categoria', category)
-    if (marketName) params.set('supermercado', marketName)
 
-    getProducts(`?${params.toString()}`)
+    getProducts(`?${buildParams(nextPage).toString()}`)
       .then((result) => {
         if (requestId.current !== current) return
         setProducts((prev) => {
@@ -166,7 +171,9 @@ export function useCatalog(query: string, category: string | null, activeMarket:
         setError('No se pudieron cargar más productos.')
       })
       .finally(() => {
-        if (requestId.current !== current) return
+        // Liberación incondicional: si esta petición quedó obsoleta por un
+        // cambio de filtros, el flag igual debe soltarse para no trabar
+        // el scroll infinito de la nueva búsqueda.
         setIsFetchingMore(false);
       })
   }

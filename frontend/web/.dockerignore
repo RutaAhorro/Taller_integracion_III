@@ -3,7 +3,8 @@ dist
 .git
 .gitignore
 .env
-.env.local
+.env.*
+!.env.example
 .vite
 coverage
 *.log

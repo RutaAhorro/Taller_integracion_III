@@ -35,8 +35,8 @@ type ProductPage = {
   total_paginas?: number
 }
 
-export function slugifyMarket(name: string) {
-  return name
+export function slugifyMarket(name: string | null | undefined) {
+  return (name ?? '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -63,6 +63,7 @@ export function marketMeta(name: string): Pick<UiSupermarket, 'logo' | 'color' |
 }
 
 export function toUiProduct(product: ApiProduct): Product {
+  const marketName = product.supermercado || 'Sin supermercado';
   return {
     id: product.id,
     name: product.nombre,
@@ -72,8 +73,8 @@ export function toUiProduct(product: ApiProduct): Product {
     unit: product.unidad || 'Unidad',
     price: product.precio,
     originalPrice: product.precio_normal || product.precio,
-    supermarketId: supermarketId(product.supermercado),
-    supermarketName: product.supermercado,
+    supermarketId: supermarketId(marketName),
+    supermarketName: marketName,
     inStock: product.en_stock,
   }
 }

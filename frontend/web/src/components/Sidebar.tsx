@@ -416,7 +416,7 @@ export function SideBar({
           </nav>
         </div>
 
-        <div className="border-t border-border px-4 py-4 space-y-3">
+        <div className="border-t border-border px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-3">
           {/* Plan Container */}
           <Link
             to="/planes"
