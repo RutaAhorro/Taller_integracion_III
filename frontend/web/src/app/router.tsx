@@ -72,12 +72,18 @@ const router = createBrowserRouter([
           { path: ROUTES.PERFIL, element: <Profile /> },
           { path: ROUTES.PLANES, element: <Planes /> },
           {
-            path: ROUTES.COLABORADOR,
-            element: (
-              <MockShell sprint={colabSprint}>
-                <Crowdsourcing />
-              </MockShell>
-            ),
+            // SUP-256: /colaborador solo colaborador o admin.
+            element: <ProtectedRoute roles={['colaborador', 'admin']} />,
+            children: [
+              {
+                path: ROUTES.COLABORADOR,
+                element: (
+                  <MockShell sprint={colabSprint}>
+                    <Crowdsourcing />
+                  </MockShell>
+                ),
+              },
+            ],
           },
           {
             path: ROUTES.RUTA,
@@ -106,9 +112,17 @@ const router = createBrowserRouter([
   { path: ROUTES.HOME, element: <Home />, errorElement: <ErrorBoundary /> },
   { path: ROUTES.LOGIN, element: <Login /> },
   { path: ROUTES.TERMINOS, element: <Terms /> },
-  { path: ROUTES.ADMIN, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
-  // SUP-280: alias /admin/metricas que abre el panel en la sección Métricas.
-  { path: ROUTES.ADMIN_METRICAS, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
+  {
+    // SUP-256: /admin solo admin. Invitado ve acceso (ir a login);
+    // logueado sin rol admin redirige a home.
+    element: <ProtectedRoute roles={['admin']} />,
+    errorElement: <ErrorBoundary />,
+    children: [
+      { path: ROUTES.ADMIN, element: <AdminDashboard /> },
+      // SUP-280: alias /admin/metricas que abre el panel en la sección Métricas.
+      { path: ROUTES.ADMIN_METRICAS, element: <AdminDashboard /> },
+    ],
+  },
   { 
     element: <ProtectedRoute />, 
     children: [

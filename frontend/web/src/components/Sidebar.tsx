@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Link } from 'react-router-dom'
+import { useRole } from '@/hooks/useRole'
 import type { UiSupermarket } from '@/types'
 
 type SideBarProps = {
@@ -112,6 +113,8 @@ export function SideBar({
   const [openDept, setOpenDept] = useState<string | null>(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  // SUP-256: Misiones solo colaborador o admin.
+  const { canAccessColaborador } = useRole()
 
   const handleCategoryClick = (category: string, closeSidebar = true) => {
     onSelectCategory(category)
@@ -398,20 +401,23 @@ export function SideBar({
                   Recetas IA
                 </Link>
               </li>
-              <li>
-                <Link
-                  to="/colaborador"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/colaborador')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Users className="h-4.5 w-4.5" aria-hidden="true" />
-                  Misiones
-                </Link>
-              </li>
+              {/* SUP-256: Misiones solo colaborador o admin. */}
+              {canAccessColaborador && (
+                <li>
+                  <Link
+                    to="/colaborador"
+                    onClick={onClose}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                      pathname.startsWith('/colaborador')
+                        ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <Users className="h-4.5 w-4.5" aria-hidden="true" />
+                    Misiones
+                  </Link>
+                </li>
+              )}
             </ul>
           </nav>
         </div>
