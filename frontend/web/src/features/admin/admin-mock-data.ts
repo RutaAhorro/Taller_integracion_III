@@ -1,16 +1,22 @@
 export type AdminSection = 'overview' | 'users' | 'sources' | 'metrics';
 
-// Roles visibles en el panel (SUP-255 + ajuste pedido: Editor -> Colaborador, + Premium).
+// Roles RBAC del panel (SUP-255: Editor -> Colaborador).
+// El plan comercial va aparte (auditoría H-06): no se mezcla con el rol.
 // Mapeo backend pendiente (SUP-242, api.usuarios): admin <-> 'admin',
-// colaborador <-> 'colaborador', resto <-> 'registrado' (+ plan premium/plus).
-export const ADMIN_ROLES = ['Administrador', 'Colaborador', 'Premium', 'Usuario'] as const;
+// colaborador <-> 'colaborador', usuario <-> 'registrado'. El plan premium
+// viaja como campo aparte (p. ej. plan='premium'), no como rol.
+export const ADMIN_ROLES = ['Administrador', 'Colaborador', 'Usuario'] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
+
+export const ADMIN_PLANS = ['Básico', 'Premium'] as const;
+export type AdminPlan = (typeof ADMIN_PLANS)[number];
 
 export type AdminUser = {
   id: string;
   name: string;
   email: string;
   role: AdminRole;
+  plan: AdminPlan;
   status: 'Activo' | 'Inactivo';
   lastAccess: string;
   initials: string;
@@ -29,12 +35,14 @@ export type AdminSource = {
   habilitada: boolean;
 };
 
+// Datos de ejemplo solo visuales (el panel aún no consume backend).
+// Correos ficticios en dominio reservado RFC 2606 para no exponer PII en el bundle.
 export const adminUsers: AdminUser[] = [
-  { id: 'usr-001', name: 'Camila Torres', email: 'camila.torres@uct.cl', role: 'Administrador', status: 'Activo', lastAccess: 'Hace 12 min', initials: 'CT' },
-  { id: 'usr-002', name: 'Matías Rojas', email: 'matias.rojas@uct.cl', role: 'Colaborador', status: 'Activo', lastAccess: 'Hace 1 h', initials: 'MR' },
-  { id: 'usr-003', name: 'Sofía Pérez', email: 'sofia.perez@uct.cl', role: 'Premium', status: 'Activo', lastAccess: 'Hace 3 h', initials: 'SP' },
-  { id: 'usr-004', name: 'Diego Morales', email: 'diego.morales@uct.cl', role: 'Usuario', status: 'Inactivo', lastAccess: '12 oct 2026', initials: 'DM' },
-  { id: 'usr-005', name: 'Valentina Silva', email: 'valentina.silva@uct.cl', role: 'Colaborador', status: 'Activo', lastAccess: '14 oct 2026', initials: 'VS' },
+  { id: 'usr-001', name: 'Camila Torres', email: 'camila.torres@example.com', role: 'Administrador', plan: 'Premium', status: 'Activo', lastAccess: 'Hace 12 min', initials: 'CT' },
+  { id: 'usr-002', name: 'Matías Rojas', email: 'matias.rojas@example.com', role: 'Colaborador', plan: 'Básico', status: 'Activo', lastAccess: 'Hace 1 h', initials: 'MR' },
+  { id: 'usr-003', name: 'Sofía Pérez', email: 'sofia.perez@example.com', role: 'Usuario', plan: 'Premium', status: 'Activo', lastAccess: 'Hace 3 h', initials: 'SP' },
+  { id: 'usr-004', name: 'Diego Morales', email: 'diego.morales@example.com', role: 'Usuario', plan: 'Básico', status: 'Inactivo', lastAccess: '12 oct 2026', initials: 'DM' },
+  { id: 'usr-005', name: 'Valentina Silva', email: 'valentina.silva@example.com', role: 'Colaborador', plan: 'Básico', status: 'Activo', lastAccess: '14 oct 2026', initials: 'VS' },
 ];
 
 export const adminSources: AdminSource[] = [

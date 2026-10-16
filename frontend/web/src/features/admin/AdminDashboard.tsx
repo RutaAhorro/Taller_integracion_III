@@ -18,7 +18,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/core/routes';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
-import { ADMIN_ROLES, type AdminSection } from './admin-mock-data';
+import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-mock-data';
 import { useAdminMetrics, useAdminSources, useAdminUsers, type AdminMetricsState } from './useAdminData';
 
 const statusStyles = {
@@ -96,13 +96,14 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => voi
   );
 }
 
-// SUP-255: listado de usuarios con activar/desactivar y asignación de rol.
-// En la vista general se usa sin acciones (solo lectura); en la sección
-// Usuarios se usa con showActions para gestionar (SUP-242).
+// SUP-255: listado de usuarios con activar/desactivar, asignación de rol RBAC
+// y plan comercial en columnas separadas (auditoría H-06: el plan nunca viaja
+// en `rol`). En la vista general se usa sin acciones (solo lectura); en la
+// sección Usuarios se usa con showActions para gestionar (SUP-242).
 function UsersTable({ showActions = false }: { showActions?: boolean }) {
   const [query, setQuery] = useState('');
   const [role, setRole] = useState('Todos');
-  const { users, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole } = useAdminUsers();
+  const { users, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan } = useAdminUsers();
   const filteredUsers = useMemo(() => users.filter((user) => {
     const matchesQuery = `${user.name} ${user.email}`.toLowerCase().includes(query.toLowerCase());
     return matchesQuery && (role === 'Todos' || user.role === role);
@@ -120,14 +121,15 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
         </div>
       </div>
       {error && <ErrorBanner message={error} onRetry={refresh} />}
-      {isLoading ? <TableSkeleton rows={4} cols={showActions ? 5 : 4} /> : (
+      {isLoading ? <TableSkeleton rows={4} cols={showActions ? 6 : 5} /> : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
+            <table className="w-full min-w-[840px] text-left text-sm">
               <thead className="bg-[#fafbf9] text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-5 py-3 font-bold">Usuario</th>
                   <th className="px-5 py-3 font-bold">Rol</th>
+                  <th className="px-5 py-3 font-bold">Plan</th>
                   <th className="px-5 py-3 font-bold">Estado</th>
                   <th className="px-5 py-3 font-bold">Último acceso</th>
                   {showActions && <th className="px-5 py-3 font-bold">Acción</th>}
@@ -147,12 +149,26 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                             disabled={busy}
                             onChange={(event) => void changeUserRole(user.id, event.target.value as (typeof ADMIN_ROLES)[number])}
                             aria-label={`Asignar rol a ${user.name}`}
-                            title="Asignar rol (SUP-242: PUT rol, incluye colaborador)"
+                            title="Asignar rol RBAC (SUP-242: PUT rol: admin | colaborador | registrado)"
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
                             {ADMIN_ROLES.map((r) => <option key={r}>{r}</option>)}
                           </select>
                         ) : user.role}
+                      </td>
+                      <td className="px-5 py-4 text-muted-foreground">
+                        {showActions ? (
+                          <select
+                            value={user.plan}
+                            disabled={busy}
+                            onChange={(event) => void changeUserPlan(user.id, event.target.value as (typeof ADMIN_PLANS)[number])}
+                            aria-label={`Asignar plan a ${user.name}`}
+                            title="Asignar plan comercial (campo aparte, nunca en `rol`)"
+                            className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                          >
+                            {ADMIN_PLANS.map((p) => <option key={p}>{p}</option>)}
+                          </select>
+                        ) : user.plan}
                       </td>
                       <td className="px-5 py-4"><StatusBadge status={user.status} /></td>
                       <td className="px-5 py-4 text-muted-foreground">{user.lastAccess}</td>
@@ -338,7 +354,10 @@ function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
   );
 }
 
-function Overview({ metrics }: { metrics: AdminMetricsState }) {
+function Overview() {
+  // Auditoría H-04: las métricas solo se piden al montar esta vista,
+  // no en la raíz del dashboard (evita 3 llamadas en /admin?section=users).
+  const metrics = useAdminMetrics();
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -374,7 +393,9 @@ function Overview({ metrics }: { metrics: AdminMetricsState }) {
   );
 }
 
-function MetricsSection({ metrics }: { metrics: AdminMetricsState }) {
+function MetricsSection() {
+  // Auditoría H-04: idem Overview; el hook vive en la sección visible.
+  const metrics = useAdminMetrics();
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -429,11 +450,12 @@ export default function AdminDashboard() {
   const [params] = useSearchParams();
   const { search, pathname } = useLocation();
   const { user, isGuest } = useAuth();
-  const metrics = useAdminMetrics();
   const section = resolveSection(pathname, search || `?${params.toString()}`);
 
-  // SUP-256: /admin solo admin. Bloquea solo cuando hay sesión con otro rol;
-  // sin sesión se muestra vista previa mock con aviso (no rompe desarrollo).
+  // Panel solo visual en este PR: sin consumo real ni redirección por rol.
+  // El bloqueo estricto (invitados + no-admin → /login) y el AdminProtectedRoute
+  // en router.tsx se implementan en la rama SUP-256. Aquí solo se anticipa el
+  // aviso para usuarios logueados sin rol admin.
   const userRole = (user?.rol || '').toLowerCase();
   if (!isGuest && userRole !== '' && userRole !== 'admin') {
     return (
@@ -453,8 +475,8 @@ export default function AdminDashboard() {
     : section === 'sources'
       ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Fuentes</h2><p className="mt-2 text-muted-foreground">Visualiza las conexiones que alimentan el catálogo de precios.</p></div><SourcesTable /></>
       : section === 'metrics'
-        ? <MetricsSection metrics={metrics} />
-        : <Overview metrics={metrics} />;
+        ? <MetricsSection />
+        : <Overview />;
 
   return (
     <AdminLayout>

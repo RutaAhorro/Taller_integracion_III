@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShoppingBasket, X } from 'lucide-react';
 import { ROUTES } from '@/core/routes';
@@ -28,6 +28,22 @@ export function AdminLayout({ children }: AdminLayoutProps) {
     pathname.endsWith('/metricas') || rawSection === 'metricas' || rawSection === 'metrics' ? 'metrics'
     : rawSection === 'users' || rawSection === 'sources' ? rawSection
     : 'overview';
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // Auditoría (a11y): Escape cierra el drawer móvil y se devuelve el foco.
+  useEffect(() => {
+    if (!sidebarOpen) return;
+    closeButtonRef.current?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSidebarOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = '';
+    };
+  }, [sidebarOpen]);
 
   return (
     <div className="min-h-dvh bg-[#f5f6f2] text-foreground">
@@ -42,6 +58,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         )}
 
         <aside
+          role="dialog"
+          aria-modal={sidebarOpen ? true : undefined}
+          aria-label="Menú de administración"
           className={`fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-[#dfe5dc] bg-[#263524] text-white transition-transform duration-200 lg:static lg:translate-x-0 ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           } ${sidebarCollapsed ? 'lg:w-24' : ''}`}
@@ -55,7 +74,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 RutaAhorro
               </span>
             </Link>
-            <button type="button" className="rounded-lg p-2 hover:bg-white/10 lg:hidden" aria-label="Cerrar menú" onClick={() => setSidebarOpen(false)}>
+            <button ref={closeButtonRef} type="button" className="rounded-lg p-2 hover:bg-white/10 lg:hidden" aria-label="Cerrar menú" onClick={() => setSidebarOpen(false)}>
               <X className="size-5" />
             </button>
           </div>
