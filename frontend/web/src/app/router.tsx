@@ -27,6 +27,7 @@ import RouteViewer from '@/pages/RouteViewer';
 import History from '@/pages/History';
 import MockShell from '@/pages/mocks/MockShell';
 import Planes from '@/pages/Planes';
+import AdminDashboard from '@/features/admin/AdminDashboard';
 
 const chatSprint = MOCK_ROUTES[ROUTES.CHAT];
 const colabSprint = MOCK_ROUTES[ROUTES.COLABORADOR];
@@ -105,6 +106,9 @@ const router = createBrowserRouter([
   { path: ROUTES.HOME, element: <Home />, errorElement: <ErrorBoundary /> },
   { path: ROUTES.LOGIN, element: <Login /> },
   { path: ROUTES.TERMINOS, element: <Terms /> },
+  { path: ROUTES.ADMIN, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
+  // SUP-280: alias /admin/metricas que abre el panel en la sección Métricas.
+  { path: ROUTES.ADMIN_METRICAS, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
   { 
     element: <ProtectedRoute />, 
     children: [

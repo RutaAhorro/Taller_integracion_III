@@ -1,6 +1,8 @@
 export const ROUTES = {
   HOME: '/',
   CATALOGO: '/dashboard',
+  ADMIN: '/admin',
+  ADMIN_METRICAS: '/admin/metricas',
   PRODUCTO_DETALLE: (id: string) => `/producto/${id}`,
   LOGIN: '/login',
   ONBOARDING: '/onboarding',

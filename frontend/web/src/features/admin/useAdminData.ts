@@ -1,0 +1,327 @@
+// Hooks del panel admin (SUP-255 / SUP-280).
+// PANEL SOLO VISUAL: sin VITE_API_URL no hay HTTP (retorno temprano a mocks).
+// Cuando exista backend (SUP-242/243/279), los hooks piden en paralelo y la UI
+// no cambia. 401/403 nunca inyectan mocks (fail-closed, auditoría H-03); la
+// redirección a /login se hará en la rama SUP-256.
+
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ADMIN_HAS_BACKEND,
+  adminPlanToBackend,
+  adminRoleToBackend,
+  fetchAdminSources,
+  fetchAdminUsers,
+  fetchCatalogoMetrics,
+  fetchControlMetrics,
+  fetchIdentidadMetrics,
+  isAdminAuthError,
+  updateAdminSource,
+  updateAdminUser,
+  type CatalogoMetrics,
+  type ControlMetrics,
+  type IdentidadMetrics,
+} from './admin-api';
+import {
+  adminMetricsMock,
+  adminSources,
+  adminUsers,
+  type AdminPlan,
+  type AdminRole,
+  type AdminSource,
+  type AdminUser,
+} from './admin-mock-data';
+
+export type ServiceState<T> = {
+  data: T | null;
+  error: string | null;
+};
+
+function toMessage(error: unknown): string {
+  if (error instanceof DOMException && error.name === 'AbortError') return 'Petición cancelada.';
+  return error instanceof Error ? error.message : 'Error de red.';
+}
+
+// Mensaje fail-closed para 401/403: sin mocks, con gancho a SUP-256.
+function authBlockedMessage(feature: string, err: unknown): string {
+  return `Acceso denegado al cargar ${feature} (${toMessage(err)}). La redirección a /login se implementará en SUP-256.`;
+}
+
+// --- Usuarios (SUP-242: listar + activar/desactivar + rol colaborador) ---
+export function useAdminUsers() {
+  const [users, setUsers] = useState<AdminUser[]>(adminUsers);
+  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    if (!ADMIN_HAS_BACKEND) {
+      setUsers(adminUsers);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+    const current = ++seq.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await fetchAdminUsers(signal);
+      if (seq.current === current) setUsers(data);
+    } catch (err) {
+      if (signal?.aborted) return;
+      // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks ni mantienen
+      // datos previos operativos; se vacía y se muestra el bloqueo.
+      // TODO SUP-256: redirigir a /login en este caso.
+      if (seq.current === current) {
+        if (isAdminAuthError(err)) {
+          setUsers([]);
+          setError(authBlockedMessage('usuarios', err));
+        } else {
+          setUsers(adminUsers);
+          setError(`No se pudo cargar usuarios del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+        }
+      }
+    } finally {
+      if (seq.current === current) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  const toggleUserStatus = useCallback(async (id: string) => {
+    const target = users.find((user) => user.id === id);
+    if (!target || pendingId) return;
+    const nextActive = target.status !== 'Activo';
+    setPendingId(id);
+    setUsers((prev) =>
+      prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
+    );
+    if (ADMIN_HAS_BACKEND) {
+      try {
+        await updateAdminUser(id, { esta_activo: nextActive });
+      } catch (err) {
+        // Revierte el optimista y muestra el error.
+        setUsers((prev) =>
+          prev.map((user): AdminUser => (user.id === id ? { ...user, status: target.status } : user)),
+        );
+        if (isAdminAuthError(err)) {
+          // TODO SUP-256: redirigir a /login.
+          setError(authBlockedMessage('el usuario', err));
+        } else {
+          setError(`No se pudo actualizar el usuario. (${toMessage(err)})`);
+        }
+      } finally {
+        setPendingId(null);
+      }
+    } else {
+      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { esta_activo }.
+      setPendingId(null);
+    }
+  }, [users, pendingId]);
+
+  const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
+    const target = users.find((user) => user.id === id);
+    if (!target || pendingId || target.role === role) return;
+    const previous = target.role;
+    setPendingId(id);
+    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
+    if (ADMIN_HAS_BACKEND) {
+      try {
+        await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+      } catch (err) {
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role: previous } : user)));
+        if (isAdminAuthError(err)) {
+          // TODO SUP-256: redirigir a /login.
+          setError(authBlockedMessage('el rol', err));
+        } else {
+          setError(`No se pudo asignar el rol. (${toMessage(err)})`);
+        }
+      } finally {
+        setPendingId(null);
+      }
+    } else {
+      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { rol }.
+      setPendingId(null);
+    }
+  }, [users, pendingId]);
+
+  // Plan comercial separado del rol (auditoría H-06). Optimista + reversión,
+  // igual que el rol; el backend lo persiste en su propio campo (no en `rol`).
+  const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
+    const target = users.find((user) => user.id === id);
+    if (!target || pendingId || target.plan === plan) return;
+    const previous = target.plan;
+    setPendingId(id);
+    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
+    if (ADMIN_HAS_BACKEND) {
+      try {
+        await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
+      } catch (err) {
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan: previous } : user)));
+        if (isAdminAuthError(err)) {
+          // TODO SUP-256: redirigir a /login.
+          setError(authBlockedMessage('el plan', err));
+        } else {
+          setError(`No se pudo asignar el plan. (${toMessage(err)})`);
+        }
+      } finally {
+        setPendingId(null);
+      }
+    } else {
+      // TODO backend: PUT /api/v1/admin/usuarios/:id { plan } (campo aparte).
+      setPendingId(null);
+    }
+  }, [users, pendingId]);
+
+  return { users, isLoading, error, pendingId, refresh: () => { void load(); }, toggleUserStatus, changeUserRole, changeUserPlan };
+}
+
+// --- Fuentes (SUP-243: listar + habilitar/deshabilitar) ---
+export function useAdminSources() {
+  const [sources, setSources] = useState<AdminSource[]>(adminSources);
+  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const seq = useRef(0);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    if (!ADMIN_HAS_BACKEND) {
+      setSources(adminSources);
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+    const current = ++seq.current;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const data = await fetchAdminSources(signal);
+      if (seq.current === current) setSources(data);
+    } catch (err) {
+      if (signal?.aborted) return;
+      if (seq.current === current) {
+        // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks.
+        // TODO SUP-256: redirigir a /login en este caso.
+        if (isAdminAuthError(err)) {
+          setSources([]);
+          setError(authBlockedMessage('fuentes', err));
+        } else {
+          setSources(adminSources);
+          setError(`No se pudo cargar fuentes del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+        }
+      }
+    } finally {
+      if (seq.current === current) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  const toggleSource = useCallback(async (id: string) => {
+    const target = sources.find((source) => source.id === id);
+    if (!target || pendingId) return;
+    const habilitada = !target.habilitada;
+    setPendingId(id);
+    setSources((prev) =>
+      prev.map((source): AdminSource => (
+        source.id === id
+          ? { ...source, habilitada, status: habilitada ? (source.status === 'Inactiva' ? 'Operativa' : source.status) : 'Inactiva' }
+          : source
+      )),
+    );
+    if (ADMIN_HAS_BACKEND) {
+      try {
+        await updateAdminSource(id, { habilitada });
+      } catch (err) {
+        setSources((prev) => prev.map((source) => (source.id === id ? target : source)));
+        if (isAdminAuthError(err)) {
+          // TODO SUP-256: redirigir a /login.
+          setError(authBlockedMessage('la fuente', err));
+        } else {
+          setError(`No se pudo actualizar la fuente. (${toMessage(err)})`);
+        }
+      } finally {
+        setPendingId(null);
+      }
+    } else {
+      // TODO backend (SUP-243): PUT /api/v1/admin/productos/fuentes/:id { habilitada }.
+      setPendingId(null);
+    }
+  }, [sources, pendingId]);
+
+  return { sources, isLoading, error, pendingId, refresh: () => { void load(); }, toggleSource };
+}
+
+// --- Métricas por servicio (SUP-279 -> SUP-280) ---
+export type AdminMetricsState = {
+  identidad: ServiceState<IdentidadMetrics>;
+  catalogo: ServiceState<CatalogoMetrics>;
+  control: ServiceState<ControlMetrics>;
+  isLoading: boolean;
+  refresh: () => void;
+};
+
+export function useAdminMetrics(): AdminMetricsState {
+  const [identidad, setIdentidad] = useState<ServiceState<IdentidadMetrics>>({ data: adminMetricsMock.identidad, error: null });
+  const [catalogo, setCatalogo] = useState<ServiceState<CatalogoMetrics>>({ data: adminMetricsMock.catalogo, error: null });
+  const [control, setControl] = useState<ServiceState<ControlMetrics>>({ data: adminMetricsMock.control, error: null });
+  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
+  const seq = useRef(0);
+
+  const load = useCallback(async (signal?: AbortSignal) => {
+    if (!ADMIN_HAS_BACKEND) {
+      setIdentidad({ data: adminMetricsMock.identidad, error: null });
+      setCatalogo({ data: adminMetricsMock.catalogo, error: null });
+      setControl({ data: adminMetricsMock.control, error: null });
+      setIsLoading(false);
+      return;
+    }
+    const current = ++seq.current;
+    setIsLoading(true);
+    try {
+      // Tres llamadas en paralelo; el fallo de una no rompe las otras (SUP-280).
+      // Auditoría H-08: try/finally para no congelar isLoading ante abort/carrera.
+      const [identidadRes, catalogoRes, controlRes] = await Promise.allSettled([
+        fetchIdentidadMetrics(signal),
+        fetchCatalogoMetrics(signal),
+        fetchControlMetrics(signal),
+      ]);
+      if (seq.current !== current || signal?.aborted) return;
+      setIdentidad(
+        identidadRes.status === 'fulfilled'
+          ? { data: identidadRes.value, error: null }
+          // H-03: 401/403 sin mocks (fail-closed); resto con tarjeta "sin datos".
+          // TODO SUP-256: redirigir a /login ante AdminAuthError.
+          : { data: null, error: isAdminAuthError(identidadRes.reason) ? authBlockedMessage('métricas de identidad', identidadRes.reason) : toMessage(identidadRes.reason) },
+      );
+      setCatalogo(
+        catalogoRes.status === 'fulfilled'
+          ? { data: catalogoRes.value, error: null }
+          : { data: null, error: isAdminAuthError(catalogoRes.reason) ? authBlockedMessage('métricas de catálogo', catalogoRes.reason) : toMessage(catalogoRes.reason) },
+      );
+      setControl(
+        controlRes.status === 'fulfilled'
+          ? { data: controlRes.value, error: null }
+          : { data: null, error: isAdminAuthError(controlRes.reason) ? authBlockedMessage('métricas de control', controlRes.reason) : toMessage(controlRes.reason) },
+      );
+    } finally {
+      if (seq.current === current) setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void load(controller.signal);
+    return () => controller.abort();
+  }, [load]);
+
+  return { identidad, catalogo, control, isLoading, refresh: () => { void load(); } };
+}
