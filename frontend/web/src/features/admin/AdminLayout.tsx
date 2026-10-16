@@ -1,7 +1,8 @@
 import { useState, type ReactNode } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Menu, PanelLeftClose, PanelLeftOpen, ShieldCheck, X } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShoppingBasket, X } from 'lucide-react';
 import { ROUTES } from '@/core/routes';
+import { useAuth } from '@/hooks/useAuth';
 import type { AdminSection } from './admin-mock-data';
 
 type AdminLayoutProps = {
@@ -12,13 +13,21 @@ const navigation: { id: AdminSection; label: string; description: string }[] = [
   { id: 'overview', label: 'Resumen', description: 'Vista general' },
   { id: 'users', label: 'Usuarios', description: 'Cuentas y permisos' },
   { id: 'sources', label: 'Fuentes', description: 'Cadenas y conexiones' },
+  { id: 'metrics', label: 'Métricas', description: 'Conteos y tasas' },
 ];
 
 export function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const { search } = useLocation();
-  const activeSection = (new URLSearchParams(search).get('section') as AdminSection) || 'overview';
+  const { search, pathname } = useLocation();
+  const navigate = useNavigate();
+  const { logout } = useAuth();
+  const rawSection = new URLSearchParams(search).get('section');
+  // Acepta 'metricas' (es) como alias de 'metrics' (SUP-280: ruta /admin/metricas).
+  const activeSection: AdminSection =
+    pathname.endsWith('/metricas') || rawSection === 'metricas' || rawSection === 'metrics' ? 'metrics'
+    : rawSection === 'users' || rawSection === 'sources' ? rawSection
+    : 'overview';
 
   return (
     <div className="min-h-dvh bg-[#f5f6f2] text-foreground">
@@ -38,11 +47,13 @@ export function AdminLayout({ children }: AdminLayoutProps) {
           } ${sidebarCollapsed ? 'lg:w-24' : ''}`}
         >
           <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
-            <Link to={ROUTES.ADMIN} className={`flex items-center gap-3 ${sidebarCollapsed ? 'lg:mx-auto' : ''}`}>
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#d4a373] text-[#263524]">
-                <ShieldCheck className="size-5" />
+            <Link to={ROUTES.ADMIN} aria-label="Ir al panel de administración" className={`flex items-center gap-2 shrink-0 ${sidebarCollapsed ? 'lg:mx-auto' : ''}`}>
+              <span className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+                <ShoppingBasket className="size-5" aria-hidden="true" />
               </span>
-              <span className={`font-serif text-xl font-bold ${sidebarCollapsed ? 'lg:hidden' : ''}`}>RutaAhorro</span>
+              <span className={`text-lg font-semibold tracking-tight text-white ${sidebarCollapsed ? 'lg:hidden' : ''}`}>
+                RutaAhorro
+              </span>
             </Link>
             <button type="button" className="rounded-lg p-2 hover:bg-white/10 lg:hidden" aria-label="Cerrar menú" onClick={() => setSidebarOpen(false)}>
               <X className="size-5" />
@@ -54,7 +65,12 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             <nav className="space-y-2">
               {navigation.map((item) => {
                 const isActive = activeSection === item.id;
-                const href = item.id === 'overview' ? ROUTES.ADMIN : `${ROUTES.ADMIN}?section=${item.id}`;
+                // SUP-280: Métricas vive en /admin/metricas; el resto usa ?section=.
+                const href = item.id === 'overview'
+                  ? ROUTES.ADMIN
+                  : item.id === 'metrics'
+                    ? ROUTES.ADMIN_METRICAS
+                    : `${ROUTES.ADMIN}?section=${item.id}`;
                 return (
                   <Link
                     key={item.id}
@@ -106,7 +122,17 @@ export function AdminLayout({ children }: AdminLayoutProps) {
                 <h1 className="text-lg font-bold md:text-xl">Administración</h1>
               </div>
             </div>
-            <Link to="/" className="text-sm font-bold text-primary hover:underline">Volver al sitio</Link>
+            <button
+              type="button"
+              onClick={() => {
+                logout();
+                navigate(ROUTES.LOGIN);
+              }}
+              className="flex items-center gap-2 text-sm font-bold text-destructive hover:underline"
+            >
+              <LogOut className="size-4" aria-hidden="true" />
+              Cerrar sesión
+            </button>
           </header>
           <main className="flex-1 p-4 md:p-8">{children}</main>
         </div>

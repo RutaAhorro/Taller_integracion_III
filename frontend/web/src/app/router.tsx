@@ -107,6 +107,8 @@ const router = createBrowserRouter([
   { path: ROUTES.LOGIN, element: <Login /> },
   { path: ROUTES.TERMINOS, element: <Terms /> },
   { path: ROUTES.ADMIN, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
+  // SUP-280: alias /admin/metricas que abre el panel en la sección Métricas.
+  { path: ROUTES.ADMIN_METRICAS, element: <AdminDashboard />, errorElement: <ErrorBoundary /> },
   { 
     element: <ProtectedRoute />, 
     children: [
