@@ -120,22 +120,21 @@ class ProductoRepositorio:
     def cargar_productos(self) -> List[dict[str, Any]]:
         """
         Obtiene los productos vigentes con stock llamando al servicio interno de Catálogo.
-        Maneja paginación y degradación ante fallo de red o timeout sin lanzar excepciones.
+        Maneja paginación y degradación ante fallo de red o timeout sin lanzar excepciones ni fugar sockets.
         """
         productos_obtenidos: List[dict[str, Any]] = []
 
+        if self._client is not None:
+            cliente_a_usar = self._client
+            es_cliente_propio = False
+        else:
+            cliente_a_usar = httpx.Client(timeout=self._timeout)
+            es_cliente_propio = True
+
         try:
-            if self._client is not None:
-                primera_respuesta = self._realizar_peticion_http(self._client, page=1)
-                cliente_a_usar = self._client
-                es_cliente_propio = False
-            else:
-                cliente_a_usar = httpx.Client(timeout=self._timeout)
-                es_cliente_propio = True
+            try:
                 primera_respuesta = self._realizar_peticion_http(cliente_a_usar, page=1)
 
-            try:
-                # Procesar primera respuesta
                 total_paginas = 1
                 items_pagina: list[Any] = []
 
@@ -150,6 +149,9 @@ class ProductoRepositorio:
                 for item in items_pagina:
                     if isinstance(item, dict) and item.get("en_stock", True):
                         productos_obtenidos.append(self._normalizar_producto(item))
+
+                if total_paginas > 10:
+                    logger.warning("Catálogo truncado a 10 páginas (%d totales disponibles)", total_paginas)
 
                 # Obtener páginas subsecuentes si hay paginación activa (límite de seguridad: 10 páginas)
                 max_paginas = min(total_paginas, 10)
@@ -194,8 +196,9 @@ class ProductoRepositorio:
                 exc,
             )
 
-        # Fallback resiliente: si ya teníamos productos válidos, conservarlos
+        # Fallback resiliente: si ya teníamos productos válidos, conservarlos y resetear TTL
         if self._productos:
+            self._ultima_actualizacion = time.time()
             logger.info("Conservando %d productos en memoria tras fallo de refresco.", len(self._productos))
             return self._productos
 
@@ -219,4 +222,5 @@ class ProductoRepositorio:
         return self._productos
 
     def __len__(self) -> int:
-        return len(self.obtener_todos())
+        """Consulta O(1) en memoria para evitar llamadas de red en healthchecks."""
+        return len(self._productos)

@@ -338,3 +338,150 @@ def test_fastapi_endpoint_productos_devuelve_catalogo():
     assert isinstance(productos, list)
     assert len(productos) > 0
 
+
+def test_len_es_o1_y_no_llama_a_red(temp_fallback_file: Path):
+    """Verifica que __len__ es O(1) en memoria y jamás dispara peticiones HTTP."""
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_resp.raise_for_status.return_value = None
+    mock_client.get.return_value = mock_resp
+
+    repo = ProductoRepositorio(
+        ruta_fallback=temp_fallback_file,
+        base_url="http://catalogo:8080",
+        client=mock_client,
+    )
+
+    mock_client.get.reset_mock()
+    total = len(repo)
+    assert total == 2
+    # Comprobar que no hubo ninguna llamada HTTP al invocar __len__
+    assert mock_client.get.call_count == 0
+
+
+def test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga(temp_fallback_file: Path):
+    """
+    En modo degradado con productos en memoria, el fallo debe resetear _ultima_actualizacion
+    para que el TTL amortigüe llamadas posteriores y no sature la red.
+    """
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_resp.raise_for_status.return_value = None
+    mock_client.get.return_value = mock_resp
+
+    repo = ProductoRepositorio(
+        ruta_fallback=temp_fallback_file,
+        base_url="http://catalogo:8080",
+        client=mock_client,
+        cache_ttl=60.0,
+    )
+
+    # Forzar recarga que falla
+    mock_client.get.side_effect = httpx.TimeoutException("Catálogo caído")
+    productos = repo.obtener_todos(forzar=True)
+    assert len(productos) == 2
+
+    # Inmediatamente después, una llamada regular (forzar=False) no debe intentar HTTP
+    mock_client.get.reset_mock()
+    productos_en_cache = repo.obtener_todos(forzar=False)
+    assert len(productos_en_cache) == 2
+    assert mock_client.get.call_count == 0
+
+
+def test_httpx_client_propio_cierra_socket_ante_error(temp_fallback_file: Path):
+    """
+    Verifica que si se usa un cliente propio de httpx y la primera llamada falla,
+    el bloque finally garantiza que cliente.close() sea ejecutado para evitar fugas de sockets.
+    """
+    mock_client_instance = MagicMock()
+    mock_client_instance.get.side_effect = httpx.TimeoutException("Fallo en primer request")
+
+    with patch("app.productos.httpx.Client", return_value=mock_client_instance):
+        repo = ProductoRepositorio(
+            ruta_fallback=temp_fallback_file,
+            base_url="http://catalogo:8080",
+            client=None,  # Para que cree y use su propio cliente httpx
+        )
+
+    # Debe haber llamado a close() garantizando que no hay fugas de sockets TCP
+    mock_client_instance.close.assert_called()
+
+
+def test_telemetria_truncamiento_mas_de_10_paginas(temp_fallback_file: Path, caplog: pytest.LogCaptureFixture):
+    """Verifica que si Catálogo reporta más de 10 páginas, se emite un warning de truncamiento."""
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = {
+        "data": [
+            {
+                "id": "prod-1",
+                "nombre": "Producto 1",
+                "precio": 1000.0,
+                "en_stock": True,
+            }
+        ],
+        "paginacion": {
+            "total_registros": 1500,
+            "pagina_actual": 1,
+            "total_paginas": 15,
+            "limite": 100,
+        },
+    }
+    mock_resp.raise_for_status.return_value = None
+    mock_client.get.return_value = mock_resp
+
+    with caplog.at_level("WARNING"):
+        repo = ProductoRepositorio(
+            ruta_fallback=temp_fallback_file,
+            base_url="http://catalogo:8080",
+            client=mock_client,
+        )
+
+    assert any("Catálogo truncado a 10 páginas (15 totales disponibles)" in record.message for record in caplog.records)
+
+
+def test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path):
+    """Verifica que el router de chat utiliza anyio.to_thread.run_sync para obtener los productos."""
+    from fastapi.testclient import TestClient
+    from app.routers.chat import crear_router_chat
+    from app.proveedores.base import ProveedorIA, ResultadoExtraccion
+    from fastapi import FastAPI
+
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_resp = MagicMock(spec=httpx.Response)
+    mock_resp.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_resp.raise_for_status.return_value = None
+    mock_client.get.return_value = mock_resp
+
+    repo = ProductoRepositorio(
+        ruta_fallback=temp_fallback_file,
+        base_url="http://catalogo:8080",
+        client=mock_client,
+    )
+
+    class MockProveedor(ProveedorIA):
+        def __init__(self):
+            self.api_key = "dummy_key"
+
+        async def extraer_filtros(self, mensaje: str):
+            return ResultadoExtraccion(filtros={"categoria": "lacteos"}, tiempo_extraccion_ms=10)
+
+        async def generar_explicacion(self, mensaje: str, productos: list):
+            return "Explicacion simulada"
+
+    test_app = FastAPI()
+    mock_prov = MockProveedor()
+    test_app.include_router(crear_router_chat(repo, mock_prov, mock_prov))
+
+    test_client = TestClient(test_app)
+    resp = test_client.post("/chat/groq", json={"mensaje": "quiero lacteos"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "productos_filtrados" in data
+    assert len(data["productos_filtrados"]) == 2
+    assert data["explicacion"] == "Explicacion simulada"
+
+
+

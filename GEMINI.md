@@ -832,7 +832,11 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 
 ### `tests/test_productos.py`
 
-- Imports internos: app.filtros, app.main, app.productos
+- Imports internos: app.filtros, app.main, app.productos, app.proveedores.base, app.routers.chat
+- **class MockProveedor(ProveedorIA)**
+  - `__init__()`
+  - `async extraer_filtros(mensaje: str)`
+  - `async generar_explicacion(mensaje: str, productos: list)`
 - `temp_fallback_file(tmp_path: Path) → Path`
 - `test_carga_exitosa_desde_catalogo_http(temp_fallback_file: Path)`
 - `test_paginacion_multiples_paginas(temp_fallback_file: Path)`
@@ -843,6 +847,11 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 - `test_compatibilidad_con_filtros_deterministas(temp_fallback_file: Path)`
 - `test_fastapi_health_check_sin_crashear_modo_degradado()`
 - `test_fastapi_endpoint_productos_devuelve_catalogo()`
+- `test_len_es_o1_y_no_llama_a_red(temp_fallback_file: Path)`
+- `test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga(temp_fallback_file: Path)`
+- `test_httpx_client_propio_cierra_socket_ante_error(temp_fallback_file: Path)`
+- `test_telemetria_truncamiento_mas_de_10_paginas(temp_fallback_file: Path, caplog: pytest.LogCaptureFixture)`
+- `test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path)`
 
 
 ## Mapa auto-generado: Motor de Rutas (FastAPI + OR-Tools)
