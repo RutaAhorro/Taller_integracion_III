@@ -1,9 +1,14 @@
-import { Outlet, useNavigate } from 'react-router-dom';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
+import { hasAllowedRole } from '@/lib/roles';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
-export function ProtectedRoute() {
-  const { isGuest } = useAuth();
+// Guardia de autenticación + rol (SUP-256, RN-11).
+// - Invitado (sin sesión): muestra la pantalla de acceso (ir a /login).
+// - Logueado sin el rol requerido: redirige a home (/), no al panel.
+// - Sin `roles`: solo exige sesión (conducta anterior).
+export function ProtectedRoute({ roles }: { roles?: string[] }) {
+  const { isGuest, user } = useAuth();
   const navigate = useNavigate();
 
   // If the user is a guest (not authenticated), show the auth gating UI
@@ -49,6 +54,10 @@ export function ProtectedRoute() {
         </div>
       </div>
     );
+  }
+
+  if (roles && roles.length > 0 && !hasAllowedRole(user?.rol, roles)) {
+    return <Navigate to="/" replace />;
   }
 
   // Otherwise, render the child routes
