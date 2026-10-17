@@ -70,7 +70,7 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 ## Mapa auto-generado: IA Conversacional (FastAPI)
 
-**17 archivos .py** detectados
+**19 archivos .py** detectados
 
 
 ### `app/config.py`
@@ -101,10 +101,14 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 ### `app/productos.py`
 
+- Imports internos: app
 - **class ProductoRepositorio**
-  - `__init__(ruta_json: Path)`
-  - `_cargar() → list`
-  - `obtener_todos() → list`
+  - `__init__(ruta_fallback: ?, base_url: ?, timeout: float, client: ?, cache_ttl: float) → ?`
+  - `_normalizar_producto(item: ?) → ?`
+  - `_cargar_fallback() → ?`
+  - `_realizar_peticion_http(client: httpx.Client, page: int, limit: int) → ?`
+  - `cargar_productos() → ?`
+  - `obtener_todos(forzar: bool) → ?`
   - `__len__() → int`
 
 ### `app/proveedores/base.py`
@@ -160,3 +164,17 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 - **class RespuestaUTF8(JSONResponse)**
 - `fix_encoding_consola() → ?`
+
+### `tests/test_productos.py`
+
+- Imports internos: app.filtros, app.main, app.productos
+- `temp_fallback_file(tmp_path: Path) → Path`
+- `test_carga_exitosa_desde_catalogo_http(temp_fallback_file: Path)`
+- `test_paginacion_multiples_paginas(temp_fallback_file: Path)`
+- `test_degradacion_timeout_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_conexion_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_http_500_aplica_fallback(temp_fallback_file: Path)`
+- `test_preserva_cache_en_memoria_tras_falla_posterior(temp_fallback_file: Path)`
+- `test_compatibilidad_con_filtros_deterministas(temp_fallback_file: Path)`
+- `test_fastapi_health_check_sin_crashear_modo_degradado()`
+- `test_fastapi_endpoint_productos_devuelve_catalogo()`

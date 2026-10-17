@@ -72,6 +72,7 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
 
 - `compose()`
 - `sql(query)`
+- `scraper_auth(path)`
 - `request(path, data, status, method, key)`
 - `wait_for(predicate, timeout)`
 - `job()`
@@ -109,6 +110,9 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `read()`
 - **class APIPipelineTest(unittest.TestCase)**
   - `test_client_posts_ingestion_contract()`
+  - `test_client_sends_service_token_on_every_call()`
+  - `test_client_reads_token_from_environment()`
+  - `test_client_without_token_sends_no_authorization()`
   - `test_pipeline_flushes_batches()`
 - **class FakeClient**
   - `ingest_batch(products, supermarket, work_id)`
@@ -206,6 +210,9 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `test_three_crawl_attempts_require_review()`
   - `test_legacy_queue_not_removed_before_sql_acceptance()`
   - `test_legacy_queue_removed_after_sql_acceptance()`
+  - `test_legacy_queue_migration_sends_service_token()`
+  - `test_rejected_credential_keeps_job_pending_and_logs_error()`
+  - `test_worker_refuses_to_start_without_service_token()`
   - `test_legacy_api_acceptance_does_not_prove_durable_queue()`
   - `test_finalize_failed_deliveries_are_permanent_not_pending()`
   - `test_terminal_job_can_be_acknowledged_without_opening_full_sqlite()`
@@ -238,6 +245,9 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `lindex()`
   - `lrem()`
 - **class Redis**
+  - `lindex()`
+  - `lrem()`
+- **class Redis**
   - `lindex(key, index)`
   - `lrem(key, count, value)`
 
@@ -258,7 +268,8 @@ Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-let
   - `__init__(message)`
   - `permanent()`
 - **class ScraperAPIClient**
-  - `__init__(endpoint: str, timeout: float, opener)`
+  - `__init__(endpoint: str, timeout: float, opener, token: ?)`
+  - `_headers(content_type: bool) → dict`
   - `ingest_batch(products: ?, supermarket: ?, branch_id: ?, branch_code: ?, work_id: ?, batch_id: ?) → dict`
   - `finalize_work(work_id: str, status: str, extracted_items: ?, error_message: ?) → dict`
   - `_ingestion_endpoint(work_id: ?) → str`

@@ -39,7 +39,11 @@ app.add_middleware(
 )
 
 
-repositorio_productos = ProductoRepositorio(config.PRODUCTOS_PATH)
+repositorio_productos = ProductoRepositorio(
+    ruta_fallback=config.PRODUCTOS_PATH,
+    base_url=config.CATALOGO_INTERNAL_URL,
+    timeout=config.CATALOGO_TIMEOUT,
+)
 
 proveedor_groq = GroqProveedor(
     api_key=config.GROQ_API_KEY,
