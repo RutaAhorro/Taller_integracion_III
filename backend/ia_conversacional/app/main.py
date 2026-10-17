@@ -31,9 +31,16 @@ app = FastAPI(
 )
 
 
+origenes_cors = [
+    origin.strip()
+    for origin in config.CORS_ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origenes_cors,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -82,4 +89,11 @@ def health_check():
 # --------------------------------------------------------------------------
 
 app.include_router(crear_router_productos(repositorio_productos))
-app.include_router(crear_router_chat(repositorio_productos, proveedor_groq, proveedor_gemini))
+app.include_router(
+    crear_router_chat(
+        repositorio=repositorio_productos,
+        proveedor_fallback=proveedor_fallback,
+        proveedor_groq=proveedor_groq,
+        proveedor_gemini=proveedor_gemini,
+    )
+)

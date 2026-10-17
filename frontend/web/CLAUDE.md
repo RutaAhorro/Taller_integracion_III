@@ -75,7 +75,7 @@ src/
 
 ## Mapa auto-generado: Frontend (React + TypeScript)
 
-**77 archivos activos** (excluidos kebab-case obsoletos)
+**82 archivos activos** (excluidos kebab-case obsoletos)
 
 
 ### `core/routes.ts`
@@ -87,6 +87,23 @@ src/
 - Exports: HOME, discountPct, formatPrice, mockUser, products, supermarketById, supermarkets
 - Imports locales: ../types
 
+### `features/admin/admin-api.ts`
+
+- Exports: ADMIN_ENDPOINTS, ADMIN_HAS_BACKEND, adminPlanFromBackend, adminPlanToBackend, adminRoleFromBackend, adminRoleToBackend, fetchAdminSources, fetchAdminUsers, fetchCatalogoMetrics, fetchControlMetrics, fetchIdentidadMetrics, isAdminAuthError, updateAdminSource, updateAdminUser
+- Tipos: CatalogoMetrics, ControlMetrics, IdentidadMetrics
+- Imports locales: ./admin-mock-data
+
+### `features/admin/admin-mock-data.ts`
+
+- Exports: ADMIN_PLANS, ADMIN_ROLES, adminMetricsMock, adminSources, adminUsers
+- Tipos: AdminPlan, AdminRole, AdminSection, AdminSource, AdminUser
+
+### `features/admin/useAdminData.ts`
+
+- Exports: useAdminMetrics, useAdminSources, useAdminUsers
+- Tipos: AdminMetricsState, AdminPlan, AdminRole, AdminSource, AdminUser, CatalogoMetrics, ControlMetrics, IdentidadMetrics, ServiceState
+- Imports locales: ./admin-api, ./admin-mock-data
+
 ### `hooks/useAuth.ts`
 
 - Exports: useAuth
@@ -95,7 +112,7 @@ src/
 ### `hooks/useCatalog.ts`
 
 - Exports: useCatalog
-- Imports locales: @/lib/constants, @/lib/products-api, @/types
+- Imports locales: @/layouts/MainLayout, @/lib/formatters, @/lib/products-api, @/types
 
 ### `hooks/useChatbot.ts`
 
@@ -139,7 +156,7 @@ src/
 
 ### `lib/products-api.ts`
 
-- Exports: toUiProduct
+- Exports: FALLBACK_MARKET_NAME, marketMeta, slugifyMarket, toUiProduct
 - Tipos: ApiPriceHistory, ApiProduct, ApiProductDetail, ProductPage
 - Imports locales: ./constants, @/types
 
@@ -155,7 +172,7 @@ src/
 ### `app/router.tsx`
 
 - Exports: AppRouter
-- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/layouts/MainLayout, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/Terms, @/pages/mocks/MockShell
+- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/features/admin/AdminDashboard, @/layouts/MainLayout, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/Terms, @/pages/mocks/MockShell
 
 ### `components/BottomNav.tsx`
 
@@ -367,6 +384,18 @@ src/
 - Exports: ToastProvider, useToast
 - Tipos: ReactNode, Toast, ToastContextType, ToastType
 - Imports locales: @/lib/utils
+
+### `features/admin/AdminDashboard.tsx`
+
+- Exports: AdminDashboard
+- Tipos: AdminMetricsState, AdminSection
+- Imports locales: ./AdminLayout, ./admin-api, ./admin-mock-data, ./useAdminData, @/components/ui/input, @/core/routes, @/hooks/useAuth
+
+### `features/admin/AdminLayout.tsx`
+
+- Exports: AdminLayout
+- Tipos: AdminLayoutProps, ReactNode
+- Imports locales: ./admin-mock-data, @/core/routes, @/hooks/useAuth
 
 ### `layouts/AppShell.tsx`
 
