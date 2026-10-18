@@ -3,6 +3,6 @@ uvicorn[standard]>=0.23.0
 pydantic>=2.0.0
 httpx>=0.24.1
 python-dotenv
-# Opcional para cuando deseen conectarse a Postgres en vez del productos.json estático:
-# SQLAlchemy>=2.0.0
-# psycopg2-binary>=2.9.7
+# RNF-05 y 06_propiedad_permisos.sql:
+# La IA NO debe conectarse a PostgreSQL ni tener credenciales directas (DATABASE_URL, psycopg2, etc.).
+# Toda consulta de catálogo se realiza estrictamente por HTTP interno hacia el microservicio de Catálogo.
