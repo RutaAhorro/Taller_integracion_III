@@ -40,7 +40,6 @@ app.add_middleware(
 
 
 repositorio_productos = ProductoRepositorio(
-    ruta_fallback=config.PRODUCTOS_PATH,
     base_url=config.CATALOGO_INTERNAL_URL,
     timeout=config.CATALOGO_TIMEOUT,
 )
@@ -78,7 +77,8 @@ def health_check():
     return {
         "status": "ok",
         "service": "ia_conversacional",
-        "productos_cargados": len(repositorio_productos)
+        "productos_cargados": len(repositorio_productos),
+        "fuente": repositorio_productos.fuente,
     }
 
 # --------------------------------------------------------------------------

@@ -769,6 +769,7 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 - Imports internos: app
 - **class ProductoRepositorio**
   - `__init__(ruta_fallback: ?, base_url: ?, timeout: float, client: ?, cache_ttl: float) → ?`
+  - `fuente() → str`
   - `_normalizar_producto(item: ?) → ?`
   - `_cargar_fallback() → ?`
   - `_realizar_peticion_http(client: httpx.Client, page: int, limit: int) → ?`
