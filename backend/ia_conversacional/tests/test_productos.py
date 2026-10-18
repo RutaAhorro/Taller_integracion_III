@@ -484,4 +484,84 @@ def test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path
     assert data["explicacion"] == "Explicacion simulada"
 
 
+def test_concurrencia_double_checked_locking_evita_llamadas_duplicadas(temp_fallback_file: Path):
+    """
+    Verifica que ante peticiones simultáneas con TTL expirado, el patrón
+    double-checked locking hace que solo el primer hilo consulte a Catálogo,
+    y los demás hilos reutilicen la caché sin volver a realizar peticiones HTTP.
+    """
+    import concurrent.futures
+    import time
+
+    mock_client = MagicMock(spec=httpx.Client)
+    
+    def mock_get(*args, **kwargs):
+        time.sleep(0.05)  # Simula latencia de red para que los hilos concurran sobre el lock
+        resp = MagicMock(spec=httpx.Response)
+        resp.json.return_value = MOCK_CATALOGO_PAGINA_1
+        resp.raise_for_status.return_value = None
+        return resp
+
+    mock_client.get.side_effect = mock_get
+
+    repo = ProductoRepositorio(
+        ruta_fallback=temp_fallback_file,
+        base_url="http://catalogo:8080",
+        client=mock_client,
+        cache_ttl=0.1,  # TTL muy corto
+    )
+
+    # Esperar a que expire el TTL
+    time.sleep(0.12)
+    mock_client.get.reset_mock()
+
+    def tarea_hilo():
+        return repo.obtener_todos(forzar=False)
+
+    # Lanzar 5 hilos en paralelo
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        resultados = list(executor.map(lambda _: tarea_hilo(), range(5)))
+
+    # Todos los hilos deben haber obtenido los 2 productos válidos
+    assert len(resultados) == 5
+    for r in resultados:
+        assert len(r) == 2
+
+    # Solo debió haberse realizado 1 llamada HTTP a Catálogo en lugar de 5
+    assert mock_client.get.call_count == 1
+
+
+def test_catalogo_caido_modo_sin_datos_respeta_ttl(temp_fallback_file: Path):
+    """
+    Verifica que si Catálogo está caído y no hay datos previos (sin_datos),
+    las llamadas subsiguientes dentro del TTL no vuelven a intentar conectar
+    inmediatamente, evitando saturar o retrasar cada petición.
+    """
+    mock_client = MagicMock(spec=httpx.Client)
+    mock_client.get.side_effect = httpx.ConnectError("Catálogo no disponible")
+
+    # Inicializar sin fallback para entrar en sin_datos
+    repo = ProductoRepositorio(
+        ruta_fallback=Path("/no/existe/productos.json"),
+        base_url="http://catalogo:8080",
+        client=mock_client,
+        cache_ttl=60.0,
+    )
+
+    assert repo.fuente == "sin_datos"
+    assert len(repo) == 0
+    assert mock_client.get.call_count == 1
+
+    # Resetear mock
+    mock_client.get.reset_mock()
+
+    # Llamadas subsiguientes dentro del TTL de 60s
+    prods = repo.obtener_todos(forzar=False)
+    assert prods == []
+    assert repo.fuente == "sin_datos"
+    # No debió realizar ninguna llamada HTTP gracias al TTL
+    assert mock_client.get.call_count == 0
+
+
+
 

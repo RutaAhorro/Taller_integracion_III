@@ -8,8 +8,9 @@ La obtención de productos vigentes con stock se realiza mediante HTTP
 interno hacia el microservicio de Catálogo (CATALOGO_INTERNAL_URL).
 
 En caso de indisponibilidad de red, timeout o fallo en Catálogo, se aplica
-degradación elegante (fallback a memoria previa o a productos.json) para
-garantizar alta disponibilidad sin crashear FastAPI.
+degradación elegante (fallback a memoria previa o retorno de lista vacía
+'sin_datos') para garantizar alta disponibilidad sin crashear FastAPI y
+sin alucinar datos.
 """
 
 from __future__ import annotations
@@ -125,121 +126,135 @@ class ProductoRepositorio:
         response.raise_for_status()
         return response.json()
 
+    def _expirado(self) -> bool:
+        """Indica si la caché local expiró según el TTL configurado."""
+        if self._cache_ttl <= 0:
+            return True
+        return (time.time() - self._ultima_actualizacion) > self._cache_ttl
+
+    def _cargar_sin_lock(self) -> List[dict[str, Any]]:
+        """
+        Lógica interna de carga y refresco desde Catálogo.
+        Debe invocarse habiendo adquirido self._lock previamente.
+        """
+        productos_obtenidos: List[dict[str, Any]] = []
+
+        if self._client is not None:
+            cliente_a_usar = self._client
+            es_cliente_propio = False
+        else:
+            cliente_a_usar = httpx.Client(timeout=self._timeout)
+            es_cliente_propio = True
+
+        try:
+            try:
+                primera_respuesta = self._realizar_peticion_http(cliente_a_usar, page=1)
+
+                total_paginas = 1
+                items_pagina: list[Any] = []
+
+                if isinstance(primera_respuesta, dict):
+                    items_pagina = primera_respuesta.get("data", [])
+                    paginacion = primera_respuesta.get("paginacion")
+                    if isinstance(paginacion, dict):
+                        total_paginas = int(paginacion.get("total_paginas", 1))
+                elif isinstance(primera_respuesta, list):
+                    items_pagina = primera_respuesta
+
+                for item in items_pagina:
+                    if isinstance(item, dict) and item.get("en_stock", True):
+                        productos_obtenidos.append(self._normalizar_producto(item))
+
+                if total_paginas > 10:
+                    logger.warning("Catálogo truncado a 10 páginas (%d totales disponibles)", total_paginas)
+
+                # Obtener páginas subsecuentes si hay paginación activa (límite de seguridad: 10 páginas)
+                max_paginas = min(total_paginas, 10)
+                for pag in range(2, max_paginas + 1):
+                    resp_siguiente = self._realizar_peticion_http(cliente_a_usar, page=pag)
+                    if isinstance(resp_siguiente, dict):
+                        items_sig = resp_siguiente.get("data", [])
+                    elif isinstance(resp_siguiente, list):
+                        items_sig = resp_siguiente
+                    else:
+                        items_sig = []
+
+                    for item in items_sig:
+                        if isinstance(item, dict) and item.get("en_stock", True):
+                            productos_obtenidos.append(self._normalizar_producto(item))
+
+            finally:
+                if es_cliente_propio:
+                    cliente_a_usar.close()
+
+            if productos_obtenidos:
+                self._productos = productos_obtenidos
+                self._fuente = "catalogo"
+                self._ultima_actualizacion = time.time()
+                logger.info(
+                    "Catálogo cargado exitosamente desde %s (%d productos vigentes con stock)",
+                    self._base_url,
+                    len(self._productos),
+                )
+                return self._productos
+
+            logger.warning("Catálogo respondió sin productos disponibles.")
+
+        except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError, httpx.RequestError) as http_err:
+            logger.warning(
+                "Degradación activada: no fue posible conectar con Catálogo en %s (%s).",
+                self._base_url,
+                http_err,
+            )
+        except Exception as exc:
+            logger.warning(
+                "Degradación activada: error inesperado al procesar productos de Catálogo (%s).",
+                exc,
+            )
+
+        # Fallback resiliente: si ya teníamos productos válidos de Catálogo en memoria, conservarlos
+        if self._productos and self._fuente in ("catalogo", "memoria"):
+            self._fuente = "memoria"
+            self._ultima_actualizacion = time.time()
+            logger.info("Conservando %d productos en memoria tras fallo de refresco.", len(self._productos))
+            return self._productos
+
+        # Si se configuró explícitamente un fallback (para tests unitarios):
+        if self._ruta_fallback is not None and self._ruta_fallback.exists():
+            logger.info("Cargando productos de fallback desde %s.", self._ruta_fallback)
+            self._productos = self._cargar_fallback()
+            self._fuente = "fallback" if self._productos else "sin_datos"
+            self._ultima_actualizacion = time.time()
+            return self._productos
+
+        # En runtime sin catálogo real previo: devolver lista vacía sin inventar datos
+        self._productos = []
+        self._fuente = "sin_datos"
+        self._ultima_actualizacion = time.time()
+        logger.warning("Sin datos de catálogo disponibles. Modo degradado: 0 productos cargados.")
+        return self._productos
+
     def cargar_productos(self) -> List[dict[str, Any]]:
         """
         Obtiene los productos vigentes con stock llamando al servicio interno de Catálogo.
         Maneja paginación y degradación ante fallo de red o timeout sin lanzar excepciones ni fugar sockets.
         """
         with self._lock:
-            productos_obtenidos: List[dict[str, Any]] = []
-
-            if self._client is not None:
-                cliente_a_usar = self._client
-                es_cliente_propio = False
-            else:
-                cliente_a_usar = httpx.Client(timeout=self._timeout)
-                es_cliente_propio = True
-
-            try:
-                try:
-                    primera_respuesta = self._realizar_peticion_http(cliente_a_usar, page=1)
-
-                    total_paginas = 1
-                    items_pagina: list[Any] = []
-
-                    if isinstance(primera_respuesta, dict):
-                        items_pagina = primera_respuesta.get("data", [])
-                        paginacion = primera_respuesta.get("paginacion")
-                        if isinstance(paginacion, dict):
-                            total_paginas = int(paginacion.get("total_paginas", 1))
-                    elif isinstance(primera_respuesta, list):
-                        items_pagina = primera_respuesta
-
-                    for item in items_pagina:
-                        if isinstance(item, dict) and item.get("en_stock", True):
-                            productos_obtenidos.append(self._normalizar_producto(item))
-
-                    if total_paginas > 10:
-                        logger.warning("Catálogo truncado a 10 páginas (%d totales disponibles)", total_paginas)
-
-                    # Obtener páginas subsecuentes si hay paginación activa (límite de seguridad: 10 páginas)
-                    max_paginas = min(total_paginas, 10)
-                    for pag in range(2, max_paginas + 1):
-                        resp_siguiente = self._realizar_peticion_http(cliente_a_usar, page=pag)
-                        if isinstance(resp_siguiente, dict):
-                            items_sig = resp_siguiente.get("data", [])
-                        elif isinstance(resp_siguiente, list):
-                            items_sig = resp_siguiente
-                        else:
-                            items_sig = []
-
-                        for item in items_sig:
-                            if isinstance(item, dict) and item.get("en_stock", True):
-                                productos_obtenidos.append(self._normalizar_producto(item))
-
-                finally:
-                    if es_cliente_propio:
-                        cliente_a_usar.close()
-
-                if productos_obtenidos:
-                    self._productos = productos_obtenidos
-                    self._fuente = "catalogo"
-                    self._ultima_actualizacion = time.time()
-                    logger.info(
-                        "Catálogo cargado exitosamente desde %s (%d productos vigentes con stock)",
-                        self._base_url,
-                        len(self._productos),
-                    )
-                    return self._productos
-
-                logger.warning("Catálogo respondió sin productos disponibles.")
-
-            except (httpx.TimeoutException, httpx.ConnectError, httpx.HTTPStatusError, httpx.RequestError) as http_err:
-                logger.warning(
-                    "Degradación activada: no fue posible conectar con Catálogo en %s (%s).",
-                    self._base_url,
-                    http_err,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Degradación activada: error inesperado al procesar productos de Catálogo (%s).",
-                    exc,
-                )
-
-            # Fallback resiliente: si ya teníamos productos válidos de Catálogo en memoria, conservarlos
-            if self._productos and self._fuente in ("catalogo", "memoria"):
-                self._fuente = "memoria"
-                self._ultima_actualizacion = time.time()
-                logger.info("Conservando %d productos en memoria tras fallo de refresco.", len(self._productos))
-                return self._productos
-
-            # Si se configuró explícitamente un fallback (para tests unitarios):
-            if self._ruta_fallback is not None and self._ruta_fallback.exists():
-                logger.info("Cargando productos de fallback desde %s.", self._ruta_fallback)
-                self._productos = self._cargar_fallback()
-                self._fuente = "fallback" if self._productos else "sin_datos"
-                self._ultima_actualizacion = time.time()
-                return self._productos
-
-            # En runtime sin catálogo real previo: devolver lista vacía sin inventar datos
-            self._productos = []
-            self._fuente = "sin_datos"
-            self._ultima_actualizacion = time.time()
-            logger.warning("Sin datos de catálogo disponibles. Modo degradado: 0 productos cargados.")
-            return self._productos
+            return self._cargar_sin_lock()
 
     def obtener_todos(self, forzar: bool = False) -> List[dict[str, Any]]:
         """
         Devuelve todos los productos vigentes con stock.
         Refresca el catálogo si el TTL expiró o si se solicita forzar recarga.
+        Implementa double-checked locking para evitar llamadas concurrentes redundantes.
         """
-        ahora = time.time()
-        expirado = self._cache_ttl > 0 and (ahora - self._ultima_actualizacion) > self._cache_ttl
+        if not forzar and not self._expirado():
+            return self._productos
 
-        if forzar or expirado or not self._productos:
-            return self.cargar_productos()
-
-        return self._productos
+        with self._lock:
+            if not forzar and not self._expirado():
+                return self._productos  # Otro hilo ya completó la recarga mientras este esperaba el lock
+            return self._cargar_sin_lock()
 
     def __len__(self) -> int:
         """Consulta O(1) en memoria para evitar llamadas de red en healthchecks."""
