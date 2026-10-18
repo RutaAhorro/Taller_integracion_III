@@ -293,15 +293,15 @@ services:
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
     volumes:
       - ./backend/ia_conversacional:/app
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')"]
-      interval: 10s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
     networks:
       - microservices_net
     deploy:
