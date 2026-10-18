@@ -1,15 +1,34 @@
+import { useEffect } from 'react';
 import { Navigate, Outlet, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
-import { hasAllowedRole } from '@/lib/roles';
+import { useToast } from '@/contexts/ToastContext';
+import { ROUTES } from '@/core/routes';
+import { hasAllowedRole, normalizeRole, ROLE_ADMIN, ROLE_COLABORADOR } from '@/lib/roles';
 import { ShieldAlert, ArrowLeft } from 'lucide-react';
 
 // Guardia de autenticación + rol (SUP-256, RN-11).
-// - Invitado (sin sesión): muestra la pantalla de acceso (ir a /login).
-// - Logueado sin el rol requerido: redirige a home (/), no al panel.
+// - Invitado (sin sesión): muestra la pantalla de acceso (ir a /login). En rutas
+//   privilegiadas (admin/colaborador) no se ofrece registro público.
+// - Logueado sin el rol requerido: avisa y redirige al inicio autenticado
+//   (/dashboard), nunca a la landing pública.
 // - Sin `roles`: solo exige sesión (conducta anterior).
 export function ProtectedRoute({ roles }: { roles?: string[] }) {
   const { isGuest, user } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const requiredRoles = roles ?? [];
+  const hasRoleGuard = requiredRoles.length > 0;
+  // Rutas que exigen admin o colaborador: sin registro público en el modal.
+  const privilegedOnly = requiredRoles.some((role) => {
+    const normalized = normalizeRole(role);
+    return normalized === ROLE_ADMIN || normalized === ROLE_COLABORADOR;
+  });
+  const denied = !isGuest && hasRoleGuard && !hasAllowedRole(user?.rol, requiredRoles);
+
+  useEffect(() => {
+    if (denied) toast('No tienes permisos para acceder a esa sección.', 'warning');
+  }, [denied, toast]);
 
   // If the user is a guest (not authenticated), show the auth gating UI
   if (isGuest) {
@@ -21,25 +40,29 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
               <ShieldAlert className="h-6 w-6 text-primary-foreground" />
             </div>
             <h2 className="text-xl font-bold text-foreground">
-              Inicia sesión para acceder
+              {privilegedOnly ? 'Acceso restringido' : 'Inicia sesión para acceder'}
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              Esta sección requiere una cuenta activa. Inicia sesión o crea una cuenta gratuita para continuar.
+              {privilegedOnly
+                ? 'Esta sección requiere una cuenta con rol de administrador o colaborador. Inicia sesión con una cuenta autorizada.'
+                : 'Esta sección requiere una cuenta activa. Inicia sesión o crea una cuenta gratuita para continuar.'}
             </p>
 
             <div className="pt-4 space-y-3">
               <button
-                onClick={() => navigate('/login')}
+                onClick={() => navigate(ROUTES.LOGIN)}
                 className="w-full bg-primary hover:brightness-110 text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] font-medium py-2.5 rounded-xl transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0 active:shadow-none"
               >
                 Iniciar Sesión
               </button>
-              <button
-                onClick={() => navigate('/login', { state: { tab: 'signup' } })}
-                className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
-              >
-                Crear Cuenta Gratuita
-              </button>
+              {!privilegedOnly && (
+                <button
+                  onClick={() => navigate(ROUTES.LOGIN, { state: { tab: 'signup' } })}
+                  className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
+                >
+                  Crear Cuenta Gratuita
+                </button>
+              )}
             </div>
             <div className="pt-2">
               <button
@@ -56,8 +79,8 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
     );
   }
 
-  if (roles && roles.length > 0 && !hasAllowedRole(user?.rol, roles)) {
-    return <Navigate to="/" replace />;
+  if (denied) {
+    return <Navigate to={ROUTES.CATALOGO} replace />;
   }
 
   // Otherwise, render the child routes

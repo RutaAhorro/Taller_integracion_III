@@ -9,6 +9,7 @@ import { ToastProvider } from '@/contexts/ToastContext';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
+import { ROLE_ADMIN, ROLE_COLABORADOR } from '@/lib/roles';
 
 // Sprint 1 — vistas funcionales
 import Home from '@/pages/Home';
@@ -73,7 +74,7 @@ const router = createBrowserRouter([
           { path: ROUTES.PLANES, element: <Planes /> },
           {
             // SUP-256: /colaborador solo colaborador o admin.
-            element: <ProtectedRoute roles={['colaborador', 'admin']} />,
+            element: <ProtectedRoute roles={[ROLE_COLABORADOR, ROLE_ADMIN]} />,
             children: [
               {
                 path: ROUTES.COLABORADOR,
@@ -114,8 +115,8 @@ const router = createBrowserRouter([
   { path: ROUTES.TERMINOS, element: <Terms /> },
   {
     // SUP-256: /admin solo admin. Invitado ve acceso (ir a login);
-    // logueado sin rol admin redirige a home.
-    element: <ProtectedRoute roles={['admin']} />,
+    // logueado sin el rol redirige al inicio autenticado (/dashboard).
+    element: <ProtectedRoute roles={[ROLE_ADMIN]} />,
     errorElement: <ErrorBoundary />,
     children: [
       { path: ROUTES.ADMIN, element: <AdminDashboard /> },
