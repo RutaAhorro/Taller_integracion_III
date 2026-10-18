@@ -10,6 +10,8 @@ services:
       IDENTITY_DB_PASSWORD: ${IDENTITY_DB_PASSWORD:?Define una contraseña exclusiva para Identidad}
       SCRAPING_DB_PASSWORD: ${SCRAPING_DB_PASSWORD:?Define una contraseña exclusiva para coordinación}
       CATALOGO_DB_PASSWORD: ${CATALOGO_DB_PASSWORD:?Define una contraseña exclusiva para Catálogo}
+      # SUP-240: opcional; sin ella app_rutas queda sin LOGIN y el motor de rutas no arranca.
+      RUTAS_DB_PASSWORD: ${RUTAS_DB_PASSWORD:-}
     ports:
       - 5432:5432
     volumes:
@@ -136,6 +138,36 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+  motor_rutas:
+    # SUP-240: dueño de rutas.*. Opcional: `docker compose --profile rutas up -d`
+    # con RUTAS_DB_PASSWORD definido antes de crear el volumen de la base.
+    profiles: [rutas]
+    build:
+      context: ./backend/motor_rutas
+      dockerfile: Dockerfile
+    environment:
+      RUTAS_DB_URL: postgres://app_rutas:${RUTAS_DB_PASSWORD:-}@db:5432/${DB_NAME}?sslmode=disable
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET}
+      CORS_ALLOWED_ORIGINS: ${RUTAS_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+    depends_on:
+      db: {condition: service_healthy}
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/_rutas/ready', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+    networks:
+      microservices_net:
+        aliases: [motor-rutas]
+    deploy:
+      resources:
+        reservations: {cpus: '0.1', memory: 64M}
+        limits: {cpus: '0.5', memory: 256M}
   gateway:
     build:
       context: ./backend/gateway
@@ -146,6 +178,8 @@ services:
       SCRAPING_URL: http://control-scraping:8080
       CATALOGO_URL: http://catalogo:8080
       IDENTIDAD_URL: http://identidad-upstream:8080
+      # Sin el perfil `rutas`, /api/v1/listas responde 502 rutas_unavailable.
+      RUTAS_URL: http://motor-rutas:8001
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
     depends_on:

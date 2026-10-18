@@ -46,6 +46,10 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"CATALOGO_URL", "http://catalogo:8080?token=private"},
 		{"CATALOGO_URL", "http://catalogo:8080#fragment"},
 		{"CATALOGO_URL", "http://catalogo:70000"},
+		{"RUTAS_URL", "ftp://motor-rutas:8001"},
+		{"RUTAS_URL", "http://user:password@motor-rutas:8001"},
+		{"RUTAS_URL", "http://motor-rutas:8001/api/v1/listas"},
+		{"RUTAS_URL", "http://motor-rutas:8001?token=private"},
 		{"GATEWAY_LISTEN_ADDR", "8082"},
 		{"GATEWAY_LISTEN_ADDR", ":0"},
 		{"GATEWAY_REQUEST_TIMEOUT", "-1s"},
@@ -75,9 +79,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 }
 
 func TestFinalTopologyDoesNotRequireLegacyBackend(t *testing.T) {
-	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080"}
+	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080", "RUTAS_URL": "http://motor-rutas:8001"}
 	c, err := Load(func(key string) string { return env[key] })
-	if err != nil || c.Backend != nil || c.Scraping == nil || c.Identidad == nil || c.Catalogo == nil {
+	if err != nil || c.Backend != nil || c.Scraping == nil || c.Identidad == nil || c.Catalogo == nil || c.Rutas == nil {
 		t.Fatalf("topología final inválida: %v %v", c, err)
 	}
 }
