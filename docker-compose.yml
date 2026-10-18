@@ -81,6 +81,14 @@ services:
       # HTTP local; en Kubernetes se conserva el default Secure=true.
       IDENTIDAD_COOKIE_SECURE: ${IDENTIDAD_COOKIE_SECURE:-false}
       IDENTIDAD_TRUSTED_PROXIES: ${IDENTIDAD_GATEWAY_IP:-172.30.0.2}
+      # SUP-189: sin SMTP_USER/SMTP_PASS el correo queda deshabilitado; `log` sólo en desarrollo.
+      IDENTIDAD_CORREO_MODO: ${IDENTIDAD_CORREO_MODO:-}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_TLS: ${SMTP_TLS:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
