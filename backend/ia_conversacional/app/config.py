@@ -25,7 +25,8 @@ JWT_SECRET = os.getenv("JWT_SECRET")
 # CORS
 # --------------------------------------------------------------------------
 CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"
+    "IA_CORS_ALLOWED_ORIGINS",
+    os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"),
 )
 
 # --------------------------------------------------------------------------

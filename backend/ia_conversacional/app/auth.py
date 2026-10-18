@@ -5,7 +5,7 @@ Valida tokens usando algoritmo HS256 y extrae los claims del usuario.
 
 from typing import Optional
 import jwt
-from fastapi import Header, HTTPException, status
+from fastapi import Cookie, Header, HTTPException, status
 from pydantic import BaseModel
 
 from app import config
@@ -17,34 +17,45 @@ class UsuarioAutenticado(BaseModel):
     provider: Optional[str] = None
 
 
+def _extraer_bearer(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    partes = authorization.strip().split()
+    if len(partes) == 2 and partes[0].lower() == "bearer":
+        return partes[1]
+    return None
+
+
 async def obtener_usuario_actual(
+    jwt_cookie: Optional[str] = Cookie(None, alias="jwt"),
     authorization: Optional[str] = Header(None, alias="Authorization"),
 ) -> UsuarioAutenticado:
     """
-    Dependency de FastAPI para validar el header Authorization: Bearer <token>.
-    Valida firma HS256, expiración y presencia de claims.
+    Dependency de FastAPI para validar la sesión del usuario.
+    Soporta primero la cookie 'jwt' (emitida como HttpOnly por Identidad)
+    y como fallback el header 'Authorization: Bearer <token>'.
+    Exige expiración obligatoria (exp) y claim user_id con firma HS256.
     """
-    if not authorization:
+    token = jwt_cookie or _extraer_bearer(authorization)
+
+    if not token:
+        if authorization and not _extraer_bearer(authorization):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Header Authorization debe tener formato 'Bearer <token>'",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Header Authorization requerido",
+            detail="Autenticación requerida: falta cookie 'jwt' o header 'Authorization'",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    partes = authorization.strip().split()
-    if len(partes) != 2 or partes[0].lower() != "bearer":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Header Authorization debe tener formato 'Bearer <token>'",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    token = partes[1]
     secret = config.JWT_SECRET
-    if not secret:
+    if not secret or len(secret) < 32:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Clave de verificación JWT no configurada en el servidor",
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Clave de verificación JWT no configurada o insegura en el servidor",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -53,11 +64,18 @@ async def obtener_usuario_actual(
             token,
             secret,
             algorithms=["HS256"],
+            options={"require": ["exp", "user_id"]},
         )
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token expirado",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    except jwt.MissingRequiredClaimError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token inválido: falta claim requerido ({exc})",
             headers={"WWW-Authenticate": "Bearer"},
         )
     except jwt.InvalidTokenError:
@@ -68,13 +86,6 @@ async def obtener_usuario_actual(
         )
 
     user_id = payload.get("user_id")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="El token no contiene el claim 'user_id'",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
     rol = payload.get("rol", "")
     provider = payload.get("provider")
 

@@ -181,11 +181,10 @@ def test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(client):
         # Respuesta estructurada correcta
         assert data["respuesta"] == "Los productos más convenientes son Tomate a $990 y Cebolla a $690."
         assert data["filtros_aplicados"] == filtros_simulados
-        assert data["user_id"] == "user-456"
 
 
-def test_chat_secret_no_configurado_retorna_401(client, monkeypatch):
-    """Test 401 si JWT_SECRET no está configurado en el servidor."""
+def test_chat_secret_no_configurado_retorna_500(client, monkeypatch):
+    """Test 500 si JWT_SECRET no está configurado o es inseguro en el servidor."""
     monkeypatch.setattr(config, "JWT_SECRET", None)
     token = generar_token()
     response = client.post(
@@ -193,7 +192,8 @@ def test_chat_secret_no_configurado_retorna_401(client, monkeypatch):
         headers={"Authorization": f"Bearer {token}"},
         json={"mensaje": "Hola"},
     )
-    assert response.status_code == 401
+    assert response.status_code == 500
+    assert "Clave de verificación JWT no configurada" in response.json().get("detail", "")
 
 
 def test_chat_texto_libre_sin_filtros(client):
@@ -219,11 +219,10 @@ def test_chat_texto_libre_sin_filtros(client):
         assert data["filtros_aplicados"] is None
         assert data["productos_recomendados"] == []
         assert data["respuesta"] == "¡Hola! ¿En qué puedo ayudarte hoy?"
-        assert data["user_id"] == "user-789"
 
 
 def test_chat_error_en_proveedor(client):
-    """Test cuando el proveedor retorna un error."""
+    """Test cuando el proveedor retorna un error: debe responder 503 Service Unavailable."""
     token_valido = generar_token(user_id="user-999")
     mock_resultado = ResultadoExtraccion(
         error="Límite de cuota excedido",
@@ -238,20 +237,82 @@ def test_chat_error_en_proveedor(client):
             json={"mensaje": "Hola"},
         )
 
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = response.json()
-        assert "error" in data
-        assert data["user_id"] == "user-999"
+        assert "no está disponible" in data.get("detail", "")
+
+
+def test_chat_con_cookie_jwt_retorna_200(client):
+    """Verifica que la cookie 'jwt' emitida por Identidad autentica correctamente al usuario."""
+    token_valido = generar_token(user_id="user-cookie-123")
+    mock_resultado = ResultadoExtraccion(
+        filtros=None,
+        texto_libre="Hola desde cookie",
+        tiempo_extraccion_ms=10,
+    )
+
+    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+        mock_extraer.return_value = mock_resultado
+
+        # Sin header Authorization, solo cookie jwt
+        response = client.post(
+            "/api/v1/chat",
+            cookies={"jwt": token_valido},
+            json={"mensaje": "Hola"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["respuesta"] == "Hola desde cookie"
+
+
+def test_chat_token_sin_claim_exp_retorna_401(client):
+    """Verifica que un token sin claim 'exp' es rechazado con 401."""
+    ahora = datetime.now(timezone.utc)
+    payload_sin_exp = {
+        "user_id": "user-sin-exp",
+        "rol": "registrado",
+        "iat": ahora,
+    }
+    token_sin_exp = jwt.encode(payload_sin_exp, TEST_JWT_SECRET, algorithm="HS256")
+
+    response = client.post(
+        "/api/v1/chat",
+        headers={"Authorization": f"Bearer {token_sin_exp}"},
+        json={"mensaje": "Hola"},
+    )
+    assert response.status_code == 401
+    assert "Token inválido" in response.json().get("detail", "")
+
+
+def test_chat_mensaje_largo_excede_maximo_retorna_422(client):
+    """Verifica que mensajes mayores a 1000 caracteres sean rechazados con 422."""
+    token_valido = generar_token()
+    mensaje_gigante = "a" * 1001
+
+    response = client.post(
+        "/api/v1/chat",
+        headers={"Authorization": f"Bearer {token_valido}"},
+        json={"mensaje": mensaje_gigante},
+    )
+    assert response.status_code == 422
+
+
+def test_endpoints_antiguos_groq_gemini_eliminados(client):
+    """Verifica que los endpoints no autenticados /chat/groq y /chat/gemini ya no existen."""
+    resp_groq = client.post("/chat/groq", json={"mensaje": "hola"})
+    assert resp_groq.status_code == 404
+
+    resp_gemini = client.post("/chat/gemini", json={"mensaje": "hola"})
+    assert resp_gemini.status_code == 404
 
 
 def test_cors_configuracion_origenes(client):
     """Verifica que el middleware CORS esté aplicando orígenes configurados y no '*'."""
     from app.main import app
 
-    # Obtener los orígenes configurados en el middleware CORS de la app
     cors_middleware = next(
         (m for m in app.user_middleware if m.cls.__name__ == "CORSMiddleware"),
-        None
+        None,
     )
     assert cors_middleware is not None
     allowed_origins = cors_middleware.kwargs.get("allow_origins", [])

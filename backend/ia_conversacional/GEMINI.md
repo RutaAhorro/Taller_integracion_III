@@ -80,7 +80,8 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 - Imports internos: app
 - **class UsuarioAutenticado(BaseModel)**
-- `async obtener_usuario_actual(authorization: ?) → UsuarioAutenticado`
+- `_extraer_bearer(authorization: ?) → ?`
+- `async obtener_usuario_actual(jwt_cookie: ?, authorization: ?) → UsuarioAutenticado`
 
 ### `app/config.py`
 
@@ -186,7 +187,11 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 - `test_chat_token_expirado_retorna_401(client)`
 - `test_chat_token_sin_user_id_retorna_401(client)`
 - `test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(client)`
-- `test_chat_secret_no_configurado_retorna_401(client, monkeypatch)`
+- `test_chat_secret_no_configurado_retorna_500(client, monkeypatch)`
 - `test_chat_texto_libre_sin_filtros(client)`
 - `test_chat_error_en_proveedor(client)`
+- `test_chat_con_cookie_jwt_retorna_200(client)`
+- `test_chat_token_sin_claim_exp_retorna_401(client)`
+- `test_chat_mensaje_largo_excede_maximo_retorna_422(client)`
+- `test_endpoints_antiguos_groq_gemini_eliminados(client)`
 - `test_cors_configuracion_origenes(client)`
