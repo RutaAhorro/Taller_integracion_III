@@ -38,7 +38,7 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 
 | Propietario / rol | Tablas | Permisos |
 | --- | --- | --- |
-| Identidad / `app_identity` | `api.usuarios` | SELECT, INSERT, UPDATE |
+| Identidad / `app_identity` | `api.usuarios`, `api.tokens_recuperacion` (SUP-184) | SELECT, INSERT, UPDATE |
 | Coordinación / `app_scraping` | `scraper.trabajos_scraper`, `scraper.entregas_ingesta`, `scraper.entregas_trabajos` | SELECT, INSERT, UPDATE; DELETE sólo en `entregas_trabajos` |
 | Catálogo / `app_catalogo` | `scraper.productos_crudos` | SELECT, INSERT, UPDATE |
 | Catálogo / `app_catalogo` | `scraper.cadenas_supermercado`, `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |

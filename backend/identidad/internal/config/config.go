@@ -17,6 +17,8 @@ type Config struct {
 	AllowedOrigins                               []string
 	TrustedProxies                               []string
 	Correo                                       Correo
+	// URLRestablecer es la página del frontend que recibe ?token= (SUP-184). Vacía apaga la recuperación.
+	URLRestablecer string
 }
 
 func Load() (Config, error) {
@@ -78,6 +80,13 @@ func Load() (Config, error) {
 	}
 	if c.Correo, err = LoadCorreo(); err != nil {
 		return Config{}, err
+	}
+	if raw := strings.TrimSpace(os.Getenv("IDENTIDAD_URL_RESTABLECER")); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(raw, "?# \t\r\n") {
+			return Config{}, errors.New("IDENTIDAD_URL_RESTABLECER requiere una URL HTTP(S) absoluta sin query ni fragmento")
+		}
+		c.URLRestablecer = raw
 	}
 	return c, nil
 }

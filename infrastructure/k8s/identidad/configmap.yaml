@@ -9,3 +9,5 @@ data:
   # SUP-189: las credenciales viven en el Secret identidad-smtp, no aquí.
   SMTP_HOST: 'smtp.gmail.com'
   SMTP_PORT: '587'
+  # SUP-184: el correo de recuperación enlaza a esta página con ?token=.
+  IDENTIDAD_URL_RESTABLECER: 'https://miweb-vmatus.dev.censei.cl/restablecer-contrasena'

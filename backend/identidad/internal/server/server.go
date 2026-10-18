@@ -18,6 +18,12 @@ import (
 
 // Cada petición protegida valida JWT localmente. No acepta identidad de headers.
 func NewRouter(cfg config.Config, db *gorm.DB, redisClient *redis.Client, ping func(context.Context) error, log *slog.Logger) *gin.Engine {
+	return NewRouterConModulo(cfg, identity.New(db, redisClient, cfg.CookieSecure), redisClient, ping, log)
+}
+
+// NewRouterConModulo recibe el módulo ya armado para que main pueda cerrarlo al apagar
+// (despacho pendiente de correos de recuperación, SUP-184).
+func NewRouterConModulo(cfg config.Config, modulo *identity.Module, redisClient *redis.Client, ping func(context.Context) error, log *slog.Logger) *gin.Engine {
 	r := gin.New()
 	_ = r.SetTrustedProxies(cfg.TrustedProxies)
 	r.RemoteIPHeaders = []string{"X-Forwarded-For"}
@@ -43,7 +49,7 @@ func NewRouter(cfg config.Config, db *gorm.DB, redisClient *redis.Client, ping f
 		}
 		c.JSON(code, gin.H{"status": state, "service": "identidad", "checks": checks})
 	})
-	identity.New(db, redisClient, cfg.CookieSecure).RegisterRoutes(r.Group("/api/v1"))
+	modulo.RegisterRoutes(r.Group("/api/v1"))
 	return r
 }
 

@@ -74,6 +74,7 @@ como comportamiento previo; no se presentan como una verificación ya implementa
 | `SMTP_TLS` | `starttls` o `tls`, inferido del puerto; no existe modo sin cifrado |
 | `SMTP_USER` / `SMTP_PASS` | Cuenta emisora y su App Password; sólo en el Secret `identidad-smtp` o en `.env` privado |
 | `SMTP_FROM` | Remitente visible; por defecto `SMTP_USER` |
+| `IDENTIDAD_URL_RESTABLECER` | Página del frontend que recibe `?token=` (SUP-184); vacía apaga la recuperación |
 
 La API sólo recibe `SCRAPING_DB_URL`; ya no recibe credencial de Identidad ni
 configuración Google. Su `JWT_SECRET` se conserva temporalmente para comprobar
@@ -140,6 +141,52 @@ El error indica la etapa que falló: `smtp conexion` (timeout) significa que la
 red bloquea la salida al puerto; probar `SMTP_PORT=465` o pedir la apertura a
 la UCT. `smtp autenticacion` (535) apunta a la App Password o a la verificación
 en dos pasos. `smtp starttls`/`smtp tls` apuntan a un proxy que intercepta TLS.
+
+## Recuperación de contraseña (SUP-184)
+
+`services.RecuperacionService` emite el token de restablecimiento y despacha su
+correo. El endpoint que lo expone (`POST /api/v1/auth/recuperar`, con límite por
+IP) es SUP-233; validar y consumir el token es SUP-185 y SUP-234.
+
+- `Solicitar(correo)` normaliza, valida el formato (`ErrCorreoInvalido` es el
+  único error posible) y encola. La búsqueda de la cuenta, el token y el correo
+  ocurren en segundo plano: ni la respuesta ni su tiempo revelan si la cuenta
+  existe, está inactiva o usa Google. El endpoint debe responder siempre igual.
+- Sólo las cuentas activas reciben el enlace. Una cuenta Google también, porque
+  recibir el correo demuestra que controla la dirección.
+- Token: 256 bits aleatorios en base64url (43 caracteres). En
+  `api.tokens_recuperacion` sólo se guarda su SHA-256
+  (`security.HashTokenRecuperacion`). Vence a los 30 minutos según el reloj de
+  PostgreSQL, y emitir uno nuevo invalida los pendientes de la misma cuenta.
+- Límite por cuenta, además del de IP: un enlace por minuto y cinco por hora.
+  Protege la bandeja del usuario y la cuota diaria de Gmail.
+- El correo enlaza a `IDENTIDAD_URL_RESTABLECER?token=<token>`. La página del
+  frontend (SUP-250) lee `token` y lo envía a `POST /api/v1/auth/restablecer`.
+- Cola de 64 solicitudes con un solo worker; si se llena se descarta y se
+  registra `recuperacion_cola_llena`. Al apagar, Identidad procesa lo pendiente
+  dentro del mismo plazo de apagado del servidor HTTP.
+- Los logs identifican la cuenta por UUID; nunca registran el correo ni el
+  token (salvo el modo `log` del correo, sólo para desarrollo).
+
+**Consumo del token (SUP-185).** Calcular `security.HashTokenRecuperacion(token)`
+y marcarlo usado en una sola sentencia, para que dos peticiones simultáneas no
+lo usen dos veces:
+
+```sql
+UPDATE api.tokens_recuperacion SET usado_el = now()
+WHERE token_hash = $1 AND usado_el IS NULL AND expira_el > now()
+RETURNING usuario_id;
+```
+
+Sin fila, el token es inválido, venció o ya se usó: responder lo mismo en los
+tres casos. `app_identity` ya tiene SELECT/INSERT/UPDATE en la tabla, sin DELETE.
+
+**Activación.** Requiere correo en modo `smtp` (o `log` en desarrollo),
+`IDENTIDAD_URL_RESTABLECER` y la tabla con sus permisos: aplicar
+`05_tokens_recuperacion.sql` y luego re-ejecutar `06_propiedad_permisos.sql`.
+Si falta algo, el log de arranque `identidad_recuperacion_deshabilitada` dice
+qué falta y el login sigue disponible; con todo en orden aparece
+`identidad_recuperacion_activa`.
 
 ## IP real y protección del login
 

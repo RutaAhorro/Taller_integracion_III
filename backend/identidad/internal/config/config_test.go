@@ -11,6 +11,20 @@ func valid(t *testing.T) {
 		t.Setenv(key, value)
 	}
 	sinCorreo(t)
+	t.Setenv("IDENTIDAD_URL_RESTABLECER", "")
+}
+func TestURLRestablecer(t *testing.T) {
+	valid(t)
+	t.Setenv("IDENTIDAD_URL_RESTABLECER", "https://frontend.example/restablecer-contrasena")
+	if c, err := Load(); err != nil || c.URLRestablecer != "https://frontend.example/restablecer-contrasena" {
+		t.Fatalf("%q %v", c.URLRestablecer, err)
+	}
+	for _, invalida := range []string{"ftp://frontend.example/r", "/restablecer", "https://frontend.example/r?token=x", "https://frontend.example/r#x", "https://user:fixture-private@frontend.example/r", "https://frontend.example/r x"} {
+		t.Setenv("IDENTIDAD_URL_RESTABLECER", invalida)
+		if _, err := Load(); err == nil || strings.Contains(err.Error(), "fixture-private") {
+			t.Fatalf("%q aceptada o con secreto en el error: %v", invalida, err)
+		}
+	}
 }
 func TestValidDefaults(t *testing.T) {
 	valid(t)
