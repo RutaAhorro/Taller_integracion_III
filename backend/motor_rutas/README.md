@@ -50,8 +50,9 @@ no abre HTTP. No ejecuta migraciones.
 3. Kubernetes: Secret `rutas-db-secret` con `DB_URL` y `DB_PASSWORD`, luego
    `kubectl apply -f infrastructure/k8s/motor-rutas/` y el Deployment del Gateway
    con `RUTAS_URL=http://motor-rutas:8001`.
-4. Compose: definir `RUTAS_DB_PASSWORD` en `.env` y levantar
-   `docker compose --profile rutas up -d motor_rutas`.
+4. Compose: definir `RUTAS_DB_PASSWORD` y `RUTAS_URL=http://motor-rutas:8001`
+   en `.env`, y levantar `docker compose --profile rutas up -d motor_rutas gateway`.
+   Sin `RUTAS_URL`, el Gateway no enruta `/api/v1/listas` (404).
 
 ## Pruebas
 

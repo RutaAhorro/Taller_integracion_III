@@ -178,8 +178,9 @@ services:
       SCRAPING_URL: http://control-scraping:8080
       CATALOGO_URL: http://catalogo:8080
       IDENTIDAD_URL: http://identidad-upstream:8080
-      # Sin el perfil `rutas`, /api/v1/listas responde 502 rutas_unavailable.
-      RUTAS_URL: http://motor-rutas:8001
+      # Vacío por defecto: el motor de rutas es opcional (perfil `rutas`) y los smokes
+      # exigen que /_gateway/dependencies esté sano. Con el perfil: http://motor-rutas:8001.
+      RUTAS_URL: ${RUTAS_URL:-}
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
     depends_on:
