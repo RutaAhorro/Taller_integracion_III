@@ -3,6 +3,7 @@ uvicorn[standard]>=0.23.0
 pydantic>=2.0.0
 httpx>=0.24.1
 python-dotenv
+pyjwt>=2.8.0
 # Opcional para cuando deseen conectarse a Postgres en vez del productos.json estático:
 # SQLAlchemy>=2.0.0
 # psycopg2-binary>=2.9.7

@@ -13,7 +13,7 @@ Gateway usa SCRAPING_URL; probes privados por loopback. Ver
 
 SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, pool 5. /_scraping/live independiente y /_scraping/ready SQL con Redis diagnóstico. Conserva recuperación SUP-270/271, ingesta HTTP idempotente a Catálogo y contrato worker. Sin JWT_SECRET, modelos de usuarios ni persistencia de catálogo. Gateway usa SCRAPING_URL; no existe servicio backend/api. Ver docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.
 
-**34 archivos .go** detectados
+**36 archivos .go** detectados
 
 
 ### `cmd/control_scraping/hardening_test.go` (package main)
@@ -49,9 +49,15 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 
 - `TestModuleCompositionHTTP(t *testing.T)`
 
+### `cmd/control_scraping/service_auth_test.go` (package main)
+
+- `TestScraperRequiresServiceToken(t *testing.T)`
+- `TestServiceTokenConfigurationFailsClosed(t *testing.T)`
+
 ### `cmd/control_scraping/swagger_test.go` (package main)
 
 - `TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T)`
+- `TestSwaggerDisabledByDefault(t *testing.T)`
 
 ### `internal/control/lifecycle_test.go` (package control)
 
@@ -128,6 +134,11 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `CORS(origins []string) gin.HandlerFunc`
 - `Observe(log *slog.Logger) gin.HandlerFunc`
 
+### `internal/middleware/service_auth.go` (package middleware)
+
+- `ValidarTokenServicio(token, catalogoToken string) error`
+- `RequireServiceToken(token string) gin.HandlerFunc`
+
 ### `internal/repositories/catalogo_client.go` (package repositories)
 
 - Structs: catalogoClient, requestIDKey
@@ -191,7 +202,7 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 
 ### `internal/routes/scraper_routes.go` (package routes)
 
-- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler)`
+- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler, auth ...gin.HandlerFunc)`
 
 ### `internal/services/ejecuciones.go` (package services)
 

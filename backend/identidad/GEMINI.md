@@ -10,7 +10,7 @@ y rutas públicas conservados. Ver `docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`.
 
 SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app_identity (pool 5), Redis para límite login y JWT_SECRET compartido por contrato con Catálogo. Cinco rutas /api/v1/auth/* conservadas. CORS allowlist, cookies Secure configurables, HS256 estricto y sin fallback de clave. Proxy Gateway explícito obligatorio para IP real. Storage una vez al arrancar; ready SQL/Redis y live independiente. No importa API/Catálogo/scraping. Ver docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md.
 
-**32 archivos .go** detectados
+**33 archivos .go** detectados
 
 
 ### `cmd/identidad/main.go` (package main)
@@ -85,7 +85,10 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 ### `internal/middleware/rate_limit.go` (package middleware)
 
 - `RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc`
+- `rateLimiter(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration, soloFallidos bool) gin.HandlerFunc`
 - `RateLimitLogin(rdb *redis.Client) gin.HandlerFunc`
+- `RateLimitRegistro(rdb *redis.Client) gin.HandlerFunc`
+- `RateLimitGoogle(rdb *redis.Client) gin.HandlerFunc`
 
 ### `internal/middleware/rbac.go` (package middleware)
 
@@ -143,7 +146,7 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 - `(authService).GoogleLogin(ctx context.Context, tokenGoogle string) (*domain.Usuario, error)`
 - `(authService).ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)`
 - `NewAuthServiceWithGoogleValidator(repo domain.UsuarioRepository, validate func(context.Context, string, string) (*idtoken.Payload, error)) AuthService`
-- `validateGoogleAccount(user *domain.Usuario, subject string) (*domain.Usuario, error)`
+- `(authService).validateGoogleAccount(ctx context.Context, user *domain.Usuario, subject string) (*domain.Usuario, error)`
 
 ### `internal/tests/architecture_test.go` (package tests)
 
@@ -201,6 +204,14 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 ### `internal/tests/rbac_test.go` (package tests)
 
 - `TestRequireRole(t *testing.T)`
+
+### `internal/tests/review_followups_test.go` (package tests)
+
+- `TestActualizarPerfilExigeContrasenaActual(t *testing.T)`
+- `googlePayload(subject, email string) *idtoken.Payload`
+- `TestGoogleVinculaCuentaLocalEInvalidaContrasena(t *testing.T)`
+- `TestGoogleRechazaOtraIdentidadVinculada(t *testing.T)`
+- `TestRateLimitLoginSoloCuentaFallidos(t *testing.T)`
 
 ### `internal/tests/review_regressions_test.go` (package tests)
 
