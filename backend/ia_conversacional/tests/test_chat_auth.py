@@ -197,11 +197,11 @@ def test_chat_secret_no_configurado_retorna_500(client, monkeypatch):
 
 
 def test_chat_texto_libre_sin_filtros(client):
-    """Test cuando el modelo responde en texto libre sin extraer filtros."""
+    """Test cuando el modelo responde en texto libre sin extraer filtros: debe responder mensaje fijo anti-alucinación."""
     token_valido = generar_token(user_id="user-789")
     mock_resultado = ResultadoExtraccion(
         filtros=None,
-        texto_libre="¡Hola! ¿En qué puedo ayudarte hoy?",
+        texto_libre="¡Hola! El tomate cuesta $300 en Lider",
         tiempo_extraccion_ms=20,
     )
 
@@ -218,7 +218,38 @@ def test_chat_texto_libre_sin_filtros(client):
         data = response.json()
         assert data["filtros_aplicados"] is None
         assert data["productos_recomendados"] == []
-        assert data["respuesta"] == "¡Hola! ¿En qué puedo ayudarte hoy?"
+        assert "No logré identificar qué productos buscas" in data["respuesta"]
+        # Verificar que NO se filtró el texto inventado por el modelo
+        assert "$300" not in data["respuesta"]
+
+
+def test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(client):
+    """
+    Si la etapa 3 (explicación LLM) falla con RuntimeError o excepción,
+    no debe retornar 500: debe retornar 200 con los productos de etapa 2 y un texto por defecto.
+    """
+    token_valido = generar_token(user_id="user-etapa3")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"categoria": "lacteos"},
+        tiempo_extraccion_ms=15,
+    )
+
+    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer, \
+         patch("app.main.proveedor_fallback.generar_explicacion", new_callable=AsyncMock) as mock_explicar:
+
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.side_effect = RuntimeError("Todos los proveedores fallaron en etapa 3")
+
+        response = client.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "Busco leche"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["respuesta"] == "Encontramos estos productos para tu búsqueda."
+        assert len(data["productos"]) > 0
 
 
 def test_chat_error_en_proveedor(client):
@@ -262,7 +293,7 @@ def test_chat_con_cookie_jwt_retorna_200(client):
         )
 
         assert response.status_code == 200
-        assert response.json()["respuesta"] == "Hola desde cookie"
+        assert "No logré identificar qué productos buscas" in response.json()["respuesta"]
 
 
 def test_chat_token_sin_claim_exp_retorna_401(client):

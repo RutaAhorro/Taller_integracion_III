@@ -1,7 +1,10 @@
 import json
+import logging
 import time
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 
 def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list) -> str:
@@ -50,9 +53,9 @@ async def generar_explicacion_con_tiempo(generador, mensaje_usuario: str, produc
     inicio = time.perf_counter()
     try:
         explicacion = await generador(mensaje_usuario, productos_filtrados)
-    except (httpx.HTTPStatusError, httpx.RequestError, KeyError, IndexError) as e:
-        print(f"No se pudo generar la explicacion: {e}")
+    except Exception as e:
+        logger.warning("No se pudo generar la explicacion: %s", e)
         explicacion = None
     tiempo_ms = round((time.perf_counter() - inicio) * 1000)
 
-    return explicacion, tiempo_ms
+    return explicacion or "Encontramos estos productos para tu búsqueda.", tiempo_ms

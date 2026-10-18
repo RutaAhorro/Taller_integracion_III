@@ -42,17 +42,15 @@ def crear_router_chat(
             )
 
         if resultado.filtros is None:
-            explicacion = (
-                resultado.texto_libre
-                or "No se identificaron criterios de búsqueda específicos en tu mensaje."
-            )
+            logger.info("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
             return {
-                "respuesta": explicacion,
+                "respuesta": "No logré identificar qué productos buscas. ¿Puedes reformularlo? Ej: \"verduras bajo $2.000\"",
                 "filtros": None,
                 "filtros_aplicados": None,
                 "productos": [],
                 "productos_recomendados": [],
                 "tiempo_extraccion_ms": resultado.tiempo_extraccion_ms,
+                "tiempo_explicacion_ms": 0,
             }
 
         # Etapa 2: Obtener productos y filtrar de forma determinista
