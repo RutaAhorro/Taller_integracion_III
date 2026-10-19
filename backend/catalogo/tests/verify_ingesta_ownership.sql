@@ -17,6 +17,11 @@ BEGIN
        OR has_table_privilege('app_catalogo', 'api.usuarios', 'SELECT') THEN
         RAISE EXCEPTION 'Los roles del smoke permiten cruzar propietarios';
     END IF;
+    IF has_table_privilege('app_catalogo', 'scraper.cadenas_supermercado', 'UPDATE')
+       OR NOT has_column_privilege('app_catalogo', 'scraper.cadenas_supermercado', 'esta_activa', 'UPDATE')
+       OR has_column_privilege('app_catalogo', 'scraper.cadenas_supermercado', 'nombre', 'UPDATE') THEN
+        RAISE EXCEPTION 'El UPDATE de fuentes no está acotado a esta_activa';
+    END IF;
     IF NOT EXISTS (SELECT 1 FROM scraper.productos_crudos WHERE sku = 'SUP269-CONCURRENT')
        OR (SELECT count(*) FROM scraper.productos_crudos WHERE sku = 'SUP269-CONCURRENT') <> 1
        OR (SELECT count(*) FROM scraper.capturas_precios cp JOIN scraper.productos_crudos pc

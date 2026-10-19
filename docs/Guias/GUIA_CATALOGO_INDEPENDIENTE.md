@@ -128,7 +128,8 @@ Las consultas sólo leen estas tablas existentes:
 - `scraper.cadenas_supermercado`.
 
 La administración de fuentes (SUP-243) es la única escritura nueva: el PUT
-actualiza `esta_activa` en `scraper.cadenas_supermercado`. No hay `AutoMigrate`,
+actualiza únicamente `esta_activa` en `scraper.cadenas_supermercado`; el rol
+recibe UPDATE a nivel de esa columna, no de toda la tabla. No hay `AutoMigrate`,
 creación de usuarios ni escrituras de ingesta. En las pruebas aisladas Catálogo
 usa un rol PostgreSQL con lectura de estas cuatro tablas, escritura del flag de
 cadenas y sin acceso a `api.usuarios`. Esto comprueba sus necesidades mínimas;

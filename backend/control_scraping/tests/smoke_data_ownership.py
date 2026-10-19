@@ -207,7 +207,7 @@ http('GET', '/_identidad/ready', base=identity_url)
 # Contar consultas reales en el log PostgreSQL del rol, no en un mock del probe.
 # log_statement se activa sólo para Catálogo en esta DB efímera; no para el
 # operador de credenciales ni para Identidad. Se restablece antes de continuar.
-privilege_query = re.compile(r'\bSELECT\s+has_(?:schema|table|sequence)_privilege\(', re.I)
+privilege_query = re.compile(r'\bSELECT\s+has_(?:schema|table|sequence|column)_privilege\(', re.I)
 def privilege_queries():
     return len(privilege_query.findall(compose('logs', '--no-color', 'db').stdout))
 
@@ -217,7 +217,7 @@ try:
     compose('restart', 'catalogo')
     compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
     startup_queries = privilege_queries()
-    # 1 esquema + 5 SELECT + 5 INSERT + 2 UPDATE + 3 secuencias (SUP-243).
+    # 1 esquema + 5 SELECT + 5 INSERT + 2 UPDATE (tabla y columna) + 3 secuencias (SUP-243).
     assert startup_queries - initial_queries == 16, 'validación inicial no ejecutada una vez'
     for _ in range(3):
         catalog_probe('/_catalogo/ready')

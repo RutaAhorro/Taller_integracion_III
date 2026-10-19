@@ -70,7 +70,9 @@ GRANT DELETE ON scraper.entregas_trabajos TO app_scraping;
 
 GRANT USAGE ON SCHEMA scraper TO app_catalogo;
 GRANT SELECT, INSERT, UPDATE ON scraper.productos_crudos TO app_catalogo;
-GRANT SELECT, INSERT, UPDATE ON scraper.cadenas_supermercado TO app_catalogo;
+GRANT SELECT, INSERT ON scraper.cadenas_supermercado TO app_catalogo;
+-- SUP-243: la administración de fuentes sólo modifica el flag de activación.
+GRANT UPDATE (esta_activa) ON scraper.cadenas_supermercado TO app_catalogo;
 GRANT SELECT, INSERT ON scraper.sucursales_supermercado, scraper.capturas_precios,
     scraper.lotes_catalogo TO app_catalogo;
 GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
@@ -96,7 +98,10 @@ BEGIN
                         AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                     AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                         OR (privilege_name = 'DELETE' AND NOT (role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos'))
-                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))) THEN
+                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
+                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
+                            AND relation.name = 'scraper.cadenas_supermercado'
+                            AND has_table_privilege(role_name, relation.oid, 'UPDATE'))) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                 END IF;
             END LOOP;
