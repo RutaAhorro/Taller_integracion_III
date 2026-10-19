@@ -1,10 +1,13 @@
 // Hooks del panel admin (SUP-255 / SUP-280).
 // PANEL SOLO VISUAL: sin VITE_API_URL no hay HTTP (retorno temprano a mocks).
 // Cuando exista backend (SUP-242/243/279), los hooks piden en paralelo y la UI
-// no cambia. 401/403 nunca inyectan mocks (fail-closed, auditoría H-03); la
-// redirección a /login se hará en la rama SUP-256.
+// no cambia. 401/403 nunca inyectan mocks (fail-closed, auditoría H-03): se
+// cierra la sesión local y se vuelve a /login (SUP-256).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { ROUTES } from '@/core/routes';
 import {
   ADMIN_HAS_BACKEND,
   adminPlanToBackend,
@@ -41,9 +44,28 @@ function toMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Error de red.';
 }
 
-// Mensaje fail-closed para 401/403: sin mocks, con gancho a SUP-256.
+// Mensaje fail-closed para 401/403: sin mocks; la sesión se cierra y se
+// vuelve a /login (SUP-256).
 function authBlockedMessage(feature: string, err: unknown): string {
-  return `Acceso denegado al cargar ${feature} (${toMessage(err)}). La redirección a /login se implementará en SUP-256.`;
+  return `Acceso denegado al cargar ${feature} (${toMessage(err)}). La sesión expiró o no tiene permisos; vuelve a iniciar sesión.`;
+}
+
+// Expiración de sesión (SUP-256): ante un 401/403 se cierra la sesión local y
+// se redirige a /login. logout/navigate se leen desde un ref actualizado tras
+// cada render para no recrear los callbacks de carga (y no re-disparar fetch).
+function useExpireSession(): () => void {
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const sessionRef = useRef({ logout, navigate });
+
+  useEffect(() => {
+    sessionRef.current = { logout, navigate };
+  });
+
+  return useCallback(() => {
+    sessionRef.current.logout();
+    sessionRef.current.navigate(ROUTES.LOGIN, { replace: true });
+  }, []);
 }
 
 // --- Usuarios (SUP-242: listar + activar/desactivar + rol colaborador) ---
@@ -53,6 +75,7 @@ export function useAdminUsers() {
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const seq = useRef(0);
+  const expireSession = useExpireSession();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!ADMIN_HAS_BACKEND) {
@@ -70,12 +93,12 @@ export function useAdminUsers() {
     } catch (err) {
       if (signal?.aborted) return;
       // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks ni mantienen
-      // datos previos operativos; se vacía y se muestra el bloqueo.
-      // TODO SUP-256: redirigir a /login en este caso.
+      // datos previos operativos; se vacía, se cierra sesión y se va a /login.
       if (seq.current === current) {
         if (isAdminAuthError(err)) {
           setUsers([]);
           setError(authBlockedMessage('usuarios', err));
+          expireSession();
         } else {
           setUsers(adminUsers);
           setError(`No se pudo cargar usuarios del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
@@ -84,7 +107,7 @@ export function useAdminUsers() {
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, []);
+  }, [expireSession]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -109,8 +132,8 @@ export function useAdminUsers() {
           prev.map((user): AdminUser => (user.id === id ? { ...user, status: target.status } : user)),
         );
         if (isAdminAuthError(err)) {
-          // TODO SUP-256: redirigir a /login.
           setError(authBlockedMessage('el usuario', err));
+          expireSession();
         } else {
           setError(`No se pudo actualizar el usuario. (${toMessage(err)})`);
         }
@@ -121,7 +144,7 @@ export function useAdminUsers() {
       // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { esta_activo }.
       setPendingId(null);
     }
-  }, [users, pendingId]);
+  }, [users, pendingId, expireSession]);
 
   const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
     const target = users.find((user) => user.id === id);
@@ -135,8 +158,8 @@ export function useAdminUsers() {
       } catch (err) {
         setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role: previous } : user)));
         if (isAdminAuthError(err)) {
-          // TODO SUP-256: redirigir a /login.
           setError(authBlockedMessage('el rol', err));
+          expireSession();
         } else {
           setError(`No se pudo asignar el rol. (${toMessage(err)})`);
         }
@@ -147,7 +170,7 @@ export function useAdminUsers() {
       // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { rol }.
       setPendingId(null);
     }
-  }, [users, pendingId]);
+  }, [users, pendingId, expireSession]);
 
   // Plan comercial separado del rol (auditoría H-06). Optimista + reversión,
   // igual que el rol; el backend lo persiste en su propio campo (no en `rol`).
@@ -163,8 +186,8 @@ export function useAdminUsers() {
       } catch (err) {
         setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan: previous } : user)));
         if (isAdminAuthError(err)) {
-          // TODO SUP-256: redirigir a /login.
           setError(authBlockedMessage('el plan', err));
+          expireSession();
         } else {
           setError(`No se pudo asignar el plan. (${toMessage(err)})`);
         }
@@ -175,7 +198,7 @@ export function useAdminUsers() {
       // TODO backend: PUT /api/v1/admin/usuarios/:id { plan } (campo aparte).
       setPendingId(null);
     }
-  }, [users, pendingId]);
+  }, [users, pendingId, expireSession]);
 
   return { users, isLoading, error, pendingId, refresh: () => { void load(); }, toggleUserStatus, changeUserRole, changeUserPlan };
 }
@@ -187,6 +210,7 @@ export function useAdminSources() {
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const seq = useRef(0);
+  const expireSession = useExpireSession();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!ADMIN_HAS_BACKEND) {
@@ -204,11 +228,12 @@ export function useAdminSources() {
     } catch (err) {
       if (signal?.aborted) return;
       if (seq.current === current) {
-        // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks.
-        // TODO SUP-256: redirigir a /login en este caso.
+        // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks; se cierra
+        // sesión y se vuelve a /login.
         if (isAdminAuthError(err)) {
           setSources([]);
           setError(authBlockedMessage('fuentes', err));
+          expireSession();
         } else {
           setSources(adminSources);
           setError(`No se pudo cargar fuentes del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
@@ -217,7 +242,7 @@ export function useAdminSources() {
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, []);
+  }, [expireSession]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -243,8 +268,8 @@ export function useAdminSources() {
       } catch (err) {
         setSources((prev) => prev.map((source) => (source.id === id ? target : source)));
         if (isAdminAuthError(err)) {
-          // TODO SUP-256: redirigir a /login.
           setError(authBlockedMessage('la fuente', err));
+          expireSession();
         } else {
           setError(`No se pudo actualizar la fuente. (${toMessage(err)})`);
         }
@@ -255,7 +280,7 @@ export function useAdminSources() {
       // TODO backend (SUP-243): PUT /api/v1/admin/productos/fuentes/:id { habilitada }.
       setPendingId(null);
     }
-  }, [sources, pendingId]);
+  }, [sources, pendingId, expireSession]);
 
   return { sources, isLoading, error, pendingId, refresh: () => { void load(); }, toggleSource };
 }
@@ -275,6 +300,7 @@ export function useAdminMetrics(): AdminMetricsState {
   const [control, setControl] = useState<ServiceState<ControlMetrics>>({ data: adminMetricsMock.control, error: null });
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const seq = useRef(0);
+  const expireSession = useExpireSession();
 
   const load = useCallback(async (signal?: AbortSignal) => {
     if (!ADMIN_HAS_BACKEND) {
@@ -299,7 +325,6 @@ export function useAdminMetrics(): AdminMetricsState {
         identidadRes.status === 'fulfilled'
           ? { data: identidadRes.value, error: null }
           // H-03: 401/403 sin mocks (fail-closed); resto con tarjeta "sin datos".
-          // TODO SUP-256: redirigir a /login ante AdminAuthError.
           : { data: null, error: isAdminAuthError(identidadRes.reason) ? authBlockedMessage('métricas de identidad', identidadRes.reason) : toMessage(identidadRes.reason) },
       );
       setCatalogo(
@@ -312,10 +337,16 @@ export function useAdminMetrics(): AdminMetricsState {
           ? { data: controlRes.value, error: null }
           : { data: null, error: isAdminAuthError(controlRes.reason) ? authBlockedMessage('métricas de control', controlRes.reason) : toMessage(controlRes.reason) },
       );
+      // SUP-256: si alguna llamada respondió 401/403, se cierra la sesión y se
+      // vuelve a /login (fail-closed) en vez de quedar en estado degradado.
+      const authExpired = [identidadRes, catalogoRes, controlRes].some(
+        (result) => result.status === 'rejected' && isAdminAuthError(result.reason),
+      );
+      if (authExpired) expireSession();
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, []);
+  }, [expireSession]);
 
   useEffect(() => {
     const controller = new AbortController();

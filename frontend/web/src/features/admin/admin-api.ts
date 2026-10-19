@@ -70,8 +70,8 @@ export type ControlMetrics = {
 
 // Error de autorización del backend (auditoría H-03).
 // Permite a los hooks distinguir 401/403 (fail-closed, sin mocks) del resto
-// de fallos de red (fallback visual a mocks). La redirección a /login se
-// implementará en la rama SUP-256; aquí solo se prepara la señal.
+// de fallos de red (fallback visual a mocks). Los hooks de useAdminData lo
+// usan para cerrar la sesión y volver a /login (SUP-256).
 export class AdminAuthError extends Error {
   readonly status: 401 | 403;
   constructor(status: 401 | 403, path: string) {

@@ -1,18 +1,21 @@
 import { Link } from 'react-router-dom';
 import { MessageSquare, Clock, Map, User, Users, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useRole } from '@/hooks/useRole';
 
 interface BottomNavProps {
   active: 'dashboard' | 'chat' | 'history' | 'route' | 'profile' | 'colaborador';
 }
 
 export default function BottomNav({ active }: BottomNavProps) {
+  // SUP-256: Misiones solo colaborador o admin.
+  const { canAccessColaborador } = useRole();
   const navItems = [
     { id: 'dashboard', label: 'Inicio', icon: Home, to: '/dashboard' },
     { id: 'chat', label: 'Chat IA', icon: MessageSquare, to: '/chat' },
     { id: 'history', label: 'Listas', icon: Clock, to: '/history' },
     { id: 'route', label: 'Ruta', icon: Map, to: '/route' },
-    { id: 'colaborador', label: 'Misiones', icon: Users, to: '/colaborador' },
+    ...(canAccessColaborador ? [{ id: 'colaborador', label: 'Misiones', icon: Users, to: '/colaborador' }] : []),
     { id: 'profile', label: 'Perfil', icon: User, to: '/profile' }
   ];
 
