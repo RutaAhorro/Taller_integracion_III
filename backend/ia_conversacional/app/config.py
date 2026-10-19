@@ -17,6 +17,19 @@ load_dotenv(PROJECT_ROOT / ".env")
 PRODUCTOS_PATH = BASE_DIR / "productos.json"
 
 # --------------------------------------------------------------------------
+# Seguridad y Autenticación (JWT emitido por Identidad)
+# --------------------------------------------------------------------------
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+# --------------------------------------------------------------------------
+# CORS
+# --------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "IA_CORS_ALLOWED_ORIGINS",
+    os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"),
+)
+
+# --------------------------------------------------------------------------
 # Catálogo interno (SUP-246 / RNF-05: HTTP interno, sin credenciales de BD)
 # --------------------------------------------------------------------------
 

@@ -471,17 +471,20 @@ def test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path
         async def generar_explicacion(self, mensaje: str, productos: list):
             return "Explicacion simulada"
 
+    from app.auth import UsuarioAutenticado, obtener_usuario_actual
+
     test_app = FastAPI()
     mock_prov = MockProveedor()
-    test_app.include_router(crear_router_chat(repo, mock_prov, mock_prov))
+    test_app.include_router(crear_router_chat(repo, mock_prov))
+    # La autenticación JWT (SUP-247) se prueba en test_chat_auth.py; aquí sólo interesa el repositorio.
+    test_app.dependency_overrides[obtener_usuario_actual] = lambda: UsuarioAutenticado(user_id="test", rol="registrado")
 
     test_client = TestClient(test_app)
-    resp = test_client.post("/chat/groq", json={"mensaje": "quiero lacteos"})
+    resp = test_client.post("/api/v1/chat", json={"mensaje": "quiero lacteos"})
     assert resp.status_code == 200
     data = resp.json()
-    assert "productos_filtrados" in data
-    assert len(data["productos_filtrados"]) == 2
-    assert data["explicacion"] == "Explicacion simulada"
+    assert len(data["productos"]) == 2
+    assert data["respuesta"] == "Explicacion simulada"
 
 
 def test_concurrencia_double_checked_locking_evita_llamadas_duplicadas(temp_fallback_file: Path):
