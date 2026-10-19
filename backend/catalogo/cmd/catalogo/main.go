@@ -55,9 +55,10 @@ func run(log *slog.Logger) error {
 		return errors.New("Catálogo requiere tablas y permisos runtime antes de iniciar")
 	}
 	service := services.NewProductoService(repositories.NewProductoRepository(db))
+	fuenteService := services.NewFuenteService(repositories.NewFuenteRepository(db))
 	ready := sqlDB.PingContext
 	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
+		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
 			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,

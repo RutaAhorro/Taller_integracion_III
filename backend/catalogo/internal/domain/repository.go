@@ -7,6 +7,4 @@ type ProductoRepository interface {
 	Listar(ctx context.Context, filtro FiltroProductosDTO) ([]ProductoDTO, int64, error)
 	ListarParaAdmin(ctx context.Context, filtro FiltroProductosDTO) ([]ProductoAdminDTO, int64, error)
 	ObtenerPorID(ctx context.Context, id string) (*ProductoDetalleDTO, error)
-	ListarFuentes(ctx context.Context) ([]FuenteDTO, error)
-	ActualizarEstadoFuente(ctx context.Context, id int, estaActiva bool) (*FuenteDTO, error)
 }

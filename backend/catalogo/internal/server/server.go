@@ -18,7 +18,7 @@ import (
 
 // NewRouter compone sólo las rutas de Catálogo. La verificación de JWT y rol
 // sucede en este servicio, incluso cuando se accede directamente sin Gateway.
-func NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine {
+func NewRouter(service services.ProductoService, fuentes services.FuenteService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine {
 	r := gin.New()
 	_ = r.SetTrustedProxies(nil)
 	r.Use(observe(logger), middleware.ErrorHandler(logger), cors(allowedOrigins))
@@ -42,6 +42,7 @@ func NewRouter(service services.ProductoService, secret string, ping func(contex
 	r.GET("/health", ready)
 
 	handler := handlers.NewProductoHandler(service)
+	fuenteHandler := handlers.NewFuenteHandler(fuentes)
 	v1 := r.Group("/api/v1")
 	v1.GET("/productos", handler.ObtenerProductos)
 	v1.GET("/productos/buscar", handler.BuscarProductos)
@@ -49,8 +50,8 @@ func NewRouter(service services.ProductoService, secret string, ping func(contex
 	admin := v1.Group("/admin/productos", middleware.RequireAuth(secret), middleware.RequireRole("admin"))
 	admin.GET("", handler.ObtenerProductosAdmin)
 	admin.GET("/", handler.ObtenerProductosAdmin)
-	admin.GET("/fuentes", handler.ObtenerFuentes)
-	admin.PUT("/fuentes/:id", handler.ActualizarFuente)
+	admin.GET("/fuentes", fuenteHandler.ObtenerFuentes)
+	admin.PUT("/fuentes/:id", fuenteHandler.ActualizarFuente)
 	if len(internal) > 0 {
 		ingesta.Register(r, internal[0], logger)
 	}
