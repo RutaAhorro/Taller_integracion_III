@@ -25,7 +25,7 @@ func TestIdentityRoutingAndFailureIsolation(t *testing.T) {
 	defer catalog.Close()
 	defer identity.Close()
 	g := gatewayFor(t, backend.URL, map[string]string{"CATALOGO_URL": catalog.URL, "IDENTIDAD_URL": identity.URL}, nil)
-	for _, tc := range []struct{ path, target string }{{"/api/v1/auth", "identidad"}, {"/api/v1/auth/login", "identidad"}, {"/api/v1/auth/me", "identidad"}, {"/api/v1/auth/unknown", "identidad"}, {"/api/v1/auth/a%2Fb", "identidad"}, {"/api/v1/authentication", "backend"}, {"/api/v1/auth-falso", "backend"}, {"/_identidad/ready", "backend"}, {"/api/v1/productos", "catalogo"}, {"/api/v1/scraper/trabajos", "backend"}, {"/health", "backend"}} {
+	for _, tc := range []struct{ path, target string }{{"/api/v1/auth", "identidad"}, {"/api/v1/auth/login", "identidad"}, {"/api/v1/auth/me", "identidad"}, {"/api/v1/auth/unknown", "identidad"}, {"/api/v1/auth/a%2Fb", "identidad"}, {"/api/v1/admin/usuarios", "identidad"}, {"/api/v1/admin/usuarios/", "identidad"}, {"/api/v1/admin/usuarios/2f1c1c1e-0000-4000-8000-000000000000", "identidad"}, {"/api/v1/admin/usuarios/metricas", "identidad"}, {"/api/v1/admin/usuarios-falso", "backend"}, {"/api/v1/admin/productos", "catalogo"}, {"/api/v1/authentication", "backend"}, {"/api/v1/auth-falso", "backend"}, {"/_identidad/ready", "backend"}, {"/api/v1/productos", "catalogo"}, {"/api/v1/scraper/trabajos", "backend"}, {"/health", "backend"}} {
 		for _, method := range []string{"GET", "POST", "PUT", "OPTIONS"} {
 			t.Run(method+tc.path, func(t *testing.T) {
 				req, _ := http.NewRequest(method, g.URL+tc.path+"?value=a%2Fb&value=c+d", strings.NewReader(`{"correo":"fixture@example.test"}`))
@@ -52,7 +52,7 @@ func TestIdentityRoutingAndFailureIsolation(t *testing.T) {
 	for _, tc := range []struct {
 		path   string
 		status int
-	}{{"/api/v1/auth/login", 502}, {"/api/v1/productos", 200}, {"/api/v1/scraper/trabajos", 200}, {"/_gateway/ready", 200}} {
+	}{{"/api/v1/auth/login", 502}, {"/api/v1/admin/usuarios", 502}, {"/api/v1/productos", 200}, {"/api/v1/scraper/trabajos", 200}, {"/_gateway/ready", 200}} {
 		res, err := http.Get(g.URL + tc.path)
 		if err != nil {
 			t.Fatal(err)

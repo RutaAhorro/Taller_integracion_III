@@ -215,7 +215,12 @@ func isScrapingPath(path string) bool {
 }
 
 func isIdentityPath(path string) bool {
-	return path == "/api/v1/auth" || strings.HasPrefix(path, "/api/v1/auth/")
+	for _, prefix := range []string{"/api/v1/auth", "/api/v1/admin/usuarios"} {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
 }
 
 func isRoutesPath(path string) bool {
