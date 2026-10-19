@@ -57,6 +57,9 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		if upstream == "scraping" {
 			unavailableMessage, timeoutMessage = "Control de scraping no está disponible.", "Control de scraping no respondió a tiempo."
 		}
+		if upstream == "rutas" {
+			unavailableMessage, timeoutMessage = "El motor de rutas no está disponible.", "El motor de rutas no respondió a tiempo."
+		}
 		return &httputil.ReverseProxy{
 			Transport: methodTransport{reads: reads, writes: writes},
 			Rewrite: func(pr *httputil.ProxyRequest) {
@@ -117,6 +120,11 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 	var identityProxy *httputil.ReverseProxy
 	if c.Identidad != nil {
 		identityProxy = newProxy(c.Identidad, "identidad")
+	}
+
+	var routesProxy *httputil.ReverseProxy
+	if c.Rutas != nil {
+		routesProxy = newProxy(c.Rutas, "rutas")
 	}
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -180,6 +188,8 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			identityProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if catalogProxy != nil && isCatalogPath(r.URL.Path) {
 			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else if routesProxy != nil && isRoutesPath(r.URL.Path) {
+			routesProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if scrapingProxy != nil && isScrapingPath(r.URL.Path) {
 			scrapingProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if backendProxy != nil {
@@ -206,6 +216,10 @@ func isScrapingPath(path string) bool {
 
 func isIdentityPath(path string) bool {
 	return path == "/api/v1/auth" || strings.HasPrefix(path, "/api/v1/auth/")
+}
+
+func isRoutesPath(path string) bool {
+	return path == "/api/v1/listas" || strings.HasPrefix(path, "/api/v1/listas/")
 }
 
 func isCatalogPath(path string) bool {

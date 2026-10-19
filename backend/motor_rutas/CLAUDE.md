@@ -5,7 +5,9 @@ Puerto: 8001 | Dockerfile: Dockerfile | Entry: uvicorn app.main:app
 ## Estructura de módulos
 
 ```
-app/main.py                              → FastAPI app, GET / (health check)
+app/main.py                              → create_app(): lifespan (pool app_rutas), CORS, probes /_rutas/*
+app/config.py, app/auth.py, app/db.py    → entorno, JWT de Identidad (cookie jwt), pool psycopg
+app/api/router.py + app/listas/          → CRUD /api/v1/listas (SUP-240), dueño de rutas.*
 app/core/strategy.py                     → RoutingStrategy(ABC) interfaz base
 app/algorithms/otp_ortools_strategy.py  → OTPOrToolsStrategy(RoutingStrategy)
 app/algorithms/prototipo_ruta_ficticia.py → Prototipo standalone con datos ficticios
@@ -37,8 +39,9 @@ tests/test_prototipo_ruta_ficticia.py    → Test del prototipo
 
 ## Rutas FastAPI
 
-- `GET /` → mensaje de servicio activo
-- Router de API comentado (app/api/router.py no implementado aún)
+- `GET/POST /api/v1/listas`, `GET/PUT/DELETE /api/v1/listas/{id}` (ver README.md)
+- `/_rutas/live`, `/_rutas/ready`, `/health`
+- Tests: `python -m unittest discover -s tests -t .`
 
 ## Infraestructura OTP
 

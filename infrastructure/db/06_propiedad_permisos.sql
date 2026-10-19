@@ -27,12 +27,28 @@ COMMENT ON COLUMN scraper.trabajos_scraper.cadena_id IS 'ID externo de Catálogo
 COMMENT ON COLUMN scraper.trabajos_scraper.cadena_nombre IS 'Snapshot de Catálogo al crear el trabajo; conserva la auditoría sin consultas cruzadas';
 COMMENT ON COLUMN scraper.trabajos_scraper.disparado_por_usuario_id IS 'UUID externo de auditoría; no acredita identidad ni autorización y no tiene FK entre dominios';
 
+-- SUP-240: el motor de rutas es dueño de rutas.*. El dueño de una lista es el
+-- user_id del JWT de Identidad: sin FK hacia api.usuarios ni cascada entre dominios.
+DO $$
+DECLARE fk RECORD;
+BEGIN
+    FOR fk IN SELECT conname FROM pg_constraint
+        WHERE contype = 'f' AND conrelid = 'rutas.listas_compras'::regclass
+        AND confrelid = 'api.usuarios'::regclass
+    LOOP
+        EXECUTE format('ALTER TABLE rutas.listas_compras DROP CONSTRAINT %I', fk.conname);
+    END LOOP;
+END $$;
+COMMENT ON COLUMN rutas.listas_compras.usuario_id IS 'UUID externo de Identidad (claim user_id del JWT); sin FK ni cascada entre dominios';
+CREATE INDEX IF NOT EXISTS idx_listas_compras_usuario ON rutas.listas_compras (usuario_id, actualizada_el DESC);
+CREATE INDEX IF NOT EXISTS idx_articulos_lista_compras_lista ON rutas.articulos_lista_compras (lista_id);
+
 -- Estos nombres son exclusivos del runtime. No se reutilizan administradores,
 -- propietarios de objetos o roles con membresías que permitan SET ROLE.
 DO $$
 DECLARE role_name TEXT; role_id OID;
 BEGIN
-    FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo'] LOOP
+    FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         SELECT oid INTO role_id FROM pg_roles WHERE rolname = role_name;
         IF role_id IS NULL THEN
             EXECUTE format('CREATE ROLE %I NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', role_name);
@@ -53,11 +69,11 @@ BEGIN
     END LOOP;
 END $$;
 
-REVOKE ALL PRIVILEGES ON SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo;
-REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo;
-REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo;
-ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON TABLES FROM app_identity, app_scraping, app_catalogo;
-ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON SEQUENCES FROM app_identity, app_scraping, app_catalogo;
+REVOKE ALL PRIVILEGES ON SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON TABLES FROM app_identity, app_scraping, app_catalogo, app_rutas;
+ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON SEQUENCES FROM app_identity, app_scraping, app_catalogo, app_rutas;
 
 GRANT USAGE ON SCHEMA api TO app_identity;
 GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
@@ -75,15 +91,23 @@ GRANT SELECT, INSERT ON scraper.cadenas_supermercado, scraper.sucursales_superme
 GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
     scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
 
+-- SUP-240: CRUD de listas. Los artículos sólo se leen para el detalle; agregarlos
+-- y quitarlos llega con SUP-241. Borrar una lista elimina sus artículos por la FK
+-- interna, que PostgreSQL ejecuta como dueño de la tabla, no como app_rutas.
+GRANT USAGE ON SCHEMA rutas TO app_rutas;
+GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
+GRANT SELECT ON rutas.articulos_lista_compras TO app_rutas;
+
 -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
 -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
 DO $$
 DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
 BEGIN
-    FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo'] LOOP
+    FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         permitted := CASE role_name
             WHEN 'app_identity' THEN ARRAY['api.usuarios']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
+            WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
         FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -94,8 +118,10 @@ BEGIN
                     OR (privilege_name IN ('SELECT','INSERT','UPDATE','REFERENCES')
                         AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                     AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
-                        OR (privilege_name = 'DELETE' AND NOT (role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos'))
-                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name <> 'scraper.productos_crudos')) THEN
+                        OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
+                            OR (role_name = 'app_rutas' AND relation.name = 'rutas.listas_compras')))
+                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name <> 'scraper.productos_crudos')
+                        OR (role_name = 'app_rutas' AND privilege_name <> 'SELECT' AND relation.name = 'rutas.articulos_lista_compras')) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                 END IF;
             END LOOP;
@@ -120,7 +146,7 @@ BEGIN
     END LOOP;
     IF EXISTS (SELECT 1 FROM pg_default_acl d, LATERAL aclexplode(d.defaclacl) a
         WHERE d.defaclobjtype IN ('r','S') AND (a.grantee = 0 OR a.grantee IN
-            (SELECT oid FROM pg_roles WHERE rolname IN ('app_identity','app_scraping','app_catalogo')))) THEN
+            (SELECT oid FROM pg_roles WHERE rolname IN ('app_identity','app_scraping','app_catalogo','app_rutas')))) THEN
         RAISE EXCEPTION 'Hay defaults de tablas/secuencias para PUBLIC o roles runtime; revisar con el operador';
     END IF;
 END $$;
