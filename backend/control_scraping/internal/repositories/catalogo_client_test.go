@@ -61,6 +61,31 @@ func TestCatalogoClientContract(t *testing.T) {
 	}
 }
 
+func TestCatalogoClientObtenerCadenaPropagaEstado(t *testing.T) {
+	token := strings.Repeat("t", 32)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/internal/v1/cadenas/resolver" {
+			t.Errorf("ruta inesperada: %s", r.URL.Path)
+			w.WriteHeader(404)
+			return
+		}
+		io.WriteString(w, `{"id":1,"nombre":"Jumbo","esta_activa":false}`)
+	}))
+	defer srv.Close()
+
+	repo, err := NewCatalogoClient(srv.URL, token, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cadena, err := repo.ObtenerCadena(context.Background(), 1, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cadena == nil || cadena.EstaActiva {
+		t.Fatalf("el flag HTTP no se propagó: %+v", cadena)
+	}
+}
+
 func TestCatalogoClientFailuresAndNoRetry(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
