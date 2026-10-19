@@ -18,8 +18,9 @@ import (
 )
 
 type Module struct {
-	handler *handlers.AuthHandler
-	redis   *redis.Client
+	handler      *handlers.AuthHandler
+	adminHandler *handlers.AdminUsuarioHandler
+	redis        *redis.Client
 	// recuperacion emite tokens y despacha su correo (SUP-184). El endpoint que la
 	// expone (POST /auth/recuperar) es SUP-233.
 	recuperacion services.RecuperacionService
@@ -39,8 +40,10 @@ func New(db *gorm.DB, rdb *redis.Client, secureCookie ...bool) *Module {
 
 func NewConRecuperacion(db *gorm.DB, rdb *redis.Client, recuperacion Recuperacion, secureCookie ...bool) *Module {
 	repo := repositories.NewUsuarioRepository(db)
+	adminRepo := repositories.NewAdminUsuarioRepository(db)
 	return &Module{
 		handler:      handlers.NewAuthHandler(services.NewAuthService(repo), secureCookie...),
+		adminHandler: handlers.NewAdminUsuarioHandler(services.NewAdminUsuarioService(adminRepo)),
 		redis:        rdb,
 		recuperacion: services.NewRecuperacionService(repo, repositories.NewRecuperacionRepository(db), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log),
 	}
@@ -53,6 +56,7 @@ func (m *Module) Cerrar(ctx context.Context) error {
 
 func (m *Module) RegisterRoutes(group *gin.RouterGroup) {
 	routes.RegistrarRutasAuth(group, m.handler, m.redis)
+	routes.RegistrarRutasAdminUsuarios(group, m.adminHandler)
 }
 
 // RequireAuth entrega el interceptor sin exponer claves, JWT ni entidades internas.

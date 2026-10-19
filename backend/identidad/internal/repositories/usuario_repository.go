@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,6 +16,11 @@ type gormUsuarioRepository struct {
 
 // NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM
 func NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository {
+	return &gormUsuarioRepository{db: db}
+}
+
+// NewAdminUsuarioRepository expone las operaciones administrativas del mismo adaptador.
+func NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository {
 	return &gormUsuarioRepository{db: db}
 }
 
@@ -42,6 +48,36 @@ func (r *gormUsuarioRepository) FindByID(ctx context.Context, id string) (*domai
 		return nil, err
 	}
 	return &usuario, nil
+}
+
+// Listar devuelve las cuentas de api.usuarios con los filtros administrativos indicados.
+func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
+	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
+
+	if texto := strings.TrimSpace(filtro.Query); texto != "" {
+		patron := "%" + strings.ToLower(texto) + "%"
+		query = query.Where("LOWER(correo) LIKE ? OR LOWER(nombre_completo) LIKE ?", patron, patron)
+	}
+	if rol := strings.TrimSpace(filtro.Rol); rol != "" {
+		query = query.Where("rol = ?", strings.ToLower(rol))
+	}
+	if filtro.EstaActivo != nil {
+		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
+	}
+
+	query = query.Order("creado_el DESC")
+	if filtro.Limit > 0 {
+		query = query.Limit(filtro.Limit)
+	}
+	if filtro.Offset > 0 {
+		query = query.Offset(filtro.Offset)
+	}
+
+	var usuarios []domain.Usuario
+	if err := query.Find(&usuarios).Error; err != nil {
+		return nil, err
+	}
+	return usuarios, nil
 }
 
 // Create inserta un nuevo registro de usuario en la base de datos

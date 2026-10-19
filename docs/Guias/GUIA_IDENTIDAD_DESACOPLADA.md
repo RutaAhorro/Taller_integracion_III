@@ -28,6 +28,8 @@ flowchart LR
 | `/api/v1/auth/google` | POST | Identidad, validación criptográfica de Google |
 | `/api/v1/auth/me` | GET | Identidad, claims de sesión |
 | `/api/v1/auth/me` | PUT | Identidad, actualización del usuario de la sesión |
+| `/api/v1/admin/usuarios` | GET | Identidad, listado de cuentas (`RequireRole('admin')`) |
+| `/api/v1/admin/usuarios/{id}` | PUT | Identidad, `esta_activo` y rol (`admin`, `colaborador`, `registrado`) (`RequireRole('admin')`) |
 | `/health`, `/api/v1/health` | GET | API, sólo conexión SQL de coordinación y diagnóstico Redis |
 | `/swagger/*` | GET | API, documentación de sus rutas de coordinación y salud |
 

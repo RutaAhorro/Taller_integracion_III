@@ -1,8 +1,10 @@
 # Identidad
 
-Servicio Go independiente, propietario de `api.usuarios`. Expone las cinco
-rutas existentes `/api/v1/auth/*`; Gateway las conserva como entrada pública.
-No importa API, Catálogo ni coordinación de scraping, y no ejecuta migraciones.
+Servicio Go independiente, propietario de `api.usuarios`. Expone las rutas
+públicas `/api/v1/auth/*` y, para administración, `GET/PUT
+/api/v1/admin/usuarios` con `RequireRole('admin')`; Gateway conserva ambas
+como entrada pública. No importa API, Catálogo ni coordinación de scraping, y
+no ejecuta migraciones.
 
 ```bash
 go test -race ./...

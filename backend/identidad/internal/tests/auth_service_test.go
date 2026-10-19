@@ -80,7 +80,27 @@ func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 	if googleID, ok := datos["google_id"].(string); ok {
 		target.GoogleID = &googleID
 	}
+	if activo, ok := datos["esta_activo"].(bool); ok {
+		target.EstaActivo = activo
+	}
+	if rol, ok := datos["rol"].(string); ok {
+		target.Rol = rol
+	}
 	return nil
+}
+
+func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
+	var resultado []domain.Usuario
+	for _, u := range m.usuarios {
+		if filtro.Rol != "" && u.Rol != filtro.Rol {
+			continue
+		}
+		if filtro.EstaActivo != nil && u.EstaActivo != *filtro.EstaActivo {
+			continue
+		}
+		resultado = append(resultado, *u)
+	}
+	return resultado, nil
 }
 
 func TestAuthService_PasswordComplexity(t *testing.T) {
