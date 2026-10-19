@@ -6,6 +6,7 @@ identica para Groq y Gemini porque ambos cumplen la interfaz proveedorIA
 _procesar_chat()
 """
 
+import anyio
 from fastapi import APIRouter
 
 from app.explicacion import generar_explicacion_con_tiempo
@@ -43,7 +44,8 @@ def crear_router_chat(
                 "tiempo_extraccion_ms": resultado.tiempo_extraccion_ms,
             }
 
-        productos_filtrados = filtrar_productos(repositorio.obtener_todos(), resultado.filtros)
+        todos_los_productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)
+        productos_filtrados = filtrar_productos(todos_los_productos, resultado.filtros)
         print(f"Productos filtrados: {len(productos_filtrados)}")
 
         explicacion, tiempo_explicacion_ms = await generar_explicacion_con_tiempo(

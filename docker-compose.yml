@@ -328,6 +328,10 @@ services:
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CATALOGO_INTERNAL_URL: http://catalogo:8080
+    depends_on:
+      catalogo:
+        condition: service_healthy
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload"]
     volumes:
       - ./backend/ia_conversacional:/app
