@@ -14,7 +14,6 @@ import {
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
-import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/core/routes';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
@@ -449,27 +448,10 @@ function resolveSection(pathname: string, search: string): AdminSection {
 export default function AdminDashboard() {
   const [params] = useSearchParams();
   const { search, pathname } = useLocation();
-  const { user, isGuest } = useAuth();
   const section = resolveSection(pathname, search || `?${params.toString()}`);
 
-  // Panel solo visual en este PR: sin consumo real ni redirección por rol.
-  // El bloqueo estricto (invitados + no-admin → /login) y el AdminProtectedRoute
-  // en router.tsx se implementan en la rama SUP-256. Aquí solo se anticipa el
-  // aviso para usuarios logueados sin rol admin.
-  const userRole = (user?.rol || '').toLowerCase();
-  if (!isGuest && userRole !== '' && userRole !== 'admin') {
-    return (
-      <AdminLayout>
-        <div className="mx-auto max-w-lg rounded-2xl border border-destructive/30 bg-white p-8 text-center shadow-sm" role="alert">
-          <TriangleAlert className="mx-auto size-8 text-destructive" aria-hidden="true" />
-          <h2 className="mt-4 font-serif text-2xl font-bold">Acceso restringido</h2>
-          <p className="mt-2 text-sm text-muted-foreground">El panel de administración requiere rol <strong>admin</strong> (SUP-256). Tu rol actual es <strong>{user?.rol || 'desconocido'}</strong>.</p>
-          <Link to={ROUTES.HOME} className="mt-6 inline-block rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground hover:brightness-110">Volver al inicio</Link>
-        </div>
-      </AdminLayout>
-    );
-  }
-
+  // SUP-256: el RBAC vive en el router (ProtectedRoute roles=['admin']).
+  // Este componente solo monta con rol admin; sin backend muestra mocks.
   const content = section === 'users'
     ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Usuarios</h2><p className="mt-2 text-muted-foreground">Gestiona las cuentas y permisos de la plataforma.</p></div><UsersTable showActions /></>
     : section === 'sources'
@@ -480,9 +462,9 @@ export default function AdminDashboard() {
 
   return (
     <AdminLayout>
-      {isGuest && (
+      {!ADMIN_HAS_BACKEND && (
         <p className="mb-4 rounded-xl border border-[#dfe5dc] bg-[#fafbf9] px-4 py-2.5 text-xs text-muted-foreground" role="note">
-          Vista previa con datos de ejemplo. Al conectar el backend (SUP-242/243/279) con JWT admin se cargan datos reales y rige RBAC (SUP-256).
+          Datos de ejemplo: el backend de administración (SUP-242/243/279) aún no está conectado.
         </p>
       )}
       {content}
