@@ -12,6 +12,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | Archivo | Uso |
 | --- | --- |
 | [05_recuperacion_scraping.sql](05_recuperacion_scraping.sql) | Recibos idempotentes de Catálogo y outboxes de coordinación (SUP-270). |
+| [05_tokens_recuperacion.sql](05_tokens_recuperacion.sql) | Tokens de restablecimiento de contraseña de Identidad (SUP-184). Aplicar antes de re-ejecutar 06, que concede sus permisos. |
 | [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). Desde SUP-240 también `app_rutas` (listas) y la FK de listas hacia usuarios. Idempotente: re-ejecutarlo en la base existente. |
 | [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los roles mediante variables privadas; `RUTAS_DB_PASSWORD` es opcional. No se ejecuta automáticamente sobre un volumen existente. |
 

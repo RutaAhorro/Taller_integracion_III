@@ -89,6 +89,8 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      # SUP-184: página del frontend que recibe ?token= para restablecer la contraseña.
+      IDENTIDAD_URL_RESTABLECER: ${IDENTIDAD_URL_RESTABLECER:-http://localhost:3000/restablecer-contrasena}
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}

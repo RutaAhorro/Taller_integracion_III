@@ -10,6 +10,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/server"
 	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 	"log/slog"
 	"net/http"
 	"os"
@@ -95,13 +96,18 @@ func run(log *slog.Logger) error {
 		return errors.New("pool de Identidad inválido")
 	}
 	defer pool.Close()
-	err = identity.VerifyStorage(startup, db)
-	cancel()
-	if err != nil {
+	if err := identity.VerifyStorage(startup, db); err != nil {
+		cancel()
 		log.Error("identidad_storage_invalid", "error", err)
 		return errors.New("Identidad requiere tablas y permisos antes de iniciar")
 	}
-	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: server.NewRouter(cfg, db, rdb, pool.PingContext, log), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 * 1024}
+	recuperacion, err := recuperacionDesde(startup, cfg, db, log)
+	cancel()
+	if err != nil {
+		return err
+	}
+	modulo := identity.NewConRecuperacion(db, rdb, recuperacion, cfg.CookieSecure)
+	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: server.NewRouterConModulo(cfg, modulo, rdb, pool.PingContext, log), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 15 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 * 1024}
 	done := make(chan error, 1)
 	go func() { done <- httpServer.ListenAndServe() }()
 	select {
@@ -116,6 +122,28 @@ func run(log *slog.Logger) error {
 			_ = httpServer.Close()
 			return errors.New("Identidad agotó el plazo de apagado")
 		}
+		if err := modulo.Cerrar(shutdown); err != nil {
+			log.Warn("identidad_recuperacion_pendiente", "error", err)
+		}
 	}
 	return nil
+}
+
+// recuperacionDesde decide si la recuperación de contraseña (SUP-184) queda activa.
+// Cualquier falta la apaga con un log explícito, sin impedir el login.
+func recuperacionDesde(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logger) (identity.Recuperacion, error) {
+	if cfg.Correo.Modo == config.CorreoDeshabilitado || cfg.URLRestablecer == "" {
+		log.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
+		return identity.Recuperacion{}, nil
+	}
+	if err := identity.VerificarRecuperacion(ctx, db); err != nil {
+		log.Warn("identidad_recuperacion_deshabilitada", "detalle", err.Error())
+		return identity.Recuperacion{}, nil
+	}
+	correo, err := mailer.Nuevo(cfg.Correo, log)
+	if err != nil {
+		return identity.Recuperacion{}, err
+	}
+	log.Info("identidad_recuperacion_activa", "url_restablecer", cfg.URLRestablecer)
+	return identity.Recuperacion{Correo: correo, URLRestablecer: cfg.URLRestablecer, Log: log}, nil
 }

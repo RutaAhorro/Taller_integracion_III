@@ -77,6 +77,8 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON SEQUENCES F
 
 GRANT USAGE ON SCHEMA api TO app_identity;
 GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
+-- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
+GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
 
 GRANT USAGE ON SCHEMA scraper TO app_scraping;
 GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper,
@@ -105,7 +107,7 @@ DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
 BEGIN
     FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         permitted := CASE role_name
-            WHEN 'app_identity' THEN ARRAY['api.usuarios']
+            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
             WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
