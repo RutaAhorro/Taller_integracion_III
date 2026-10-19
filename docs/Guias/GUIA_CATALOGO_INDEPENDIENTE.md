@@ -62,7 +62,7 @@ respuestas se extraen conservando su comportamiento actual.
 | GET | `/api/v1/productos/:id` | Público; detalle e historial actuales |
 | GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` |
 | GET | `/api/v1/admin/productos/` | Misma protección y respuesta administrativa |
-| GET | `/api/v1/admin/productos/fuentes` | Cookie JWT válida y rol `admin`; lista cadenas y su flag `esta_activa` (SUP-243) |
+| GET | `/api/v1/admin/productos/fuentes` | Cookie JWT válida y rol `admin`; lista cadenas y expone `habilitada` (columna `esta_activa`) (SUP-243) |
 | PUT | `/api/v1/admin/productos/fuentes/:id` | Cookie JWT válida y rol `admin`; habilita/deshabilita la fuente y persiste `scraper.cadenas_supermercado` (SUP-243) |
 | GET | `/_catalogo/live` | Vida del proceso, independiente de PostgreSQL |
 | GET | `/_catalogo/ready` | Conexión PostgreSQL; 503 si falla |
@@ -127,9 +127,11 @@ Las consultas sólo leen estas tablas existentes:
 - `scraper.sucursales_supermercado`.
 - `scraper.cadenas_supermercado`.
 
-No hay `AutoMigrate`, creación de usuarios ni escrituras de ingesta. En las
-pruebas aisladas Catálogo usa un rol PostgreSQL con lectura de estas cuatro
-tablas y sin acceso a `api.usuarios`. Esto comprueba sus necesidades mínimas;
+La administración de fuentes (SUP-243) es la única escritura nueva: el PUT
+actualiza `esta_activa` en `scraper.cadenas_supermercado`. No hay `AutoMigrate`,
+creación de usuarios ni escrituras de ingesta. En las pruebas aisladas Catálogo
+usa un rol PostgreSQL con lectura de estas cuatro tablas, escritura del flag de
+cadenas y sin acceso a `api.usuarios`. Esto comprueba sus necesidades mínimas;
 el provisionamiento de roles y permisos en entornos existentes sigue siendo
 responsabilidad de SUP-271, sin cambiar usuarios de base de datos reales aquí.
 

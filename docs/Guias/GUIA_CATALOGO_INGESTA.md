@@ -134,10 +134,12 @@ cuatro tablas y secuencias; coordinación accede a trabajos y a las tablas de
 identidad del proceso API, sin acceso a datos de Catálogo. Las claves foráneas
 actuales permanecen; su consolidación corresponde a SUP-271.
 
-El rol de Catálogo requiere SELECT/INSERT/UPDATE en `cadenas_supermercado`,
-`sucursales_supermercado`, `productos_crudos` y `capturas_precios`, además de
-USAGE/SELECT de sus tres secuencias. Un rol lector de SUP-267 no basta para
-activar ingesta. No requiere permisos sobre trabajos, usuarios ni otros esquemas.
+El rol de Catálogo requiere SELECT/INSERT en `cadenas_supermercado`,
+`sucursales_supermercado`, `productos_crudos` y `capturas_precios`, UPDATE en
+`productos_crudos` y `cadenas_supermercado` (esta última para el flag
+`esta_activa` de fuentes, SUP-243), además de USAGE/SELECT de sus tres
+secuencias. Un rol lector de SUP-267 no basta para activar ingesta. No requiere
+permisos sobre trabajos, usuarios ni otros esquemas.
 
 Rollback: pausar nuevos lotes, volver a la imagen de API de SUP-268 (escritor SQL
 anterior) y luego, si es necesario, a la imagen de Catálogo de SUP-268. Gateway

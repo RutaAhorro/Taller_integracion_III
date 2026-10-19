@@ -40,11 +40,14 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 | --- | --- | --- |
 | Identidad / `app_identity` | `api.usuarios` | SELECT, INSERT, UPDATE |
 | Coordinación / `app_scraping` | `scraper.trabajos_scraper`, `scraper.entregas_ingesta`, `scraper.entregas_trabajos` | SELECT, INSERT, UPDATE; DELETE sólo en `entregas_trabajos` |
-| Catálogo / `app_catalogo` | `scraper.productos_crudos` | SELECT, INSERT, UPDATE |
-| Catálogo / `app_catalogo` | `scraper.cadenas_supermercado`, `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
+| Catálogo / `app_catalogo` | `scraper.productos_crudos`, `scraper.cadenas_supermercado` | SELECT, INSERT, UPDATE |
+| Catálogo / `app_catalogo` | `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
 | Gateway y worker | Ninguna tabla PostgreSQL | Sin credencial PostgreSQL |
 
 Sólo Catálogo necesita USAGE en las secuencias de cadenas, sucursales y capturas.
+El UPDATE de `scraper.cadenas_supermercado` se limita al flag `esta_activa` que
+administra el panel de fuentes (SUP-243); se concede en
+`08_grants_catalogo_fuentes.sql` después de `06`.
 Las capturas y recibos son append-only para el runtime. Sólo `app_scraping` puede
 borrar del outbox `scraper.entregas_trabajos` para purgar ejecuciones terminales,
 como exige SUP-270. No puede borrar trabajos ni entregas de ingesta. Ningún rol
