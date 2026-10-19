@@ -70,8 +70,9 @@ GRANT DELETE ON scraper.entregas_trabajos TO app_scraping;
 
 GRANT USAGE ON SCHEMA scraper TO app_catalogo;
 GRANT SELECT, INSERT, UPDATE ON scraper.productos_crudos TO app_catalogo;
-GRANT SELECT, INSERT ON scraper.cadenas_supermercado, scraper.sucursales_supermercado,
-    scraper.capturas_precios, scraper.lotes_catalogo TO app_catalogo;
+GRANT SELECT, INSERT, UPDATE ON scraper.cadenas_supermercado TO app_catalogo;
+GRANT SELECT, INSERT ON scraper.sucursales_supermercado, scraper.capturas_precios,
+    scraper.lotes_catalogo TO app_catalogo;
 GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
     scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
 
