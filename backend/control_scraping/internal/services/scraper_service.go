@@ -151,9 +151,18 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
 }
 
-// ObtenerCadena consulta una cadena de supermercado en Catálogo por ID o nombre
+// ObtenerCadena consulta una cadena de supermercado en Catálogo por ID o nombre.
+// El contrato HTTP usa 404 para ausente; se traduce al error de dominio para que
+// los handlers no confundan una fuente inexistente con una respuesta vacía.
 func (s *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
-	return s.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
+	cadena, err := s.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
+	if err != nil {
+		return nil, err
+	}
+	if cadena == nil {
+		return nil, ErrCadenaNoEncontrada
+	}
+	return cadena, nil
 }
 
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios

@@ -87,7 +87,15 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 		if h.responderErrorCatalogo(c, err) {
 			return
 		}
-	} else if cadena != nil && !cadena.EstaActiva {
+		slog.Error("scraper_chain_lookup_error", "request_id", c.GetHeader("X-Request-ID"), "trabajo_id", trabajo.ID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al consultar la fuente"})
+		return
+	}
+	if cadena == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": services.ErrCadenaNoEncontrada.Error()})
+		return
+	}
+	if !cadena.EstaActiva {
 		c.JSON(http.StatusConflict, gin.H{"error": services.ErrFuenteDeshabilitada.Error(), "codigo": "fuente_deshabilitada"})
 		return
 	}

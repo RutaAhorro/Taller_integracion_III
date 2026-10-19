@@ -390,7 +390,7 @@ func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(t *testing.T) {
 	}
 }
 
-func TestScraperService_ObtenerCadena_ConsultaHTTPInterno(t *testing.T) {
+func TestScraperService_ObtenerCadena(t *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
@@ -406,6 +406,60 @@ func TestScraperService_ObtenerCadena_ConsultaHTTPInterno(t *testing.T) {
 	}
 	if cadena == nil || !cadena.EstaActiva {
 		t.Fatalf("se esperaba la cadena habilitada, se obtuvo: %+v", cadena)
+	}
+}
+
+func TestScraperService_ObtenerCadena_NoEncontrada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	if _, err := service.ObtenerCadena(context.Background(), 99, ""); !errors.Is(err, services.ErrCadenaNoEncontrada) {
+		t.Fatalf("se esperaba ErrCadenaNoEncontrada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	trabajoID := uuid.New()
+	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 1, CadenaNombre: "Jumbo", Estado: "en_progreso"}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	router := gin.New()
+	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	trabajoID := uuid.New()
+	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 99, Estado: "en_progreso"}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	router := gin.New()
+	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("se esperaba 404 para cadena inexistente, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
 	}
 }
 
