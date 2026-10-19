@@ -267,6 +267,52 @@ func TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T) {
 	}
 }
 
+func TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+	mockRepo.sucursales[1] = &domain.SucursalSupermercado{
+		ID:         1,
+		CadenaID:   1,
+		EstaActiva: true,
+	}
+	service := services.NewScraperService(mockRepo, mockRepo)
+	sucursalID := 1
+
+	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+		SucursalID: &sucursalID,
+		Productos: []domain.ProductoScrapeadoDTO{
+			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
+		},
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperService_IngestaDirectaFuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+		Supermercado: stringPtr("Jumbo"),
+		Productos: []domain.ProductoScrapeadoDTO{
+			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
+		},
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
 // -------------------------------------------------------------
 // Pruebas de integración HTTP de ScraperHandler
 // -------------------------------------------------------------
@@ -415,6 +461,26 @@ func TestScraperService_ObtenerCadena_NoEncontrada(t *testing.T) {
 
 	if _, err := service.ObtenerCadena(context.Background(), 99, ""); !errors.Is(err, services.ErrCadenaNoEncontrada) {
 		t.Fatalf("se esperaba ErrCadenaNoEncontrada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	router := gin.New()
+	router.POST("/productos", handler.IngestarProductosDirecto)
+
+	body := `{"supermercado":"Jumbo","productos":[{"sku":"SKU-1","producto":"Leche","precio_normal":1290}]}`
+	req, _ := http.NewRequest(http.MethodPost, "/productos", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
 	}
 }
 

@@ -208,6 +208,11 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 			return nil, err
 		}
 		if cadena != nil {
+			// La ingesta directa no tiene un trabajo que ya haya sido autorizado
+			// al inicio; debe respetar el flag de la fuente (SUP-243).
+			if parsedTrabajoUUID == nil && !cadena.EstaActiva {
+				return nil, ErrFuenteDeshabilitada
+			}
 			cadenaID = cadena.ID
 		}
 	}
@@ -219,6 +224,17 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	}
 	if sucursal == nil {
 		return nil, ErrSucursalNoEncontrada
+	}
+	if parsedTrabajoUUID == nil && cadenaID == 0 {
+		// La ingesta directa también puede identificar la fuente sólo por
+		// sucursal; en ese caso se valida la cadena antes de escribir.
+		cadena, err := s.ingesta.ObtenerCadena(ctx, sucursal.CadenaID, "")
+		if err != nil {
+			return nil, err
+		}
+		if cadena != nil && !cadena.EstaActiva {
+			return nil, ErrFuenteDeshabilitada
+		}
 	}
 
 	// Ejecutar la persistencia en lote

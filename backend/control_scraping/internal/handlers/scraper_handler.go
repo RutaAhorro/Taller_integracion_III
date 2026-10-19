@@ -361,6 +361,8 @@ func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, services.ErrFuenteDeshabilitada):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "fuente_deshabilitada"})
 	case errors.Is(err, services.ErrEntregaPendiente):
 		c.Header("Retry-After", "2")
 		c.JSON(http.StatusAccepted, gin.H{"error": err.Error(), "codigo": "entrega_pendiente"})
