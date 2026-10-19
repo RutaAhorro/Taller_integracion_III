@@ -77,7 +77,7 @@ def http(method, path, payload=None, status=200, headers=None, base=None):
 
 
 allowed = {
-    'app_identity': {'api.usuarios'},
+    'app_identity': {'api.usuarios', 'api.tokens_recuperacion'},
     'app_scraping': {'scraper.trabajos_scraper', 'scraper.entregas_ingesta', 'scraper.entregas_trabajos'},
     'app_catalogo': {'scraper.cadenas_supermercado', 'scraper.sucursales_supermercado',
                     'scraper.productos_crudos', 'scraper.capturas_precios', 'scraper.lotes_catalogo'},
