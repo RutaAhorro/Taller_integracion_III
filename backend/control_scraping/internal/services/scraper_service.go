@@ -21,6 +21,7 @@ var (
 	ErrLoteExcedeMaximo      = errors.New("el lote excede el tamaño máximo permitido de 1000 productos")
 	ErrEstadoTrabajoInvalido = errors.New("el estado debe ser 'completado' o 'fallido'")
 	ErrUUIDInvalido          = errors.New("el identificador proporcionado no es un UUID válido")
+	ErrFuenteDeshabilitada   = errors.New("la fuente de scraping se encuentra deshabilitada")
 	ErrCatalogoNoDisponible  = errors.New("Catálogo no está disponible")
 	ErrCatalogoTimeout       = errors.New("Catálogo no respondió a tiempo")
 	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote y el contador está pendiente; conservar la clave del lote")
@@ -35,6 +36,7 @@ type ScraperService interface {
 	IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)
 	FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)
 	ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)
+	ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)
 	IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)
 }
 
@@ -61,6 +63,9 @@ func (s *scraperService) IniciarTrabajo(ctx context.Context, input domain.Inicia
 	}
 	if cadena == nil {
 		return nil, ErrCadenaNoEncontrada
+	}
+	if !cadena.EstaActiva {
+		return nil, ErrFuenteDeshabilitada
 	}
 
 	var usuarioUUID *uuid.UUID
@@ -144,6 +149,11 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	cadenaNombre = s.nombreTrabajo(ctx, trabajo)
 
 	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
+}
+
+// ObtenerCadena consulta una cadena de supermercado en Catálogo por ID o nombre
+func (s *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
+	return s.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
 }
 
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios

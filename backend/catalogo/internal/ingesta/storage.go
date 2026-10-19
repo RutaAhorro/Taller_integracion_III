@@ -31,8 +31,10 @@ func VerifyStorage(ctx context.Context, db *gorm.DB, writer bool) error {
 	}
 	if writer {
 		var permitted bool
-		if err := db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.productos_crudos', 'UPDATE')").Scan(&permitted).Error; err != nil || !permitted {
-			return errors.New("faltan permisos de actualización de productos")
+		for _, updateTable := range []string{"scraper.productos_crudos", "scraper.cadenas_supermercado"} {
+			if err := db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, ?, 'UPDATE')", updateTable).Scan(&permitted).Error; err != nil || !permitted {
+				return errors.New("faltan permisos de actualización de " + updateTable)
+			}
 		}
 		for _, sequence := range []string{"scraper.cadenas_supermercado_id_seq", "scraper.sucursales_supermercado_id_seq", "scraper.capturas_precios_id_seq"} {
 			if err := db.WithContext(ctx).Raw("SELECT has_sequence_privilege(current_user, ?, 'USAGE')", sequence).Scan(&permitted).Error; err != nil || !permitted {

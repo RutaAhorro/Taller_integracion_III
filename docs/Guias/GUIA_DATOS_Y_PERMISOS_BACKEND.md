@@ -157,6 +157,10 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    `06_propiedad_permisos.sql` con el operador y `psql -X -v ON_ERROR_STOP=1`.
    Tiene transacción, lock timeout de 5 s y statement timeout de 60 s; una
    contención exige reprogramar el corte, no dejar el esquema a medias.
+   Con `06` aplicado, ejecutar también `08_grants_catalogo_fuentes.sql` para
+   conceder `UPDATE` de `app_catalogo` sobre `scraper.cadenas_supermercado`
+   (SUP-243). Si se vuelve a ejecutar `06`, éste revoca los privilegios y hay
+   que reaplicar `08`.
 3. La migración crea el snapshot, elimina las dos dependencias externas de
    trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
    membresías, propiedad de objetos y permisos públicos/defaults que crucen

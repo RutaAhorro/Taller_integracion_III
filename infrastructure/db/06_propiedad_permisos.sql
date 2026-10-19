@@ -95,7 +95,7 @@ BEGIN
                         AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                     AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                         OR (privilege_name = 'DELETE' AND NOT (role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos'))
-                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name <> 'scraper.productos_crudos')) THEN
+                        OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                 END IF;
             END LOOP;

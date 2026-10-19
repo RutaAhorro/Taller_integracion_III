@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"gorm.io/gorm"
@@ -319,4 +320,86 @@ func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*
 		ProductoDTO: baseProd,
 		Historial:   historial,
 	}, nil
+}
+
+// ListarFuentes consulta las cadenas de supermercado y calcula estadísticas de sucursales y productos
+func (r *gormProductoRepository) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
+	type rowResult struct {
+		ID               int        `gorm:"column:id"`
+		Nombre           string     `gorm:"column:nombre"`
+		URLSitioWeb      *string    `gorm:"column:url_sitio_web"`
+		URLLogo          *string    `gorm:"column:url_logo"`
+		EstaActiva       bool       `gorm:"column:esta_activa"`
+		TotalSucursales  int        `gorm:"column:total_sucursales"`
+		TotalProductos   int64      `gorm:"column:total_productos"`
+		UltimaExtraccion *time.Time `gorm:"column:ultima_extraccion"`
+		CreadoEl         time.Time  `gorm:"column:creado_el"`
+	}
+
+	var rows []rowResult
+	query := `
+		SELECT 
+			c.id,
+			c.nombre,
+			c.url_sitio_web,
+			c.url_logo,
+			c.esta_activa,
+			c.creado_el,
+			COALESCE(COUNT(DISTINCT s.id), 0) AS total_sucursales,
+			COALESCE(COUNT(DISTINCT p.id), 0) AS total_productos,
+			MAX(cp.capturado_el) AS ultima_extraccion
+		FROM scraper.cadenas_supermercado c
+		LEFT JOIN scraper.sucursales_supermercado s ON s.cadena_id = c.id
+		LEFT JOIN scraper.productos_crudos p ON p.sucursal_id = s.id
+		LEFT JOIN scraper.capturas_precios cp ON cp.producto_crudo_id = p.id
+		GROUP BY c.id, c.nombre, c.url_sitio_web, c.url_logo, c.esta_activa, c.creado_el
+		ORDER BY c.id ASC
+	`
+
+	if err := r.db.WithContext(ctx).Raw(query).Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+
+	fuentes := make([]domain.FuenteDTO, 0, len(rows))
+	for _, row := range rows {
+		fuentes = append(fuentes, domain.FuenteDTO{
+			ID:               row.ID,
+			Nombre:           row.Nombre,
+			URLSitioWeb:      row.URLSitioWeb,
+			URLLogo:          row.URLLogo,
+			EstaActiva:       row.EstaActiva,
+			Habilitada:       row.EstaActiva,
+			TotalSucursales:  row.TotalSucursales,
+			TotalProductos:   row.TotalProductos,
+			UltimaExtraccion: row.UltimaExtraccion,
+			CreadoEl:         row.CreadoEl,
+		})
+	}
+	return fuentes, nil
+}
+
+// ActualizarEstadoFuente persiste el cambio del flag esta_activa en scraper.cadenas_supermercado
+func (r *gormProductoRepository) ActualizarEstadoFuente(ctx context.Context, id int, estaActiva bool) (*domain.FuenteDTO, error) {
+	res := r.db.WithContext(ctx).
+		Table("scraper.cadenas_supermercado").
+		Where("id = ?", id).
+		Update("esta_activa", estaActiva)
+
+	if res.Error != nil {
+		return nil, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	fuentes, err := r.ListarFuentes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range fuentes {
+		if f.ID == id {
+			return &f, nil
+		}
+	}
+	return nil, nil
 }

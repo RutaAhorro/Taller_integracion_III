@@ -14,6 +14,7 @@ import (
 var (
 	ErrProductoNoEncontrado = errors.New("producto no encontrado")
 	ErrBusquedaCorta        = errors.New("el término de búsqueda debe tener al menos 3 caracteres")
+	ErrFuenteNoEncontrada   = errors.New("fuente no encontrada")
 )
 
 // ProductoService define el contrato para la lógica de negocio del catálogo de productos
@@ -21,6 +22,8 @@ type ProductoService interface {
 	ObtenerCatalogo(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error)
 	ObtenerCatalogoAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error)
 	ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)
+	ObtenerFuentes(ctx context.Context) ([]domain.FuenteDTO, error)
+	ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error)
 }
 
 type productoService struct {
@@ -193,4 +196,33 @@ func (s *productoService) ObtenerPorID(ctx context.Context, id string) (*domain.
 	}
 
 	return producto, nil
+}
+
+// ObtenerFuentes lista todas las fuentes de scraping para administración
+func (s *productoService) ObtenerFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
+	return s.repo.ListarFuentes(ctx)
+}
+
+// ActualizarFuente cambia el estado activo/habilitado de una fuente de scraping
+func (s *productoService) ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error) {
+	if id <= 0 {
+		return nil, ErrFuenteNoEncontrada
+	}
+	var nuevoEstado bool
+	if input.Habilitada != nil {
+		nuevoEstado = *input.Habilitada
+	} else if input.EstaActiva != nil {
+		nuevoEstado = *input.EstaActiva
+	} else {
+		return nil, errors.New("debe especificar el estado de la fuente (habilitada o esta_activa)")
+	}
+
+	fuente, err := s.repo.ActualizarEstadoFuente(ctx, id, nuevoEstado)
+	if err != nil {
+		return nil, err
+	}
+	if fuente == nil {
+		return nil, ErrFuenteNoEncontrada
+	}
+	return fuente, nil
 }

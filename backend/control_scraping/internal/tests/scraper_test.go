@@ -366,3 +366,73 @@ func TestScraperHandler_EndpointsHTTP(t *testing.T) {
 func stringPtr(s string) *string {
 	return &s
 }
+
+// -------------------------------------------------------------
+// SUP-243: Control respeta el flag de fuente habilitada
+// -------------------------------------------------------------
+
+func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	_, err := service.IniciarTrabajo(context.Background(), domain.IniciarTrabajoDTO{
+		CadenaID:     1,
+		Supermercado: "Jumbo",
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperService_ObtenerCadena_ConsultaHTTPInterno(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: true,
+	}
+
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	cadena, err := service.ObtenerCadena(context.Background(), 1, "")
+	if err != nil {
+		t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+	}
+	if cadena == nil || !cadena.EstaActiva {
+		t.Fatalf("se esperaba la cadena habilitada, se obtuvo: %+v", cadena)
+	}
+}
+
+func TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	router := gin.New()
+	router.POST("/trabajos", handler.IniciarTrabajo)
+
+	body, _ := json.Marshal(domain.IniciarTrabajoDTO{CadenaID: 1, Supermercado: "Jumbo"})
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("se esperaba 409 para fuente deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Errorf("se esperaba el código 'fuente_deshabilitada' en la respuesta: %s", w.Body.String())
+	}
+}

@@ -49,6 +49,8 @@ func NewRouter(service services.ProductoService, secret string, ping func(contex
 	admin := v1.Group("/admin/productos", middleware.RequireAuth(secret), middleware.RequireRole("admin"))
 	admin.GET("", handler.ObtenerProductosAdmin)
 	admin.GET("/", handler.ObtenerProductosAdmin)
+	admin.GET("/fuentes", handler.ObtenerFuentes)
+	admin.PUT("/fuentes/:id", handler.ActualizarFuente)
 	if len(internal) > 0 {
 		ingesta.Register(r, internal[0], logger)
 	}
@@ -73,7 +75,7 @@ func cors(allowedOrigins []string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
-			c.Header("Access-Control-Allow-Methods", "GET, OPTIONS")
+			c.Header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)

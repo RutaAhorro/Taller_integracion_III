@@ -77,6 +77,20 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "El trabajo no está disponible para ejecución"})
 		return
 	}
+
+	cadena, err := h.service.ObtenerCadena(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), trabajo.CadenaID, trabajo.CadenaNombre)
+	if err != nil {
+		if errors.Is(err, services.ErrCadenaNoEncontrada) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if h.responderErrorCatalogo(c, err) {
+			return
+		}
+	} else if cadena != nil && !cadena.EstaActiva {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrFuenteDeshabilitada.Error(), "codigo": "fuente_deshabilitada"})
+		return
+	}
 	id = trabajo.ID
 
 	var input ejecutarScraperRequest
@@ -164,6 +178,10 @@ func (h *ScraperHandler) IniciarTrabajo(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, services.ErrCadenaNoEncontrada) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, services.ErrFuenteDeshabilitada) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "fuente_deshabilitada"})
 			return
 		}
 		if h.responderErrorCatalogo(c, err) {

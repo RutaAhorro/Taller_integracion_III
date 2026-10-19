@@ -14,6 +14,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [05_recuperacion_scraping.sql](05_recuperacion_scraping.sql) | Recibos idempotentes de Catálogo y outboxes de coordinación (SUP-270). |
 | [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). |
 | [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los tres roles mediante variables privadas; no se ejecuta automáticamente sobre un volumen existente. |
+| [08_grants_catalogo_fuentes.sql](08_grants_catalogo_fuentes.sql) | `UPDATE` de `app_catalogo` sobre `scraper.cadenas_supermercado` para administrar el flag de fuentes de scraping (SUP-243). Aplicar después de `06_propiedad_permisos.sql`. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para
