@@ -69,6 +69,11 @@ como comportamiento previo; no se presentan como una verificación ya implementa
 | `IDENTIDAD_COOKIE_SECURE` | true por defecto; false sólo para HTTP local explícito |
 | `IDENTIDAD_TRUSTED_PROXIES` | IPs/CIDRs reales de Gateway, obligatorio; vacío invalida el arranque |
 | `PORT` | 8080 por defecto |
+| `IDENTIDAD_CORREO_MODO` | `smtp`, `log` o `deshabilitado`; vacío = `smtp` si hay credenciales, si no `deshabilitado` |
+| `SMTP_HOST` / `SMTP_PORT` | `smtp.gmail.com` / `587` (STARTTLS); con `465` usa TLS implícito |
+| `SMTP_TLS` | `starttls` o `tls`, inferido del puerto; no existe modo sin cifrado |
+| `SMTP_USER` / `SMTP_PASS` | Cuenta emisora y su App Password; sólo en el Secret `identidad-smtp` o en `.env` privado |
+| `SMTP_FROM` | Remitente visible; por defecto `SMTP_USER` |
 
 La API sólo recibe `SCRAPING_DB_URL`; ya no recibe credencial de Identidad ni
 configuración Google. Su `JWT_SECRET` se conserva temporalmente para comprobar
@@ -83,6 +88,58 @@ administrativas consumen conexiones adicionales; revisar capacidad real de DB.
 Si la clave JWT actual tiene menos de 32 bytes, planificar su actualización en
 Identidad y Catálogo conjuntamente: rotarla invalida las cookies anteriores.
 No cambiarla sólo para un servicio ni afirmar que esa rotación conserva sesiones.
+
+## Correo SMTP (SUP-188 y SUP-189)
+
+Identidad es el único servicio que envía correos de autenticación (verificación
+y recuperación). El paquete `internal/mailer` entrega la interfaz `Mailer`;
+`mailer.Nuevo(cfg.Correo, log)` elige el transporte según la configuración:
+
+- `smtp`: STARTTLS en 587 o TLS implícito en 465, certificado validado y
+  autenticación PLAIN sólo sobre la conexión cifrada. Si el servidor no ofrece
+  STARTTLS, aborta antes de enviar credenciales.
+- `log`: imprime el correo completo, con enlaces y tokens. Sólo para desarrollo
+  local; nunca configurarlo en Kubernetes.
+- `deshabilitado`: `Enviar` devuelve `mailer.ErrDeshabilitado`. Es el modo sin
+  credenciales, así que Identidad arranca aunque el Secret aún no exista.
+
+`Enviar` es síncrono y acota el envío a 30 s si el contexto no trae deadline.
+Los casos de uso lo despachan en segundo plano y nunca muestran el error SMTP
+al cliente (SUP-184, SUP-231). El correo no forma parte de readiness: una caída
+de Gmail no retira Identidad del Service.
+
+**Cuenta emisora (SUP-188).** Activar la verificación en dos pasos y generar una
+App Password dedicada a Identidad (Cuenta de Google → Seguridad → Contraseñas
+de aplicaciones). Copiarla sin espacios al gestor de secretos del equipo; nunca
+a Git, issues ni chats. Google publica cuotas diarias por cuenta (del orden de
+500 destinatarios en Gmail y 2000 en Workspace): confirmarlas en la cuenta real.
+Revocar la App Password en la misma pantalla si se filtra.
+
+**Kubernetes.** Crear el Secret desde un archivo privado con las líneas
+`SMTP_USER=...` y `SMTP_PASS=...`, sin pasar la clave como argumento literal:
+
+```bash
+kubectl create secret generic identidad-smtp --from-env-file=<archivo-privado>
+kubectl rollout restart deployment/identidad
+```
+
+El log de arranque `identidad_correo` debe mostrar `"modo":"smtp"`. El Deployment
+referencia ese Secret como opcional y el ConfigMap trae `SMTP_HOST`/`SMTP_PORT`.
+La NetworkPolicy de Identidad sólo restringe ingreso: la salida al 587 depende
+de la red del clúster.
+
+**Prueba de salida y entrega.** El mismo binario trae un comando que usa sólo la
+configuración de correo, sin BD ni Redis, desde el pod real:
+
+```bash
+kubectl exec deploy/identidad -- identidad correo-prueba <bandeja-externa>
+docker compose exec identidad identidad correo-prueba <bandeja-externa>
+```
+
+El error indica la etapa que falló: `smtp conexion` (timeout) significa que la
+red bloquea la salida al puerto; probar `SMTP_PORT=465` o pedir la apertura a
+la UCT. `smtp autenticacion` (535) apunta a la App Password o a la verificación
+en dos pasos. `smtp starttls`/`smtp tls` apuntan a un proxy que intercepta TLS.
 
 ## IP real y protección del login
 

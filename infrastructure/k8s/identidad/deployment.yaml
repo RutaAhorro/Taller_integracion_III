@@ -34,6 +34,14 @@ spec:
                 secretKeyRef: {name: db-secret, key: JWT_SECRET}
             - {name: REDIS_URL, value: 'redis://redis:6379/0'}
             - {name: GOOGLE_CLIENT_ID, value: '832261851860-a1pu1rj9hejrref2tjq15h4hh8rr4snr.apps.googleusercontent.com'}
+            # SUP-189: opcionales para que, sin el Secret identidad-smtp, Identidad arranque
+            # con el correo deshabilitado en lugar de quedar en CreateContainerConfigError.
+            - name: SMTP_USER
+              valueFrom:
+                secretKeyRef: {name: identidad-smtp, key: SMTP_USER, optional: true}
+            - name: SMTP_PASS
+              valueFrom:
+                secretKeyRef: {name: identidad-smtp, key: SMTP_PASS, optional: true}
           envFrom:
             - configMapRef: {name: identidad-config}
           securityContext:

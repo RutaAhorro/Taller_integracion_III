@@ -16,6 +16,7 @@ type Config struct {
 	CookieSecure                                 bool
 	AllowedOrigins                               []string
 	TrustedProxies                               []string
+	Correo                                       Correo
 }
 
 func Load() (Config, error) {
@@ -74,6 +75,9 @@ func Load() (Config, error) {
 	}
 	if len(c.TrustedProxies) == 0 {
 		return Config{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere los proxies Gateway reales antes del corte")
+	}
+	if c.Correo, err = LoadCorreo(); err != nil {
+		return Config{}, err
 	}
 	return c, nil
 }

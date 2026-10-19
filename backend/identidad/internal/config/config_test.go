@@ -10,6 +10,7 @@ func valid(t *testing.T) {
 	for key, value := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": ""} {
 		t.Setenv(key, value)
 	}
+	sinCorreo(t)
 }
 func TestValidDefaults(t *testing.T) {
 	valid(t)
