@@ -16,6 +16,7 @@ type Config struct {
 	Catalogo              *url.URL
 	Identidad             *url.URL
 	Scraping              *url.URL
+	Rutas                 *url.URL
 	RequestTimeout        time.Duration
 	DialTimeout           time.Duration
 	ResponseHeaderTimeout time.Duration
@@ -64,6 +65,14 @@ func Load(getenv func(string) string) (Config, error) {
 	// Vacío sólo permite rollback a una API histórica que todavía aloje auth.
 	if value := getenv("IDENTIDAD_URL"); value != "" {
 		c.Identidad, err = parseOrigin("IDENTIDAD_URL", value)
+		if err != nil {
+			return c, err
+		}
+	}
+
+	// SUP-240: motor de rutas, dueño de listas. Vacío deja /api/v1/listas sin enrutar.
+	if value := getenv("RUTAS_URL"); value != "" {
+		c.Rutas, err = parseOrigin("RUTAS_URL", value)
 		if err != nil {
 			return c, err
 		}

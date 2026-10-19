@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: motor-rutas
+  labels:
+    app: motor-rutas
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: motor-rutas
+  template:
+    metadata:
+      labels:
+        app: motor-rutas
+    spec:
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: motor-rutas
+          image: ghcr.io/danirc2024/taller_integracion_iii-motor-rutas:develop
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: motor-rutas-config
+          env:
+            # SUP-240: DSN exclusivo de app_rutas; provisionar rutas-db-secret antes del rollout.
+            - name: RUTAS_DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rutas-db-secret
+                  key: DB_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: db-secret
+                  key: JWT_SECRET
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          startupProbe:
+            httpGet:
+              path: /_rutas/live
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          livenessProbe:
+            httpGet:
+              path: /_rutas/live
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /_rutas/ready
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+          # Holgura para OR-Tools dentro del límite de 512 MiB por pod.
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 500m
+              memory: 384Mi

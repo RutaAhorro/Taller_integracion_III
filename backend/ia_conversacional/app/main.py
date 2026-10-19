@@ -46,7 +46,10 @@ app.add_middleware(
 )
 
 
-repositorio_productos = ProductoRepositorio(config.PRODUCTOS_PATH)
+repositorio_productos = ProductoRepositorio(
+    base_url=config.CATALOGO_INTERNAL_URL,
+    timeout=config.CATALOGO_TIMEOUT,
+)
 
 proveedor_groq = GroqProveedor(
     api_key=config.GROQ_API_KEY,
@@ -81,7 +84,8 @@ def health_check():
     return {
         "status": "ok",
         "service": "ia_conversacional",
-        "productos_cargados": len(repositorio_productos)
+        "productos_cargados": len(repositorio_productos),
+        "fuente": repositorio_productos.fuente,
     }
 
 # --------------------------------------------------------------------------

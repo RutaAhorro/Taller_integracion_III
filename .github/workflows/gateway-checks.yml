@@ -5,6 +5,7 @@ on:
     branches: [main, develop, develop-refactor]
     paths:
       - 'backend/gateway/**'
+      - 'backend/motor_rutas/**'
       - 'backend/catalogo/**'
       - 'backend/control_scraping/**'
       - 'backend/identidad/**'
@@ -25,6 +26,7 @@ on:
     branches: [develop-refactor]
     paths:
       - 'backend/gateway/**'
+      - 'backend/motor_rutas/**'
       - 'backend/catalogo/**'
       - 'backend/control_scraping/**'
       - 'backend/identidad/**'
@@ -107,6 +109,18 @@ jobs:
       - name: Build runtime image
         run: docker build -t sup265-gateway:local backend/gateway
 
+  motor-rutas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Route engine unit tests (test stage)
+        run: docker build --target test -t sup240-motor-rutas-test:local backend/motor_rutas
+      - name: Build route engine runtime image
+        run: docker build -t sup240-motor-rutas:local backend/motor_rutas
+
   integration:
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -148,6 +162,7 @@ jobs:
           kubeconform -strict -summary -kubernetes-version 1.32.0 \
             infrastructure/k8s/gateway/ \
             infrastructure/k8s/identidad/ \
+            infrastructure/k8s/motor-rutas/ \
             infrastructure/k8s/catalogo/ \
             infrastructure/k8s/control-scraping/ \
             infrastructure/k8s/scraper/ \

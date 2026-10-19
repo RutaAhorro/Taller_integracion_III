@@ -13,7 +13,9 @@ import jwt
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config
+import json
+
+from app import config, main
 from app.main import app
 from app.proveedores.base import ResultadoExtraccion
 
@@ -24,6 +26,17 @@ TEST_JWT_SECRET = "super-secret-key-32-bytes-minimum-length-fixture!"
 def configurar_jwt_secret(monkeypatch):
     """Asegura que JWT_SECRET esté configurado para todas las pruebas."""
     monkeypatch.setattr(config, "JWT_SECRET", TEST_JWT_SECRET)
+
+
+@pytest.fixture(autouse=True)
+def catalogo_fijo(monkeypatch):
+    """
+    Desde SUP-246 el repositorio consulta a Catálogo por HTTP, que no existe en estas
+    pruebas. Se alimenta con productos.json como fixture para verificar las 3 etapas.
+    """
+    with open(config.PRODUCTOS_PATH, encoding="utf-8") as f:
+        productos = [main.repositorio_productos._normalizar_producto(p) for p in json.load(f)]
+    monkeypatch.setattr(main.repositorio_productos, "obtener_todos", lambda forzar=False: productos)
 
 
 @pytest.fixture
