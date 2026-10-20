@@ -22,7 +22,7 @@ import (
 
 func catalogRouter(repo *mockProductoRepository, ping func(context.Context) error) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	return server.NewRouter(services.NewProductoService(repo), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
+	return server.NewRouter(services.NewProductoService(repo), services.NewFuenteService(&mockFuenteRepository{}), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
 }
 
 func signedToken(t *testing.T, role string, method jwt.SigningMethod, key string, expires *time.Time) string {
@@ -130,7 +130,7 @@ func TestCatalogHealthAndDomainIsolation(t *testing.T) {
 
 func TestCatalogRequestCorrelation(t *testing.T) {
 	var logs bytes.Buffer
-	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
+	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
 	for _, received := range []string{"gateway-request-267", strings.Repeat("x", 129)} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/productos/buscar?q=le", nil)
 		req.Header.Set("X-Request-ID", received)

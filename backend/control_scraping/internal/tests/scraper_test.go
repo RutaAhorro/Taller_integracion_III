@@ -267,6 +267,52 @@ func TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T) {
 	}
 }
 
+func TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+	mockRepo.sucursales[1] = &domain.SucursalSupermercado{
+		ID:         1,
+		CadenaID:   1,
+		EstaActiva: true,
+	}
+	service := services.NewScraperService(mockRepo, mockRepo)
+	sucursalID := 1
+
+	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+		SucursalID: &sucursalID,
+		Productos: []domain.ProductoScrapeadoDTO{
+			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
+		},
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperService_IngestaDirectaFuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+		Supermercado: stringPtr("Jumbo"),
+		Productos: []domain.ProductoScrapeadoDTO{
+			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
+		},
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
 // -------------------------------------------------------------
 // Pruebas de integración HTTP de ScraperHandler
 // -------------------------------------------------------------
@@ -365,4 +411,148 @@ func TestScraperHandler_EndpointsHTTP(t *testing.T) {
 
 func stringPtr(s string) *string {
 	return &s
+}
+
+// -------------------------------------------------------------
+// SUP-243: Control respeta el flag de fuente habilitada
+// -------------------------------------------------------------
+
+func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	_, err := service.IniciarTrabajo(context.Background(), domain.IniciarTrabajoDTO{
+		CadenaID:     1,
+		Supermercado: "Jumbo",
+	})
+	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
+		t.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperService_ObtenerCadena(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: true,
+	}
+
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	cadena, err := service.ObtenerCadena(context.Background(), 1, "")
+	if err != nil {
+		t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+	}
+	if cadena == nil || !cadena.EstaActiva {
+		t.Fatalf("se esperaba la cadena habilitada, se obtuvo: %+v", cadena)
+	}
+}
+
+func TestScraperService_ObtenerCadena_NoEncontrada(t *testing.T) {
+	mockRepo := newMockScraperRepository()
+	service := services.NewScraperService(mockRepo, mockRepo)
+
+	if _, err := service.ObtenerCadena(context.Background(), 99, ""); !errors.Is(err, services.ErrCadenaNoEncontrada) {
+		t.Fatalf("se esperaba ErrCadenaNoEncontrada, se obtuvo: %v", err)
+	}
+}
+
+func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	router := gin.New()
+	router.POST("/productos", handler.IngestarProductosDirecto)
+
+	body := `{"supermercado":"Jumbo","productos":[{"sku":"SKU-1","producto":"Leche","precio_normal":1290}]}`
+	req, _ := http.NewRequest(http.MethodPost, "/productos", bytes.NewBufferString(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	trabajoID := uuid.New()
+	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 1, CadenaNombre: "Jumbo", Estado: "en_progreso"}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	router := gin.New()
+	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	trabajoID := uuid.New()
+	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 99, Estado: "en_progreso"}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	router := gin.New()
+	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("se esperaba 404 para cadena inexistente, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	mockRepo := newMockScraperRepository()
+	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+		ID:         1,
+		Nombre:     "Jumbo",
+		EstaActiva: false,
+	}
+
+	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
+	router := gin.New()
+	router.POST("/trabajos", handler.IniciarTrabajo)
+
+	body, _ := json.Marshal(domain.IniciarTrabajoDTO{CadenaID: 1, Supermercado: "Jumbo"})
+	req, _ := http.NewRequest(http.MethodPost, "/trabajos", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("se esperaba 409 para fuente deshabilitada, se obtuvo: %d. Body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "fuente_deshabilitada") {
+		t.Errorf("se esperaba el código 'fuente_deshabilitada' en la respuesta: %s", w.Body.String())
+	}
 }

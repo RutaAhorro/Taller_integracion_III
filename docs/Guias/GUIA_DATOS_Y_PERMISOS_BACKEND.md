@@ -41,12 +41,18 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 | Identidad / `app_identity` | `api.usuarios`, `api.tokens_recuperacion` (SUP-184) | SELECT, INSERT, UPDATE |
 | Coordinación / `app_scraping` | `scraper.trabajos_scraper`, `scraper.entregas_ingesta`, `scraper.entregas_trabajos` | SELECT, INSERT, UPDATE; DELETE sólo en `entregas_trabajos` |
 | Catálogo / `app_catalogo` | `scraper.productos_crudos` | SELECT, INSERT, UPDATE |
-| Catálogo / `app_catalogo` | `scraper.cadenas_supermercado`, `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
+| Catálogo / `app_catalogo` | `scraper.cadenas_supermercado` | SELECT, INSERT; UPDATE sólo columna `esta_activa` |
+| Catálogo / `app_catalogo` | `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
 | Motor de rutas / `app_rutas` | `rutas.listas_compras` | SELECT, INSERT, UPDATE, DELETE |
 | Motor de rutas / `app_rutas` | `rutas.articulos_lista_compras` | SELECT (escritura con SUP-241) |
 | Gateway y worker | Ninguna tabla PostgreSQL | Sin credencial PostgreSQL |
 
 Sólo Catálogo necesita USAGE en las secuencias de cadenas, sucursales y capturas.
+El UPDATE de `scraper.cadenas_supermercado` se concede a nivel de la columna
+`esta_activa`, que administra el panel de fuentes (SUP-243); no se otorga UPDATE
+de tabla completa. Se aplica en `06_propiedad_permisos.sql` y
+`08_grants_catalogo_fuentes.sql` reaplica el mismo GRANT de forma idempotente en
+bases ya migradas, retirando primero cualquier grant de tabla anterior.
 Las capturas y recibos son append-only para el runtime. Sólo `app_scraping` puede
 borrar del outbox `scraper.entregas_trabajos` para purgar ejecuciones terminales,
 como exige SUP-270. No puede borrar trabajos ni entregas de ingesta. Ningún rol
@@ -173,6 +179,12 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    `06_propiedad_permisos.sql` con el operador y `psql -X -v ON_ERROR_STOP=1`.
    Tiene transacción, lock timeout de 5 s y statement timeout de 60 s; una
    contención exige reprogramar el corte, no dejar el esquema a medias.
+   El `06` vigente ya concede `UPDATE` de `app_catalogo` sobre la columna
+   `esta_activa` de `scraper.cadenas_supermercado` (SUP-243). En bases que
+   aplicaron una versión anterior de `06`, ejecutar
+   `08_grants_catalogo_fuentes.sql` de forma idempotente; retira el grant de
+   tabla completa de versiones previas y vuelve a ejecutar el `06` actual
+   también conserva el permiso acotado.
 3. La migración crea el snapshot, elimina las dos dependencias externas de
    trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
    membresías, propiedad de objetos y permisos públicos/defaults que crucen

@@ -77,6 +77,28 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "El trabajo no está disponible para ejecución"})
 		return
 	}
+
+	cadena, err := h.service.ObtenerCadena(repositories.WithRequestID(c.Request.Context(), c.GetHeader("X-Request-ID")), trabajo.CadenaID, trabajo.CadenaNombre)
+	if err != nil {
+		if errors.Is(err, services.ErrCadenaNoEncontrada) {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if h.responderErrorCatalogo(c, err) {
+			return
+		}
+		slog.Error("scraper_chain_lookup_error", "request_id", c.GetHeader("X-Request-ID"), "trabajo_id", trabajo.ID, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error interno al consultar la fuente"})
+		return
+	}
+	if cadena == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": services.ErrCadenaNoEncontrada.Error()})
+		return
+	}
+	if !cadena.EstaActiva {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrFuenteDeshabilitada.Error(), "codigo": "fuente_deshabilitada"})
+		return
+	}
 	id = trabajo.ID
 
 	var input ejecutarScraperRequest
@@ -164,6 +186,10 @@ func (h *ScraperHandler) IniciarTrabajo(c *gin.Context) {
 	if err != nil {
 		if errors.Is(err, services.ErrCadenaNoEncontrada) {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		if errors.Is(err, services.ErrFuenteDeshabilitada) {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "fuente_deshabilitada"})
 			return
 		}
 		if h.responderErrorCatalogo(c, err) {
@@ -335,6 +361,8 @@ func (h *ScraperHandler) manejarErrorIngesta(c *gin.Context, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, services.ErrFuenteDeshabilitada):
+		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "codigo": "fuente_deshabilitada"})
 	case errors.Is(err, services.ErrEntregaPendiente):
 		c.Header("Retry-After", "2")
 		c.JSON(http.StatusAccepted, gin.H{"error": err.Error(), "codigo": "entrega_pendiente"})
