@@ -1,8 +1,8 @@
 // Hooks del panel admin (SUP-255 / SUP-280).
-// PANEL SOLO VISUAL: sin VITE_API_URL no hay HTTP (retorno temprano a mocks).
-// Cuando exista backend (SUP-242/243/279), los hooks piden en paralelo y la UI
-// no cambia. 401/403 nunca inyectan mocks (fail-closed, auditoría H-03): se
-// cierra la sesión local y se vuelve a /login (SUP-256).
+// Sin VITE_API_URL no hay HTTP (retorno temprano a mocks). SUP-242 (usuarios)
+// ya tiene backend; SUP-243 (fuentes) y SUP-279 (métricas) se integran cuando
+// estén disponibles. 401/403 nunca inyectan mocks (fail-closed, auditoría
+// H-03): se cierra la sesión local y se vuelve a /login (SUP-256).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -141,7 +141,7 @@ export function useAdminUsers() {
         setPendingId(null);
       }
     } else {
-      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { esta_activo }.
+      // Sin backend el cambio queda solo en el estado local.
       setPendingId(null);
     }
   }, [users, pendingId, expireSession]);
@@ -167,7 +167,7 @@ export function useAdminUsers() {
         setPendingId(null);
       }
     } else {
-      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { rol }.
+      // Sin backend el cambio queda solo en el estado local.
       setPendingId(null);
     }
   }, [users, pendingId, expireSession]);

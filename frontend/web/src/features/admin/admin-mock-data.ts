@@ -2,9 +2,9 @@ export type AdminSection = 'overview' | 'users' | 'sources' | 'metrics';
 
 // Roles RBAC del panel (SUP-255: Editor -> Colaborador).
 // El plan comercial va aparte (auditoría H-06): no se mezcla con el rol.
-// Mapeo backend pendiente (SUP-242, api.usuarios): admin <-> 'admin',
-// colaborador <-> 'colaborador', usuario <-> 'registrado'. El plan premium
-// viaja como campo aparte (p. ej. plan='premium'), no como rol.
+// Mapeo backend implementado en admin-api.ts (SUP-242, api.usuarios):
+// admin <-> 'admin', colaborador <-> 'colaborador', usuario <-> 'registrado'.
+// El plan premium viaja como campo aparte (p. ej. plan='premium'), no como rol.
 export const ADMIN_ROLES = ['Administrador', 'Colaborador', 'Usuario'] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
 
