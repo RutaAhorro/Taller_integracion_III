@@ -19,13 +19,13 @@ var (
 	// ErrIDUsuarioInvalido se emite cuando el identificador no es un UUID válido.
 	ErrIDUsuarioInvalido = errors.New("identificador de usuario inválido")
 	// ErrUltimoAdmin impide desactivar o degradar al último administrador activo.
-	ErrUltimoAdmin = errors.New("no se puede dejar el sistema sin administradores activos")
+	ErrUltimoAdmin = domain.ErrUltimoAdmin
 )
 
 // AdminUsuarioService define los casos de uso del panel de administración de cuentas.
 type AdminUsuarioService interface {
 	Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.UsuarioAdminDTO, error)
-	Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO) (*domain.UsuarioAdminDTO, error)
+	Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
 }
 
 type adminUsuarioService struct {
@@ -59,21 +59,23 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 	return resultado, nil
 }
 
-// Actualizar aplica esta_activo y/o rol sobre una cuenta existente.
-func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO) (*domain.UsuarioAdminDTO, error) {
+// Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
+// del último admin y la auditoría se ejecutan juntas en el repositorio.
+func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
 	id = strings.TrimSpace(id)
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrIDUsuarioInvalido
 	}
+	if strings.TrimSpace(actorID) == "" {
+		return nil, ErrIDUsuarioInvalido
+	}
 
 	datos := make(map[string]interface{})
-	var nuevoRol *string
 	if input.Rol != nil {
 		rol, err := normalizarRol(*input.Rol)
 		if err != nil {
 			return nil, err
 		}
-		nuevoRol = &rol
 		datos["rol"] = rol
 	}
 	if input.EstaActivo != nil {
@@ -83,34 +85,13 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 		return nil, ErrSinCambiosAdmin
 	}
 
-	usuario, err := s.usuarioRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if usuario == nil {
-		return nil, ErrUsuarioNoEncontrado
-	}
-
-	// Un administrador activo sólo puede salir de ese estado si queda otro
-	// administrador activo. Así se evita bloquear la plataforma por completo.
-	rolActual := strings.ToLower(strings.TrimSpace(usuario.Rol))
-	dejaDeSerAdminActivo := rolActual == domain.RolAdmin && usuario.EstaActivo &&
-		((input.EstaActivo != nil && !*input.EstaActivo) ||
-			(nuevoRol != nil && *nuevoRol != domain.RolAdmin))
-	if dejaDeSerAdminActivo {
-		otros, err := s.usuarioRepo.ContarAdminsActivos(ctx, usuario.ID.String())
-		if err != nil {
-			return nil, err
-		}
-		if otros == 0 {
-			return nil, ErrUltimoAdmin
-		}
-	}
-
 	datos["actualizado_el"] = time.Now()
-	if err := s.usuarioRepo.Actualizar(ctx, id, datos); err != nil {
+	if err := s.usuarioRepo.ActualizarConGuarda(ctx, id, datos, actorID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUsuarioNoEncontrado
+		}
+		if errors.Is(err, domain.ErrUltimoAdmin) {
+			return nil, ErrUltimoAdmin
 		}
 		return nil, err
 	}
@@ -129,20 +110,19 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 
 // normalizarRol valida y normaliza un rol antes de persistirlo.
 func normalizarRol(rol string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(rol)) {
-	case domain.RolAdmin:
-		return domain.RolAdmin, nil
-	case domain.RolColaborador:
-		return domain.RolColaborador, nil
-	case domain.RolRegistrado:
-		return domain.RolRegistrado, nil
-	default:
+	normalizado, ok := domain.NormalizarRol(rol)
+	if !ok {
 		return "", ErrRolInvalido
 	}
+	return normalizado, nil
 }
 
 // mapearUsuarioAdmin convierte la entidad privada en su DTO de administración.
 func mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO {
+	rol, ok := domain.NormalizarRol(usuario.Rol)
+	if !ok {
+		rol = usuario.Rol
+	}
 	return domain.UsuarioAdminDTO{
 		ID:             usuario.ID.String(),
 		Correo:         usuario.Correo,
@@ -150,7 +130,7 @@ func mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO {
 		Telefono:       usuario.Telefono,
 		Direccion:      usuario.Direccion,
 		URLAvatar:      usuario.URLAvatar,
-		Rol:            usuario.Rol,
+		Rol:            rol,
 		CuotaTokensIA:  usuario.CuotaTokensIA,
 		EstaActivo:     usuario.EstaActivo,
 		CreadoEl:       usuario.CreadoEl,

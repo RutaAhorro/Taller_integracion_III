@@ -173,6 +173,9 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    `06_propiedad_permisos.sql` con el operador y `psql -X -v ON_ERROR_STOP=1`.
    Tiene transacción, lock timeout de 5 s y statement timeout de 60 s; una
    contención exige reprogramar el corte, no dejar el esquema a medias.
+   Para SUP-242, aplicar después `08_normalizar_rol_admin_y_auditoria.sql`:
+   normaliza el alias `administrador` a `admin` y crea la auditoría de cambios
+   administrativos. Si se re-ejecuta `06`, volver a aplicar `08` por los grants.
 3. La migración crea el snapshot, elimina las dos dependencias externas de
    trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
    membresías, propiedad de objetos y permisos públicos/defaults que crucen

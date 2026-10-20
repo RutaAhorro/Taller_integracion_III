@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -10,7 +11,24 @@ const (
 	RolAdmin       = "admin"
 	RolColaborador = "colaborador"
 	RolRegistrado  = "registrado"
+	// RolAdminLegacy es el alias histórico que se normaliza a RolAdmin.
+	RolAdminLegacy = "administrador"
 )
+
+// NormalizarRol devuelve el valor canónico almacenado en api.usuarios.rol.
+// El alias "administrador" se trata siempre como "admin".
+func NormalizarRol(rol string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(rol)) {
+	case RolAdmin, RolAdminLegacy:
+		return RolAdmin, true
+	case RolColaborador:
+		return RolColaborador, true
+	case RolRegistrado:
+		return RolRegistrado, true
+	default:
+		return "", false
+	}
+}
 
 // FiltroUsuariosAdminDTO contiene los criterios opcionales del listado administrativo.
 type FiltroUsuariosAdminDTO struct {
@@ -47,8 +65,7 @@ type UsuarioAdminDTO struct {
 type AdminUsuarioRepository interface {
 	Listar(ctx context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, error)
 	FindByID(ctx context.Context, id string) (*Usuario, error)
-	Actualizar(ctx context.Context, id string, datos map[string]interface{}) error
-	// ContarAdminsActivos cuenta los administradores activos, excluyendo el
-	// usuario indicado. Se usa para no dejar la plataforma sin administración.
-	ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error)
+	// ActualizarConGuarda aplica el cambio y registra la auditoría en una sola
+	// transacción, impidiendo que se desactive o degrade al último admin activo.
+	ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error
 }

@@ -54,10 +54,19 @@ configuración. Catálogo sigue validando firma y rol por su cuenta, sin consult
 usuarios ni importar código de Identidad. Conservar la misma clave al hacer el
 corte permite reutilizar sesiones anteriores.
 
+Desde SUP-242, las rutas protegidas de Identidad revalidan `api.usuarios` en cada
+petición: si la cuenta fue desactivada o su rol cambió, el JWT deja de conceder
+acceso sin esperar a su expiración. El rol vigente sale de la base de datos y el
+alias histórico `administrador` se normaliza a `admin`. Las actualizaciones
+administrativas usan una transacción con advisory lock para no dejar el sistema
+sin admins activos y registran al actor y los cambios en
+`api.auditoria_admin_usuarios` (migración `08_normalizar_rol_admin_y_auditoria.sql`).
+
 Esta tarea extrae las cinco rutas existentes. No implementa refresh tokens,
-revocación, verificación de correo, recuperación de contraseña ni nuevas reglas
-Premium. El auto-login del registro y su mensaje sobre verificación se conservan
-como comportamiento previo; no se presentan como una verificación ya implementada.
+verificación de correo, recuperación de contraseña ni nuevas reglas Premium; la
+revalidación de estado/rol por petición llega después, en SUP-242. El auto-login
+del registro y su mensaje sobre verificación se conservan como comportamiento
+previo; no se presentan como una verificación ya implementada.
 
 ## Configuración y permisos
 
@@ -82,7 +91,9 @@ La API sólo recibe `SCRAPING_DB_URL`; ya no recibe credencial de Identidad ni
 configuración Google. Su `JWT_SECRET` se conserva temporalmente para comprobar
 que el token interno de Catálogo sea distinto; no contiene emisor/verificador
 JWT ni rutas auth. Identidad no recibe claves de coordinación o ingesta.
-Los roles y Secrets separados provienen de SUP-271: no hay nueva migración SQL.
+Los roles y Secrets separados provienen de SUP-271. SUP-272 no agrega migración
+SQL; SUP-242 sí requiere aplicar `08_normalizar_rol_admin_y_auditoria.sql`
+después de `06_propiedad_permisos.sql`.
 Cada proceso de Identidad y API dispone de un pool de máximo 5 conexiones,
 2 idle y vida de 30 minutos. Con HPA máximo de 4 por dominio y Catálogo a 10,
 el presupuesto runtime sigue en `4*5 + 4*5 + 4*10 = 80`. Otros clientes y sesiones

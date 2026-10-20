@@ -163,11 +163,16 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 		httperrors.ResponderError(c, http.StatusBadRequest, "El identificador de usuario es obligatorio en la ruta.", nil)
 		return
 	}
+	actorID := strings.TrimSpace(c.GetString("user_id"))
+	if actorID == "" {
+		httperrors.ResponderError(c, http.StatusUnauthorized, "La sesión no identifica al administrador.", nil)
+		return
+	}
 
 	dto, err := h.adminService.Actualizar(c.Request.Context(), id, domain.ActualizarUsuarioAdminDTO{
 		EstaActivo: req.EstaActivo,
 		Rol:        req.Rol,
-	})
+	}, actorID)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrIDUsuarioInvalido), errors.Is(err, services.ErrRolInvalido), errors.Is(err, services.ErrSinCambiosAdmin):

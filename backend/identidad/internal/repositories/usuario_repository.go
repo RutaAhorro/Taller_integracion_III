@@ -6,21 +6,33 @@ import (
 	"strings"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 )
+
+// adminGuardLockKey serializa las actualizaciones administrativas entre
+// instancias. El valor es un identificador estable, no un dato de negocio.
+const adminGuardLockKey int64 = 0x535550323432
 
 type gormUsuarioRepository struct {
 	db *gorm.DB
 }
 
-// NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM
+// NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM.
+// Sin conexión devuelve nil para que los routers de prueba no intenten consultar.
 func NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository {
+	if db == nil {
+		return nil
+	}
 	return &gormUsuarioRepository{db: db}
 }
 
 // NewAdminUsuarioRepository expone las operaciones administrativas del mismo adaptador.
 func NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository {
+	if db == nil {
+		return nil
+	}
 	return &gormUsuarioRepository{db: db}
 }
 
@@ -58,8 +70,12 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 		patron := "%" + escaparPatronLike(strings.ToLower(texto)) + "%"
 		query = query.Where(`LOWER(correo) LIKE ? ESCAPE '!' OR LOWER(nombre_completo) LIKE ? ESCAPE '!'`, patron, patron)
 	}
-	if rol := strings.TrimSpace(filtro.Rol); rol != "" {
-		query = query.Where("LOWER(rol) = ?", strings.ToLower(rol))
+	if rol := strings.ToLower(strings.TrimSpace(filtro.Rol)); rol != "" {
+		if rol == domain.RolAdmin {
+			query = query.Where("LOWER(TRIM(rol)) IN ?", []string{domain.RolAdmin, domain.RolAdminLegacy})
+		} else {
+			query = query.Where("LOWER(TRIM(rol)) = ?", rol)
+		}
 	}
 	if filtro.EstaActivo != nil {
 		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
@@ -100,22 +116,84 @@ func (r *gormUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 	return nil
 }
 
-// ContarAdminsActivos cuenta administradores activos distintos del usuario
-// indicado. El rol se compara sin distinguir mayúsculas para tolerar datos
-// históricos escritos antes de normalizar el RBAC.
-func (r *gormUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
-	query := r.db.WithContext(ctx).
-		Model(&domain.Usuario{}).
-		Where("LOWER(rol) = ? AND esta_activo = ?", domain.RolAdmin, true)
-	if excluirID != "" {
-		query = query.Where("id <> ?", excluirID)
+// ActualizarConGuarda aplica el cambio de estado/rol y su auditoría dentro de
+// una transacción. El advisory lock serializa las actualizaciones entre
+// instancias para que dos admins no puedan degradarse mutuamente a la vez.
+func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
+	actorUUID, err := uuid.Parse(strings.TrimSpace(actorID))
+	if err != nil {
+		return errors.New("actor de auditoría inválido")
 	}
 
-	var total int64
-	if err := query.Count(&total).Error; err != nil {
-		return 0, err
-	}
-	return total, nil
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", adminGuardLockKey).Error; err != nil {
+			return err
+		}
+
+		var usuario domain.Usuario
+		if err := tx.Where("id = ?", id).First(&usuario).Error; err != nil {
+			return err
+		}
+
+		rolActual, _ := domain.NormalizarRol(usuario.Rol)
+		// Si no se está cambiando el rol, aprovechar la actualización para
+		// persistir el valor canónico (p. ej. "administrador" -> "admin").
+		if _, cambiaRol := datos["rol"]; !cambiaRol {
+			if canonico, ok := domain.NormalizarRol(usuario.Rol); ok && strings.TrimSpace(usuario.Rol) != canonico {
+				datos["rol"] = canonico
+			}
+		}
+
+		dejaDeSerAdmin := false
+		if rolActual == domain.RolAdmin && usuario.EstaActivo {
+			if activo, ok := datos["esta_activo"].(bool); ok && !activo {
+				dejaDeSerAdmin = true
+			}
+			if nuevoRol, ok := datos["rol"].(string); ok {
+				if canonico, _ := domain.NormalizarRol(nuevoRol); canonico != domain.RolAdmin {
+					dejaDeSerAdmin = true
+				}
+			}
+		}
+
+		if dejaDeSerAdmin {
+			var otros int64
+			if err := tx.Model(&domain.Usuario{}).
+				Where("id <> ? AND LOWER(TRIM(rol)) IN ? AND esta_activo = ?",
+					id, []string{domain.RolAdmin, domain.RolAdminLegacy}, true).
+				Count(&otros).Error; err != nil {
+				return err
+			}
+			if otros == 0 {
+				return domain.ErrUltimoAdmin
+			}
+		}
+
+		res := tx.Model(&domain.Usuario{}).Where("id = ?", id).Updates(datos)
+		if res.Error != nil {
+			return classifyWriteError(res.Error)
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+
+		cambios := map[string]interface{}{}
+		if nuevo, ok := datos["rol"]; ok {
+			cambios["rol"] = map[string]interface{}{"anterior": usuario.Rol, "nuevo": nuevo}
+		}
+		if nuevo, ok := datos["esta_activo"]; ok {
+			cambios["esta_activo"] = map[string]interface{}{"anterior": usuario.EstaActivo, "nuevo": nuevo}
+		}
+		auditoria := domain.AuditoriaAdminUsuario{
+			ActorID:    actorUUID,
+			ObjetivoID: usuario.ID,
+			Cambios:    cambios,
+		}
+		if err := tx.Create(&auditoria).Error; err != nil {
+			return err
+		}
+		return nil
+	})
 }
 
 // escaparPatronLike neutraliza los comodines de LIKE para que la búsqueda

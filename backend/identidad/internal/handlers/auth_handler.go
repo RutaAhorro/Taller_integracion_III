@@ -45,6 +45,13 @@ type LoginResponse struct {
 	Mensaje        string  `json:"mensaje" example:"Inicio de sesión exitoso."`
 }
 
+func rolCanonico(rol string) string {
+	if canonico, ok := domain.NormalizarRol(rol); ok {
+		return canonico
+	}
+	return rol
+}
+
 // AuthHandler gestiona las peticiones HTTP del módulo de autenticación
 type AuthHandler struct {
 	authService  services.AuthService
@@ -99,7 +106,7 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 	}
 
 	// Auto-login: emisión del JWT centralizado e inyección de cookie HttpOnly
-	tokenString, err := security.GenerarToken(creado.ID.String(), creado.Rol, "local")
+	tokenString, err := security.GenerarToken(creado.ID.String(), rolCanonico(creado.Rol), "local")
 	if err != nil {
 		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización tras registro.", err)
 		return
@@ -112,7 +119,7 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 		ID:             creado.ID.String(),
 		Correo:         creado.Correo,
 		NombreCompleto: creado.NombreCompleto,
-		Rol:            creado.Rol,
+		Rol:            rolCanonico(creado.Rol),
 		EstaActivo:     creado.EstaActivo,
 		Mensaje:        creado.Mensaje,
 	})
@@ -153,7 +160,7 @@ func (h *AuthHandler) LoginUsuario(c *gin.Context) {
 	}
 
 	// Emisión del JWT centralizado (provider siempre es 'local' en login nativo)
-	tokenString, err := security.GenerarToken(usuario.ID.String(), usuario.Rol, "local")
+	tokenString, err := security.GenerarToken(usuario.ID.String(), rolCanonico(usuario.Rol), "local")
 	if err != nil {
 		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización.", err)
 		return
@@ -167,7 +174,7 @@ func (h *AuthHandler) LoginUsuario(c *gin.Context) {
 		ID:             usuario.ID.String(),
 		Correo:         usuario.Correo,
 		NombreCompleto: usuario.NombreCompleto,
-		Rol:            usuario.Rol,
+		Rol:            rolCanonico(usuario.Rol),
 		EstaActivo:     usuario.EstaActivo,
 		URLAvatar:      usuario.URLAvatar,
 		Mensaje:        "Inicio de sesión exitoso.",
@@ -287,7 +294,7 @@ func (h *AuthHandler) GoogleLoginUsuario(c *gin.Context) {
 	}
 
 	// Emisión del JWT centralizado
-	tokenString, err := security.GenerarToken(usuario.ID.String(), usuario.Rol, "google")
+	tokenString, err := security.GenerarToken(usuario.ID.String(), rolCanonico(usuario.Rol), "google")
 	if err != nil {
 		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización local.", err)
 		return
@@ -300,7 +307,7 @@ func (h *AuthHandler) GoogleLoginUsuario(c *gin.Context) {
 		ID:             usuario.ID.String(),
 		Correo:         usuario.Correo,
 		NombreCompleto: usuario.NombreCompleto,
-		Rol:            usuario.Rol,
+		Rol:            rolCanonico(usuario.Rol),
 		EstaActivo:     usuario.EstaActivo,
 		URLAvatar:      usuario.URLAvatar,
 		Mensaje:        "Inicio de sesión con Google exitoso.",

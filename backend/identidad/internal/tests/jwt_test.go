@@ -7,10 +7,12 @@ import (
 	"os"
 	"testing"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 func TestJWT_GenerarYValidarToken(t *testing.T) {
@@ -124,6 +126,67 @@ func TestMiddleware_RequireAuth(t *testing.T) {
 			t.Errorf("Claims devueltos no coinciden con los inyectados: %v", res)
 		}
 	})
+}
+
+func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(t *testing.T) {
+	repo := newMockUsuarioRepository()
+	usuarioID := uuid.New()
+	repo.usuarios["admin@uct.cl"] = &domain.Usuario{
+		ID: usuarioID, Correo: "admin@uct.cl", NombreCompleto: "Admin",
+		Rol: domain.RolAdminLegacy, EstaActivo: true,
+	}
+
+	r := gin.New()
+	r.Use(httperrors.ErrorHandler())
+	r.GET("/protegido", middleware.RequireAuth(repo), func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"user_id": c.GetString("user_id"),
+			"rol":     c.GetString("rol"),
+		})
+	})
+
+	// El JWT dice "registrado", pero la base de datos manda: rol admin.
+	tokenStr, err := security.GenerarToken(usuarioID.String(), domain.RolRegistrado, "local")
+	if err != nil {
+		t.Fatalf("Error generando token: %v", err)
+	}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/protegido", nil)
+	req.AddCookie(&http.Cookie{Name: "jwt", Value: tokenStr})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("Esperaba 200, obtuve %d. Body: %s", w.Code, w.Body.String())
+	}
+	var res map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("Respuesta inválida: %v", err)
+	}
+	if res["rol"] != domain.RolAdmin {
+		t.Fatalf("El rol debía normalizarse desde la base de datos a admin, obtuve %v", res["rol"])
+	}
+
+	// Desactivar la cuenta invalida el token en la siguiente petición.
+	repo.usuarios["admin@uct.cl"].EstaActivo = false
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest(http.MethodGet, "/protegido", nil)
+	req.AddCookie(&http.Cookie{Name: "jwt", Value: tokenStr})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Una cuenta desactivada debía recibir 401, obtuve %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	// Un token válido para un usuario inexistente tampoco sirve.
+	tokenInexistente, err := security.GenerarToken(uuid.NewString(), domain.RolAdmin, "local")
+	if err != nil {
+		t.Fatalf("Error generando token: %v", err)
+	}
+	w = httptest.NewRecorder()
+	req, _ = http.NewRequest(http.MethodGet, "/protegido", nil)
+	req.AddCookie(&http.Cookie{Name: "jwt", Value: tokenInexistente})
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("Un usuario inexistente debía recibir 401, obtuve %d. Body: %s", w.Code, w.Body.String())
+	}
 }
 
 func init() {

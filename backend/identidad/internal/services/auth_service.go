@@ -388,13 +388,17 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 		return nil, ErrUsuarioNoEncontrado
 	}
 
+	rol := actualizado.Rol
+	if canonico, ok := domain.NormalizarRol(actualizado.Rol); ok {
+		rol = canonico
+	}
 	return &domain.PerfilUsuarioDTO{
 		ID:             actualizado.ID.String(),
 		Correo:         actualizado.Correo,
 		NombreCompleto: actualizado.NombreCompleto,
 		Telefono:       actualizado.Telefono,
 		Direccion:      actualizado.Direccion,
-		Rol:            actualizado.Rol,
+		Rol:            rol,
 		EstaActivo:     actualizado.EstaActivo,
 		Mensaje:        "Perfil actualizado exitosamente.",
 	}, nil

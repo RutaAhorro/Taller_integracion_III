@@ -11,11 +11,13 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // mockUsuarioRepository implementa UsuarioRepository en memoria para pruebas unitarias
 type mockUsuarioRepository struct {
-	usuarios map[string]*domain.Usuario
+	usuarios   map[string]*domain.Usuario
+	auditorias []domain.AuditoriaAdminUsuario
 }
 
 func newMockUsuarioRepository() *mockUsuarioRepository {
@@ -48,18 +50,16 @@ func (m *mockUsuarioRepository) Create(ctx context.Context, usuario *domain.Usua
 	return nil
 }
 
-func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
-	var target *domain.Usuario
+func (m *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
 	for _, u := range m.usuarios {
 		if u.ID.String() == id {
-			target = u
-			break
+			return u
 		}
 	}
-	if target == nil {
-		return errors.New("record not found")
-	}
+	return nil
+}
 
+func (m *mockUsuarioRepository) aplicarDatos(target *domain.Usuario, datos map[string]interface{}) {
 	if nombre, ok := datos["nombre_completo"].(string); ok {
 		target.NombreCompleto = nombre
 	}
@@ -88,15 +88,102 @@ func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 	if rol, ok := datos["rol"].(string); ok {
 		target.Rol = rol
 	}
+}
+
+func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
+	target := m.buscarPorID(id)
+	if target == nil {
+		return gorm.ErrRecordNotFound
+	}
+	m.aplicarDatos(target, datos)
+	return nil
+}
+
+func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
+	actorUUID, err := uuid.Parse(strings.TrimSpace(actorID))
+	if err != nil {
+		return errors.New("actor de auditoría inválido")
+	}
+
+	target := m.buscarPorID(id)
+	if target == nil {
+		return gorm.ErrRecordNotFound
+	}
+
+	rolActual, _ := domain.NormalizarRol(target.Rol)
+	if _, cambiaRol := datos["rol"]; !cambiaRol {
+		if canonico, ok := domain.NormalizarRol(target.Rol); ok && strings.TrimSpace(target.Rol) != canonico {
+			datos["rol"] = canonico
+		}
+	}
+
+	dejaDeSerAdmin := false
+	if rolActual == domain.RolAdmin && target.EstaActivo {
+		if activo, ok := datos["esta_activo"].(bool); ok && !activo {
+			dejaDeSerAdmin = true
+		}
+		if nuevoRol, ok := datos["rol"].(string); ok {
+			if canonico, _ := domain.NormalizarRol(nuevoRol); canonico != domain.RolAdmin {
+				dejaDeSerAdmin = true
+			}
+		}
+	}
+
+	if dejaDeSerAdmin {
+		var otros int64
+		for _, u := range m.usuarios {
+			if u.ID == target.ID {
+				continue
+			}
+			rol, ok := domain.NormalizarRol(u.Rol)
+			if ok && rol == domain.RolAdmin && u.EstaActivo {
+				otros++
+			}
+		}
+		if otros == 0 {
+			return domain.ErrUltimoAdmin
+		}
+	}
+
+	anteriorRol := target.Rol
+	anteriorActivo := target.EstaActivo
+	m.aplicarDatos(target, datos)
+
+	cambios := map[string]interface{}{}
+	if nuevo, ok := datos["rol"]; ok {
+		cambios["rol"] = map[string]interface{}{"anterior": anteriorRol, "nuevo": nuevo}
+	}
+	if nuevo, ok := datos["esta_activo"]; ok {
+		cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
+	}
+	m.auditorias = append(m.auditorias, domain.AuditoriaAdminUsuario{
+		ActorID:    actorUUID,
+		ObjetivoID: target.ID,
+		Cambios:    cambios,
+	})
 	return nil
 }
 
 func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
 	var resultado []domain.Usuario
 	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
+	rolFiltro := ""
+	if filtro.Rol != "" {
+		if canonico, ok := domain.NormalizarRol(filtro.Rol); ok {
+			rolFiltro = canonico
+		} else {
+			rolFiltro = strings.ToLower(strings.TrimSpace(filtro.Rol))
+		}
+	}
 	for _, u := range m.usuarios {
-		if filtro.Rol != "" && !strings.EqualFold(strings.TrimSpace(u.Rol), filtro.Rol) {
-			continue
+		if rolFiltro != "" {
+			rolUsuario, ok := domain.NormalizarRol(u.Rol)
+			if !ok {
+				rolUsuario = strings.ToLower(strings.TrimSpace(u.Rol))
+			}
+			if rolUsuario != rolFiltro {
+				continue
+			}
 		}
 		if filtro.EstaActivo != nil && u.EstaActivo != *filtro.EstaActivo {
 			continue
@@ -126,7 +213,7 @@ func (m *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluir
 		if u.ID.String() == excluirID {
 			continue
 		}
-		if strings.EqualFold(strings.TrimSpace(u.Rol), domain.RolAdmin) && u.EstaActivo {
+		if rol, ok := domain.NormalizarRol(u.Rol); ok && rol == domain.RolAdmin && u.EstaActivo {
 			total++
 		}
 	}

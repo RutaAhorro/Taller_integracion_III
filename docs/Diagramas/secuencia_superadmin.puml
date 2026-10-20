@@ -42,9 +42,10 @@ box "2. Gestión de Usuarios e Igualdad de Productos (ucUsuarios, Definir Iguald
     DB --> API : Lista de usuarios del sistema
     API --> UI : 200 OK (Tabla de Usuarios)
 
-    Admin -> UI : Cambia estado (Activar/Desactivar) o Modifica Suscripción
-    UI -> API : PATCH /api/v1/admin/usuarios/{id} (estado="desactivado", plan="premium")
-    API -> DB : UPDATE usuarios SET estado = ...
+    Admin -> UI : Cambia estado (Activar/Desactivar) o rol de la cuenta
+    UI -> API : PUT /api/v1/admin/usuarios/{id} (esta_activo=false, rol="colaborador")
+    API -> DB : UPDATE api.usuarios SET esta_activo/rol ...
+    API -> DB : INSERT api.auditoria_admin_usuarios (actor, objetivo, cambios)
     DB --> API : OK
     API --> UI : 200 OK (Usuario modificado)
 

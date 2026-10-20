@@ -15,6 +15,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [05_tokens_recuperacion.sql](05_tokens_recuperacion.sql) | Tokens de restablecimiento de contraseña de Identidad (SUP-184). Aplicar antes de re-ejecutar 06, que concede sus permisos. |
 | [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). Desde SUP-240 también `app_rutas` (listas) y la FK de listas hacia usuarios. Idempotente: re-ejecutarlo en la base existente. |
 | [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los roles mediante variables privadas; `RUTAS_DB_PASSWORD` es opcional. No se ejecuta automáticamente sobre un volumen existente. |
+| [08_normalizar_rol_admin_y_auditoria.sql](08_normalizar_rol_admin_y_auditoria.sql) | Normaliza el alias histórico `administrador` a `admin` y crea `api.auditoria_admin_usuarios` con permisos para Identidad (SUP-242). Aplicar después de 06; si se re-ejecuta 06, volver a aplicar 08 para restaurar los grants. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para

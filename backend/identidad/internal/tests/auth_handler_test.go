@@ -9,6 +9,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -60,6 +61,61 @@ func TestAuthHandler_RegistrarUsuario_AutoLogin(t *testing.T) {
 
 	if jwtCookie.Value == "" {
 		t.Errorf("El valor de la cookie 'jwt' no debe estar vacío")
+	}
+}
+
+func TestAuthHandler_LoginNormalizaRolLegacy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repo := newMockUsuarioRepository()
+	hash, err := security.HashPassword("AliasLogin2026!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	userID := uuid.New()
+	repo.usuarios["alias@uct.cl"] = &domain.Usuario{
+		ID: userID, Correo: "alias@uct.cl", NombreCompleto: "Alias",
+		PasswordHash: &hash, Rol: domain.RolAdminLegacy, EstaActivo: true,
+	}
+
+	handler := handlers.NewAuthHandler(services.NewAuthService(repo))
+	router := gin.New()
+	router.POST("/api/v1/auth/login", handler.LoginUsuario)
+
+	body, _ := json.Marshal(handlers.LoginRequest{Correo: "alias@uct.cl", Password: "AliasLogin2026!"})
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Esperaba HTTP 200, obtuve %d. Body: %s", w.Code, w.Body.String())
+	}
+	var res handlers.LoginResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
+		t.Fatalf("Respuesta inválida: %v", err)
+	}
+	if res.Rol != domain.RolAdmin {
+		t.Fatalf("La respuesta debía normalizar el rol a admin, obtuve %q", res.Rol)
+	}
+
+	var jwtCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == "jwt" {
+			jwtCookie = cookie
+			break
+		}
+	}
+	if jwtCookie == nil {
+		t.Fatal("El login debía emitir la cookie jwt")
+	}
+	token, err := security.ValidarToken(jwtCookie.Value)
+	if err != nil {
+		t.Fatalf("Token inválido: %v", err)
+	}
+	claims, ok := token.Claims.(*security.JWTClaims)
+	if !ok || claims.Rol != domain.RolAdmin {
+		t.Fatalf("El JWT debía llevar el rol admin, obtuve %+v", token.Claims)
 	}
 }
 
