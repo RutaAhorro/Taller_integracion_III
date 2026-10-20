@@ -51,9 +51,13 @@ services:
       DB_URL: postgres://sup267_catalog_reader:${SUP267_READER_PASSWORD}@db:5432/sup267?sslmode=disable
       JWT_SECRET: ${SUP267_JWT_SECRET:?}
       CORS_ALLOWED_ORIGINS: https://frontend.example
+      # En el fixture aislado la API de referencia es el dueño de api.usuarios
+      # y expone el mismo contrato GET /api/v1/auth/me que Identidad.
+      IDENTIDAD_URL: http://api:8080
     ports: ['127.0.0.1:${SUP267_CATALOGO_PORT:-18083}:8080']
     depends_on:
       db: {condition: service_healthy}
+      api: {condition: service_healthy}
     read_only: true
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
