@@ -18,6 +18,7 @@ import ProductDetail from '@/pages/ProductDetail';
 import Login from '@/pages/Login';
 import Onboarding from '@/pages/Onboarding';
 import Profile from '@/pages/Profile';
+import ShoppingLists from '@/pages/ShoppingLists';
 import NotFound from '@/pages/NotFound';
 import Terms from '@/pages/Terms';
 
@@ -71,6 +72,7 @@ const router = createBrowserRouter([
         element: <ProtectedRoute />,
         children: [
           { path: ROUTES.PERFIL, element: <Profile /> },
+          { path: ROUTES.LISTAS, element: <ShoppingLists /> },
           { path: ROUTES.PLANES, element: <Planes /> },
           {
             // SUP-256: /colaborador solo colaborador o admin.
