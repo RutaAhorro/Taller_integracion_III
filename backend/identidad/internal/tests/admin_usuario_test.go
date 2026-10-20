@@ -232,6 +232,10 @@ func TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T) {
 	repo.usuarios["unico-admin@uct.cl"] = &domain.Usuario{
 		ID: adminID, Correo: "unico-admin@uct.cl", NombreCompleto: "Único Admin", Rol: domain.RolAdmin, EstaActivo: true,
 	}
+	// Un admin inactivo no cuenta como respaldo para la guarda.
+	repo.usuarios["admin-inactivo@uct.cl"] = &domain.Usuario{
+		ID: uuid.New(), Correo: "admin-inactivo@uct.cl", NombreCompleto: "Admin Inactivo", Rol: domain.RolAdmin, EstaActivo: false,
+	}
 
 	for _, body := range []string{
 		`{"esta_activo":false}`,
