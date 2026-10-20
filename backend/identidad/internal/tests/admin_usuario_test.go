@@ -178,6 +178,24 @@ func TestAdminUsuariosIdEnCuerpo(t *testing.T) {
 	}
 }
 
+func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
+	router, _ := newAdminUsuariosTestRouter(t)
+	for _, query := range []string{
+		"esta_activo=flase",
+		"limit=abc",
+		"limit=0",
+		"offset=-1",
+		"page=0",
+	} {
+		t.Run(query, func(t *testing.T) {
+			w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?"+query, domain.RolAdmin, "")
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("se esperaba 400, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
 func TestAdminUsuariosAplicaLimitePorDefecto(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
 	for i := 0; i < 51; i++ {

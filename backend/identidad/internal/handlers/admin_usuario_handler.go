@@ -44,10 +44,10 @@ func NewAdminUsuarioHandler(adminService services.AdminUsuarioService) *AdminUsu
 // @Produce      json
 // @Param        q            query     string  false  "Búsqueda por correo o nombre"
 // @Param        rol          query     string  false  "Filtrar por rol (admin, colaborador, registrado)"
-// @Param        esta_activo  query     bool    false  "Filtrar por cuentas activas/inactivas"
-// @Param        page         query     int     false  "Número de página (requiere limit)"
+// @Param        esta_activo  query     bool    false  "Filtrar por cuentas activas/inactivas (true/false)"
+// @Param        page         query     int     false  "Número de página, base 1 (por defecto 1)"
 // @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200, por defecto 50)"
-// @Param        offset       query     int     false  "Desplazamiento explícito"
+// @Param        offset       query     int     false  "Desplazamiento explícito, base 0"
 // @Success      200  {array}   domain.UsuarioAdminDTO
 // @Failure      400  {object}  httperrors.RespuestaError
 // @Failure      401  {object}  httperrors.RespuestaError
@@ -61,27 +61,41 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 	}
 
 	if value := c.Query("esta_activo"); value != "" {
-		if activo, err := strconv.ParseBool(value); err == nil {
-			filtro.EstaActivo = &activo
+		activo, err := strconv.ParseBool(value)
+		if err != nil {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El filtro esta_activo debe ser true o false.", err)
+			return
 		}
+		filtro.EstaActivo = &activo
 	}
 
 	limit, offset := usuariosAdminPorPaginaPredeterminado, 0
 	if value := c.Query("limit"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			limit = parsed
-			if limit > maxUsuariosAdminPorPagina {
-				limit = maxUsuariosAdminPorPagina
-			}
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed <= 0 {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro limit debe ser un entero positivo.", err)
+			return
+		}
+		limit = parsed
+		if limit > maxUsuariosAdminPorPagina {
+			limit = maxUsuariosAdminPorPagina
 		}
 	}
 	if value := c.Query("offset"); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
-			offset = parsed
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 0 {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro offset debe ser un entero no negativo.", err)
+			return
 		}
+		offset = parsed
 	}
-	if value := c.Query("page"); value != "" && limit > 0 {
-		if parsed, err := strconv.Atoi(value); err == nil && parsed > 1 {
+	if value := c.Query("page"); value != "" {
+		parsed, err := strconv.Atoi(value)
+		if err != nil || parsed < 1 {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page debe ser un entero positivo.", err)
+			return
+		}
+		if parsed > 1 {
 			offset = (parsed - 1) * limit
 		}
 	}
