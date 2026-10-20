@@ -15,14 +15,11 @@ import (
 const (
 	// maxUsuariosAdminPorPagina acota el listado cuando el cliente pide límite.
 	maxUsuariosAdminPorPagina = 200
-	// usuariosAdminPorPaginaPredeterminado evita volcar la tabla completa
-	// cuando el cliente no envía `limit`.
-	usuariosAdminPorPaginaPredeterminado = 50
 )
 
-// ActualizarUsuarioAdminRequest permite recibir el ID tanto en la ruta como en el cuerpo.
+// ActualizarUsuarioAdminRequest contiene los campos administrables de la cuenta.
+// El identificador viaja siempre en la ruta para evitar dos fuentes de verdad.
 type ActualizarUsuarioAdminRequest struct {
-	ID         string  `json:"id" example:"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"`
 	EstaActivo *bool   `json:"esta_activo" example:"true"`
 	Rol        *string `json:"rol" example:"colaborador"`
 }
@@ -45,9 +42,9 @@ func NewAdminUsuarioHandler(adminService services.AdminUsuarioService) *AdminUsu
 // @Param        q            query     string  false  "Búsqueda por correo o nombre"
 // @Param        rol          query     string  false  "Filtrar por rol (admin, colaborador, registrado)"
 // @Param        esta_activo  query     bool    false  "Filtrar por cuentas activas/inactivas (true/false)"
-// @Param        page         query     int     false  "Número de página, base 1 (por defecto 1)"
-// @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200, por defecto 50)"
-// @Param        offset       query     int     false  "Desplazamiento explícito, base 0"
+// @Param        page         query     int     false  "Número de página, base 1; requiere limit si es mayor a 1"
+// @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200; sin límite si se omite)"
+// @Param        offset       query     int     false  "Desplazamiento explícito, base 0; excluyente con page"
 // @Success      200  {array}   domain.UsuarioAdminDTO
 // @Failure      400  {object}  httperrors.RespuestaError
 // @Failure      401  {object}  httperrors.RespuestaError
@@ -69,7 +66,11 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 		filtro.EstaActivo = &activo
 	}
 
-	limit, offset := usuariosAdminPorPaginaPredeterminado, 0
+	// Sin `limit` se devuelve el listado completo, que es lo que espera el
+	// panel mientras no tenga paginación propia. Un límite explícito sigue
+	// acotado para evitar respuestas desmedidas.
+	limit, offset := 0, 0
+	limitDefinido := false
 	if value := c.Query("limit"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed <= 0 {
@@ -80,7 +81,10 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 		if limit > maxUsuariosAdminPorPagina {
 			limit = maxUsuariosAdminPorPagina
 		}
+		limitDefinido = true
 	}
+
+	offsetDefinido := false
 	if value := c.Query("offset"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed < 0 {
@@ -88,15 +92,31 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 			return
 		}
 		offset = parsed
+		offsetDefinido = true
 	}
+
 	if value := c.Query("page"); value != "" {
-		parsed, err := strconv.Atoi(value)
+		if offsetDefinido {
+			httperrors.ResponderError(c, http.StatusBadRequest, "Los parámetros page y offset son mutuamente excluyentes.", nil)
+			return
+		}
+		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || parsed < 1 {
 			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page debe ser un entero positivo.", err)
 			return
 		}
+		if parsed > 1 && !limitDefinido {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page requiere limit cuando es mayor a 1.", nil)
+			return
+		}
 		if parsed > 1 {
-			offset = (parsed - 1) * limit
+			maxInt := int64(^uint(0) >> 1)
+			// Se divide antes de multiplicar para no desbordar int64.
+			if parsed-1 > maxInt/int64(limit) {
+				httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
+				return
+			}
+			offset = int((parsed - 1) * int64(limit))
 		}
 	}
 	filtro.Limit = limit
@@ -128,6 +148,7 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 // @Failure      401  {object}  httperrors.RespuestaError
 // @Failure      403  {object}  httperrors.RespuestaError
 // @Failure      404  {object}  httperrors.RespuestaError
+// @Failure      409  {object}  httperrors.RespuestaError
 // @Failure      500  {object}  httperrors.RespuestaError
 // @Router       /api/v1/admin/usuarios/{id} [put]
 func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
@@ -139,7 +160,8 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 
 	id := strings.TrimSpace(c.Param("id"))
 	if id == "" {
-		id = strings.TrimSpace(req.ID)
+		httperrors.ResponderError(c, http.StatusBadRequest, "El identificador de usuario es obligatorio en la ruta.", nil)
+		return
 	}
 
 	dto, err := h.adminService.Actualizar(c.Request.Context(), id, domain.ActualizarUsuarioAdminDTO{
@@ -152,6 +174,8 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 			httperrors.ResponderError(c, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrUsuarioNoEncontrado):
 			httperrors.ResponderError(c, http.StatusNotFound, err.Error(), err)
+		case errors.Is(err, services.ErrUltimoAdmin):
+			httperrors.ResponderError(c, http.StatusConflict, err.Error(), err)
 		default:
 			httperrors.ResponderError(c, http.StatusInternalServerError, "Error interno al actualizar la cuenta de usuario.", err)
 		}

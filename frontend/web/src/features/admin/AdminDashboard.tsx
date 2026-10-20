@@ -156,18 +156,22 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                         ) : user.role}
                       </td>
                       <td className="px-5 py-4 text-muted-foreground">
-                        {showActions ? (
+                        {!ADMIN_HAS_BACKEND && showActions ? (
                           <select
-                            value={user.plan}
+                            value={user.plan ?? ''}
                             disabled={busy}
-                            onChange={(event) => void changeUserPlan(user.id, event.target.value as (typeof ADMIN_PLANS)[number])}
+                            onChange={(event) => changeUserPlan(user.id, event.target.value as (typeof ADMIN_PLANS)[number])}
                             aria-label={`Asignar plan a ${user.name}`}
                             title="Asignar plan comercial (campo aparte, nunca en `rol`)"
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
                             {ADMIN_PLANS.map((p) => <option key={p}>{p}</option>)}
                           </select>
-                        ) : user.plan}
+                        ) : (
+                          <span title={ADMIN_HAS_BACKEND ? 'api.usuarios todavía no expone el plan comercial' : undefined}>
+                            {ADMIN_HAS_BACKEND ? '—' : user.plan ?? '—'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-5 py-4"><StatusBadge status={user.status} /></td>
                       <td className="px-5 py-4 text-muted-foreground">{user.lastAccess}</td>

@@ -55,11 +55,11 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
 
 	if texto := strings.TrimSpace(filtro.Query); texto != "" {
-		patron := "%" + strings.ToLower(texto) + "%"
-		query = query.Where("LOWER(correo) LIKE ? OR LOWER(nombre_completo) LIKE ?", patron, patron)
+		patron := "%" + escaparPatronLike(strings.ToLower(texto)) + "%"
+		query = query.Where(`LOWER(correo) LIKE ? ESCAPE '!' OR LOWER(nombre_completo) LIKE ? ESCAPE '!'`, patron, patron)
 	}
 	if rol := strings.TrimSpace(filtro.Rol); rol != "" {
-		query = query.Where("rol = ?", strings.ToLower(rol))
+		query = query.Where("LOWER(rol) = ?", strings.ToLower(rol))
 	}
 	if filtro.EstaActivo != nil {
 		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
@@ -98,6 +98,30 @@ func (r *gormUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 		return gorm.ErrRecordNotFound
 	}
 	return nil
+}
+
+// ContarAdminsActivos cuenta administradores activos distintos del usuario
+// indicado. El rol se compara sin distinguir mayúsculas para tolerar datos
+// históricos escritos antes de normalizar el RBAC.
+func (r *gormUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
+	query := r.db.WithContext(ctx).
+		Model(&domain.Usuario{}).
+		Where("LOWER(rol) = ? AND esta_activo = ?", domain.RolAdmin, true)
+	if excluirID != "" {
+		query = query.Where("id <> ?", excluirID)
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, err
+	}
+	return total, nil
+}
+
+// escaparPatronLike neutraliza los comodines de LIKE para que la búsqueda
+// trate `%`, `_` y `!` como texto literal. Se usa `!` como carácter de escape.
+func escaparPatronLike(texto string) string {
+	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(texto)
 }
 
 func classifyWriteError(err error) error {

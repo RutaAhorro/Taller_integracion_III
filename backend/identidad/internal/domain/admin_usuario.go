@@ -48,4 +48,7 @@ type AdminUsuarioRepository interface {
 	Listar(ctx context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, error)
 	FindByID(ctx context.Context, id string) (*Usuario, error)
 	Actualizar(ctx context.Context, id string, datos map[string]interface{}) error
+	// ContarAdminsActivos cuenta los administradores activos, excluyendo el
+	// usuario indicado. Se usa para no dejar la plataforma sin administración.
+	ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error)
 }

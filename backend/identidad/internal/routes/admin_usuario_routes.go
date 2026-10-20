@@ -12,8 +12,6 @@ func RegistrarRutasAdminUsuarios(rg *gin.RouterGroup, handler *handlers.AdminUsu
 	admin := rg.Group("/admin/usuarios", middleware.RequireAuth(), middleware.RequireRole("admin"))
 	{
 		admin.GET("", handler.ListarUsuarios)
-		admin.GET("/", handler.ListarUsuarios)
-		admin.PUT("", handler.ActualizarUsuario)
 		admin.PUT("/:id", handler.ActualizarUsuario)
 	}
 }

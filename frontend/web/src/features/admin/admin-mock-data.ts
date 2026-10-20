@@ -16,7 +16,8 @@ export type AdminUser = {
   name: string;
   email: string;
   role: AdminRole;
-  plan: AdminPlan;
+  // null cuando el backend aún no expone el plan comercial.
+  plan: AdminPlan | null;
   status: 'Activo' | 'Inactivo';
   lastAccess: string;
   initials: string;
@@ -35,7 +36,9 @@ export type AdminSource = {
   habilitada: boolean;
 };
 
-// Datos de ejemplo solo visuales (el panel aún no consume backend).
+// Datos de ejemplo para desarrollo sin VITE_API_URL. Con backend configurado,
+// los usuarios reales vienen de Identidad; ante un fallo de red sin 401/403 el
+// panel vuelve temporalmente a estos datos.
 // Correos ficticios en dominio reservado RFC 2606 para no exponer PII en el bundle.
 export const adminUsers: AdminUser[] = [
   { id: 'usr-001', name: 'Camila Torres', email: 'camila.torres@example.com', role: 'Administrador', plan: 'Premium', status: 'Activo', lastAccess: 'Hace 12 min', initials: 'CT' },

@@ -95,7 +95,7 @@ func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 	var resultado []domain.Usuario
 	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
 	for _, u := range m.usuarios {
-		if filtro.Rol != "" && u.Rol != filtro.Rol {
+		if filtro.Rol != "" && !strings.EqualFold(strings.TrimSpace(u.Rol), filtro.Rol) {
 			continue
 		}
 		if filtro.EstaActivo != nil && u.EstaActivo != *filtro.EstaActivo {
@@ -118,6 +118,19 @@ func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 		resultado = resultado[:filtro.Limit]
 	}
 	return resultado, nil
+}
+
+func (m *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
+	var total int64
+	for _, u := range m.usuarios {
+		if u.ID.String() == excluirID {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(u.Rol), domain.RolAdmin) && u.EstaActivo {
+			total++
+		}
+	}
+	return total, nil
 }
 
 func TestAuthService_PasswordComplexity(t *testing.T) {

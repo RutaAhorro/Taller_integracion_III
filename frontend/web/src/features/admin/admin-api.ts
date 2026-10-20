@@ -18,7 +18,8 @@ export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
 export const ADMIN_ENDPOINTS = {
   // SUP-242 — GET/PUT /api/v1/admin/usuarios (RequireRole admin, tras el Gateway).
   // Body PUT: { esta_activo?: boolean; rol?: 'registrado' | 'colaborador' | 'admin' }.
-  // El plan comercial NO viaja en `rol` (auditoría H-06); va en campo aparte.
+  // El plan comercial NO viaja en `rol` (auditoría H-06), pero api.usuarios
+  // todavía no expone un campo de plan: el panel no lo envía ni lo edita.
   usuarios: '/admin/usuarios',
   // SUP-243 — GET/PUT de fuentes bajo /api/v1/admin/productos ya enrutado.
   // Ej.: /api/v1/admin/productos/fuentes — persiste scraper.cadenas_supermercado.
@@ -41,19 +42,22 @@ export function adminRoleToBackend(role: AdminRole): string {
 }
 
 export function adminRoleFromBackend(rol: string): AdminRole {
-  if (rol === 'admin') return 'Administrador';
-  if (rol === 'colaborador') return 'Colaborador';
-  return 'Usuario';
+  switch (rol.trim().toLowerCase()) {
+    case 'admin':
+    case 'administrador':
+      return 'Administrador';
+    case 'colaborador':
+      return 'Colaborador';
+    default:
+      return 'Usuario';
+  }
 }
 
 // --- Mapeo plan UI <-> backend ---
-// Display: Básico | Premium. Backend: campo de plan/suscripción aparte
-// (p. ej. plan='premium'); nunca se envía como `rol`.
-export function adminPlanToBackend(plan: AdminPlan): string {
-  return plan === 'Premium' ? 'premium' : 'basico';
-}
-
-export function adminPlanFromBackend(plan?: string | null): AdminPlan {
+// Display: Básico | Premium. api.usuarios todavía no expone el plan, así que
+// el mapeo devuelve null y la UI muestra un guion en vez de inventar "Básico".
+export function adminPlanFromBackend(plan?: string | null): AdminPlan | null {
+  if (!plan) return null;
   if (plan === 'premium' || plan === 'plus' || plan === 'Premium') return 'Premium';
   return 'Básico';
 }
@@ -67,9 +71,17 @@ type UsuarioBackend = {
   rol: string;
   esta_activo: boolean;
   plan?: string | null;
+  ultimo_acceso?: string | null;
   creado_el?: string | null;
   actualizado_el?: string | null;
 };
+
+// Sólo los usuarios reales tienen UUID; los mocks usan ids `usr-00X`.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isPersistableId(id: string): boolean {
+  return UUID_RE.test(id);
+}
 
 function initialsFromName(name: string): string {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -79,7 +91,8 @@ function initialsFromName(name: string): string {
   return (first + last).toUpperCase() || '?';
 }
 
-// Última actualización como aproximación: api.usuarios aún no expone último acceso.
+// api.usuarios todavía no expone `ultimo_acceso`. Si el backend no lo envía
+// se muestra "Sin registros"; no se usa `actualizado_el` como sustituto.
 function formatLastAccess(value?: string | null): string {
   if (!value) return 'Sin registros';
   const date = new Date(value);
@@ -95,7 +108,7 @@ export function adminUserFromBackend(usuario: UsuarioBackend): AdminUser {
     role: adminRoleFromBackend(usuario.rol),
     plan: adminPlanFromBackend(usuario.plan),
     status: usuario.esta_activo ? 'Activo' : 'Inactivo',
-    lastAccess: formatLastAccess(usuario.actualizado_el ?? usuario.creado_el),
+    lastAccess: formatLastAccess(usuario.ultimo_acceso),
     initials: initialsFromName(usuario.nombre_completo),
   };
 }
@@ -146,8 +159,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-// Usuarios (SUP-242). GET lista, PUT { esta_activo, rol, plan } por id.
-// `rol` solo acepta valores RBAC; el plan viaja en su propio campo.
+// Usuarios (SUP-242). GET lista, PUT { esta_activo, rol } por id.
+// `rol` solo acepta valores RBAC; el plan aún no lo expone api.usuarios.
 export async function fetchAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
   const usuarios = await request<UsuarioBackend[]>(ADMIN_ENDPOINTS.usuarios, { signal });
   return usuarios.map(adminUserFromBackend);
@@ -155,7 +168,7 @@ export async function fetchAdminUsers(signal?: AbortSignal): Promise<AdminUser[]
 
 export async function updateAdminUser(
   id: string,
-  patch: { esta_activo?: boolean; rol?: string; plan?: string },
+  patch: { esta_activo?: boolean; rol?: string },
 ): Promise<AdminUser> {
   const usuario = await request<UsuarioBackend>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
     method: 'PUT',

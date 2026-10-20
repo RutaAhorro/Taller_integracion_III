@@ -10,7 +10,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/core/routes';
 import {
   ADMIN_HAS_BACKEND,
-  adminPlanToBackend,
   adminRoleToBackend,
   fetchAdminSources,
   fetchAdminUsers,
@@ -18,6 +17,7 @@ import {
   fetchControlMetrics,
   fetchIdentidadMetrics,
   isAdminAuthError,
+  isPersistableId,
   updateAdminSource,
   updateAdminUser,
   type CatalogoMetrics,
@@ -123,7 +123,9 @@ export function useAdminUsers() {
     setUsers((prev) =>
       prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
     );
-    if (ADMIN_HAS_BACKEND) {
+    // Con backend sólo se persisten usuarios reales; los mocks de respaldo
+    // conservan el cambio en memoria para no enviar un id inválido.
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
         await updateAdminUser(id, { esta_activo: nextActive });
       } catch (err) {
@@ -152,7 +154,7 @@ export function useAdminUsers() {
     const previous = target.role;
     setPendingId(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
-    if (ADMIN_HAS_BACKEND) {
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
         await updateAdminUser(id, { rol: adminRoleToBackend(role) });
       } catch (err) {
@@ -172,33 +174,19 @@ export function useAdminUsers() {
     }
   }, [users, pendingId, expireSession]);
 
-  // Plan comercial separado del rol (auditoría H-06). Optimista + reversión,
-  // igual que el rol; el backend lo persiste en su propio campo (no en `rol`).
-  const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
+  // Plan comercial separado del rol (auditoría H-06). api.usuarios todavía no
+  // expone el campo, así que con backend configurado el cambio no se envía:
+  // enviarlo devolvía 400. En modo mock el cambio queda en memoria.
+  const changeUserPlan = useCallback((id: string, plan: AdminPlan) => {
     const target = users.find((user) => user.id === id);
     if (!target || pendingId || target.plan === plan) return;
-    const previous = target.plan;
-    setPendingId(id);
-    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
     if (ADMIN_HAS_BACKEND) {
-      try {
-        await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
-      } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan: previous } : user)));
-        if (isAdminAuthError(err)) {
-          setError(authBlockedMessage('el plan', err));
-          expireSession();
-        } else {
-          setError(`No se pudo asignar el plan. (${toMessage(err)})`);
-        }
-      } finally {
-        setPendingId(null);
-      }
-    } else {
-      // TODO backend: PUT /api/v1/admin/usuarios/:id { plan } (campo aparte).
-      setPendingId(null);
+      setError('El plan comercial todavía no está disponible en el backend.');
+      return;
     }
-  }, [users, pendingId, expireSession]);
+    // Sin backend el cambio queda solo en el estado local.
+    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
+  }, [users, pendingId]);
 
   return { users, isLoading, error, pendingId, refresh: () => { void load(); }, toggleUserStatus, changeUserRole, changeUserPlan };
 }

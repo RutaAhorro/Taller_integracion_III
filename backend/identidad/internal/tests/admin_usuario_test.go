@@ -163,21 +163,6 @@ func TestAdminUsuariosValidaRolYDestino(t *testing.T) {
 	}
 }
 
-func TestAdminUsuariosIdEnCuerpo(t *testing.T) {
-	router, repo := newAdminUsuariosTestRouter(t)
-	userID := uuid.New()
-	repo.usuarios["cuerpo@uct.cl"] = &domain.Usuario{ID: userID, Correo: "cuerpo@uct.cl", NombreCompleto: "Cuerpo", Rol: domain.RolRegistrado, EstaActivo: true}
-
-	payload := `{"id":"` + userID.String() + `","rol":"colaborador"}`
-	w := adminRequest(t, router, http.MethodPut, "/api/v1/admin/usuarios", domain.RolAdmin, payload)
-	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba 200 con id en el cuerpo, se obtuvo %d. Body: %s", w.Code, w.Body.String())
-	}
-	if repo.usuarios["cuerpo@uct.cl"].Rol != domain.RolColaborador {
-		t.Fatal("el rol colaborador no se persistió")
-	}
-}
-
 func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
 	router, _ := newAdminUsuariosTestRouter(t)
 	for _, query := range []string{
@@ -186,6 +171,9 @@ func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
 		"limit=0",
 		"offset=-1",
 		"page=0",
+		"page=2",
+		"page=2&offset=0",
+		"page=9223372036854775807&limit=200",
 	} {
 		t.Run(query, func(t *testing.T) {
 			w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?"+query, domain.RolAdmin, "")
@@ -196,7 +184,7 @@ func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
 	}
 }
 
-func TestAdminUsuariosAplicaLimitePorDefecto(t *testing.T) {
+func TestAdminUsuariosSinLimiteDevuelveTodos(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
 	for i := 0; i < 51; i++ {
 		correo := fmt.Sprintf("usuario%02d@uct.cl", i)
@@ -212,8 +200,98 @@ func TestAdminUsuariosAplicaLimitePorDefecto(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
 		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
 	}
-	if len(usuarios) != 50 {
-		t.Fatalf("se esperaba el límite por defecto de 50, se obtuvieron %d", len(usuarios))
+	if len(usuarios) != 51 {
+		t.Fatalf("sin limit se esperaban 51 usuarios, se obtuvieron %d", len(usuarios))
+	}
+}
+
+func TestAdminUsuariosAcotaLimiteMaximo(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	for i := 0; i < 205; i++ {
+		correo := fmt.Sprintf("usuario%03d@uct.cl", i)
+		repo.usuarios[correo] = &domain.Usuario{ID: uuid.New(), Correo: correo, NombreCompleto: "Usuario", Rol: domain.RolRegistrado, EstaActivo: true}
+	}
+
+	w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?limit=999", domain.RolAdmin, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var usuarios []domain.UsuarioAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
+		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	}
+	if len(usuarios) != 200 {
+		t.Fatalf("el límite máximo debía acotar a 200, se obtuvieron %d", len(usuarios))
+	}
+}
+
+func TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	adminID := uuid.New()
+	repo.usuarios["unico-admin@uct.cl"] = &domain.Usuario{
+		ID: adminID, Correo: "unico-admin@uct.cl", NombreCompleto: "Único Admin", Rol: domain.RolAdmin, EstaActivo: true,
+	}
+
+	for _, body := range []string{
+		`{"esta_activo":false}`,
+		`{"rol":"registrado"}`,
+		`{"rol":"colaborador"}`,
+	} {
+		w := adminRequest(t, router, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), domain.RolAdmin, body)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("se esperaba 409 al intentar dejar el sistema sin admins con %s, se obtuvo %d. Body: %s", body, w.Code, w.Body.String())
+		}
+		if !repo.usuarios["unico-admin@uct.cl"].EstaActivo || repo.usuarios["unico-admin@uct.cl"].Rol != domain.RolAdmin {
+			t.Fatal("el último admin no debía modificarse")
+		}
+	}
+
+	// Con otro admin activo la operación sí se permite.
+	repo.usuarios["segundo-admin@uct.cl"] = &domain.Usuario{
+		ID: uuid.New(), Correo: "segundo-admin@uct.cl", NombreCompleto: "Segundo Admin", Rol: domain.RolAdmin, EstaActivo: true,
+	}
+	w := adminRequest(t, router, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), domain.RolAdmin, `{"esta_activo":false}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("con otro admin activo se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsuariosFiltraPorTextoRolYEstado(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	repo.usuarios["ana@uct.cl"] = &domain.Usuario{ID: uuid.New(), Correo: "ana@uct.cl", NombreCompleto: "Ana Admin", Rol: domain.RolAdmin, EstaActivo: true}
+	repo.usuarios["bruno@uct.cl"] = &domain.Usuario{ID: uuid.New(), Correo: "bruno@uct.cl", NombreCompleto: "Bruno Colaborador", Rol: domain.RolColaborador, EstaActivo: false}
+	repo.usuarios["carla@uct.cl"] = &domain.Usuario{ID: uuid.New(), Correo: "carla@uct.cl", NombreCompleto: "Carla Registrada", Rol: domain.RolRegistrado, EstaActivo: true}
+
+	casos := []struct {
+		query    string
+		esperado string
+	}{
+		{"q=BRU&rol=colaborador&esta_activo=false", "bruno@uct.cl"},
+		{"rol=ADMIN", "ana@uct.cl"},
+		{"esta_activo=true", "ana@uct.cl"},
+	}
+
+	for _, caso := range casos {
+		t.Run(caso.query, func(t *testing.T) {
+			w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?"+caso.query, domain.RolAdmin, "")
+			if w.Code != http.StatusOK {
+				t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+			}
+			var usuarios []domain.UsuarioAdminDTO
+			if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
+				t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+			}
+			if len(usuarios) == 0 {
+				t.Fatalf("el filtro %s no devolvió usuarios", caso.query)
+			}
+			if caso.query == "esta_activo=true" && len(usuarios) != 2 {
+				t.Fatalf("esta_activo=true debía devolver 2 usuarios, devolvió %d", len(usuarios))
+			}
+			if caso.query != "esta_activo=true" && usuarios[0].Correo != caso.esperado {
+				t.Fatalf("el filtro %s devolvió %q, se esperaba %q", caso.query, usuarios[0].Correo, caso.esperado)
+			}
+		})
 	}
 }
 

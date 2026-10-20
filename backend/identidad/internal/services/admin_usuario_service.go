@@ -18,6 +18,8 @@ var (
 	ErrSinCambiosAdmin = errors.New("no se enviaron cambios para actualizar la cuenta")
 	// ErrIDUsuarioInvalido se emite cuando el identificador no es un UUID válido.
 	ErrIDUsuarioInvalido = errors.New("identificador de usuario inválido")
+	// ErrUltimoAdmin impide desactivar o degradar al último administrador activo.
+	ErrUltimoAdmin = errors.New("no se puede dejar el sistema sin administradores activos")
 )
 
 // AdminUsuarioService define los casos de uso del panel de administración de cuentas.
@@ -65,11 +67,13 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 	}
 
 	datos := make(map[string]interface{})
+	var nuevoRol *string
 	if input.Rol != nil {
 		rol, err := normalizarRol(*input.Rol)
 		if err != nil {
 			return nil, err
 		}
+		nuevoRol = &rol
 		datos["rol"] = rol
 	}
 	if input.EstaActivo != nil {
@@ -85,6 +89,22 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 	}
 	if usuario == nil {
 		return nil, ErrUsuarioNoEncontrado
+	}
+
+	// Un administrador activo sólo puede salir de ese estado si queda otro
+	// administrador activo. Así se evita bloquear la plataforma por completo.
+	rolActual := strings.ToLower(strings.TrimSpace(usuario.Rol))
+	dejaDeSerAdminActivo := rolActual == domain.RolAdmin && usuario.EstaActivo &&
+		((input.EstaActivo != nil && !*input.EstaActivo) ||
+			(nuevoRol != nil && *nuevoRol != domain.RolAdmin))
+	if dejaDeSerAdminActivo {
+		otros, err := s.usuarioRepo.ContarAdminsActivos(ctx, usuario.ID.String())
+		if err != nil {
+			return nil, err
+		}
+		if otros == 0 {
+			return nil, ErrUltimoAdmin
+		}
 	}
 
 	datos["actualizado_el"] = time.Now()
