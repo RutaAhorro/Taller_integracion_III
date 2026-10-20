@@ -16,7 +16,6 @@ export const ROUTES = {
 } as const;
 
 export const MOCK_ROUTES: Record<string, 'Sprint 2' | 'Sprint 3'> = {
-  [ROUTES.CHAT]: 'Sprint 2',
   [ROUTES.COLABORADOR]: 'Sprint 2',
   [ROUTES.RUTA]: 'Sprint 3',
   [ROUTES.HISTORIAL]: 'Sprint 3',

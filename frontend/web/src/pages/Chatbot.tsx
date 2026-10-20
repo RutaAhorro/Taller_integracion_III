@@ -1,21 +1,18 @@
-import React from 'react';
 import { 
-  Sparkles, CheckCircle2, 
+  Sparkles,
   Trash2, Maximize2, 
-  User, Bot, X, ShieldAlert, Loader2, Info, Send
+  User, Bot, X, ShieldAlert, Info, Send
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { OutOfStockAlert } from '@/components/chatbot/OutOfStockAlert';
-import { RichRecipeCard } from '@/components/chatbot/RichRecipeCard';
+import { ChatProducts } from '@/components/chatbot/ChatProducts';
 import { TypingIndicator } from '@/components/chatbot/TypingIndicator';
-import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import { useChatbot } from '@/hooks/useChatbot';
+import { CHAT_MAX_LENGTH } from '@/features/chat/chat-api';
 
 export default function Chatbot() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   
   const {
     user,
@@ -30,10 +27,6 @@ export default function Chatbot() {
     handleClear
   } = useChatbot();
 
-  const handleAddToCart = () => {
-    toast("Ingredientes agregados a tu carrito", "success");
-  };
-
   return (
     <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden relative">
       {/* Header */}
@@ -47,7 +40,7 @@ export default function Chatbot() {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)] whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
-                Catálogos al día
+                 Asistente de compras
               </span>
             </div>
           </div>
@@ -74,6 +67,10 @@ export default function Chatbot() {
         </div>
       </header>
 
+      <p className="flex-none border-b border-border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
+        Integración parcial: el chat requiere que la ruta del Gateway esté habilitada (SUP-278). Guardar ingredientes en listas aún está pendiente.
+      </p>
+
       {/* Main Chat Area */}
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
         <div className="max-w-3xl mx-auto space-y-6">
@@ -95,10 +92,13 @@ export default function Chatbot() {
                   : "bg-card border border-border text-foreground rounded-bl-none shadow-sm"
               )}>
                 {msg.type === 'text' && (
-                  <div className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
+                  <div className="break-words leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
                     <ReactMarkdown>{msg.content || ''}</ReactMarkdown>
+                    {msg.products && <ChatProducts products={msg.products} />}
                   </div>
                 )}
+
+                {msg.type === 'error' && <p role="alert" className="text-destructive">{msg.content}</p>}
                 
                 {msg.type === 'welcome' && (
                   <div className="space-y-4">
@@ -113,7 +113,8 @@ export default function Chatbot() {
                       ].map((chip, idx) => (
                         <button
                           key={idx}
-                          onClick={() => handleSend(chip)}
+                           onClick={() => handleSend(chip)}
+                           disabled={isProcessing}
                           className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium"
                         >
                           "{chip}"
@@ -124,29 +125,10 @@ export default function Chatbot() {
                 )}
 
                 {msg.type === 'processing' && (
-                  <div className="space-y-3 py-1">
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 1 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground"/>}
-                      <span className={msg.step! > 1 ? "text-foreground" : "text-muted-foreground"}>Extrayendo ingredientes y cantidades...</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 2 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : msg.step! === 2 ? <Loader2 className="h-4 w-4 animate-spin text-foreground"/> : <div className="h-4 w-4 rounded-full border-2 border-border"/>}
-                      <span className={msg.step! > 2 ? "text-foreground" : msg.step! === 2 ? "text-foreground font-medium" : "text-muted-foreground"}>Cruzando stock en supermercados de Temuco...</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 3 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : msg.step! === 3 ? <Loader2 className="h-4 w-4 animate-spin text-foreground"/> : <div className="h-4 w-4 rounded-full border-2 border-border"/>}
-                      <span className={msg.step! > 3 ? "text-foreground" : msg.step! === 3 ? "text-foreground font-medium" : "text-muted-foreground"}>Generando plan de ahorro...</span>
-                    </div>
+                  <div role="status" className="space-y-3 py-1">
+                    <p>Consultando al asistente…</p>
                     <TypingIndicator className="mt-2" />
                   </div>
-                )}
-
-                {msg.type === 'out-of-stock' && (
-                  <OutOfStockAlert query={msg.query} />
-                )}
-
-                {msg.type === 'rich-recipe' && (
-                  <RichRecipeCard onAddToCart={handleAddToCart} />
                 )}
               </div>
 
@@ -169,10 +151,12 @@ export default function Chatbot() {
             className="relative flex items-end gap-2 bg-background border border-border rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-border transition-all"
           >
             <textarea 
+              aria-label="Mensaje para el asistente"
+              maxLength={CHAT_MAX_LENGTH}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
                   handleSend(inputValue);
                 }
@@ -183,6 +167,7 @@ export default function Chatbot() {
             />
             <button 
               type="submit"
+              aria-label="Enviar mensaje"
               disabled={!inputValue.trim() || isProcessing}
               className="p-2.5 mb-0.5 rounded-xl bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] hover:bg-primary disabled:bg-muted disabled:text-muted-foreground transition-colors shrink-0 flex items-center justify-center"
             >
@@ -191,7 +176,7 @@ export default function Chatbot() {
           </form>
           <p className="text-center text-[10px] text-muted-foreground mt-2 flex items-center justify-center gap-1">
             <Info className="h-3 w-3"/>
-            Los precios y el stock son validados contra catálogos vigentes de Temuco.
+            Precios y stock según el catálogo consultado por el asistente. Máximo {CHAT_MAX_LENGTH} caracteres por mensaje.
           </p>
         </div>
       </div>
