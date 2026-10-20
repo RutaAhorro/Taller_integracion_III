@@ -1,7 +1,7 @@
 // Capa de acceso a endpoints de administración (SUP-242 / SUP-243 / SUP-279).
-// PANEL SOLO VISUAL: hoy no hay consumo real. Los hooks solo usan mocks salvo
-// que exista VITE_API_URL, y estas funciones quedan listas para cuando se cree
-// el backend. No cambiar la UI al crear el backend: solo ajustar endpoints.
+// Usa VITE_API_URL como base (ya incluye /api/v1); sin esa variable los hooks
+// caen a mocks. SUP-242 (usuarios) ya tiene backend en Identidad; SUP-243
+// (fuentes) y SUP-279 (métricas) dependen de sus propias tareas.
 //
 // Convención de ramas: backend/feat/[tarea]-[nombre], frontend/feat/[tarea]-[nombre].
 
@@ -10,25 +10,24 @@ import type { AdminPlan, AdminRole, AdminSource, AdminUser } from './admin-mock-
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
 
-// RUTAS PROPUESTAS, aún no disponibles en el Gateway Go (auditoría H-14):
-// gateway/internal/proxy/gateway.go hoy solo enruta identidad bajo
-// `/api/v1/auth`; `/api/v1/admin/usuarios*` aún responde 404. Coordinar con
-// backend (SUP-242/279) el alta de la ruta hacia Identidad antes del consumo
-// real. Catálogo (`/api/v1/admin/productos*`, SUP-243) y Control
-// (`/api/v1/scraper*`) ya están enrutados.
+// Rutas relativas a VITE_API_URL, que ya incluye el prefijo `/api/v1` igual
+// que AuthContext y products-api. Concatenar otro `/api/v1` producía
+// `/api/v1/api/v1/...` y el Gateway devolvía 404.
+// SUP-242: `/admin/usuarios*` ya está enrutado hacia Identidad. SUP-243
+// (`/admin/productos*`) y Control (`/scraper*`) conservan sus rutas.
 export const ADMIN_ENDPOINTS = {
   // SUP-242 — GET/PUT /api/v1/admin/usuarios (RequireRole admin, tras el Gateway).
   // Body PUT: { esta_activo?: boolean; rol?: 'registrado' | 'colaborador' | 'admin' }.
   // El plan comercial NO viaja en `rol` (auditoría H-06); va en campo aparte.
-  usuarios: '/api/v1/admin/usuarios',
+  usuarios: '/admin/usuarios',
   // SUP-243 — GET/PUT de fuentes bajo /api/v1/admin/productos ya enrutado.
   // Ej.: /api/v1/admin/productos/fuentes — persiste scraper.cadenas_supermercado.
-  fuentes: '/api/v1/admin/productos/fuentes',
+  fuentes: '/admin/productos/fuentes',
   // SUP-279 — un endpoint de métricas por servicio, sin agregación en Gateway.
   // Nombres exactos a confirmar al implementar.
-  metricasIdentidad: '/api/v1/admin/usuarios/metricas',
-  metricasCatalogo: '/api/v1/admin/productos/metricas',
-  metricasControl: '/api/v1/scraper/metricas',
+  metricasIdentidad: '/admin/usuarios/metricas',
+  metricasCatalogo: '/admin/productos/metricas',
+  metricasControl: '/scraper/metricas',
 } as const;
 
 // --- Mapeo rol UI <-> backend (SUP-242) ---
@@ -57,6 +56,48 @@ export function adminPlanToBackend(plan: AdminPlan): string {
 export function adminPlanFromBackend(plan?: string | null): AdminPlan {
   if (plan === 'premium' || plan === 'plus' || plan === 'Premium') return 'Premium';
   return 'Básico';
+}
+
+// --- Mapeo usuario backend <-> modelo de UI (SUP-242) ---
+// Identidad devuelve el DTO de api.usuarios en español; la UI usa AdminUser.
+type UsuarioBackend = {
+  id: string;
+  correo: string;
+  nombre_completo: string;
+  rol: string;
+  esta_activo: boolean;
+  plan?: string | null;
+  creado_el?: string | null;
+  actualizado_el?: string | null;
+};
+
+function initialsFromName(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  const first = parts[0]?.[0] ?? '';
+  const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? '' : '';
+  return (first + last).toUpperCase() || '?';
+}
+
+// Última actualización como aproximación: api.usuarios aún no expone último acceso.
+function formatLastAccess(value?: string | null): string {
+  if (!value) return 'Sin registros';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Sin registros';
+  return date.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+export function adminUserFromBackend(usuario: UsuarioBackend): AdminUser {
+  return {
+    id: usuario.id,
+    name: usuario.nombre_completo,
+    email: usuario.correo,
+    role: adminRoleFromBackend(usuario.rol),
+    plan: adminPlanFromBackend(usuario.plan),
+    status: usuario.esta_activo ? 'Activo' : 'Inactivo',
+    lastAccess: formatLastAccess(usuario.actualizado_el ?? usuario.creado_el),
+    initials: initialsFromName(usuario.nombre_completo),
+  };
 }
 
 // --- Métricas por servicio (SUP-279) ---
@@ -107,18 +148,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // Usuarios (SUP-242). GET lista, PUT { esta_activo, rol, plan } por id.
 // `rol` solo acepta valores RBAC; el plan viaja en su propio campo.
-export function fetchAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
-  return request<AdminUser[]>(ADMIN_ENDPOINTS.usuarios, { signal });
+export async function fetchAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
+  const usuarios = await request<UsuarioBackend[]>(ADMIN_ENDPOINTS.usuarios, { signal });
+  return usuarios.map(adminUserFromBackend);
 }
 
-export function updateAdminUser(
+export async function updateAdminUser(
   id: string,
   patch: { esta_activo?: boolean; rol?: string; plan?: string },
 ): Promise<AdminUser> {
-  return request<AdminUser>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
+  const usuario = await request<UsuarioBackend>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
   });
+  return adminUserFromBackend(usuario);
 }
 
 // Fuentes (SUP-243). GET lista, PUT { habilitada } por id.
