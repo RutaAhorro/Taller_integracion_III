@@ -118,12 +118,16 @@ func TestAdminUsuariosListaConRolAdmin(t *testing.T) {
 		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var usuarios []domain.UsuarioAdminDTO
-	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
-		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	var pagina domain.PaginaUsuariosAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &pagina); err != nil {
+		t.Fatalf("respuesta no es una página de usuarios: %v", err)
 	}
+	usuarios := pagina.Data
 	if len(usuarios) != 3 {
 		t.Fatalf("se esperaban 3 usuarios (incluido el actor admin), se obtuvieron %d: %s", len(usuarios), w.Body.String())
+	}
+	if pagina.Paginacion.TotalRegistros != 3 || pagina.Paginacion.PaginaActual != 1 {
+		t.Fatalf("paginación inesperada: %+v", pagina.Paginacion)
 	}
 	for _, u := range usuarios {
 		if u.ID == "" || u.Correo == "" {
@@ -200,9 +204,10 @@ func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
 		"esta_activo=flase",
 		"limit=abc",
 		"limit=0",
+		"limit=201",
 		"offset=-1",
+		"offset=9223372036854775807&limit=1",
 		"page=0",
-		"page=2",
 		"page=2&offset=0",
 		"page=9223372036854775807&limit=200",
 	} {
@@ -215,7 +220,7 @@ func TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T) {
 	}
 }
 
-func TestAdminUsuariosSinLimiteDevuelveTodos(t *testing.T) {
+func TestAdminUsuariosPaginaPorDefecto(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
 	for i := 0; i < 51; i++ {
 		correo := fmt.Sprintf("usuario%02d@uct.cl", i)
@@ -227,33 +232,23 @@ func TestAdminUsuariosSinLimiteDevuelveTodos(t *testing.T) {
 		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
 
-	var usuarios []domain.UsuarioAdminDTO
-	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
-		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	var pagina domain.PaginaUsuariosAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &pagina); err != nil {
+		t.Fatalf("respuesta no es una página de usuarios: %v", err)
 	}
-	if len(usuarios) != 52 {
-		t.Fatalf("sin limit se esperaban 52 usuarios (incluido el actor admin), se obtuvieron %d", len(usuarios))
+	if len(pagina.Data) != 20 {
+		t.Fatalf("por defecto se esperaban 20 usuarios, se obtuvieron %d", len(pagina.Data))
+	}
+	if pagina.Paginacion.TotalRegistros != 52 || pagina.Paginacion.TotalPaginas != 3 || pagina.Paginacion.Limite != 20 {
+		t.Fatalf("metadatos de paginación inesperados: %+v", pagina.Paginacion)
 	}
 }
 
-func TestAdminUsuariosAcotaLimiteMaximo(t *testing.T) {
+func TestAdminUsuariosRechazaLimiteExcesivo(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
-	for i := 0; i < 205; i++ {
-		correo := fmt.Sprintf("usuario%03d@uct.cl", i)
-		repo.usuarios[correo] = &domain.Usuario{ID: uuid.New(), Correo: correo, NombreCompleto: "Usuario", Rol: domain.RolRegistrado, EstaActivo: true}
-	}
-
 	w := adminRequest(t, router, repo, http.MethodGet, "/api/v1/admin/usuarios?limit=999", domain.RolAdmin, "")
-	if w.Code != http.StatusOK {
-		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
-	}
-
-	var usuarios []domain.UsuarioAdminDTO
-	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
-		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
-	}
-	if len(usuarios) != 200 {
-		t.Fatalf("el límite máximo debía acotar a 200, se obtuvieron %d", len(usuarios))
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("se esperaba 400, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
 }
 
@@ -278,6 +273,9 @@ func TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T) {
 		w := adminRequestComo(t, router, adminID.String(), domain.RolAdmin, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), body)
 		if w.Code != http.StatusConflict {
 			t.Fatalf("se esperaba 409 al intentar dejar el sistema sin admins con %s, se obtuvo %d. Body: %s", body, w.Code, w.Body.String())
+		}
+		if !strings.Contains(w.Body.String(), domain.ErrUltimoAdmin.Error()) {
+			t.Fatalf("el 409 debía exponer el mensaje de negocio del último admin: %s", w.Body.String())
 		}
 		if !repo.usuarios["unico-admin@uct.cl"].EstaActivo || repo.usuarios["unico-admin@uct.cl"].Rol != domain.RolAdminLegacy {
 			t.Fatal("el último admin no debía modificarse")
@@ -363,10 +361,11 @@ func TestAdminUsuariosFiltraPorTextoRolYEstado(t *testing.T) {
 			if w.Code != http.StatusOK {
 				t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 			}
-			var usuarios []domain.UsuarioAdminDTO
-			if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
-				t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+			var pagina domain.PaginaUsuariosAdminDTO
+			if err := json.Unmarshal(w.Body.Bytes(), &pagina); err != nil {
+				t.Fatalf("respuesta no es una página de usuarios: %v", err)
 			}
+			usuarios := pagina.Data
 			if len(usuarios) == 0 {
 				t.Fatalf("el filtro %s no devolvió usuarios", caso.query)
 			}
@@ -391,23 +390,77 @@ func TestAdminUsuariosPaginaYFueraDeRango(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
-	var segundaPagina []domain.UsuarioAdminDTO
-	if err := json.Unmarshal(w.Body.Bytes(), &segundaPagina); err != nil {
-		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	var pagina domain.PaginaUsuariosAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &pagina); err != nil {
+		t.Fatalf("respuesta no es una página de usuarios: %v", err)
 	}
-	if len(segundaPagina) != 2 {
-		t.Fatalf("la segunda página debía traer 2 usuarios (incluido el actor admin), trajo %d", len(segundaPagina))
+	if len(pagina.Data) != 2 {
+		t.Fatalf("la segunda página debía traer 2 usuarios (incluido el actor admin), trajo %d", len(pagina.Data))
+	}
+	if pagina.Paginacion.PaginaActual != 2 || pagina.Paginacion.TotalPaginas != 2 {
+		t.Fatalf("metadatos de la segunda página inesperados: %+v", pagina.Paginacion)
 	}
 
 	w = adminRequest(t, router, repo, http.MethodGet, "/api/v1/admin/usuarios?limit=2&page=9", domain.RolAdmin, "")
 	if w.Code != http.StatusOK {
 		t.Fatalf("se esperaba 200 en página fuera de rango, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
-	var vacia []domain.UsuarioAdminDTO
+	var vacia domain.PaginaUsuariosAdminDTO
 	if err := json.Unmarshal(w.Body.Bytes(), &vacia); err != nil {
-		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+		t.Fatalf("respuesta no es una página de usuarios: %v", err)
 	}
-	if len(vacia) != 0 {
-		t.Fatalf("la página fuera de rango debía quedar vacía, trajo %d", len(vacia))
+	if len(vacia.Data) != 0 {
+		t.Fatalf("la página fuera de rango debía quedar vacía, trajo %d", len(vacia.Data))
+	}
+}
+
+func TestAdminUsuariosActualizaPlan(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	targetID := uuid.New()
+	repo.usuarios["plan@uct.cl"] = &domain.Usuario{
+		ID: targetID, Correo: "plan@uct.cl", NombreCompleto: "Plan", Rol: domain.RolRegistrado,
+		Plan: domain.PlanBasico, EstaActivo: true,
+	}
+
+	w := adminRequest(t, router, repo, http.MethodPut, "/api/v1/admin/usuarios/"+targetID.String(), domain.RolAdmin, `{"plan":"premium"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	var actualizado domain.UsuarioAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &actualizado); err != nil {
+		t.Fatalf("respuesta inválida: %v", err)
+	}
+	if actualizado.Plan != domain.PlanPremium {
+		t.Fatalf("plan en respuesta: %q", actualizado.Plan)
+	}
+	if repo.usuarios["plan@uct.cl"].Plan != domain.PlanPremium {
+		t.Fatalf("plan persistido: %q", repo.usuarios["plan@uct.cl"].Plan)
+	}
+	cambioPlan, ok := repo.auditorias[0].Cambios["plan"].(map[string]interface{})
+	if !ok || cambioPlan["anterior"] != domain.PlanBasico || cambioPlan["nuevo"] != domain.PlanPremium {
+		t.Fatalf("auditoría de plan inesperada: %+v", repo.auditorias[0].Cambios)
+	}
+
+	w = adminRequest(t, router, repo, http.MethodPut, "/api/v1/admin/usuarios/"+targetID.String(), domain.RolAdmin, `{"plan":"oro"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("plan inválido debía dar 400, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestAdminUsuariosRechazaCamposDesconocidos(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	targetID := uuid.New()
+	repo.usuarios["campos@uct.cl"] = &domain.Usuario{
+		ID: targetID, Correo: "campos@uct.cl", NombreCompleto: "Campos", Rol: domain.RolRegistrado,
+		Plan: domain.PlanBasico, EstaActivo: true,
+	}
+	for _, body := range []string{
+		`{"esta_activo":false,"id":"otro"}`,
+		`{"esta_activo":false} {"esta_activo":true}`,
+	} {
+		w := adminRequest(t, router, repo, http.MethodPut, "/api/v1/admin/usuarios/"+targetID.String(), domain.RolAdmin, body)
+		if w.Code != http.StatusBadRequest {
+			t.Fatalf("se esperaba 400 con %s, se obtuvo %d. Body: %s", body, w.Code, w.Body.String())
+		}
 	}
 }

@@ -175,7 +175,9 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    contención exige reprogramar el corte, no dejar el esquema a medias.
    Para SUP-242, aplicar después `08_normalizar_rol_admin_y_auditoria.sql`:
    normaliza el alias `administrador` a `admin` y crea la auditoría de cambios
-   administrativos. Si se re-ejecuta `06`, volver a aplicar `08` por los grants.
+   administrativos. Luego aplicar `09_plan_y_ultimo_acceso.sql`, que agrega el
+   plan comercial y la marca de último acceso. Si se re-ejecuta `06`, volver a
+   aplicar `08` por los grants; `09` no concede permisos nuevos.
 3. La migración crea el snapshot, elimina las dos dependencias externas de
    trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
    membresías, propiedad de objetos y permisos públicos/defaults que crucen

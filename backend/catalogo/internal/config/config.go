@@ -13,6 +13,7 @@ type Config struct {
 	ListenAddr         string
 	DatabaseURL        string
 	JWTSecret          string
+	IdentidadURL       string
 	InternalToken      string
 	CORSAllowedOrigins []string
 	MaxOpenConns       int
@@ -31,6 +32,17 @@ func Load() (Config, error) {
 	}
 	if c.JWTSecret == "" {
 		return Config{}, errors.New("JWT_SECRET es obligatorio para verificar permisos administrativos")
+	}
+	if raw := strings.TrimSpace(os.Getenv("IDENTIDAD_URL")); raw != "" {
+		value := strings.TrimRight(raw, "/")
+		parsed, err := url.Parse(value)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+			parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" ||
+			parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+			strings.ContainsAny(value, "*?#\\ \t\r\n") {
+			return Config{}, errors.New("IDENTIDAD_URL debe ser un origen HTTP(S) exacto, sin ruta, credenciales ni query")
+		}
+		c.IdentidadURL = value
 	}
 	if c.InternalToken != "" && (len(c.InternalToken) < 32 || strings.ContainsAny(c.InternalToken, " \t\r\n") || c.InternalToken == c.JWTSecret) {
 		return Config{}, errors.New("CATALOGO_INTERNAL_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET")

@@ -6,8 +6,10 @@ públicas `/api/v1/auth/*` y, para administración, `GET/PUT
 como entrada pública. No importa API, Catálogo ni coordinación de scraping, y
 no ejecuta migraciones: requiere `06_propiedad_permisos.sql` y, desde SUP-242,
 `08_normalizar_rol_admin_y_auditoria.sql` (auditoría y normalización del rol
-`administrador` a `admin`). Las rutas protegidas revalidan estado y rol en
-`api.usuarios` en cada petición.
+`administrador` a `admin`) y `09_plan_y_ultimo_acceso.sql` (plan comercial y
+último acceso). Las rutas protegidas revalidan estado y rol en `api.usuarios`
+en cada petición. El listado administrativo es paginado (`data` + `paginacion`)
+y el `PUT` acepta `esta_activo`, `rol` y `plan` por separado.
 
 ```bash
 go test -race ./...

@@ -24,6 +24,13 @@ el ejemplo habilita sólo dos puertos locales. Si está vacío, las peticiones c
 `Origin` reciben 403; las peticiones sin `Origin` siguen disponibles y requieren
 JWT/rol en administración. CORS no reemplaza autenticación ni protección CSRF.
 
+`IDENTIDAD_URL` es el origen HTTP(S) interno de Identidad. Catálogo reenvía la
+cookie `jwt` a `GET /api/v1/auth/me` antes de autorizar `/api/v1/admin/productos`;
+así una cuenta desactivada o degradada pierde acceso sin esperar a que expire el
+token. Si la variable está vacía, el catálogo público sigue funcionando, pero la
+administración falla cerrada con 503. En Kubernetes, la NetworkPolicy de Identidad
+debe permitir el ingreso desde el pod `catalogo`.
+
 ```bash
 go test -race ./...
 go vet ./...

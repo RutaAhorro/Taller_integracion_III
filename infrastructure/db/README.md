@@ -16,6 +16,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [06_propiedad_permisos.sql](06_propiedad_permisos.sql) | Roles runtime mínimos, snapshot de cadena y eliminación de FK externas desde trabajos (SUP-271). Desde SUP-240 también `app_rutas` (listas) y la FK de listas hacia usuarios. Idempotente: re-ejecutarlo en la base existente. |
 | [07_runtime_credentials.sh](07_runtime_credentials.sh) | Inicializar/rotar contraseñas de los roles mediante variables privadas; `RUTAS_DB_PASSWORD` es opcional. No se ejecuta automáticamente sobre un volumen existente. |
 | [08_normalizar_rol_admin_y_auditoria.sql](08_normalizar_rol_admin_y_auditoria.sql) | Normaliza el alias histórico `administrador` a `admin` y crea `api.auditoria_admin_usuarios` con permisos para Identidad (SUP-242). Aplicar después de 06; si se re-ejecuta 06, volver a aplicar 08 para restaurar los grants. |
+| [09_plan_y_ultimo_acceso.sql](09_plan_y_ultimo_acceso.sql) | Agrega `api.usuarios.plan` (`basico`/`premium`) y `ultimo_acceso`, usados por el panel administrativo (SUP-242). Aplicar después de 08. Idempotente; no requiere grants nuevos porque el permiso es de tabla. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para

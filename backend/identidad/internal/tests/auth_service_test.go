@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
@@ -88,6 +89,12 @@ func (m *mockUsuarioRepository) aplicarDatos(target *domain.Usuario, datos map[s
 	if rol, ok := datos["rol"].(string); ok {
 		target.Rol = rol
 	}
+	if plan, ok := datos["plan"].(string); ok {
+		target.Plan = plan
+	}
+	if ultimo, ok := datos["ultimo_acceso"].(time.Time); ok {
+		target.UltimoAcceso = &ultimo
+	}
 }
 
 func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
@@ -147,6 +154,7 @@ func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 
 	anteriorRol := target.Rol
 	anteriorActivo := target.EstaActivo
+	anteriorPlan := target.Plan
 	m.aplicarDatos(target, datos)
 
 	cambios := map[string]interface{}{}
@@ -156,6 +164,9 @@ func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 	if nuevo, ok := datos["esta_activo"]; ok {
 		cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
 	}
+	if nuevo, ok := datos["plan"]; ok {
+		cambios["plan"] = map[string]interface{}{"anterior": anteriorPlan, "nuevo": nuevo}
+	}
 	m.auditorias = append(m.auditorias, domain.AuditoriaAdminUsuario{
 		ActorID:    actorUUID,
 		ObjetivoID: target.ID,
@@ -164,7 +175,7 @@ func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 	return nil
 }
 
-func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
+func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
 	var resultado []domain.Usuario
 	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
 	rolFiltro := ""
@@ -195,16 +206,17 @@ func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 	}
 	// Orden estable para probar paginación sin depender del mapa.
 	sort.Slice(resultado, func(i, j int) bool { return resultado[i].Correo < resultado[j].Correo })
+	total := int64(len(resultado))
 	if filtro.Offset > 0 {
 		if filtro.Offset >= len(resultado) {
-			return nil, nil
+			return nil, total, nil
 		}
 		resultado = resultado[filtro.Offset:]
 	}
 	if filtro.Limit > 0 && filtro.Limit < len(resultado) {
 		resultado = resultado[:filtro.Limit]
 	}
-	return resultado, nil
+	return resultado, total, nil
 }
 
 func (m *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
@@ -288,6 +300,9 @@ func TestAuthService_RegistroExitoso(t *testing.T) {
 
 	if u.PasswordHash == nil || !security.CheckPasswordHash("SuperClave2026#", *u.PasswordHash) {
 		t.Errorf("El hash almacenado no coincide con la contraseña con bcrypt")
+	}
+	if u.Plan != domain.PlanBasico || u.UltimoAcceso == nil {
+		t.Errorf("El registro debía iniciar con plan básico y último acceso: %+v", u)
 	}
 
 	// Intento de registro duplicado
@@ -373,6 +388,9 @@ func TestAuthService_Login(t *testing.T) {
 		}
 		if u.Correo != "activo@uct.cl" {
 			t.Errorf("Esperaba correo activo@uct.cl, obtuve %s", u.Correo)
+		}
+		if u.UltimoAcceso == nil {
+			t.Error("El login debía registrar ultimo_acceso")
 		}
 	})
 }

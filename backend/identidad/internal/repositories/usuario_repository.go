@@ -62,8 +62,9 @@ func (r *gormUsuarioRepository) FindByID(ctx context.Context, id string) (*domai
 	return &usuario, nil
 }
 
-// Listar devuelve las cuentas de api.usuarios con los filtros administrativos indicados.
-func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
+// Listar devuelve una página de cuentas de api.usuarios y el total de filas
+// que cumplen los filtros administrativos indicados.
+func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
 	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
 
 	if texto := strings.TrimSpace(filtro.Query); texto != "" {
@@ -81,6 +82,12 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
 	}
 
+	// Count sobre una sesión independiente para no arrastrar ORDER/LIMIT.
+	var total int64
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
 	query = query.Order("creado_el DESC, id DESC")
 	if filtro.Limit > 0 {
 		query = query.Limit(filtro.Limit)
@@ -91,9 +98,9 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 
 	var usuarios []domain.Usuario
 	if err := query.Find(&usuarios).Error; err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	return usuarios, nil
+	return usuarios, total, nil
 }
 
 // Create inserta un nuevo registro de usuario en la base de datos
@@ -183,6 +190,9 @@ func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 		}
 		if nuevo, ok := datos["esta_activo"]; ok {
 			cambios["esta_activo"] = map[string]interface{}{"anterior": usuario.EstaActivo, "nuevo": nuevo}
+		}
+		if nuevo, ok := datos["plan"]; ok {
+			cambios["plan"] = map[string]interface{}{"anterior": usuario.Plan, "nuevo": nuevo}
 		}
 		auditoria := domain.AuditoriaAdminUsuario{
 			ActorID:    actorUUID,

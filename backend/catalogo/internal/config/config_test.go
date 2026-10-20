@@ -6,7 +6,7 @@ import (
 )
 
 func TestLoad(t *testing.T) {
-	for _, name := range []string{"DB_URL", "JWT_SECRET", "PORT", "DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "CORS_ALLOWED_ORIGINS"} {
+	for _, name := range []string{"DB_URL", "JWT_SECRET", "IDENTIDAD_URL", "PORT", "DB_MAX_OPEN_CONNS", "DB_MAX_IDLE_CONNS", "DB_CONN_MAX_LIFETIME", "CORS_ALLOWED_ORIGINS"} {
 		t.Setenv(name, "")
 	}
 	if _, err := Load(); err == nil {
@@ -55,6 +55,28 @@ func TestCORSOriginsConfiguration(t *testing.T) {
 	cfg, err = Load()
 	if err != nil || len(cfg.CORSAllowedOrigins) != 0 {
 		t.Fatal("CORS no queda cerrado por defecto")
+	}
+}
+
+func TestIdentityURLConfiguration(t *testing.T) {
+	t.Setenv("DB_URL", "postgres://test-only")
+	t.Setenv("JWT_SECRET", "test-only")
+	t.Setenv("IDENTIDAD_URL", "")
+	if _, err := Load(); err != nil {
+		t.Fatalf("IDENTIDAD_URL vacío debe permitir arrancar con administración bloqueada: %v", err)
+	}
+	for _, origin := range []string{"ftp://identidad", "identidad:8080", "http://identidad:8080/api", "http://user@identidad:8080", "http://identidad:8080?x=1", "http://identidad:8080#x"} {
+		t.Run(origin, func(t *testing.T) {
+			t.Setenv("IDENTIDAD_URL", origin)
+			if _, err := Load(); err == nil {
+				t.Fatal("se aceptó un IDENTIDAD_URL inválido")
+			}
+		})
+	}
+	t.Setenv("IDENTIDAD_URL", "http://identidad:8080/")
+	cfg, err := Load()
+	if err != nil || cfg.IdentidadURL != "http://identidad:8080" {
+		t.Fatalf("IDENTIDAD_URL válido no normalizado: %#v %v", cfg.IdentidadURL, err)
 	}
 }
 

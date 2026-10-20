@@ -60,7 +60,7 @@ respuestas se extraen conservando su comportamiento actual.
 | GET | `/api/v1/productos` | Público; listado, filtros y paginación actuales |
 | GET | `/api/v1/productos/buscar` | Público; búsqueda con mínimo de 3 caracteres |
 | GET | `/api/v1/productos/:id` | Público; detalle e historial actuales |
-| GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` |
+| GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` vigente en Identidad |
 | GET | `/api/v1/admin/productos/` | Misma protección y respuesta administrativa |
 | GET | `/_catalogo/live` | Vida del proceso, independiente de PostgreSQL |
 | GET | `/_catalogo/ready` | Conexión PostgreSQL; 503 si falla |
@@ -104,15 +104,17 @@ las otras rutas de la API heredada quedan fuera de esta corrección de Catálogo
 
 ## Autenticación y datos
 
-Catálogo verifica directamente la cookie `jwt`, firma HS256, expiración y rol.
-Estos requisitos corresponden a los tokens que emite Identidad actualmente.
-Un visitante obtiene 401; un usuario registrado obtiene 403 en administración.
-No se aceptan identidades o roles declarados en `X-User-ID`/`X-User-Role`.
+Catálogo verifica la cookie `jwt`, firma HS256 y expiración, y desde SUP-242
+revalida la sesión contra `GET /api/v1/auth/me` en `IDENTIDAD_URL`. El rol
+vigente sale de `api.usuarios`, no del claim: una cuenta desactivada obtiene 401
+y una cuenta degradada obtiene 403 en administración. Si Identidad no responde,
+la administración falla cerrada con 503. Un visitante sin cookie obtiene 401. No
+se aceptan identidades o roles declarados en `X-User-ID`/`X-User-Role`.
 
 `JWT_SECRET` es obligatorio y no tiene fallback. Se comparte temporalmente con
 Identidad: al conocer un secreto HMAC, un verificador técnicamente también puede
 firmar. Migrar a claves asimétricas/JWKS requerirá una tarea de compatibilidad y
-rotación; no se incorpora implícitamente en esta extracción. El nuevo verificador
+rotación; no se incorpora implícitamente en esta extracción. El verificador
 rechaza algoritmos distintos de HS256 y tokens sin expiración; la API heredada
 acepta otros HMAC y no exige ese claim. Los tokens reales del emisor actual son
 HS256 con expiración y se comprueban en las pruebas de integración.
@@ -136,6 +138,7 @@ responsabilidad de SUP-271, sin cambiar usuarios de base de datos reales aquí.
 |---|---|
 | `DB_URL` | Obligatoria; PostgreSQL con el esquema existente |
 | `JWT_SECRET` | Obligatoria; misma clave que Identidad |
+| `IDENTIDAD_URL` | Origen interno de Identidad; vacío mantiene el catálogo público pero la administración responde 503 |
 | `CORS_ALLOWED_ORIGINS` | Vacía; rechaza peticiones con `Origin` hasta configurar una lista exacta |
 | `PORT` | `8080` |
 | `DB_MAX_OPEN_CONNS` | `10` por proceso |

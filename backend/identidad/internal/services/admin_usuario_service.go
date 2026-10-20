@@ -14,6 +14,8 @@ import (
 var (
 	// ErrRolInvalido se emite cuando se intenta asignar un rol fuera de api.usuarios.
 	ErrRolInvalido = errors.New("rol inválido: sólo se admite admin, colaborador o registrado")
+	// ErrPlanInvalido se emite cuando el plan comercial no es basico ni premium.
+	ErrPlanInvalido = errors.New("plan inválido: sólo se admite basico o premium")
 	// ErrSinCambiosAdmin se emite cuando la actualización administrativa no trae campos.
 	ErrSinCambiosAdmin = errors.New("no se enviaron cambios para actualizar la cuenta")
 	// ErrIDUsuarioInvalido se emite cuando el identificador no es un UUID válido.
@@ -24,7 +26,7 @@ var (
 
 // AdminUsuarioService define los casos de uso del panel de administración de cuentas.
 type AdminUsuarioService interface {
-	Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.UsuarioAdminDTO, error)
+	Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)
 	Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
 }
 
@@ -37,8 +39,8 @@ func NewAdminUsuarioService(usuarioRepo domain.AdminUsuarioRepository) AdminUsua
 	return &adminUsuarioService{usuarioRepo: usuarioRepo}
 }
 
-// Listar devuelve las cuentas con los filtros recibidos, sin exponer credenciales.
-func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.UsuarioAdminDTO, error) {
+// Listar devuelve una página de cuentas con los filtros recibidos, sin exponer credenciales.
+func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
 	if filtro.Rol != "" {
 		rol, err := normalizarRol(filtro.Rol)
 		if err != nil {
@@ -46,8 +48,17 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 		}
 		filtro.Rol = rol
 	}
+	if filtro.Page < 1 {
+		filtro.Page = 1
+	}
+	if filtro.Limit < 1 {
+		filtro.Limit = 20
+	}
+	if filtro.Offset < 0 {
+		filtro.Offset = 0
+	}
 
-	usuarios, err := s.usuarioRepo.Listar(ctx, filtro)
+	usuarios, total, err := s.usuarioRepo.Listar(ctx, filtro)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +67,20 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 	for i := range usuarios {
 		resultado = append(resultado, mapearUsuarioAdmin(&usuarios[i]))
 	}
-	return resultado, nil
+
+	totalPaginas := 0
+	if total > 0 {
+		totalPaginas = int((total + int64(filtro.Limit) - 1) / int64(filtro.Limit))
+	}
+	return &domain.PaginaUsuariosAdminDTO{
+		Data: resultado,
+		Paginacion: domain.MetadatosPaginacionDTO{
+			TotalRegistros: total,
+			PaginaActual:   filtro.Page,
+			TotalPaginas:   totalPaginas,
+			Limite:         filtro.Limit,
+		},
+	}, nil
 }
 
 // Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
@@ -80,6 +104,13 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 	}
 	if input.EstaActivo != nil {
 		datos["esta_activo"] = *input.EstaActivo
+	}
+	if input.Plan != nil {
+		plan, err := normalizarPlan(*input.Plan)
+		if err != nil {
+			return nil, err
+		}
+		datos["plan"] = plan
 	}
 	if len(datos) == 0 {
 		return nil, ErrSinCambiosAdmin
@@ -117,11 +148,24 @@ func normalizarRol(rol string) (string, error) {
 	return normalizado, nil
 }
 
+// normalizarPlan valida y normaliza el plan comercial antes de persistirlo.
+func normalizarPlan(plan string) (string, error) {
+	normalizado, ok := domain.NormalizarPlan(plan)
+	if !ok {
+		return "", ErrPlanInvalido
+	}
+	return normalizado, nil
+}
+
 // mapearUsuarioAdmin convierte la entidad privada en su DTO de administración.
 func mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO {
 	rol, ok := domain.NormalizarRol(usuario.Rol)
 	if !ok {
 		rol = usuario.Rol
+	}
+	plan, ok := domain.NormalizarPlan(usuario.Plan)
+	if !ok {
+		plan = usuario.Plan
 	}
 	return domain.UsuarioAdminDTO{
 		ID:             usuario.ID.String(),
@@ -131,8 +175,10 @@ func mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO {
 		Direccion:      usuario.Direccion,
 		URLAvatar:      usuario.URLAvatar,
 		Rol:            rol,
+		Plan:           plan,
 		CuotaTokensIA:  usuario.CuotaTokensIA,
 		EstaActivo:     usuario.EstaActivo,
+		UltimoAcceso:   usuario.UltimoAcceso,
 		CreadoEl:       usuario.CreadoEl,
 		ActualizadoEl:  usuario.ActualizadoEl,
 	}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"os"
 	"strings"
@@ -118,6 +119,20 @@ func validarEmail(email string) bool {
 	return err == nil && parsed.Address != "" && strings.Contains(email, "@") && strings.Contains(email, ".")
 }
 
+// registrarUltimoAcceso deja constancia del acceso sin bloquear el login si
+// falla la escritura: la autenticación ya fue validada.
+func (s *authService) registrarUltimoAcceso(ctx context.Context, usuario *domain.Usuario) {
+	if usuario == nil {
+		return
+	}
+	ahora := time.Now()
+	if err := s.usuarioRepo.Actualizar(ctx, usuario.ID.String(), map[string]interface{}{"ultimo_acceso": ahora}); err != nil {
+		slog.Warn("identidad_ultimo_acceso", "user_id", usuario.ID.String(), "error", err)
+		return
+	}
+	usuario.UltimoAcceso = &ahora
+}
+
 // Registrar ejecuta el caso de uso completo de registro con validaciones de seguridad
 func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error) {
 	// 1. Validar complejidad de contraseña antes de computar hash
@@ -149,6 +164,7 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 
 	// 5. Generar token de verificación UUID
 	tokenVerificacion := uuid.New()
+	ahora := time.Now()
 
 	// 6. Instanciar modelo de dominio
 	nuevoUsuario := &domain.Usuario{
@@ -156,8 +172,10 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 		PasswordHash:      &hash,
 		NombreCompleto:    nombreSanitizado,
 		Rol:               "registrado",
+		Plan:              domain.PlanBasico,
 		CuotaTokensIA:     1000,
 		EstaActivo:        true, // Activado temporalmente según requerimiento de auto-login
+		UltimoAcceso:      &ahora,
 		TokenVerificacion: &tokenVerificacion,
 	}
 
@@ -212,6 +230,7 @@ func (s *authService) LoginWithContext(ctx context.Context, correo, password str
 		return nil, ErrCredencialesInvalidas
 	}
 
+	s.registrarUltimoAcceso(ctx, usuario)
 	return usuario, nil
 }
 
@@ -255,6 +274,7 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 	}
 
 	if usuario == nil {
+		ahora := time.Now()
 		nuevoUsuario := &domain.Usuario{
 			ID:             uuid.New(),
 			Correo:         email,
@@ -262,7 +282,9 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 			URLAvatar:      picture,
 			GoogleID:       &googleID,
 			Rol:            "registrado",
+			Plan:           domain.PlanBasico,
 			EstaActivo:     true,
+			UltimoAcceso:   &ahora,
 			CuotaTokensIA:  1000,
 		}
 
@@ -276,7 +298,12 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 			if usuario == nil {
 				return nil, ErrCredencialesInvalidas
 			}
-			return s.validateGoogleAccount(ctx, usuario, googleID)
+			usuario, err = s.validateGoogleAccount(ctx, usuario, googleID)
+			if err != nil {
+				return nil, err
+			}
+			s.registrarUltimoAcceso(ctx, usuario)
+			return usuario, nil
 		}
 		if err != nil {
 			return nil, fmt.Errorf("error al registrar usuario con Google: %w", err)
@@ -284,7 +311,12 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 		return nuevoUsuario, nil
 	}
 
-	return s.validateGoogleAccount(ctx, usuario, googleID)
+	usuario, err = s.validateGoogleAccount(ctx, usuario, googleID)
+	if err != nil {
+		return nil, err
+	}
+	s.registrarUltimoAcceso(ctx, usuario)
+	return usuario, nil
 }
 
 // ActualizarPerfil procesa las actualizaciones parciales del perfil de usuario

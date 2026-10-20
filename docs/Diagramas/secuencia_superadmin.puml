@@ -37,16 +37,17 @@ end box
 
 box "2. Gestión de Usuarios e Igualdad de Productos (ucUsuarios, Definir Igualdad)" #FCE4EC
     Admin -> UI : 4. Solicita listado de usuarios
-    UI -> API : GET /api/v1/admin/usuarios
-    API -> DB : SELECT * FROM usuarios
-    DB --> API : Lista de usuarios del sistema
-    API --> UI : 200 OK (Tabla de Usuarios)
+    UI -> API : GET /api/v1/admin/usuarios?page=1&limit=20
+    API -> DB : SELECT ... FROM api.usuarios WHERE filtros LIMIT/OFFSET
+    API -> DB : SELECT count(*) FROM api.usuarios WHERE filtros
+    DB --> API : Página de usuarios + total
+    API --> UI : 200 OK (data + paginación)
 
-    Admin -> UI : Cambia estado (Activar/Desactivar) o rol de la cuenta
-    UI -> API : PUT /api/v1/admin/usuarios/{id} (esta_activo=false, rol="colaborador")
-    API -> DB : UPDATE api.usuarios SET esta_activo/rol ...
+    Admin -> UI : Cambia estado, rol o plan de la cuenta
+    UI -> API : PUT /api/v1/admin/usuarios/{id} (esta_activo=false, rol="colaborador", plan="premium")
+    API -> DB : BEGIN; advisory lock; UPDATE api.usuarios SET esta_activo/rol/plan ...
     API -> DB : INSERT api.auditoria_admin_usuarios (actor, objetivo, cambios)
-    DB --> API : OK
+    DB --> API : COMMIT (o 409 si es el último admin activo)
     API --> UI : 200 OK (Usuario modificado)
 
     Admin -> UI : 5. Definir Igualdad / Equivalencia entre Productos (ucEquivalencias)

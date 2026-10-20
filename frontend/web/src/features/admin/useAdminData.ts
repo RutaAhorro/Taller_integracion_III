@@ -10,12 +10,14 @@ import { useAuth } from '@/hooks/useAuth';
 import { ROUTES } from '@/core/routes';
 import {
   ADMIN_HAS_BACKEND,
+  adminPlanToBackend,
   adminRoleToBackend,
   fetchAdminSources,
   fetchAdminUsers,
   fetchCatalogoMetrics,
   fetchControlMetrics,
   fetchIdentidadMetrics,
+  isAdminApiError,
   isAdminAuthError,
   isPersistableId,
   updateAdminSource,
@@ -68,28 +70,75 @@ function useExpireSession(): () => void {
   }, []);
 }
 
-// --- Usuarios (SUP-242: listar + activar/desactivar + rol colaborador) ---
-export function useAdminUsers() {
-  const [users, setUsers] = useState<AdminUser[]>(adminUsers);
+// --- Usuarios (SUP-242: listar + activar/desactivar + rol + plan) ---
+export type AdminUsersParams = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  rol?: AdminRole | 'Todos';
+};
+
+export type AdminUsersPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+function userMutationMessage(prefix: string, err: unknown): string {
+  if (isAdminApiError(err)) {
+    if (err.status === 409) return err.message;
+    return `${prefix} ${err.message}${err.detail ? ` (${err.detail})` : ''}`;
+  }
+  return `${prefix} (${toMessage(err)})`;
+}
+
+export function useAdminUsers(params: AdminUsersParams = {}) {
+  const page = Math.max(1, params.page ?? 1);
+  const limit = params.limit ?? 20;
+  const q = (params.q ?? '').trim();
+  const rolFiltro = params.rol && params.rol !== 'Todos' ? adminRoleToBackend(params.rol) : '';
+
+  const [users, setUsers] = useState<AdminUser[]>(ADMIN_HAS_BACKEND ? [] : adminUsers);
+  const [pagination, setPagination] = useState<AdminUsersPagination>({ page, limit, total: 0, totalPages: 0 });
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const seq = useRef(0);
+  const pendingRef = useRef<string | null>(null);
   const expireSession = useExpireSession();
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    // Un refresh durante una mutación podría devolver el estado anterior y
+    // pisar la actualización optimista. La mutación invalida cualquier load.
+    if (pendingRef.current) return;
+
     if (!ADMIN_HAS_BACKEND) {
-      setUsers(adminUsers);
+      const texto = q.toLowerCase();
+      const filtrados = adminUsers.filter((user) => {
+        const coincideTexto = !texto || `${user.name} ${user.email}`.toLowerCase().includes(texto);
+        const coincideRol = !rolFiltro
+          || (user.role !== 'Desconocido' && adminRoleToBackend(user.role) === rolFiltro);
+        return coincideTexto && coincideRol;
+      });
+      const inicio = (page - 1) * limit;
+      const totalPaginas = filtrados.length === 0 ? 0 : Math.ceil(filtrados.length / limit);
+      setUsers(filtrados.slice(inicio, inicio + limit));
+      setPagination({ page, limit, total: filtrados.length, totalPages: totalPaginas });
       setIsLoading(false);
       setError(null);
       return;
     }
+
     const current = ++seq.current;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchAdminUsers(signal);
-      if (seq.current === current) setUsers(data);
+      const result = await fetchAdminUsers({ page, limit, q, rol: rolFiltro }, signal);
+      if (seq.current === current) {
+        setUsers(result.users);
+        setPagination({ page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages });
+      }
     } catch (err) {
       if (signal?.aborted) return;
       // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks ni mantienen
@@ -100,14 +149,16 @@ export function useAdminUsers() {
           setError(authBlockedMessage('usuarios', err));
           expireSession();
         } else {
+          const totalPaginas = adminUsers.length === 0 ? 0 : Math.ceil(adminUsers.length / limit);
           setUsers(adminUsers);
+          setPagination({ page: 1, limit, total: adminUsers.length, totalPages: totalPaginas });
           setError(`No se pudo cargar usuarios del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
         }
       }
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, [expireSession]);
+  }, [expireSession, page, limit, q, rolFiltro]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,11 +166,36 @@ export function useAdminUsers() {
     return () => controller.abort();
   }, [load]);
 
+  const beginMutation = useCallback((id: string) => {
+    // Invalida cualquier GET en vuelo y bloquea refresh hasta terminar.
+    seq.current += 1;
+    pendingRef.current = id;
+    setPendingId(id);
+    setIsLoading(false);
+  }, []);
+
+  const endMutation = useCallback(() => {
+    pendingRef.current = null;
+    setPendingId(null);
+  }, []);
+
+  const aplicarActualizado = useCallback((id: string, actualizado: AdminUser) => {
+    if (rolFiltro && (actualizado.role === 'Desconocido' || adminRoleToBackend(actualizado.role) !== rolFiltro)) {
+      setUsers((prev) => prev.filter((user) => user.id !== id));
+      setPagination((prev) => {
+        const total = Math.max(0, prev.total - 1);
+        return { ...prev, total, totalPages: total === 0 ? 0 : Math.ceil(total / prev.limit) };
+      });
+      return;
+    }
+    setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+  }, [rolFiltro]);
+
   const toggleUserStatus = useCallback(async (id: string) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId) return;
+    if (!target || pendingRef.current) return;
     const nextActive = target.status !== 'Activo';
-    setPendingId(id);
+    beginMutation(id);
     setUsers((prev) =>
       prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
     );
@@ -127,68 +203,82 @@ export function useAdminUsers() {
     // conservan el cambio en memoria para no enviar un id inválido.
     if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
-        await updateAdminUser(id, { esta_activo: nextActive });
+        const actualizado = await updateAdminUser(id, { esta_activo: nextActive });
+        aplicarActualizado(id, actualizado);
+        setError(null);
       } catch (err) {
-        // Revierte el optimista y muestra el error.
-        setUsers((prev) =>
-          prev.map((user): AdminUser => (user.id === id ? { ...user, status: target.status } : user)),
-        );
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
         if (isAdminAuthError(err)) {
           setError(authBlockedMessage('el usuario', err));
           expireSession();
         } else {
-          setError(`No se pudo actualizar el usuario. (${toMessage(err)})`);
+          setError(userMutationMessage('No se pudo actualizar el usuario.', err));
         }
       } finally {
-        setPendingId(null);
+        endMutation();
       }
     } else {
-      // Sin backend el cambio queda solo en el estado local.
-      setPendingId(null);
+      endMutation();
     }
-  }, [users, pendingId, expireSession]);
+  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
 
   const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId || target.role === role) return;
-    const previous = target.role;
-    setPendingId(id);
+    if (!target || pendingRef.current || target.role === role) return;
+    beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
     if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
-        await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+        const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+        aplicarActualizado(id, actualizado);
+        setError(null);
       } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role: previous } : user)));
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
         if (isAdminAuthError(err)) {
           setError(authBlockedMessage('el rol', err));
           expireSession();
         } else {
-          setError(`No se pudo asignar el rol. (${toMessage(err)})`);
+          setError(userMutationMessage('No se pudo asignar el rol.', err));
         }
       } finally {
-        setPendingId(null);
+        endMutation();
       }
     } else {
-      // Sin backend el cambio queda solo en el estado local.
-      setPendingId(null);
+      endMutation();
     }
-  }, [users, pendingId, expireSession]);
+  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
 
-  // Plan comercial separado del rol (auditoría H-06). api.usuarios todavía no
-  // expone el campo, así que con backend configurado el cambio no se envía:
-  // enviarlo devolvía 400. En modo mock el cambio queda en memoria.
-  const changeUserPlan = useCallback((id: string, plan: AdminPlan) => {
+  const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId || target.plan === plan) return;
-    if (ADMIN_HAS_BACKEND) {
-      setError('El plan comercial todavía no está disponible en el backend.');
-      return;
-    }
-    // Sin backend el cambio queda solo en el estado local.
+    if (!target || pendingRef.current || target.plan === plan) return;
+    beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
-  }, [users, pendingId]);
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
+      try {
+        const actualizado = await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
+        setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+        setError(null);
+      } catch (err) {
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
+        if (isAdminAuthError(err)) {
+          setError(authBlockedMessage('el plan', err));
+          expireSession();
+        } else {
+          setError(userMutationMessage('No se pudo asignar el plan.', err));
+        }
+      } finally {
+        endMutation();
+      }
+    } else {
+      endMutation();
+    }
+  }, [users, beginMutation, endMutation, expireSession]);
 
-  return { users, isLoading, error, pendingId, refresh: () => { void load(); }, toggleUserStatus, changeUserRole, changeUserPlan };
+  const refresh = useCallback(() => {
+    if (!pendingRef.current) void load();
+  }, [load]);
+
+  return { users, pagination, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan };
 }
 
 // --- Fuentes (SUP-243: listar + habilitar/deshabilitar) ---

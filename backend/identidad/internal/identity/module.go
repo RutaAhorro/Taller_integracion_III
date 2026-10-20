@@ -83,9 +83,12 @@ func VerifyStorage(ctx context.Context, db *gorm.DB) error {
         to_regclass('api.auditoria_admin_usuarios') IS NOT NULL AND
         has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'SELECT') AND
         has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'INSERT') AND
-        has_sequence_privilege(current_user, 'api.auditoria_admin_usuarios_id_seq', 'USAGE')`).Scan(&permitted).Error
+        has_sequence_privilege(current_user, 'api.auditoria_admin_usuarios_id_seq', 'USAGE') AND
+        (SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = 'api' AND table_name = 'usuarios'
+              AND column_name IN ('plan', 'ultimo_acceso')) = 2`).Scan(&permitted).Error
 	if err != nil || !permitted {
-		return errors.New("aplicar 06_propiedad_permisos.sql y 08_normalizar_rol_admin_y_auditoria.sql antes de iniciar Identidad")
+		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql y 09_plan_y_ultimo_acceso.sql antes de iniciar Identidad")
 	}
 	return nil
 }

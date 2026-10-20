@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +15,8 @@ import (
 )
 
 const (
+	// defaultUsuariosAdminPorPagina mantiene acotado el listado por defecto.
+	defaultUsuariosAdminPorPagina = 20
 	// maxUsuariosAdminPorPagina acota el listado cuando el cliente pide límite.
 	maxUsuariosAdminPorPagina = 200
 )
@@ -22,6 +26,7 @@ const (
 type ActualizarUsuarioAdminRequest struct {
 	EstaActivo *bool   `json:"esta_activo" example:"true"`
 	Rol        *string `json:"rol" example:"colaborador"`
+	Plan       *string `json:"plan" example:"premium"`
 }
 
 // AdminUsuarioHandler gestiona los endpoints administrativos de api.usuarios.
@@ -42,19 +47,22 @@ func NewAdminUsuarioHandler(adminService services.AdminUsuarioService) *AdminUsu
 // @Param        q            query     string  false  "Búsqueda por correo o nombre"
 // @Param        rol          query     string  false  "Filtrar por rol (admin, colaborador, registrado)"
 // @Param        esta_activo  query     bool    false  "Filtrar por cuentas activas/inactivas (true/false)"
-// @Param        page         query     int     false  "Número de página, base 1; requiere limit si es mayor a 1"
-// @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200; sin límite si se omite)"
+// @Param        page         query     int     false  "Número de página, base 1 (por defecto 1)"
+// @Param        limit        query     int     false  "Cantidad de cuentas por página (por defecto 20; máx. 200)"
 // @Param        offset       query     int     false  "Desplazamiento explícito, base 0; excluyente con page"
-// @Success      200  {array}   domain.UsuarioAdminDTO
+// @Success      200  {object}  domain.PaginaUsuariosAdminDTO
 // @Failure      400  {object}  httperrors.RespuestaError
 // @Failure      401  {object}  httperrors.RespuestaError
 // @Failure      403  {object}  httperrors.RespuestaError
 // @Failure      500  {object}  httperrors.RespuestaError
 // @Router       /api/v1/admin/usuarios [get]
 func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
+	maxInt := int64(^uint(0) >> 1)
 	filtro := domain.FiltroUsuariosAdminDTO{
 		Query: c.Query("q"),
 		Rol:   c.Query("rol"),
+		Page:  1,
+		Limit: defaultUsuariosAdminPorPagina,
 	}
 
 	if value := c.Query("esta_activo"); value != "" {
@@ -66,22 +74,18 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 		filtro.EstaActivo = &activo
 	}
 
-	// Sin `limit` se devuelve el listado completo, que es lo que espera el
-	// panel mientras no tenga paginación propia. Un límite explícito sigue
-	// acotado para evitar respuestas desmedidas.
-	limit, offset := 0, 0
-	limitDefinido := false
 	if value := c.Query("limit"); value != "" {
 		parsed, err := strconv.Atoi(value)
 		if err != nil || parsed <= 0 {
 			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro limit debe ser un entero positivo.", err)
 			return
 		}
-		limit = parsed
-		if limit > maxUsuariosAdminPorPagina {
-			limit = maxUsuariosAdminPorPagina
+		if parsed > maxUsuariosAdminPorPagina {
+			httperrors.ResponderError(c, http.StatusBadRequest,
+				"El parámetro limit no puede superar 200.", nil)
+			return
 		}
-		limitDefinido = true
+		filtro.Limit = parsed
 	}
 
 	offsetDefinido := false
@@ -91,38 +95,50 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro offset debe ser un entero no negativo.", err)
 			return
 		}
-		offset = parsed
+		filtro.Offset = parsed
 		offsetDefinido = true
 	}
 
+	pageDefinida := false
 	if value := c.Query("page"); value != "" {
-		if offsetDefinido {
-			httperrors.ResponderError(c, http.StatusBadRequest, "Los parámetros page y offset son mutuamente excluyentes.", nil)
-			return
-		}
 		parsed, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || parsed < 1 {
 			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page debe ser un entero positivo.", err)
 			return
 		}
-		if parsed > 1 && !limitDefinido {
-			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page requiere limit cuando es mayor a 1.", nil)
+		if parsed > maxInt {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
 			return
 		}
-		if parsed > 1 {
-			maxInt := int64(^uint(0) >> 1)
-			// Se divide antes de multiplicar para no desbordar int64.
-			if parsed-1 > maxInt/int64(limit) {
-				httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
-				return
-			}
-			offset = int((parsed - 1) * int64(limit))
-		}
+		filtro.Page = int(parsed)
+		pageDefinida = true
 	}
-	filtro.Limit = limit
-	filtro.Offset = offset
 
-	usuarios, err := h.adminService.Listar(c.Request.Context(), filtro)
+	if pageDefinida && offsetDefinido {
+		httperrors.ResponderError(c, http.StatusBadRequest, "Los parámetros page y offset son mutuamente excluyentes.", nil)
+		return
+	}
+
+	if offsetDefinido {
+		// Con offset explícito se informa la página equivalente para que el
+		// cliente pueda seguir usando los metadatos de paginación. Se calcula
+		// en int64 para no desbordar int en el límite superior.
+		pagina := int64(filtro.Offset) / int64(filtro.Limit)
+		if pagina >= maxInt {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro offset excede el rango admitido.", nil)
+			return
+		}
+		filtro.Page = int(pagina + 1)
+	} else if filtro.Page > 1 {
+		// Se divide antes de multiplicar para no desbordar int64.
+		if int64(filtro.Page-1) > maxInt/int64(filtro.Limit) {
+			httperrors.ResponderError(c, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
+			return
+		}
+		filtro.Offset = (filtro.Page - 1) * filtro.Limit
+	}
+
+	pagina, err := h.adminService.Listar(c.Request.Context(), filtro)
 	if err != nil {
 		if errors.Is(err, services.ErrRolInvalido) {
 			httperrors.ResponderError(c, http.StatusBadRequest, err.Error(), err)
@@ -132,12 +148,12 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, usuarios)
+	c.JSON(http.StatusOK, pagina)
 }
 
 // ActualizarUsuario godoc
-// @Summary      Activar/desactivar o asignar rol a una cuenta
-// @Description  Actualiza esta_activo y/o el rol de un usuario registrado, incluido el rol colaborador. Sólo rol admin.
+// @Summary      Activar/desactivar, asignar rol o plan a una cuenta
+// @Description  Actualiza esta_activo, el rol RBAC y/o el plan comercial de un usuario. Sólo rol admin.
 // @Tags         admin
 // @Accept       json
 // @Produce      json
@@ -153,8 +169,12 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 // @Router       /api/v1/admin/usuarios/{id} [put]
 func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 	var req ActualizarUsuarioAdminRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		httperrors.ResponderError(c, http.StatusBadRequest, "Datos de entrada inválidos para actualizar la cuenta.", err)
+	if err := bindJSONStrict(c, &req); err != nil {
+		mensaje := "Datos de entrada inválidos para actualizar la cuenta."
+		if strings.Contains(err.Error(), "unknown field") {
+			mensaje = "La actualización contiene campos no permitidos."
+		}
+		httperrors.ResponderError(c, http.StatusBadRequest, mensaje, err)
 		return
 	}
 
@@ -172,10 +192,11 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 	dto, err := h.adminService.Actualizar(c.Request.Context(), id, domain.ActualizarUsuarioAdminDTO{
 		EstaActivo: req.EstaActivo,
 		Rol:        req.Rol,
+		Plan:       req.Plan,
 	}, actorID)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrIDUsuarioInvalido), errors.Is(err, services.ErrRolInvalido), errors.Is(err, services.ErrSinCambiosAdmin):
+		case errors.Is(err, services.ErrIDUsuarioInvalido), errors.Is(err, services.ErrRolInvalido), errors.Is(err, services.ErrPlanInvalido), errors.Is(err, services.ErrSinCambiosAdmin):
 			httperrors.ResponderError(c, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrUsuarioNoEncontrado):
 			httperrors.ResponderError(c, http.StatusNotFound, err.Error(), err)
@@ -188,4 +209,23 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, dto)
+}
+
+// bindJSONStrict decodifica un único objeto JSON y rechaza campos desconocidos.
+// Así un cliente no recibe 200 cuando intenta enviar, por ejemplo, id o correo
+// fuera del contrato administrable.
+func bindJSONStrict(c *gin.Context, destino any) error {
+	decoder := json.NewDecoder(c.Request.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(destino); err != nil {
+		return err
+	}
+	var extra json.RawMessage
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			return errors.New("el cuerpo debe contener un único objeto JSON")
+		}
+		return err
+	}
+	return nil
 }

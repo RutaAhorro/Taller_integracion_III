@@ -9,8 +9,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireAuth intercepta la petición HTTP validando el token en la cookie segura HttpOnly 'jwt'
-func RequireAuth(secret string) gin.HandlerFunc {
+// RequireAuth valida la firma del JWT y, si recibe un validador, revalida la
+// cookie contra Identidad para usar el estado y rol vigentes de api.usuarios.
+// Sin validador falla cerrado: la administración queda en 503.
+func RequireAuth(secret string, validators ...auth.SessionValidator) gin.HandlerFunc {
+	var validator auth.SessionValidator
+	if len(validators) > 0 {
+		validator = validators[0]
+	}
+
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("jwt")
 		if err != nil || strings.TrimSpace(tokenString) == "" {
@@ -45,11 +52,47 @@ func RequireAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// Inyectar claims en el contexto de Gin para consumo de las rutas protegidas
-		c.Set("user_id", claims.UserID)
-		c.Set("rol", claims.Rol)
-		c.Set("provider", claims.Provider)
+		if validator == nil {
+			ResponderError(
+				c,
+				http.StatusServiceUnavailable,
+				"No se pudo validar la sesión.",
+				errors.New("validador de sesión de Identidad no configurado"),
+			)
+			return
+		}
 
+		session, err := validator.Validate(c.Request.Context(), c.Request.Header.Get("Cookie"))
+		if err != nil {
+			if errors.Is(err, auth.ErrSesionInactiva) {
+				ResponderError(c, http.StatusUnauthorized, "La sesión ya no está activa.", nil)
+				return
+			}
+			ResponderError(
+				c,
+				http.StatusServiceUnavailable,
+				"No se pudo validar la sesión.",
+				err,
+			)
+			return
+		}
+		// Identidad debe devolver el mismo sujeto que el token firmado. Un
+		// identificador vacío o distinto se rechaza para no aceptar sesiones
+		// ambiguas aunque el rol devuelto sea correcto.
+		if strings.TrimSpace(session.UserID) == "" || session.UserID != claims.UserID {
+			ResponderError(c, http.StatusUnauthorized, "Token inválido o expirado.", nil)
+			return
+		}
+
+		// El rol vigente es el de Identidad/api.usuarios, no el claim firmado.
+		rol := strings.ToLower(strings.TrimSpace(session.Rol))
+		if rol == "administrador" {
+			rol = "admin"
+		}
+
+		c.Set("user_id", session.UserID)
+		c.Set("rol", rol)
+		c.Set("provider", claims.Provider)
 		c.Next()
 	}
 }

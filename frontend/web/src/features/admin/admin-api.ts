@@ -5,7 +5,7 @@
 //
 // Convención de ramas: backend/feat/[tarea]-[nombre], frontend/feat/[tarea]-[nombre].
 
-import type { AdminPlan, AdminRole, AdminSource, AdminUser } from './admin-mock-data';
+import type { AdminPlan, AdminRole, AdminSource, AdminUser, AdminUserRole } from './admin-mock-data';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
@@ -17,9 +17,10 @@ export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
 // (`/admin/productos*`) y Control (`/scraper*`) conservan sus rutas.
 export const ADMIN_ENDPOINTS = {
   // SUP-242 — GET/PUT /api/v1/admin/usuarios (RequireRole admin, tras el Gateway).
-  // Body PUT: { esta_activo?: boolean; rol?: 'registrado' | 'colaborador' | 'admin' }.
-  // El plan comercial NO viaja en `rol` (auditoría H-06), pero api.usuarios
-  // todavía no expone un campo de plan: el panel no lo envía ni lo edita.
+  // GET paginado: ?page=&limit=&q=&rol=&esta_activo=.
+  // Body PUT: { esta_activo?: boolean; rol?: 'registrado' | 'colaborador' | 'admin';
+  //             plan?: 'basico' | 'premium' }.
+  // El plan comercial viaja en su propio campo, nunca dentro de `rol` (H-06).
   usuarios: '/admin/usuarios',
   // SUP-243 — GET/PUT de fuentes bajo /api/v1/admin/productos ya enrutado.
   // Ej.: /api/v1/admin/productos/fuentes — persiste scraper.cadenas_supermercado.
@@ -41,25 +42,39 @@ export function adminRoleToBackend(role: AdminRole): string {
   return 'registrado';
 }
 
-export function adminRoleFromBackend(rol: string): AdminRole {
+export function adminRoleFromBackend(rol: string): AdminUserRole {
   switch (rol.trim().toLowerCase()) {
     case 'admin':
     case 'administrador':
       return 'Administrador';
     case 'colaborador':
       return 'Colaborador';
-    default:
+    case 'registrado':
+    case 'usuario':
       return 'Usuario';
+    default:
+      return 'Desconocido';
   }
 }
 
 // --- Mapeo plan UI <-> backend ---
-// Display: Básico | Premium. api.usuarios todavía no expone el plan, así que
-// el mapeo devuelve null y la UI muestra un guion en vez de inventar "Básico".
+// Display: Básico | Premium. Un valor desconocido no se inventa: la UI muestra "—".
 export function adminPlanFromBackend(plan?: string | null): AdminPlan | null {
   if (!plan) return null;
-  if (plan === 'premium' || plan === 'plus' || plan === 'Premium') return 'Premium';
-  return 'Básico';
+  switch (plan.trim().toLowerCase()) {
+    case 'basico':
+    case 'básico':
+      return 'Básico';
+    case 'premium':
+    case 'plus':
+      return 'Premium';
+    default:
+      return null;
+  }
+}
+
+export function adminPlanToBackend(plan: AdminPlan): string {
+  return plan === 'Premium' ? 'premium' : 'basico';
 }
 
 // --- Mapeo usuario backend <-> modelo de UI (SUP-242) ---
@@ -69,11 +84,31 @@ type UsuarioBackend = {
   correo: string;
   nombre_completo: string;
   rol: string;
-  esta_activo: boolean;
   plan?: string | null;
+  esta_activo: boolean;
   ultimo_acceso?: string | null;
   creado_el?: string | null;
   actualizado_el?: string | null;
+};
+
+type PaginacionBackend = {
+  total_registros: number;
+  pagina_actual: number;
+  total_paginas: number;
+  limite: number;
+};
+
+type PaginaUsuariosBackend = {
+  data: UsuarioBackend[];
+  paginacion: PaginacionBackend;
+};
+
+export type AdminUsersPage = {
+  users: AdminUser[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
 };
 
 // Sólo los usuarios reales tienen UUID; los mocks usan ids `usr-00X`.
@@ -91,8 +126,9 @@ function initialsFromName(name: string): string {
   return (first + last).toUpperCase() || '?';
 }
 
-// api.usuarios todavía no expone `ultimo_acceso`. Si el backend no lo envía
-// se muestra "Sin registros"; no se usa `actualizado_el` como sustituto.
+// `ultimo_acceso` se actualiza al iniciar sesión. Si no existe todavía para una
+// cuenta antigua se muestra "Sin registros"; no se usa `actualizado_el` como
+// sustituto porque no representa un acceso.
 function formatLastAccess(value?: string | null): string {
   if (!value) return 'Sin registros';
   const date = new Date(value);
@@ -139,13 +175,32 @@ export function isAdminAuthError(error: unknown): error is AdminAuthError {
   return error instanceof AdminAuthError;
 }
 
+// Error no autoritativo del backend con el mensaje de negocio (por ejemplo,
+// el 409 de "último administrador") en vez de un texto técnico genérico.
+export class AdminApiError extends Error {
+  readonly status: number;
+  readonly detail?: string;
+  constructor(status: number, message: string, detail?: string) {
+    super(message);
+    this.name = 'AdminApiError';
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+export function isAdminApiError(error: unknown): error is AdminApiError {
+  return error instanceof AdminApiError;
+}
+
+type ErrorBackend = { mensaje?: string; detalle?: string };
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Auditoría: no enviar Content-Type en GET sin cuerpo (evita preflights
   // OPTIONS innecesarios) y combinar headers en vez de sobrescribirlos.
   const hasBody = init?.body !== undefined && init?.body !== null;
   const headers = {
     ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-    ...(init?.headers ?? {}),
+    ...init?.headers,
   };
   const response = await fetch(`${API_BASE}${path}`, {
     credentials: 'include',
@@ -155,20 +210,50 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (response.status === 401 || response.status === 403) {
     throw new AdminAuthError(response.status, path);
   }
-  if (!response.ok) throw new Error(`La API respondió con ${response.status} en ${path}`);
+  if (!response.ok) {
+    let message = `La API respondió con ${response.status} en ${path}`;
+    let detail: string | undefined;
+    try {
+      const body = await response.json() as ErrorBackend;
+      if (body.mensaje) message = body.mensaje;
+      detail = body.detalle;
+    } catch {
+      // Respuesta sin JSON: conservar el mensaje con el estado.
+    }
+    throw new AdminApiError(response.status, message, detail);
+  }
   return response.json() as Promise<T>;
 }
 
-// Usuarios (SUP-242). GET lista, PUT { esta_activo, rol } por id.
-// `rol` solo acepta valores RBAC; el plan aún no lo expone api.usuarios.
-export async function fetchAdminUsers(signal?: AbortSignal): Promise<AdminUser[]> {
-  const usuarios = await request<UsuarioBackend[]>(ADMIN_ENDPOINTS.usuarios, { signal });
-  return usuarios.map(adminUserFromBackend);
+// Usuarios (SUP-242). GET paginado con búsqueda/rol del servidor.
+// PUT acepta esta_activo, rol y plan por separado.
+export type AdminUsersQuery = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  rol?: string;
+};
+
+export async function fetchAdminUsers(query: AdminUsersQuery = {}, signal?: AbortSignal): Promise<AdminUsersPage> {
+  const params = new URLSearchParams();
+  if (query.page) params.set('page', String(query.page));
+  if (query.limit) params.set('limit', String(query.limit));
+  if (query.q) params.set('q', query.q);
+  if (query.rol) params.set('rol', query.rol);
+  const suffix = params.toString() ? `?${params.toString()}` : '';
+  const pagina = await request<PaginaUsuariosBackend>(`${ADMIN_ENDPOINTS.usuarios}${suffix}`, { signal });
+  return {
+    users: pagina.data.map(adminUserFromBackend),
+    total: pagina.paginacion.total_registros,
+    page: pagina.paginacion.pagina_actual,
+    limit: pagina.paginacion.limite,
+    totalPages: pagina.paginacion.total_paginas,
+  };
 }
 
 export async function updateAdminUser(
   id: string,
-  patch: { esta_activo?: boolean; rol?: string },
+  patch: { esta_activo?: boolean; rol?: string; plan?: string },
 ): Promise<AdminUser> {
   const usuario = await request<UsuarioBackend>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
     method: 'PUT',

@@ -7,6 +7,8 @@ export type AdminSection = 'overview' | 'users' | 'sources' | 'metrics';
 // El plan premium viaja como campo aparte (p. ej. plan='premium'), no como rol.
 export const ADMIN_ROLES = ['Administrador', 'Colaborador', 'Usuario'] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
+// Un rol no reconocido se muestra, pero no se puede convertir en otro por accidente.
+export type AdminUserRole = AdminRole | 'Desconocido';
 
 export const ADMIN_PLANS = ['Básico', 'Premium'] as const;
 export type AdminPlan = (typeof ADMIN_PLANS)[number];
@@ -15,8 +17,8 @@ export type AdminUser = {
   id: string;
   name: string;
   email: string;
-  role: AdminRole;
-  // null cuando el backend aún no expone el plan comercial.
+  role: AdminUserRole;
+  // null cuando el backend no informa un plan reconocido (se muestra "—").
   plan: AdminPlan | null;
   status: 'Activo' | 'Inactivo';
   lastAccess: string;
