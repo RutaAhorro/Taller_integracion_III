@@ -3,6 +3,8 @@ package tests
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
@@ -91,6 +93,7 @@ func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 
 func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, error) {
 	var resultado []domain.Usuario
+	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
 	for _, u := range m.usuarios {
 		if filtro.Rol != "" && u.Rol != filtro.Rol {
 			continue
@@ -98,7 +101,21 @@ func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 		if filtro.EstaActivo != nil && u.EstaActivo != *filtro.EstaActivo {
 			continue
 		}
+		if patron != "" && !strings.Contains(strings.ToLower(u.Correo), patron) && !strings.Contains(strings.ToLower(u.NombreCompleto), patron) {
+			continue
+		}
 		resultado = append(resultado, *u)
+	}
+	// Orden estable para probar paginación sin depender del mapa.
+	sort.Slice(resultado, func(i, j int) bool { return resultado[i].Correo < resultado[j].Correo })
+	if filtro.Offset > 0 {
+		if filtro.Offset >= len(resultado) {
+			return nil, nil
+		}
+		resultado = resultado[filtro.Offset:]
+	}
+	if filtro.Limit > 0 && filtro.Limit < len(resultado) {
+		resultado = resultado[:filtro.Limit]
 	}
 	return resultado, nil
 }

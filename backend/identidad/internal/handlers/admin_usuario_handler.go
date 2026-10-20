@@ -12,8 +12,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// maxUsuariosAdminPorPagina acota el listado cuando el cliente pide límite.
-const maxUsuariosAdminPorPagina = 200
+const (
+	// maxUsuariosAdminPorPagina acota el listado cuando el cliente pide límite.
+	maxUsuariosAdminPorPagina = 200
+	// usuariosAdminPorPaginaPredeterminado evita volcar la tabla completa
+	// cuando el cliente no envía `limit`.
+	usuariosAdminPorPaginaPredeterminado = 50
+)
 
 // ActualizarUsuarioAdminRequest permite recibir el ID tanto en la ruta como en el cuerpo.
 type ActualizarUsuarioAdminRequest struct {
@@ -41,7 +46,7 @@ func NewAdminUsuarioHandler(adminService services.AdminUsuarioService) *AdminUsu
 // @Param        rol          query     string  false  "Filtrar por rol (admin, colaborador, registrado)"
 // @Param        esta_activo  query     bool    false  "Filtrar por cuentas activas/inactivas"
 // @Param        page         query     int     false  "Número de página (requiere limit)"
-// @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200)"
+// @Param        limit        query     int     false  "Cantidad de cuentas por página (máx. 200, por defecto 50)"
 // @Param        offset       query     int     false  "Desplazamiento explícito"
 // @Success      200  {array}   domain.UsuarioAdminDTO
 // @Failure      400  {object}  httperrors.RespuestaError
@@ -61,7 +66,7 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 		}
 	}
 
-	limit, offset := 0, 0
+	limit, offset := usuariosAdminPorPaginaPredeterminado, 0
 	if value := c.Query("limit"); value != "" {
 		if parsed, err := strconv.Atoi(value); err == nil && parsed > 0 {
 			limit = parsed

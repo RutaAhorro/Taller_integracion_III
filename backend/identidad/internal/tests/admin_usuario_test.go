@@ -2,6 +2,7 @@ package tests
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -174,5 +175,58 @@ func TestAdminUsuariosIdEnCuerpo(t *testing.T) {
 	}
 	if repo.usuarios["cuerpo@uct.cl"].Rol != domain.RolColaborador {
 		t.Fatal("el rol colaborador no se persistió")
+	}
+}
+
+func TestAdminUsuariosAplicaLimitePorDefecto(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	for i := 0; i < 51; i++ {
+		correo := fmt.Sprintf("usuario%02d@uct.cl", i)
+		repo.usuarios[correo] = &domain.Usuario{ID: uuid.New(), Correo: correo, NombreCompleto: "Usuario", Rol: domain.RolRegistrado, EstaActivo: true}
+	}
+
+	w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios", domain.RolAdmin, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+
+	var usuarios []domain.UsuarioAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &usuarios); err != nil {
+		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	}
+	if len(usuarios) != 50 {
+		t.Fatalf("se esperaba el límite por defecto de 50, se obtuvieron %d", len(usuarios))
+	}
+}
+
+func TestAdminUsuariosPaginaYFueraDeRango(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	for i := 0; i < 3; i++ {
+		correo := fmt.Sprintf("usuario%02d@uct.cl", i)
+		repo.usuarios[correo] = &domain.Usuario{ID: uuid.New(), Correo: correo, NombreCompleto: "Usuario", Rol: domain.RolRegistrado, EstaActivo: true}
+	}
+
+	w := adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?limit=2&page=2", domain.RolAdmin, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	var segundaPagina []domain.UsuarioAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &segundaPagina); err != nil {
+		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	}
+	if len(segundaPagina) != 1 {
+		t.Fatalf("la segunda página debía traer 1 usuario, trajo %d", len(segundaPagina))
+	}
+
+	w = adminRequest(t, router, http.MethodGet, "/api/v1/admin/usuarios?limit=2&page=9", domain.RolAdmin, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200 en página fuera de rango, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	var vacia []domain.UsuarioAdminDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &vacia); err != nil {
+		t.Fatalf("respuesta no es un arreglo de usuarios: %v", err)
+	}
+	if len(vacia) != 0 {
+		t.Fatalf("la página fuera de rango debía quedar vacía, trajo %d", len(vacia))
 	}
 }

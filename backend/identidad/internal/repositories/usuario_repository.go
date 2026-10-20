@@ -65,7 +65,7 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
 	}
 
-	query = query.Order("creado_el DESC")
+	query = query.Order("creado_el DESC, id DESC")
 	if filtro.Limit > 0 {
 		query = query.Limit(filtro.Limit)
 	}
