@@ -38,11 +38,13 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 
 | Propietario / rol | Tablas | Permisos |
 | --- | --- | --- |
-| Identidad / `app_identity` | `api.usuarios` | SELECT, INSERT, UPDATE |
+| Identidad / `app_identity` | `api.usuarios`, `api.tokens_recuperacion` (SUP-184) | SELECT, INSERT, UPDATE |
 | Coordinación / `app_scraping` | `scraper.trabajos_scraper`, `scraper.entregas_ingesta`, `scraper.entregas_trabajos` | SELECT, INSERT, UPDATE; DELETE sólo en `entregas_trabajos` |
 | Catálogo / `app_catalogo` | `scraper.productos_crudos` | SELECT, INSERT, UPDATE |
 | Catálogo / `app_catalogo` | `scraper.cadenas_supermercado` | SELECT, INSERT; UPDATE sólo columna `esta_activa` |
 | Catálogo / `app_catalogo` | `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
+| Motor de rutas / `app_rutas` | `rutas.listas_compras` | SELECT, INSERT, UPDATE, DELETE |
+| Motor de rutas / `app_rutas` | `rutas.articulos_lista_compras` | SELECT (escritura con SUP-241) |
 | Gateway y worker | Ninguna tabla PostgreSQL | Sin credencial PostgreSQL |
 
 Sólo Catálogo necesita USAGE en las secuencias de cadenas, sucursales y capturas.
@@ -65,10 +67,17 @@ LOGIN. La migración conserva contraseñas existentes al repetirse. Los objetos
 siguen perteneciendo al operador de migraciones, no a estos roles.
 
 El resto de `api.*` (preferencias, perfiles, tarjetas, misiones, catálogo
-normalizado, equivalencias, recetas y mapeos IA) y `rutas.*` queda fuera del
-runtime implementado. Se conserva con el operador hasta definir sus servicios
-y contratos. No se modifica IA conversacional ni motor de rutas ni se conceden
-permisos preventivos a los tres roles actuales.
+normalizado, equivalencias, recetas y mapeos IA) queda fuera del runtime
+implementado. Se conserva con el operador hasta definir sus servicios y
+contratos. No se modifica IA conversacional ni se conceden permisos preventivos.
+
+SUP-240 asigna `rutas.*` al motor de rutas (`backend/motor_rutas`), como fija
+`GUIA_BACKEND_GO.md` §4. `app_rutas` sigue las mismas reglas que los otros tres
+roles: NOLOGIN hasta provisionar contraseña (`RUTAS_DB_PASSWORD` o `\password`),
+sin herencia ni objetos propios. Sólo DELETE en `listas_compras`: borrar una
+lista elimina sus artículos por la FK interna, que PostgreSQL ejecuta como dueño
+de la tabla. Ejecuciones, paradas y detalle siguen sin grants hasta que exista
+la optimización.
 
 ## Referencias entre dominios
 
@@ -88,8 +97,14 @@ permisos preventivos a los tres roles actuales.
   resueltos por HTTP, sin transacción ni joins SQL con Catálogo. Una referencia
   cuyo destino desapareció sigue el manejo de fallos de SUP-270.
 
-Las FK de funcionalidades de IA/rutas todavía no extraídas no se eliminan en
-esta tarea. Evitar crear nuevas dependencias de runtime hacia ellas.
+- `listas_compras.usuario_id` es el `user_id` del JWT de Identidad. SUP-240
+  elimina su FK hacia `api.usuarios`: borrar un usuario ya no borra sus listas
+  en cascada, y el motor de rutas nunca lee `api.*`.
+
+Las FK de IA y del resto de `rutas.*` (artículos hacia productos normalizados,
+ejecuciones y paradas hacia perfiles, sucursales y capturas) se revisan con la
+tarea que las use (SUP-241, SUP-244). Evitar crear nuevas dependencias de
+runtime hacia ellas.
 
 ## Configuración
 
@@ -121,7 +136,8 @@ readiness. Cambios posteriores de permisos/tablas requieren un rollout/reinicio
 para volver a validar storage; los probes periódicos no auditan privilegios.
 
 Los HPA de Identidad, API y Catálogo permiten hasta cuatro réplicas por servicio.
-El techo de los pools es `4 × 5 + 4 × 5 + 4 × 10 = 80` conexiones. Contar además
+El techo de los pools es `4 × 5 + 4 × 5 + 4 × 10 = 80` conexiones; el motor de
+rutas suma `2 × 5 = 10` (HPA máximo 2, `RUTAS_DB_POOL_MAX=5`). Contar además
 operadores, migraciones, bot/IA/rutas y otros consumidores: 80 es un máximo
 configurado, no un consumo medido ni una garantía de capacidad. Si cambian HPA
 o pools, recalcular antes de desplegar.

@@ -11,6 +11,7 @@ on:
       - 'backend/identidad/**'
       - 'backend/catalogo/**'
       - 'backend/gateway/**'
+      - 'backend/motor_rutas/**'
       - 'backend/bot_discord/**'
       - 'backend/scraper/**'
       - 'frontend/web/**'
@@ -25,6 +26,7 @@ env:
   IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
   IMAGE_NAME_SCRAPER: ${{ github.repository }}-scraper
   IMAGE_NAME_GATEWAY: ${{ github.repository }}-gateway
+  IMAGE_NAME_MOTOR_RUTAS: ${{ github.repository }}-motor-rutas
 
 jobs:
   build-and-push:
@@ -120,6 +122,33 @@ jobs:
           push: true
           tags: ${{ steps.meta-identidad.outputs.tags }}
           labels: ${{ steps.meta-identidad.outputs.labels }}
+
+      # ==== BUILD MOTOR DE RUTAS ====
+      - name: Extract metadata for Motor de rutas
+        id: meta-motor-rutas
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MOTOR_RUTAS }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Motor de rutas image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/motor_rutas
+          target: test
+          push: false
+
+      - name: Build and push Motor de rutas image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/motor_rutas
+          target: runtime
+          push: true
+          tags: ${{ steps.meta-motor-rutas.outputs.tags }}
+          labels: ${{ steps.meta-motor-rutas.outputs.labels }}
 
       # ==== BUILD CATALOGO ====
       - name: Extract metadata for Catalogo

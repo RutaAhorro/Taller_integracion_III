@@ -13,3 +13,6 @@ go build ./cmd/identidad
 Configuración, seguridad, contratos y operación:
 [GUIA_IDENTIDAD_DESACOPLADA.md](../../docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md).
 Integración aislada desde la raíz: `bash scripts/smoke_identity_compose.sh`.
+
+Correo SMTP (SUP-189): `identidad correo-prueba <destinatario>` envía un correo
+real con la configuración `SMTP_*` del entorno; ver la sección de correo de la guía.

@@ -1,4 +1,4 @@
-import { useState, FormEvent, useEffect } from 'react'
+import { useState, type FormEvent, useEffect } from 'react'
 import { Menu, MapPin, Search, ShoppingBasket, CircleUserRound, Bot, User, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Link, useNavigate } from 'react-router-dom'
@@ -137,6 +137,10 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                                         Mi Perfil
                                     </Link>
                                     <div className="h-px bg-border w-full" />
+                                    <Link to={ROUTES.LISTAS} onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-accent transition-colors">
+                                        <ShoppingBasket className="h-4 w-4" />
+                                        Mis listas
+                                    </Link>
                                     <button
                                         onClick={() => {
                                             setIsDropdownOpen(false);
