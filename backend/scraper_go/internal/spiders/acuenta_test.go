@@ -1,6 +1,12 @@
 package spiders
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+)
 
 func TestExtractAcuentaProductCard(t *testing.T) {
 	body := `
@@ -237,5 +243,33 @@ func TestValidateAcuentaCategoryURL(t *testing.T) {
 	}
 	if err := validateAcuentaCategoryURL("https://www.acuenta.cl/ca/congelados/04"); err != nil {
 		t.Errorf("URL válida: %v", err)
+	}
+}
+
+func TestAcuentaRunPagination(t *testing.T) {
+	categoryURL := "https://www.acuenta.cl/ca/congelados/04"
+	t.Setenv("ACUENTA_CATEGORY_URLS", categoryURL)
+	page1 := acuentaPageURL(categoryURL, 1)
+	page2 := acuentaPageURL(categoryURL, 2)
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		page1: response(page1, `<div class="product-card"><a href="/p/uno-1">Uno 1 L</a><div>$1.000</div></div>`),
+		page2: response(page2, `<div class="product-card"><a href="/p/dos-2">Dos 1 L</a><div>$2.000</div></div>`),
+	}}
+	spider := NewAcuenta(fetcher, t.TempDir(), 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	for _, item := range items {
+		if item.Categoria != "congelados" || item.Supermercado != "A Cuenta" {
+			t.Errorf("item = %+v", item)
+		}
 	}
 }

@@ -1,8 +1,12 @@
 package spiders
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
 func TestExtractLiderProductsFromCards(t *testing.T) {
@@ -175,5 +179,38 @@ func TestLiderPageURLAndCategory(t *testing.T) {
 	}
 	if got := liderPageNumber(categoryURL); got != 1 {
 		t.Errorf("página = %d", got)
+	}
+}
+
+func TestLiderRunPagination(t *testing.T) {
+	categoryURL := "https://super.lider.cl/browse/frutas-y-verduras/frutas/22884697_93034836"
+	t.Setenv("LIDER_CATEGORY_URLS", categoryURL)
+	page2 := liderPageURL(categoryURL, 2)
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		categoryURL: response(categoryURL, `<div data-testid="item-stack"><div role="group" data-item-id="1" data-dca-id="00000000000001">
+<a href="/ip/frutas/uno/00000000000001"><img data-testid="productTileImage" src="/uno.webp"></a>
+<div data-automation-id="product-price"><div aria-hidden="true">$1.000</div></div>
+<span data-automation-id="product-title">Uno 1 kg</span></div></div>`),
+		page2: response(page2, `<div data-testid="item-stack"><div role="group" data-item-id="2" data-dca-id="00000000000002">
+<a href="/ip/frutas/dos/00000000000002"><img data-testid="productTileImage" src="/dos.webp"></a>
+<div data-automation-id="product-price"><div aria-hidden="true">$2.000</div></div>
+<span data-automation-id="product-title">Dos 1 kg</span></div></div>`),
+	}}
+	spider := NewLider(fetcher, t.TempDir(), 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("items = %d, want 2", len(items))
+	}
+	for _, item := range items {
+		if item.Categoria != "frutas" || item.Supermercado != "Lider" {
+			t.Errorf("item = %+v", item)
+		}
 	}
 }
