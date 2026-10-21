@@ -60,6 +60,7 @@ func NewRegistry(fetcher Fetcher, categoryDir string, maxPages int, logger *slog
 	}
 	registry := &Registry{spiders: make(map[string]Spider)}
 	registry.Register(NewJumbo(fetcher, categoryDir, maxPages, logger))
+	registry.Register(NewSantaIsabel(fetcher, categoryDir, maxPages, logger))
 	return registry
 }
 

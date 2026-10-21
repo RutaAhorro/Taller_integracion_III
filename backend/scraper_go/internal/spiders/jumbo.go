@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -231,11 +230,7 @@ func toJumboItem(product domain.Product, category, responseURL string) domain.It
 
 func (j *Jumbo) startURLs() []string {
 	urls := readCategoryURLs(filepath.Join(j.categoryDir, "jumbo_categories.txt"))
-	for _, raw := range strings.Split(os.Getenv("JUMBO_CATEGORY_URLS"), ",") {
-		if value := strings.TrimSpace(raw); value != "" {
-			urls = append(urls, value)
-		}
-	}
+	urls = append(urls, envCategoryURLs("JUMBO_CATEGORY_URLS")...)
 	urls = dedupeStrings(urls)
 	if len(urls) == 0 {
 		return append([]string(nil), jumboDefaultCategories...)
@@ -244,68 +239,19 @@ func (j *Jumbo) startURLs() []string {
 }
 
 func (j *Jumbo) appendCategoryURL(rawURL string) error {
-	if err := validateCategoryURL(rawURL); err != nil {
-		return err
-	}
-	file := filepath.Join(j.categoryDir, "jumbo_categories.txt")
-	for _, existing := range readCategoryURLs(file) {
-		if existing == rawURL {
-			return nil
-		}
-	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-		return err
-	}
-	handle, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
-	}
-	defer handle.Close()
-	_, err = handle.WriteString(rawURL + "\n")
-	return err
-}
-
-func readCategoryURLs(file string) []string {
-	body, err := os.ReadFile(file)
-	if err != nil {
-		return nil
-	}
-	var urls []string
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		urls = append(urls, line)
-	}
-	return urls
-}
-
-func dedupeStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
+	return appendCategoryURL(
+		filepath.Join(j.categoryDir, "jumbo_categories.txt"),
+		rawURL,
+		validateCategoryURL,
+	)
 }
 
 func validateProductURL(rawURL string) error {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return err
-	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("product_url debe ser HTTPS")
-	}
-	if _, ok := jumboAllowedHosts[strings.ToLower(parsed.Hostname())]; !ok {
-		return fmt.Errorf("product_url debe ser una URL pública de jumbo.cl")
-	}
-	return nil
+	return validateHTTPSHost(
+		rawURL,
+		jumboAllowedHosts,
+		"product_url debe ser una URL HTTPS pública de jumbo.cl",
+	)
 }
 
 func validateCategoryURL(rawURL string) error {
@@ -318,42 +264,6 @@ func canonicalProductURL(rawURL string) string {
 		return ""
 	}
 	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
-}
-
-func categoryFromURL(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	segments := strings.Split(strings.TrimRight(parsed.Path, "/"), "/")
-	for i := len(segments) - 1; i >= 0; i-- {
-		if segments[i] != "" {
-			return segments[i]
-		}
-	}
-	return ""
-}
-
-func withPage(rawURL string, page int) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-	query := parsed.Query()
-	query.Set("page", strconv.Itoa(page))
-	parsed.RawQuery = query.Encode()
-	return parsed.String()
-}
-
-func resolveURL(base *url.URL, reference string) string {
-	parsed, err := url.Parse(reference)
-	if err != nil {
-		return reference
-	}
-	if base == nil {
-		return reference
-	}
-	return base.ResolveReference(parsed).String()
 }
 
 func extractJumboProducts(body []byte) []domain.Product {

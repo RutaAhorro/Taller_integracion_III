@@ -14,7 +14,7 @@ rollback mientras ambos convivan.
 | Supermercado | Estado |
 | --- | --- |
 | Jumbo | Implementado: JSON-LD, paginación, modo producto y enriquecimiento EAN |
-| Santa Isabel | Pendiente de portar |
+| Santa Isabel | Implementado: renderData, paginación y filtro por seller |
 | Cugat | Pendiente de portar |
 | Acuenta | Pendiente de portar |
 | Lider | Pendiente de portar |
@@ -129,7 +129,7 @@ los cuatro spiders restantes tengan pruebas de paridad.
 
 ## Pendientes
 
-- Portar Santa Isabel, Cugat, Acuenta y Lider con fixtures y pruebas doradas.
+- Portar Cugat, Acuenta y Lider con fixtures y pruebas doradas.
 - Agregar el gate de RAM en CI (objetivo de trabajo: 150 MB de RSS; el worker
   Go debería quedar en 60–100 MB).
 - Agregar un smoke de compose que ejecute un trabajo real contra Redis y una
