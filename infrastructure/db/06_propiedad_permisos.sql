@@ -79,6 +79,16 @@ GRANT USAGE ON SCHEMA api TO app_identity;
 GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
 -- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
 GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
+-- SUP-242: 08 crea api.auditoria_admin_usuarios después de este script. Si ya
+-- existe (re-ejecución de 06 en una base migrada), se restauran sus grants para
+-- que la auditoría administrativa siga operativa. Sin DELETE ni UPDATE.
+DO $$
+BEGIN
+    IF to_regclass('api.auditoria_admin_usuarios') IS NOT NULL THEN
+        EXECUTE 'GRANT SELECT, INSERT ON api.auditoria_admin_usuarios TO app_identity';
+        EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE api.auditoria_admin_usuarios_id_seq TO app_identity';
+    END IF;
+END $$;
 
 GRANT USAGE ON SCHEMA scraper TO app_scraping;
 GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper,
@@ -110,7 +120,7 @@ DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
 BEGIN
     FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         permitted := CASE role_name
-            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion']
+            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
             WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
@@ -140,8 +150,12 @@ BEGIN
         LOOP
             FOREACH privilege_name IN ARRAY ARRAY['USAGE','SELECT','UPDATE'] LOOP
                 IF has_sequence_privilege(role_name, relation.oid, privilege_name)
-                    AND (role_name <> 'app_catalogo' OR privilege_name <> 'USAGE'
-                        OR relation.name NOT IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq')) THEN
+                    AND NOT (
+                        (role_name = 'app_catalogo' AND privilege_name = 'USAGE'
+                            AND relation.name IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq'))
+                        OR (role_name = 'app_identity' AND privilege_name IN ('USAGE','SELECT')
+                            AND relation.name = 'api.auditoria_admin_usuarios_id_seq')
+                    ) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar secuencias', role_name, privilege_name, relation.name;
                 END IF;
             END LOOP;
