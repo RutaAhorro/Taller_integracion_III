@@ -274,7 +274,7 @@ func extractCugatProducts(body []byte, responseURL *url.URL) []domain.Product {
 }
 
 func cugatPriceFrom(card *goquery.Selection, selector string) *float64 {
-	amount := card.Find(selector).First().Find("span.woocommerce-Price-amount").First().Text()
+	amount := card.Find(selector).Find("span.woocommerce-Price-amount").First().Text()
 	return normalize.PrecioCLP(amount)
 }
 

@@ -348,10 +348,11 @@ func extractLiderCards(document *goquery.Document, responseURL *url.URL) []domai
 			normalPrice = currentPrice
 		}
 
-		productCode := normalize.EAN(card.AttrOr("data-dca-id", ""))
-		if productCode == nil {
-			productCode = normalize.EAN(lastPathSegment(productURL))
+		rawCode := card.AttrOr("data-dca-id", "")
+		if rawCode == "" {
+			rawCode = lastPathSegment(productURL)
 		}
+		productCode := normalize.EAN(rawCode)
 		sku := firstNonNilString(productCode, nonEmptyStringPtr(card.AttrOr("data-item-id", "")))
 
 		image := firstAttr(card, `img[data-testid='productTileImage']`, "src")
