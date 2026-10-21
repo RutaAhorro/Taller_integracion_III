@@ -31,7 +31,6 @@ import MockShell from '@/pages/mocks/MockShell';
 import Planes from '@/pages/Planes';
 import AdminDashboard from '@/features/admin/AdminDashboard';
 
-const chatSprint = MOCK_ROUTES[ROUTES.CHAT];
 const colabSprint = MOCK_ROUTES[ROUTES.COLABORADOR];
 const rutaSprint = MOCK_ROUTES[ROUTES.RUTA];
 const histSprint = MOCK_ROUTES[ROUTES.HISTORIAL];
@@ -52,11 +51,7 @@ const router = createBrowserRouter([
       // Sprint 2+ (con SideBar disponible)
       {
         path: ROUTES.CHAT,
-        element: (
-          <MockShell sprint={chatSprint}>
-            <Chatbot />
-          </MockShell>
-        ),
+        element: <Chatbot />,
       },
     ],
   },

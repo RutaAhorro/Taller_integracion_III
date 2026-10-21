@@ -1,17 +1,15 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { ChatApiError, sendChatMessage, type ChatProduct } from '@/features/chat/chat-api';
 
-const IA_API_URL = (import.meta.env.VITE_IA_URL || 'http://localhost:8002').replace(/\/$/, '');
-
-export type MessageType = 'welcome' | 'text' | 'processing' | 'rich-recipe' | 'out-of-stock';
+export type MessageType = 'welcome' | 'text' | 'processing' | 'error';
 
 export type Message = {
   id: string;
   role: 'user' | 'assistant';
   type: MessageType;
   content?: string;
-  step?: number;
-  query?: string;
+  products?: ChatProduct[];
 };
 
 export function useChatbot() {
@@ -20,10 +18,24 @@ export function useChatbot() {
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const activeRequest = useRef<AbortController | null>(null);
+  const sequence = useRef(0);
   
   const [messages, setMessages] = useState<Message[]>([
     { id: '1', role: 'assistant', type: 'welcome' }
   ]);
+
+  // No conservar respuestas de otra sesión ni peticiones al abandonar la vista.
+  useEffect(() => {
+    setMessages([{ id: 'welcome', role: 'assistant', type: 'welcome' }]);
+    setInputValue('');
+    setIsProcessing(false);
+    setShowAuthModal(false);
+    return () => {
+      activeRequest.current?.abort();
+      activeRequest.current = null;
+    };
+  }, [user?.id]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -38,47 +50,45 @@ export function useChatbot() {
       return;
     }
     
-    if (!text.trim() || isProcessing) return;
+    if (!text.trim() || activeRequest.current) return;
 
-    const newMsg: Message = { id: Date.now().toString(), role: 'user', type: 'text', content: text };
+    const controller = new AbortController();
+    activeRequest.current = controller;
+    const id = String(++sequence.current);
+    const newMsg: Message = { id: `user-${id}`, role: 'user', type: 'text', content: text.trim() };
     setMessages(prev => [...prev, newMsg]);
     setInputValue('');
     setIsProcessing(true);
 
-    const processingId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, { id: processingId, role: 'assistant', type: 'processing', step: 1 }]);
+    const processingId = `processing-${id}`;
+    setMessages(prev => [...prev, { id: processingId, role: 'assistant', type: 'processing' }]);
 
     try {
-      setMessages(prev => prev.map(m => m.id === processingId ? { ...m, step: 2 } : m));
-
-      const response = await fetch(`${IA_API_URL}/chat/gemini`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensaje: text })
-      });
-
-      setMessages(prev => prev.map(m => m.id === processingId ? { ...m, step: 3 } : m));
-
-      const data = await response.json();
-      setMessages(prev => prev.filter(m => m.id !== processingId));
-
-      if (data.error) {
-        console.error("Error devuelto por la IA:", data.error);
-        setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.' }]);
-      } else {
-        setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: data.explicacion || 'Procesado.' }]);
-      }
+      const data = await sendChatMessage(text, controller.signal);
+      if (activeRequest.current !== controller) return;
+      setMessages(prev => [...prev.filter(m => m.id !== processingId), {
+        id: `assistant-${id}`, role: 'assistant', type: 'text', content: data.respuesta, products: data.productos,
+      }]);
     } catch (error) {
-      console.error("Excepción al contactar la API:", error);
-      setMessages(prev => prev.filter(m => m.id !== processingId));
-      setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: 'Lo siento, hay problemas de conexión con mis servicios en este momento.' }]);
+      if (activeRequest.current !== controller) return;
+      if (error instanceof ChatApiError && error.status === 401) setShowAuthModal(true);
+      setMessages(prev => [...prev.filter(m => m.id !== processingId), {
+        id: `error-${id}`, role: 'assistant', type: 'error',
+        content: error instanceof Error ? error.message : 'No se pudo procesar tu consulta. Intenta nuevamente.',
+      }]);
     } finally {
-      setIsProcessing(false);
+      if (activeRequest.current === controller) {
+        activeRequest.current = null;
+        setIsProcessing(false);
+      }
     }
   };
 
   const handleClear = () => {
-    setMessages([{ id: Date.now().toString(), role: 'assistant', type: 'welcome' }]);
+    activeRequest.current?.abort();
+    activeRequest.current = null;
+    setIsProcessing(false);
+    setMessages([{ id: 'welcome', role: 'assistant', type: 'welcome' }]);
   };
 
   return {
