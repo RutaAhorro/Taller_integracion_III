@@ -1,0 +1,73 @@
+name: Scraper Go checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+    paths:
+      - 'backend/scraper_go/**'
+      - 'backend/scraper/research/*_categories.txt'
+      - 'docker-compose.scraper-go.yml'
+      - '.github/workflows/scraper-go-checks.yml'
+  push:
+    branches: [develop-refactor]
+    paths:
+      - 'backend/scraper_go/**'
+      - 'backend/scraper/research/*_categories.txt'
+      - 'docker-compose.scraper-go.yml'
+      - '.github/workflows/scraper-go-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scraper-go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Formato
+        working-directory: backend/scraper_go
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "Archivos sin gofmt:"
+            echo "$files"
+            exit 1
+          fi
+      - name: Tests con race detector
+        working-directory: backend/scraper_go
+        env:
+          REDIS_TEST_URL: redis://localhost:6379/15
+        run: go test -race ./...
+      - name: Vet y build
+        working-directory: backend/scraper_go
+        run: |
+          go vet ./...
+          go build -o /tmp/scraper-worker ./cmd/worker
+
+  image:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Construir imagen
+        run: docker build -f backend/scraper_go/Dockerfile -t scraper-go:ci .

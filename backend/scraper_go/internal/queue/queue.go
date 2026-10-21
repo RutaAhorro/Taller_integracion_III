@@ -44,10 +44,13 @@ return 1
 `
 
 type Options struct {
-	Stream   string
-	Group    string
-	Lease    time.Duration
-	Consumer string
+	Stream       string
+	Group        string
+	Lease        time.Duration
+	Consumer     string
+	IndexKey     string
+	DeadLetter   string
+	ClosedPrefix string
 }
 
 type Queue struct {
@@ -78,15 +81,24 @@ func New(client *redis.Client, opts Options) (*Queue, error) {
 		hostname, _ := os.Hostname()
 		opts.Consumer = hostname + "-" + uuid.NewString()
 	}
+	if opts.IndexKey == "" {
+		opts.IndexKey = JobIndex
+	}
+	if opts.DeadLetter == "" {
+		opts.DeadLetter = DefaultDeadLetter
+	}
+	if opts.ClosedPrefix == "" {
+		opts.ClosedPrefix = JobClosedPrefix
+	}
 	return &Queue{
 		client:       client,
 		stream:       opts.Stream,
 		group:        opts.Group,
 		consumer:     opts.Consumer,
 		lease:        opts.Lease,
-		indexKey:     JobIndex,
-		deadLetter:   DefaultDeadLetter,
-		closedPrefix: JobClosedPrefix,
+		indexKey:     opts.IndexKey,
+		deadLetter:   opts.DeadLetter,
+		closedPrefix: opts.ClosedPrefix,
 		cursor:       "0-0",
 		renewScript:  redis.NewScript(renewScriptSource),
 		ackScript:    redis.NewScript(ackScriptSource),
@@ -128,7 +140,9 @@ func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
-	q.cursor = next
+	if next != "" {
+		q.cursor = next
+	}
 	if len(messages) > 0 {
 		return &messages[0], nil
 	}

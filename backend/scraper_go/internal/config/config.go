@@ -1,3 +1,4 @@
+// Package config concentra y valida las variables de entorno del worker.
 package config
 
 import (
@@ -63,10 +64,18 @@ func FromEnv() (Config, error) {
 		return Config{}, fmt.Errorf("SCRAPER_STATE_MIN_FREE_BYTES debe ser al menos 1 MiB")
 	case cfg.BatchSize < 1 || cfg.BatchSize > 1000:
 		return Config{}, fmt.Errorf("SCRAPER_API_BATCH_SIZE debe estar entre 1 y 1000")
+	case cfg.APITimeout <= 0:
+		return Config{}, fmt.Errorf("SCRAPER_API_TIMEOUT debe ser mayor que cero")
+	case cfg.DownloadTimeout <= 0:
+		return Config{}, fmt.Errorf("SCRAPER_DOWNLOAD_TIMEOUT debe ser mayor que cero")
+	case cfg.MaxDownloadSize <= 0:
+		return Config{}, fmt.Errorf("SCRAPER_DOWNLOAD_MAXSIZE debe ser mayor que cero")
 	case cfg.DownloadDelay < 0:
 		return Config{}, fmt.Errorf("SCRAPER_DOWNLOAD_DELAY_MS no puede ser negativo")
 	case cfg.MaxRetries < 0:
 		return Config{}, fmt.Errorf("SCRAPER_RETRY_TIMES no puede ser negativo")
+	case cfg.FailedRetention < 0:
+		return Config{}, fmt.Errorf("SCRAPER_FAILED_RETENTION_SECONDS no puede ser negativo")
 	}
 	return cfg, nil
 }

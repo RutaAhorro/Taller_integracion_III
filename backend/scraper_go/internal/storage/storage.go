@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"syscall"
 	"time"
 
@@ -93,6 +94,10 @@ type Collector struct {
 	minFree   int64
 	retention time.Duration
 	logger    *slog.Logger
+	// cursor rota la revisión entre llamadas. Sin él, los primeros 20
+	// directorios podrían acaparar todos los turnos y los spools antiguos
+	// nunca se recolectarían.
+	cursor string
 }
 
 func NewCollector(stateDir string, minFree int64, retention time.Duration, logger *slog.Logger) *Collector {
@@ -115,20 +120,38 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 		return 0, err
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	removed := 0
-	processed := 0
+	var names []string
 	for _, entry := range entries {
-		if processed >= limit || time.Now().After(deadline) {
-			break
-		}
 		if !entry.IsDir() {
 			continue
 		}
-		workID := entry.Name()
-		if _, err := uuid.Parse(workID); err != nil {
+		name := entry.Name()
+		if _, err := uuid.Parse(name); err != nil {
 			continue
 		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	if len(names) == 0 {
+		return 0, nil
+	}
+	start := 0
+	for index, name := range names {
+		if name > c.cursor {
+			start = index
+			break
+		}
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	removed := 0
+	processed := 0
+	for offset := 0; offset < len(names) && processed < limit; offset++ {
+		if time.Now().After(deadline) {
+			break
+		}
+		workID := names[(start+offset)%len(names)]
+		c.cursor = workID
 		processed++
 
 		status, err := api.GetWork(ctx, workID)

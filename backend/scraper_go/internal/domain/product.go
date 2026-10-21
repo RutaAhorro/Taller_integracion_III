@@ -1,3 +1,5 @@
+// Package domain define el contrato de producto y trabajo que comparten el
+// worker, los spiders y los adaptadores de salida.
 package domain
 
 // Product es el documento que se guarda en el spool y se envía a la API.
