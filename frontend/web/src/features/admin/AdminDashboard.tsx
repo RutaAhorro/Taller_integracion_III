@@ -167,7 +167,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                 {users.map((user) => {
                   const isActive = user.status === 'Activo';
                   const busy = pendingId === user.id;
-                  const isSelf = Boolean(currentUser?.id) && currentUser.id === user.id;
+                  const isSelf = currentUser?.id === user.id;
                   const roleEditable = (ADMIN_ROLES as readonly string[]).includes(user.role);
                   return (
                     <tr key={user.id} className="hover:bg-[#fcfdfb]">
