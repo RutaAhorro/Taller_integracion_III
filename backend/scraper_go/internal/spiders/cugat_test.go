@@ -61,6 +61,21 @@ func TestExtractCugatProducts(t *testing.T) {
 	}
 }
 
+func TestCugatImageFallsBackToNoscript(t *testing.T) {
+	body := `<div class="products"><div class="product-small product">
+<p class="product-title"><a href="/producto/uno/">Uno</a></p>
+<noscript><img src="/uploads/uno.webp"></noscript>
+<ins><span class="woocommerce-Price-amount">$1.000</span></ins>
+</div></div>`
+	products := extractCugatProducts([]byte(body), mustURL("https://cugat.cl/categoria/"))
+	if len(products) != 1 {
+		t.Fatalf("productos = %d, want 1", len(products))
+	}
+	if products[0].Imagen == nil || *products[0].Imagen != "https://cugat.cl/uploads/uno.webp" {
+		t.Errorf("imagen = %v", products[0].Imagen)
+	}
+}
+
 func TestCugatPageURLAndCategory(t *testing.T) {
 	categoryURL := "https://cugat.cl/categoria-producto/bebidas-jugos-y-aguas/"
 	if got := cugatPageURL(categoryURL, 2); got != "https://cugat.cl/categoria-producto/bebidas-jugos-y-aguas/page/2/" {

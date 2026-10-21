@@ -327,7 +327,7 @@ func extractLiderCards(document *goquery.Document, responseURL *url.URL) []domai
 
 	var products []domain.Product
 	cards.Each(func(_ int, card *goquery.Selection) {
-		name := normalize.Texto(texts(card, `[data-automation-id='product-title']`, " "))
+		name := normalize.Texto(allText(card.Find(`[data-automation-id='product-title']`)))
 		href := firstAttr(card, `a[href*="/ip/"]`, "href")
 		if name == nil || href == "" {
 			return

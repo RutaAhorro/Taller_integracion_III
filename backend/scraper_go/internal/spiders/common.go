@@ -157,15 +157,30 @@ func firstAttr(selection *goquery.Selection, selector, attribute string) string 
 	return value
 }
 
-// texts concatena los nodos que coinciden con el selector. goquery Text()
-// pega los textos sin separación; los sitios que separan títulos en varios
-// spans necesitan el mismo espacio que usa Scrapy.
-func texts(selection *goquery.Selection, selector, separator string) string {
-	var parts []string
-	selection.Find(selector).Each(func(_ int, node *goquery.Selection) {
-		parts = append(parts, node.Text())
-	})
-	return strings.Join(parts, separator)
+// noscriptImage lee el HTML crudo dentro de <noscript>. goquery puede dejar
+// ese contenido como texto cuando el parser tiene scripting habilitado, así
+// que se vuelve a parsear para no perder la imagen de respaldo de WooCommerce.
+func noscriptImage(selection *goquery.Selection) string {
+	for _, node := range selection.Find("noscript").Nodes {
+		var raw strings.Builder
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			if child.Type == html.TextNode {
+				raw.WriteString(child.Data)
+			}
+		}
+		text := strings.TrimSpace(raw.String())
+		if text == "" {
+			continue
+		}
+		document, err := goquery.NewDocumentFromReader(strings.NewReader(text))
+		if err != nil {
+			continue
+		}
+		if source, ok := document.Find("img").First().Attr("src"); ok && source != "" {
+			return source
+		}
+	}
+	return ""
 }
 
 func formatFromText(value string) *string {

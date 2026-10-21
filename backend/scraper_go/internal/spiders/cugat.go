@@ -226,6 +226,9 @@ func extractCugatProducts(body []byte, responseURL *url.URL) []domain.Product {
 			image = firstAttr(card, "noscript img", "src")
 		}
 		if image == "" {
+			image = noscriptImage(card)
+		}
+		if image == "" {
 			image = firstAttr(card, "img", "src")
 		}
 
