@@ -20,6 +20,8 @@ var (
 	ErrSinCambiosAdmin = errors.New("no se enviaron cambios para actualizar la cuenta")
 	// ErrIDUsuarioInvalido se emite cuando el identificador no es un UUID válido.
 	ErrIDUsuarioInvalido = errors.New("identificador de usuario inválido")
+	// ErrAutoModificacionAdmin impide que un admin se desactive o se degrade a sí mismo.
+	ErrAutoModificacionAdmin = domain.ErrAutoModificacionAdmin
 	// ErrUltimoAdmin impide desactivar o degradar al último administrador activo.
 	ErrUltimoAdmin = domain.ErrUltimoAdmin
 )
@@ -27,6 +29,7 @@ var (
 // AdminUsuarioService define los casos de uso del panel de administración de cuentas.
 type AdminUsuarioService interface {
 	Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)
+	Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error)
 	Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
 }
 
@@ -83,6 +86,15 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 	}, nil
 }
 
+// Metricas devuelve el total de cuentas y las activas para el panel.
+func (s *adminUsuarioService) Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error) {
+	total, activos, err := s.usuarioRepo.Contar(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.MetricasUsuariosDTO{TotalUsuarios: total, UsuariosActivos: activos}, nil
+}
+
 // Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
 // del último admin y la auditoría se ejecutan juntas en el repositorio.
 func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
@@ -90,7 +102,8 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrIDUsuarioInvalido
 	}
-	if strings.TrimSpace(actorID) == "" {
+	actorID = strings.TrimSpace(actorID)
+	if actorID == "" {
 		return nil, ErrIDUsuarioInvalido
 	}
 

@@ -97,10 +97,26 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 	}
 
 	var usuarios []domain.Usuario
-	if err := query.Find(&usuarios).Error; err != nil {
+	if err := query.Select(
+		"id, correo, nombre_completo, telefono, direccion, url_avatar, rol, plan, cuota_tokens_ia, esta_activo, ultimo_acceso, creado_el, actualizado_el",
+	).Find(&usuarios).Error; err != nil {
 		return nil, 0, err
 	}
 	return usuarios, total, nil
+}
+
+// Contar devuelve el total de cuentas y cuántas están activas, en dos COUNT
+// simples que no exponen columnas sensibles ni cargan filas en memoria.
+func (r *gormUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
+	var total, activos int64
+	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
+	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return 0, 0, err
+	}
+	if err := query.Session(&gorm.Session{}).Where("esta_activo = ?", true).Count(&activos).Error; err != nil {
+		return 0, 0, err
+	}
+	return total, activos, nil
 }
 
 // Create inserta un nuevo registro de usuario en la base de datos
@@ -173,6 +189,12 @@ func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 			}
 			if otros == 0 {
 				return domain.ErrUltimoAdmin
+			}
+			// Con otro admin activo, el cambio seguiría siendo peligroso si el
+			// actor se lo aplica a sí mismo: la revalidación de sesión lo
+			// dejaría fuera al instante. Exigir que lo haga otro administrador.
+			if actorUUID == usuario.ID {
+				return domain.ErrAutoModificacionAdmin
 			}
 		}
 

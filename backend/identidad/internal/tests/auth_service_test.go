@@ -51,6 +51,17 @@ func (m *mockUsuarioRepository) Create(ctx context.Context, usuario *domain.Usua
 	return nil
 }
 
+func (m *mockUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
+	var total, activos int64
+	for _, u := range m.usuarios {
+		total++
+		if u.EstaActivo {
+			activos++
+		}
+	}
+	return total, activos, nil
+}
+
 func (m *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
 	for _, u := range m.usuarios {
 		if u.ID.String() == id {
@@ -149,6 +160,9 @@ func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 		}
 		if otros == 0 {
 			return domain.ErrUltimoAdmin
+		}
+		if actorUUID == target.ID {
+			return domain.ErrAutoModificacionAdmin
 		}
 	}
 

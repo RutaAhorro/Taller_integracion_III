@@ -151,6 +151,25 @@ func (h *AdminUsuarioHandler) ListarUsuarios(c *gin.Context) {
 	c.JSON(http.StatusOK, pagina)
 }
 
+// Metricas godoc
+// @Summary      Métricas de cuentas de usuario
+// @Description  Devuelve el total de cuentas y cuántas están activas. Sólo rol admin.
+// @Tags         admin
+// @Produce      json
+// @Success      200  {object}  domain.MetricasUsuariosDTO
+// @Failure      401  {object}  httperrors.RespuestaError
+// @Failure      403  {object}  httperrors.RespuestaError
+// @Failure      500  {object}  httperrors.RespuestaError
+// @Router       /api/v1/admin/usuarios/metricas [get]
+func (h *AdminUsuarioHandler) Metricas(c *gin.Context) {
+	metricas, err := h.adminService.Metricas(c.Request.Context())
+	if err != nil {
+		httperrors.ResponderError(c, http.StatusInternalServerError, "Error interno al calcular las métricas de usuarios.", err)
+		return
+	}
+	c.JSON(http.StatusOK, metricas)
+}
+
 // ActualizarUsuario godoc
 // @Summary      Activar/desactivar, asignar rol o plan a una cuenta
 // @Description  Actualiza esta_activo, el rol RBAC y/o el plan comercial de un usuario. Sólo rol admin.
@@ -200,7 +219,7 @@ func (h *AdminUsuarioHandler) ActualizarUsuario(c *gin.Context) {
 			httperrors.ResponderError(c, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrUsuarioNoEncontrado):
 			httperrors.ResponderError(c, http.StatusNotFound, err.Error(), err)
-		case errors.Is(err, services.ErrUltimoAdmin):
+		case errors.Is(err, services.ErrAutoModificacionAdmin), errors.Is(err, services.ErrUltimoAdmin):
 			httperrors.ResponderError(c, http.StatusConflict, err.Error(), err)
 		default:
 			httperrors.ResponderError(c, http.StatusInternalServerError, "Error interno al actualizar la cuenta de usuario.", err)

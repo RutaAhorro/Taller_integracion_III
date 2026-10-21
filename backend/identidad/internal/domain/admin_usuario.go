@@ -94,11 +94,19 @@ type PaginaUsuariosAdminDTO struct {
 	Paginacion MetadatosPaginacionDTO `json:"paginacion"`
 }
 
+// MetricasUsuariosDTO resume el conteo de cuentas para el panel de administración.
+type MetricasUsuariosDTO struct {
+	TotalUsuarios   int64 `json:"total_usuarios"`
+	UsuariosActivos int64 `json:"usuarios_activos"`
+}
+
 // AdminUsuarioRepository define las operaciones de administración sobre api.usuarios.
 // Se mantiene separado de UsuarioRepository para no acoplar el perfil público.
 type AdminUsuarioRepository interface {
 	Listar(ctx context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, int64, error)
 	FindByID(ctx context.Context, id string) (*Usuario, error)
+	// Contar devuelve el total de cuentas y cuántas están activas.
+	Contar(ctx context.Context) (total, activos int64, err error)
 	// ActualizarConGuarda aplica el cambio y registra la auditoría en una sola
 	// transacción, impidiendo que se desactive o degrade al último admin activo.
 	ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error

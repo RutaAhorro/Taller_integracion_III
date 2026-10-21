@@ -13,6 +13,7 @@ func RegistrarRutasAdminUsuarios(rg *gin.RouterGroup, handler *handlers.AdminUsu
 	admin := rg.Group("/admin/usuarios", middleware.RequireAuth(repo), middleware.RequireRole("admin"))
 	{
 		admin.GET("", handler.ListarUsuarios)
+		admin.GET("/metricas", handler.Metricas)
 		admin.PUT("/:id", handler.ActualizarUsuario)
 	}
 }

@@ -17,6 +17,7 @@ import {
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
 import { ROUTES } from '@/core/routes';
+import { useAuth } from '@/hooks/useAuth';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
 import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-mock-data';
@@ -107,6 +108,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
   const [role, setRole] = useState('Todos');
   const [page, setPage] = useState(1);
   const limit = 20;
+  const { user: currentUser } = useAuth();
   const { users, pagination, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan } = useAdminUsers({
     page,
     limit,
@@ -165,6 +167,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                 {users.map((user) => {
                   const isActive = user.status === 'Activo';
                   const busy = pendingId === user.id;
+                  const isSelf = Boolean(currentUser?.id) && currentUser.id === user.id;
                   const roleEditable = (ADMIN_ROLES as readonly string[]).includes(user.role);
                   return (
                     <tr key={user.id} className="hover:bg-[#fcfdfb]">
@@ -173,12 +176,14 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                         {showActions ? (
                           <select
                             value={roleEditable ? user.role : ''}
-                            disabled={busy || !roleEditable}
+                            disabled={busy || !roleEditable || isSelf}
                             onChange={(event) => void changeUserRole(user.id, event.target.value as (typeof ADMIN_ROLES)[number])}
                             aria-label={`Asignar rol a ${user.name}`}
-                            title={roleEditable
-                              ? 'Asignar rol RBAC (SUP-242: PUT rol: admin | colaborador | registrado)'
-                              : 'El backend devolvió un rol no reconocido; no se puede reasignar desde el panel'}
+                            title={isSelf
+                              ? 'No puedes cambiar tu propio rol; debe hacerlo otro administrador'
+                              : roleEditable
+                                ? 'Asignar rol RBAC (SUP-242: PUT rol: admin | colaborador | registrado)'
+                                : 'El backend devolvió un rol no reconocido; no se puede reasignar desde el panel'}
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
                             {!roleEditable && <option value="">Desconocido</option>}
@@ -210,9 +215,11 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                           <button
                             type="button"
                             onClick={() => void toggleUserStatus(user.id)}
-                            disabled={busy}
+                            disabled={busy || isSelf}
                             aria-label={`${isActive ? 'Desactivar' : 'Activar'} a ${user.name}`}
-                            title={isActive ? 'Desactivar usuario (SUP-242: esta_activo=false)' : 'Activar usuario (SUP-242: esta_activo=true)'}
+                            title={isSelf
+                              ? 'No puedes desactivar tu propia cuenta; debe hacerlo otro administrador'
+                              : isActive ? 'Desactivar usuario (SUP-242: esta_activo=false)' : 'Activar usuario (SUP-242: esta_activo=true)'}
                             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${isActive ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}
                           >
                             <Power className="size-3.5" aria-hidden="true" />{busy ? 'Guardando…' : isActive ? 'Desactivar' : 'Activar'}

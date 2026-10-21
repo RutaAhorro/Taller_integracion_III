@@ -252,6 +252,40 @@ func TestAdminUsuariosRechazaLimiteExcesivo(t *testing.T) {
 	}
 }
 
+func TestAdminUsuariosMetricas(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	repo.usuarios["activo@uct.cl"] = &domain.Usuario{
+		ID: uuid.New(), Correo: "activo@uct.cl", NombreCompleto: "Activo", Rol: domain.RolRegistrado, EstaActivo: true,
+	}
+	repo.usuarios["inactivo@uct.cl"] = &domain.Usuario{
+		ID: uuid.New(), Correo: "inactivo@uct.cl", NombreCompleto: "Inactivo", Rol: domain.RolRegistrado, EstaActivo: false,
+	}
+
+	w := adminRequest(t, router, repo, http.MethodGet, "/api/v1/admin/usuarios/metricas", domain.RolRegistrado, "")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("un no admin no debe leer métricas, se obtuvo %d", w.Code)
+	}
+
+	w = adminRequest(t, router, repo, http.MethodGet, "/api/v1/admin/usuarios/metricas", domain.RolAdmin, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	var metricas domain.MetricasUsuariosDTO
+	if err := json.Unmarshal(w.Body.Bytes(), &metricas); err != nil {
+		t.Fatalf("respuesta inválida: %v", err)
+	}
+	var total, activos int64
+	for _, usuario := range repo.usuarios {
+		total++
+		if usuario.EstaActivo {
+			activos++
+		}
+	}
+	if metricas.TotalUsuarios != total || metricas.UsuariosActivos != activos {
+		t.Fatalf("métricas incorrectas: %+v; esperado total=%d activos=%d", metricas, total, activos)
+	}
+}
+
 func TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
 	adminID := uuid.New()
@@ -282,19 +316,63 @@ func TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T) {
 		}
 	}
 
-	// Con otro admin activo la operación sí se permite y el rol se normaliza.
+	// Con otro admin activo la operación sigue prohibida si el actor es el
+	// propio usuario: nadie debe desactivarse o degradarse a sí mismo.
+	segundoAdminID := uuid.New()
 	repo.usuarios["segundo-admin@uct.cl"] = &domain.Usuario{
-		ID: uuid.New(), Correo: "segundo-admin@uct.cl", NombreCompleto: "Segundo Admin", Rol: domain.RolAdmin, EstaActivo: true,
+		ID: segundoAdminID, Correo: "segundo-admin@uct.cl", NombreCompleto: "Segundo Admin", Rol: domain.RolAdmin, EstaActivo: true,
 	}
 	w := adminRequestComo(t, router, adminID.String(), domain.RolAdmin, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), `{"esta_activo":false}`)
+	if w.Code != http.StatusConflict {
+		t.Fatalf("un admin no debe desactivarse a sí mismo, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), services.ErrAutoModificacionAdmin.Error()) {
+		t.Fatalf("el 409 debía explicar la auto-modificación: %s", w.Body.String())
+	}
+	if !repo.usuarios["unico-admin@uct.cl"].EstaActivo {
+		t.Fatal("la auto-desactivación no debía aplicarse")
+	}
+
+	// Otro administrador sí puede desactivarlo.
+	w = adminRequestComo(t, router, segundoAdminID.String(), domain.RolAdmin, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), `{"esta_activo":false}`)
 	if w.Code != http.StatusOK {
-		t.Fatalf("con otro admin activo se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+		t.Fatalf("otro admin debía poder desactivar la cuenta, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 	}
 	if repo.usuarios["unico-admin@uct.cl"].EstaActivo {
 		t.Fatal("el admin debía quedar inactivo")
 	}
 	if repo.usuarios["unico-admin@uct.cl"].Rol != domain.RolAdmin {
 		t.Fatalf("el rol histórico debía normalizarse a admin, se obtuvo %q", repo.usuarios["unico-admin@uct.cl"].Rol)
+	}
+}
+
+func TestAdminUsuariosRechazaAutoDegradacionPeroPermitePlan(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	adminID := uuid.New()
+	repo.usuarios["self-admin@uct.cl"] = &domain.Usuario{
+		ID: adminID, Correo: "self-admin@uct.cl", NombreCompleto: "Self Admin", Rol: domain.RolAdmin, EstaActivo: true,
+	}
+	repo.usuarios["otro-admin@uct.cl"] = &domain.Usuario{
+		ID: uuid.New(), Correo: "otro-admin@uct.cl", NombreCompleto: "Otro Admin", Rol: domain.RolAdmin, EstaActivo: true,
+	}
+
+	for _, body := range []string{`{"rol":"colaborador"}`, `{"rol":"registrado"}`} {
+		w := adminRequestComo(t, router, adminID.String(), domain.RolAdmin, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), body)
+		if w.Code != http.StatusConflict {
+			t.Fatalf("se esperaba 409 al auto-degradarse con %s, se obtuvo %d. Body: %s", body, w.Code, w.Body.String())
+		}
+		if repo.usuarios["self-admin@uct.cl"].Rol != domain.RolAdmin {
+			t.Fatal("el rol propio no debía cambiar")
+		}
+	}
+
+	// Cambiar el plan propio no afecta la autorización y debe permitirse.
+	w := adminRequestComo(t, router, adminID.String(), domain.RolAdmin, http.MethodPut, "/api/v1/admin/usuarios/"+adminID.String(), `{"plan":"premium"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("el plan propio debía actualizarse, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	if repo.usuarios["self-admin@uct.cl"].Plan != domain.PlanPremium {
+		t.Fatal("el plan propio no se persistió")
 	}
 }
 

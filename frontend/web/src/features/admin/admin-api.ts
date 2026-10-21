@@ -26,7 +26,8 @@ export const ADMIN_ENDPOINTS = {
   // Ej.: /api/v1/admin/productos/fuentes — persiste scraper.cadenas_supermercado.
   fuentes: '/admin/productos/fuentes',
   // SUP-279 — un endpoint de métricas por servicio, sin agregación en Gateway.
-  // Nombres exactos a confirmar al implementar.
+  // Identidad ya expone /admin/usuarios/metricas (SUP-242); Catálogo y Control
+  // quedan pendientes de sus tickets.
   metricasIdentidad: '/admin/usuarios/metricas',
   metricasCatalogo: '/admin/productos/metricas',
   metricasControl: '/scraper/metricas',
@@ -307,10 +308,13 @@ export async function updateAdminSource(id: string, patch: { habilitada: boolean
   return adminSourceFromBackend(fuente);
 }
 
-// Métricas (SUP-279). Cada servicio se pide por separado; el hook las combina
-// con Promise.allSettled para tolerar fallo parcial (SUP-280).
+// Métricas (SUP-279/SUP-242). Identidad expone el conteo real de cuentas;
+// Catálogo y Control siguen pendientes de sus tickets.
 export function fetchIdentidadMetrics(signal?: AbortSignal): Promise<IdentidadMetrics> {
-  return request<IdentidadMetrics>(ADMIN_ENDPOINTS.metricasIdentidad, { signal });
+  return request<{ total_usuarios: number; usuarios_activos: number }>(
+    ADMIN_ENDPOINTS.metricasIdentidad,
+    { signal },
+  ).then((data) => ({ totalUsuarios: data.total_usuarios, usuariosActivos: data.usuarios_activos }));
 }
 
 export function fetchCatalogoMetrics(signal?: AbortSignal): Promise<CatalogoMetrics> {
