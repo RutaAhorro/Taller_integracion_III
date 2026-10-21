@@ -5,14 +5,14 @@ on:
     branches: [main, develop, develop-refactor]
     paths:
       - 'backend/scraper_go/**'
-      - 'backend/scraper/research/*_categories.txt'
+      - 'backend/scraper_go/categories/*_categories.txt'
       - 'docker-compose.scraper-go.yml'
       - '.github/workflows/scraper-go-checks.yml'
   push:
     branches: [develop-refactor]
     paths:
       - 'backend/scraper_go/**'
-      - 'backend/scraper/research/*_categories.txt'
+      - 'backend/scraper_go/categories/*_categories.txt'
       - 'docker-compose.scraper-go.yml'
       - '.github/workflows/scraper-go-checks.yml'
   workflow_dispatch:

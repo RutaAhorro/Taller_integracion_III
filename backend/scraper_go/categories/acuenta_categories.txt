@@ -1,0 +1,15 @@
+#categoria frutas y verduras
+https://www.acuenta.cl/ca/frutas-y-verduras/06
+
+#categoria lacteos, fiambres, quesos y huevos 
+#esta categoria obtiene mas datos que las categorias de otros supermercados
+https://www.acuenta.cl/ca/frescos-y-lacteos/07
+
+# Categoría Congelados
+https://www.acuenta.cl/ca/congelados/04
+
+# categoria despensa
+https://www.acuenta.cl/ca/despensa/05?
+
+#categoria Carnes y Pescados
+https://www.acuenta.cl/ca/carnes-y-pescados/03

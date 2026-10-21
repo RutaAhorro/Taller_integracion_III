@@ -87,6 +87,12 @@ separadas por coma sin editar el archivo. El campo `add_url` de un trabajo
 agrega la categoría al archivo `<spider>_categories.txt` del directorio
 configurado.
 
+La fuente de verdad de las categorías es `backend/scraper_go/categories/`.
+Python las sigue leyendo desde `/app/research` mediante un montaje de compose;
+en el host, `backend/scraper/research/*_categories.txt` son enlaces simbólicos
+temporales a esa carpeta para no romper el rollback. Al borrar
+`backend/scraper`, los enlaces desaparecen pero las categorías quedan en Go.
+
 ## Desarrollo y pruebas
 
 Go no se instala en el host: las pruebas se ejecutan en Docker. Desde la raíz
@@ -100,7 +106,7 @@ docker run --rm --user "$(id -u):$(id -g)" \
 ```
 
 La imagen usa el contexto de build en la raíz para tomar las categorías de
-`backend/scraper/research`:
+`backend/scraper_go/categories`:
 
 ```bash
 docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .

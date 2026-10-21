@@ -21,9 +21,9 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/scraper-worker /app/scraper-worker
-# Hasta el cutover, las categorías viven en el árbol de Python para no
-# duplicar la fuente de verdad. En compose se montan en /app/research.
-COPY backend/scraper/research/*_categories.txt /app/research/
+# Las categorías son la fuente de verdad del servicio Go. Se copian a
+# /app/research para mantener el mismo SCRAPER_CATEGORY_DIR que Python.
+COPY backend/scraper_go/categories/*_categories.txt /app/research/
 RUN mkdir -p /var/lib/scraper
 
 ENV SCRAPER_STATE_DIR=/var/lib/scraper \

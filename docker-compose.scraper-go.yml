@@ -29,7 +29,7 @@ services:
       gateway:
         condition: service_healthy
     volumes:
-      - ./backend/scraper/research:/app/research
+      - ./backend/scraper_go/categories:/app/research
       - scraperdata:/var/lib/scraper
     security_opt:
       - no-new-privileges:true

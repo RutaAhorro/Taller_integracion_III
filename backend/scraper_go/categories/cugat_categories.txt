@@ -1,0 +1,16 @@
+# categoria frutas y verduras
+https://cugat.cl/categoria-producto/la-gran-feria-cugat/
+
+# Categoria Lacteos y Congelados 
+# huevos se dejo aparte ya que en esta cadena estan dentro de la categoria despensa
+https://cugat.cl/categoria-producto/lacteos/
+https://cugat.cl/categoria-producto/mundo-congelados/
+
+# Categoria quesos y fiambres
+https://cugat.cl/categoria-producto/fiambreria-embutidos-y-quesos/
+
+# categoria despensa
+https://cugat.cl/categoria-producto/despensa/
+
+# Categoria Carnes y Pescados
+https://cugat.cl/categoria-producto/carniceria/
