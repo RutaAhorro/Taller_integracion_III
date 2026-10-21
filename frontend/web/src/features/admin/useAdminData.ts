@@ -93,6 +93,13 @@ function userMutationMessage(prefix: string, err: unknown): string {
   return `${prefix} (${toMessage(err)})`;
 }
 
+// El hook serializa las mutaciones: si llega otra mientras hay una en vuelo,
+// se informa en vez de descartarla en silencio (SUP-242).
+const MUTACION_EN_CURSO =
+  'Hay otra actualización en curso. Espera a que termine antes de modificar otro usuario.';
+const MUTACION_EN_CURSO_FUENTE =
+  'Hay otra actualización en curso. Espera a que termine antes de modificar otra fuente.';
+
 export function useAdminUsers(params: AdminUsersParams = {}) {
   const page = Math.max(1, params.page ?? 1);
   const limit = params.limit ?? 20;
@@ -192,7 +199,11 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
 
   const toggleUserStatus = useCallback(async (id: string) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingRef.current) return;
+    if (!target) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
     const nextActive = target.status !== 'Activo';
     beginMutation(id);
     setUsers((prev) =>
@@ -223,7 +234,11 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
 
   const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingRef.current || target.role === role) return;
+    if (!target || target.role === role) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
     beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
     if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
@@ -249,7 +264,11 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
 
   const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingRef.current || target.plan === plan) return;
+    if (!target || target.plan === plan) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
     beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
     if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
@@ -329,7 +348,11 @@ export function useAdminSources() {
 
   const toggleSource = useCallback(async (id: string) => {
     const target = sources.find((source) => source.id === id);
-    if (!target || pendingId) return;
+    if (!target) return;
+    if (pendingId) {
+      setError(MUTACION_EN_CURSO_FUENTE);
+      return;
+    }
     const habilitada = !target.habilitada;
     setPendingId(id);
     setSources((prev) =>

@@ -80,7 +80,7 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 
 ### `internal/middleware/jwt_auth.go` (package middleware)
 
-- `RequireAuth(repos ...domain.UsuarioRepository) gin.HandlerFunc`
+- `RequireAuth(repo domain.UsuarioRepository) gin.HandlerFunc`
 
 ### `internal/middleware/rate_limit.go` (package middleware)
 

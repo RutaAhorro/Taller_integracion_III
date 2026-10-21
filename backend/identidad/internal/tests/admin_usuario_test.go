@@ -418,6 +418,33 @@ func TestAdminUsuariosNormalizaAliasYAuditaElCambio(t *testing.T) {
 	}
 }
 
+func TestAdminUsuariosNoAuditaMutacionIdempotente(t *testing.T) {
+	router, repo := newAdminUsuariosTestRouter(t)
+	targetID := uuid.New()
+	repo.usuarios["idempotente@uct.cl"] = &domain.Usuario{
+		ID: targetID, Correo: "idempotente@uct.cl", NombreCompleto: "Idempotente",
+		Rol: domain.RolRegistrado, Plan: domain.PlanBasico, EstaActivo: true,
+	}
+
+	// Mismos valores: no hay cambio efectivo, no debe quedar auditoría.
+	w := adminRequest(t, router, repo, http.MethodPut, "/api/v1/admin/usuarios/"+targetID.String(), domain.RolAdmin, `{"rol":"registrado","esta_activo":true,"plan":"basico"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	if len(repo.auditorias) != 0 {
+		t.Fatalf("un PUT idempotente no debía auditar, se obtuvieron %d registros", len(repo.auditorias))
+	}
+
+	// Un cambio real sí se audita una sola vez.
+	w = adminRequest(t, router, repo, http.MethodPut, "/api/v1/admin/usuarios/"+targetID.String(), domain.RolAdmin, `{"plan":"premium"}`)
+	if w.Code != http.StatusOK {
+		t.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+	}
+	if len(repo.auditorias) != 1 {
+		t.Fatalf("se esperaba una auditoría, se obtuvieron %d", len(repo.auditorias))
+	}
+}
+
 func TestAdminUsuariosFiltraPorTextoRolYEstado(t *testing.T) {
 	router, repo := newAdminUsuariosTestRouter(t)
 	repo.usuarios["ana@uct.cl"] = &domain.Usuario{ID: uuid.New(), Correo: "ana@uct.cl", NombreCompleto: "Ana Admin", Rol: domain.RolAdmin, EstaActivo: true}

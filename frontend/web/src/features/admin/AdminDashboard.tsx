@@ -136,6 +136,10 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
 
   const inicio = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
   const fin = Math.min(pagination.page * pagination.limit, pagination.total);
+  // El hook serializa las mutaciones (una a la vez). Bloquear toda la tabla
+  // mientras hay una en vuelo evita que el operador crea que aplicó un cambio
+  // que el hook descartaría en silencio (SUP-242).
+  const isAnyMutationPending = pendingId !== null;
 
   return (
     <section className="rounded-2xl border border-[#dfe5dc] bg-white shadow-sm">
@@ -176,7 +180,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                         {showActions ? (
                           <select
                             value={roleEditable ? user.role : ''}
-                            disabled={busy || !roleEditable || isSelf}
+                            disabled={isAnyMutationPending || !roleEditable || isSelf}
                             onChange={(event) => void changeUserRole(user.id, event.target.value as (typeof ADMIN_ROLES)[number])}
                             aria-label={`Asignar rol a ${user.name}`}
                             title={isSelf
@@ -195,7 +199,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                         {showActions ? (
                           <select
                             value={user.plan ?? ''}
-                            disabled={busy}
+                            disabled={isAnyMutationPending}
                             onChange={(event) => void changeUserPlan(user.id, event.target.value as (typeof ADMIN_PLANS)[number])}
                             aria-label={`Asignar plan a ${user.name}`}
                             title="Asignar plan comercial (campo aparte, nunca en `rol`)"
@@ -215,7 +219,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                           <button
                             type="button"
                             onClick={() => void toggleUserStatus(user.id)}
-                            disabled={busy || isSelf}
+                            disabled={isAnyMutationPending || isSelf}
                             aria-label={`${isActive ? 'Desactivar' : 'Activar'} a ${user.name}`}
                             title={isSelf
                               ? 'No puedes desactivar tu propia cuenta; debe hacerlo otro administrador'
@@ -271,6 +275,8 @@ function SourcesTable() {
     () => sources.filter((source) => source.name.toLowerCase().includes(query.toLowerCase())),
     [sources, query],
   );
+  // Igual que en usuarios: el hook serializa y descarta mutaciones concurrentes.
+  const isAnyMutationPending = pendingId !== null;
 
   return (
     <section className="rounded-2xl border border-[#dfe5dc] bg-white shadow-sm">
@@ -295,7 +301,7 @@ function SourcesTable() {
                         <button
                           type="button"
                           onClick={() => void toggleSource(source.id)}
-                          disabled={busy}
+                          disabled={isAnyMutationPending}
                           aria-label={`${source.habilitada ? 'Deshabilitar' : 'Habilitar'} fuente ${source.name}`}
                           title={source.habilitada ? 'Deshabilitar fuente (SUP-243)' : 'Habilitar fuente (SUP-243)'}
                           className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${source.habilitada ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}

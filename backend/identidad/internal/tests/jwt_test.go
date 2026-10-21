@@ -62,10 +62,17 @@ func TestJWT_TokenInvalido(t *testing.T) {
 }
 
 func TestMiddleware_RequireAuth(t *testing.T) {
+	repo := newMockUsuarioRepository()
+	usuarioID := uuid.New()
+	repo.usuarios["middleware@uct.cl"] = &domain.Usuario{
+		ID: usuarioID, Correo: "middleware@uct.cl", NombreCompleto: "Middleware",
+		Rol: domain.RolColaborador, EstaActivo: true,
+	}
+
 	r := gin.New()
 	r.Use(httperrors.ErrorHandler())
 
-	r.GET("/protegido", middleware.RequireAuth(), func(c *gin.Context) {
+	r.GET("/protegido", middleware.RequireAuth(repo), func(c *gin.Context) {
 		userID, _ := c.Get("user_id")
 		rol, _ := c.Get("rol")
 		provider, _ := c.Get("provider")
@@ -102,7 +109,7 @@ func TestMiddleware_RequireAuth(t *testing.T) {
 	})
 
 	t.Run("Cookie jwt valida exitosa", func(t *testing.T) {
-		tokenStr, err := security.GenerarToken("usr-123", "colaborador", "google")
+		tokenStr, err := security.GenerarToken(usuarioID.String(), domain.RolColaborador, "google")
 		if err != nil {
 			t.Fatalf("Error generando token: %v", err)
 		}
@@ -122,10 +129,19 @@ func TestMiddleware_RequireAuth(t *testing.T) {
 		var res map[string]interface{}
 		json.Unmarshal(w.Body.Bytes(), &res)
 
-		if res["user_id"] != "usr-123" || res["rol"] != "colaborador" || res["provider"] != "google" {
+		if res["user_id"] != usuarioID.String() || res["rol"] != domain.RolColaborador || res["provider"] != "google" {
 			t.Errorf("Claims devueltos no coinciden con los inyectados: %v", res)
 		}
 	})
+}
+
+func TestMiddleware_RequireAuthExigeRepositorio(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("RequireAuth(nil) debía entrar en pánico para no omitir la revalidación de sesión")
+		}
+	}()
+	middleware.RequireAuth(nil)
 }
 
 func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(t *testing.T) {

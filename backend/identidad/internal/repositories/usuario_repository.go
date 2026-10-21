@@ -19,11 +19,51 @@ type gormUsuarioRepository struct {
 	db *gorm.DB
 }
 
+// errBaseDeDatosNoDisponible lo devuelve el repositorio cerrado que se usa
+// cuando el módulo se construye sin conexión (pruebas de límites HTTP). Nunca
+// se omite la revalidación: toda operación falla de forma cerrada.
+var errBaseDeDatosNoDisponible = errors.New("base de datos no configurada")
+
+// repositorioCerrado satisface las interfaces de usuario y de administración
+// sin tocar la base de datos. Mantiene el arranque de routers de prueba sin
+// conexión y garantiza que ninguna petición autenticada se autorice por
+// accidente cuando falta la revalidación en api.usuarios.
+type repositorioCerrado struct{}
+
+func (repositorioCerrado) FindByEmail(context.Context, string) (*domain.Usuario, error) {
+	return nil, errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) FindByID(context.Context, string) (*domain.Usuario, error) {
+	return nil, errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) Create(context.Context, *domain.Usuario) error {
+	return errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) Actualizar(context.Context, string, map[string]interface{}) error {
+	return errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) Listar(context.Context, domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
+	return nil, 0, errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) Contar(context.Context) (int64, int64, error) {
+	return 0, 0, errBaseDeDatosNoDisponible
+}
+
+func (repositorioCerrado) ActualizarConGuarda(context.Context, string, map[string]interface{}, string) error {
+	return errBaseDeDatosNoDisponible
+}
+
 // NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM.
-// Sin conexión devuelve nil para que los routers de prueba no intenten consultar.
+// Sin conexión devuelve un repositorio cerrado (fail-closed) en vez de nil, para
+// que RequireAuth siempre tenga un repositorio real que consultar.
 func NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository {
 	if db == nil {
-		return nil
+		return repositorioCerrado{}
 	}
 	return &gormUsuarioRepository{db: db}
 }
@@ -31,7 +71,7 @@ func NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository {
 // NewAdminUsuarioRepository expone las operaciones administrativas del mismo adaptador.
 func NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository {
 	if db == nil {
-		return nil
+		return repositorioCerrado{}
 	}
 	return &gormUsuarioRepository{db: db}
 }
@@ -208,13 +248,24 @@ func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 
 		cambios := map[string]interface{}{}
 		if nuevo, ok := datos["rol"]; ok {
-			cambios["rol"] = map[string]interface{}{"anterior": usuario.Rol, "nuevo": nuevo}
+			// Sólo se audita un cambio efectivo. Un PUT idempotente con el
+			// mismo valor no debe dejar un registro ficticio (anterior == nuevo).
+			if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(usuario.Rol) {
+				cambios["rol"] = map[string]interface{}{"anterior": usuario.Rol, "nuevo": nuevo}
+			}
 		}
 		if nuevo, ok := datos["esta_activo"]; ok {
-			cambios["esta_activo"] = map[string]interface{}{"anterior": usuario.EstaActivo, "nuevo": nuevo}
+			if activo, esBool := nuevo.(bool); !esBool || activo != usuario.EstaActivo {
+				cambios["esta_activo"] = map[string]interface{}{"anterior": usuario.EstaActivo, "nuevo": nuevo}
+			}
 		}
 		if nuevo, ok := datos["plan"]; ok {
-			cambios["plan"] = map[string]interface{}{"anterior": usuario.Plan, "nuevo": nuevo}
+			if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(usuario.Plan) {
+				cambios["plan"] = map[string]interface{}{"anterior": usuario.Plan, "nuevo": nuevo}
+			}
+		}
+		if len(cambios) == 0 {
+			return nil
 		}
 		auditoria := domain.AuditoriaAdminUsuario{
 			ActorID:    actorUUID,

@@ -188,7 +188,9 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    Para SUP-242, aplicar después `08_normalizar_rol_admin_y_auditoria.sql`:
    normaliza el alias `administrador` a `admin` y crea la auditoría de cambios
    administrativos. Luego aplicar `09_plan_y_ultimo_acceso.sql`, que agrega el
-   plan comercial y la marca de último acceso. Si se re-ejecuta `06`, éste
+   plan comercial y la marca de último acceso. El `09` ejecuta el DDL en una
+   transacción breve y valida el `CHECK` en otra posterior, para que el escaneo
+   no retenga el `AccessExclusiveLock`. Si se re-ejecuta `06`, éste
    restaura los grants de auditoría cuando la tabla ya existe; `09` no concede
    permisos nuevos.
 3. La migración crea el snapshot, elimina las dos dependencias externas de

@@ -173,13 +173,23 @@ func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 
 	cambios := map[string]interface{}{}
 	if nuevo, ok := datos["rol"]; ok {
-		cambios["rol"] = map[string]interface{}{"anterior": anteriorRol, "nuevo": nuevo}
+		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorRol) {
+			cambios["rol"] = map[string]interface{}{"anterior": anteriorRol, "nuevo": nuevo}
+		}
 	}
 	if nuevo, ok := datos["esta_activo"]; ok {
-		cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
+		if activo, esBool := nuevo.(bool); !esBool || activo != anteriorActivo {
+			cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
+		}
 	}
 	if nuevo, ok := datos["plan"]; ok {
-		cambios["plan"] = map[string]interface{}{"anterior": anteriorPlan, "nuevo": nuevo}
+		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorPlan) {
+			cambios["plan"] = map[string]interface{}{"anterior": anteriorPlan, "nuevo": nuevo}
+		}
+	}
+	// Igual que el repositorio real: un PUT idempotente no genera auditoría.
+	if len(cambios) == 0 {
+		return nil
 	}
 	m.auditorias = append(m.auditorias, domain.AuditoriaAdminUsuario{
 		ActorID:    actorUUID,
