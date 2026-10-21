@@ -27,6 +27,7 @@ var (
 		"super.lider.cl": {},
 	}
 	liderCategoryIDPattern = regexp.MustCompile(`^\d+(?:_\d+)*$`)
+	liderFormatPattern     = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|g|ml|lt|l|un(?:idades?)?)\b`)
 )
 
 type Lider struct {
@@ -308,7 +309,7 @@ func extractLiderNextData(document *goquery.Document, responseURL *url.URL) ([]d
 				EanGtin:           productCode,
 				SKU:               sku,
 				Marca:             normalize.Texto(item["brand"]),
-				FormatoCrudo:      formatFromText(*name),
+				FormatoCrudo:      formatFromText(*name, liderFormatPattern),
 				MecanicaPromocion: mechanics,
 				EnStock:           inStock,
 				URLProducto:       &productURL,
@@ -391,7 +392,7 @@ func extractLiderCards(document *goquery.Document, responseURL *url.URL) []domai
 			EanGtin:           productCode,
 			SKU:               sku,
 			Marca:             normalize.Texto(firstText(card, "div.mb1.mt2.b")),
-			FormatoCrudo:      formatFromText(*name),
+			FormatoCrudo:      formatFromText(*name, liderFormatPattern),
 			MecanicaPromocion: mechanics,
 			EnStock:           inStock,
 			URLProducto:       &productURL,

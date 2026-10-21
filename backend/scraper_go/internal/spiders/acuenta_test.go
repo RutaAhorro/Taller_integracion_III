@@ -73,6 +73,15 @@ func TestAcuentaMergesVisibleOfferIntoRSCProduct(t *testing.T) {
 	}
 }
 
+func TestAcuentaNameFromSlugUsesPythonTitle(t *testing.T) {
+	if got := acuentaNameFromSlug("coca-cola-1.5l-1075736"); got == nil || *got != "Coca Cola 1.5L" {
+		t.Errorf("nombre = %v", got)
+	}
+	if got := formatFromText("Pan 1 unidad", acuentaFormatPattern); got == nil || *got != "1 unidad" {
+		t.Errorf("formato = %v", got)
+	}
+}
+
 func TestAcuentaPageURLRemovesInternalToken(t *testing.T) {
 	rawURL := "https://www.acuenta.cl/ca/congelados/04?currentPage=2&_rsc=2x5uv"
 	if got := acuentaPageURL(rawURL, 3); got != "https://www.acuenta.cl/ca/congelados/04?currentPage=3" {

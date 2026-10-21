@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 
@@ -48,6 +47,7 @@ var (
 	acuentaMultiPrice     = regexp.MustCompile(`\b(\d+)\s*[xX]\s*\$\s*([\d.,]+)`)
 	acuentaAmountPattern  = regexp.MustCompile(`\$\s*([\d.,]+)`)
 	acuentaBrandText      = regexp.MustCompile(`(?i)\b(Lider|Super Cerdo|La Crianza|Savory|Mega|PF)\b`)
+	acuentaFormatPattern  = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|g|gr|ml|lt|l|un(?:idad(?:es)?)?)\b`)
 	acuentaWordPattern    = regexp.MustCompile(`[a-záéíóúñ0-9]+`)
 	acuentaTrailingDigits = regexp.MustCompile(`-\d+$`)
 )
@@ -274,7 +274,7 @@ func extractAcuentaCards(body []byte, responseURL *url.URL) []domain.Product {
 			PrecioOferta:      offer,
 			SKU:               sku,
 			Marca:             acuentaBrandFromText(*text),
-			FormatoCrudo:      formatFromText(*name),
+			FormatoCrudo:      formatFromText(*name, acuentaFormatPattern),
 			MecanicaPromocion: promotion,
 			URLProducto:       &productURL,
 			Imagen:            imageURL,
@@ -439,7 +439,7 @@ func extractAcuentaRSCProducts(body []byte, responseURL *url.URL) []domain.Produ
 			EanGtin:           ean,
 			SKU:               &sku,
 			Marca:             brand,
-			FormatoCrudo:      formatFromText(*name),
+			FormatoCrudo:      formatFromText(*name, acuentaFormatPattern),
 			MecanicaPromocion: mechanics,
 			EnStock:           stock,
 			URLProducto:       &productURL,
@@ -576,15 +576,7 @@ func acuentaTokens(value string) map[string]struct{} {
 
 func acuentaNameFromSlug(slug string) *string {
 	readable := acuentaTrailingDigits.ReplaceAllString(slug, "")
-	words := strings.Fields(strings.ReplaceAll(readable, "-", " "))
-	for index, word := range words {
-		runes := []rune(strings.ToLower(word))
-		if len(runes) > 0 {
-			runes[0] = unicode.ToUpper(runes[0])
-		}
-		words[index] = string(runes)
-	}
-	return normalize.Texto(strings.Join(words, " "))
+	return normalize.Texto(pythonTitle(strings.ReplaceAll(readable, "-", " ")))
 }
 
 func acuentaPricesFromText(text string) (*float64, *float64, *string) {

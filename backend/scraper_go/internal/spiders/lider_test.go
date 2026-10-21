@@ -146,6 +146,18 @@ func TestExtractLiderPrefersHydratedItems(t *testing.T) {
 	}
 }
 
+func TestLiderFormatFromTextMatchesPython(t *testing.T) {
+	if got := formatFromText("Pan 1 unidad", liderFormatPattern); got != nil {
+		t.Errorf("Lider no debía extraer formato de 'unidad': %v", got)
+	}
+	if got := formatFromText("Pan 1 unidade", liderFormatPattern); got == nil || *got != "1 unidade" {
+		t.Errorf("formato = %v", got)
+	}
+	if got := formatFromText("Bebida 1.5 L", liderFormatPattern); got == nil || *got != "1.5 L" {
+		t.Errorf("formato = %v", got)
+	}
+}
+
 func TestValidateLiderURLs(t *testing.T) {
 	categoryURL := "https://super.lider.cl/browse/frutas-y-verduras/frutas/22884697_93034836"
 	productURL := "https://super.lider.cl/ip/frutas/00203017000000"

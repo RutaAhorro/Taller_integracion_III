@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
@@ -15,7 +16,35 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
-var formatPattern = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|g|ml|lt|l|un(?:idad(?:es)?)?)\b`)
+func formatFromText(value string, pattern *regexp.Regexp) *string {
+	match := pattern.FindString(value)
+	if match == "" {
+		return nil
+	}
+	return normalize.Texto(match)
+}
+
+// pythonTitle replica str.title() de Python: cada secuencia de letras empieza
+// en mayúscula y el resto se pasa a minúscula. Los dígitos y signos cortan la
+// secuencia, por eso "1.5l" queda como "1.5L".
+func pythonTitle(value string) string {
+	var builder strings.Builder
+	previousLetter := false
+	for _, character := range value {
+		if unicode.IsLetter(character) {
+			if previousLetter {
+				builder.WriteRune(unicode.ToLower(character))
+			} else {
+				builder.WriteRune(unicode.ToUpper(character))
+			}
+			previousLetter = true
+			continue
+		}
+		builder.WriteRune(character)
+		previousLetter = false
+	}
+	return builder.String()
+}
 
 func readCategoryURLs(file string) []string {
 	body, err := os.ReadFile(file)
@@ -181,14 +210,6 @@ func noscriptImage(selection *goquery.Selection) string {
 		}
 	}
 	return ""
-}
-
-func formatFromText(value string) *string {
-	match := formatPattern.FindString(value)
-	if match == "" {
-		return nil
-	}
-	return normalize.Texto(match)
 }
 
 func firstNonNilString(values ...*string) *string {
