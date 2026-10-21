@@ -275,6 +275,7 @@ check_kubernetes_probes()
 assert state('identidad')==before
 
 # Single-domain outages never cause fallback or withdraw the edge Gateway.
+# Catálogo valida el JWT localmente: la caída de Identidad no bloquea su administración.
 compose('stop','identidad')
 try:
     body,_=request('/api/v1/auth/me',502,opener=new_client); assert body['error']=='identidad_unavailable'
@@ -317,6 +318,8 @@ compose('-f',str(root/'docker-compose.identidad-rollback.yml'),'up','-d','--no-d
 compose('stop','identidad')
 try:
     request('/api/v1/auth/me',opener=new_client)
+    # El rollback sustituye Identidad, no Catálogo: la lectura administrativa
+    # sigue disponible porque Catálogo valida el JWT localmente.
     request('/api/v1/admin/productos',opener=new_client)
     request('/api/v1/auth/register',201,method='POST',data={'correo':'sup272.rollback@example.test','password':'Sup272FixturePassword123!','nombre_completo':'Rollback Fixture'})
 finally:

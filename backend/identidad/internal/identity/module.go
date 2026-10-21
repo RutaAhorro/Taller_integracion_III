@@ -5,6 +5,7 @@ package identity
 import (
 	"context"
 	"errors"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/middleware"
@@ -18,8 +19,10 @@ import (
 )
 
 type Module struct {
-	handler *handlers.AuthHandler
-	redis   *redis.Client
+	handler      *handlers.AuthHandler
+	adminHandler *handlers.AdminUsuarioHandler
+	repo         domain.UsuarioRepository
+	redis        *redis.Client
 	// recuperacion emite tokens y despacha su correo (SUP-184). El endpoint que la
 	// expone (POST /auth/recuperar) es SUP-233.
 	recuperacion services.RecuperacionService
@@ -39,8 +42,11 @@ func New(db *gorm.DB, rdb *redis.Client, secureCookie ...bool) *Module {
 
 func NewConRecuperacion(db *gorm.DB, rdb *redis.Client, recuperacion Recuperacion, secureCookie ...bool) *Module {
 	repo := repositories.NewUsuarioRepository(db)
+	adminRepo := repositories.NewAdminUsuarioRepository(db)
 	return &Module{
 		handler:      handlers.NewAuthHandler(services.NewAuthService(repo), secureCookie...),
+		adminHandler: handlers.NewAdminUsuarioHandler(services.NewAdminUsuarioService(adminRepo)),
+		repo:         repo,
 		redis:        rdb,
 		recuperacion: services.NewRecuperacionService(repo, repositories.NewRecuperacionRepository(db), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log),
 	}
@@ -52,28 +58,37 @@ func (m *Module) Cerrar(ctx context.Context) error {
 }
 
 func (m *Module) RegisterRoutes(group *gin.RouterGroup) {
-	routes.RegistrarRutasAuth(group, m.handler, m.redis)
+	routes.RegistrarRutasAuth(group, m.handler, m.redis, m.repo)
+	routes.RegistrarRutasAdminUsuarios(group, m.adminHandler, m.repo)
 }
 
 // RequireAuth entrega el interceptor sin exponer claves, JWT ni entidades internas.
 func (m *Module) RequireAuth() gin.HandlerFunc {
-	return middleware.RequireAuth()
+	return middleware.RequireAuth(m.repo)
 }
 
 func (m *Module) RequireRole(roles ...string) gin.HandlerFunc {
 	return middleware.RequireRole(roles...)
 }
 
-// VerifyStorage comprueba únicamente la tabla que utiliza Identidad.
+// VerifyStorage comprueba las tablas que utiliza Identidad, incluida la
+// auditoría administrativa agregada en SUP-242.
 func VerifyStorage(ctx context.Context, db *gorm.DB) error {
 	var permitted bool
 	err := db.WithContext(ctx).Raw(`SELECT
         has_schema_privilege(current_user, 'api', 'USAGE') AND
         has_table_privilege(current_user, 'api.usuarios', 'SELECT') AND
         has_table_privilege(current_user, 'api.usuarios', 'INSERT') AND
-        has_table_privilege(current_user, 'api.usuarios', 'UPDATE')`).Scan(&permitted).Error
+        has_table_privilege(current_user, 'api.usuarios', 'UPDATE') AND
+        to_regclass('api.auditoria_admin_usuarios') IS NOT NULL AND
+        has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'SELECT') AND
+        has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'INSERT') AND
+        has_sequence_privilege(current_user, 'api.auditoria_admin_usuarios_id_seq', 'USAGE') AND
+        (SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = 'api' AND table_name = 'usuarios'
+              AND column_name IN ('plan', 'ultimo_acceso')) = 2`).Scan(&permitted).Error
 	if err != nil || !permitted {
-		return errors.New("aplicar 06_propiedad_permisos.sql y permisos de Identidad antes de iniciar Identidad")
+		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql y 09_plan_y_ultimo_acceso.sql antes de iniciar Identidad")
 	}
 	return nil
 }

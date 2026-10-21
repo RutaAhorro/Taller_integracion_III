@@ -28,6 +28,8 @@ flowchart LR
 | `/api/v1/auth/google` | POST | Identidad, validación criptográfica de Google |
 | `/api/v1/auth/me` | GET | Identidad, claims de sesión |
 | `/api/v1/auth/me` | PUT | Identidad, actualización del usuario de la sesión |
+| `/api/v1/admin/usuarios` | GET | Identidad, listado paginado de cuentas (`RequireRole('admin')`) |
+| `/api/v1/admin/usuarios/{id}` | PUT | Identidad, `esta_activo`, rol (`admin`, `colaborador`, `registrado`) y plan (`basico`, `premium`) (`RequireRole('admin')`) |
 | `/health`, `/api/v1/health` | GET | API, sólo conexión SQL de coordinación y diagnóstico Redis |
 | `/swagger/*` | GET | API, documentación de sus rutas de coordinación y salud |
 
@@ -48,14 +50,30 @@ y están descritas arriba. Esta especificación no es un agregador de servicios.
 Los JWT mantienen HS256, `user_id`, `rol`, `provider` y expiración de 24 horas.
 Las cookies conservan nombre `jwt`, HttpOnly, Path `/` y duración. Se explicita
 SameSite=Lax y Secure=true por defecto; Compose local HTTP lo desactiva mediante
-configuración. Catálogo sigue validando firma y rol por su cuenta, sin consultar
-usuarios ni importar código de Identidad. Conservar la misma clave al hacer el
-corte permite reutilizar sesiones anteriores.
+configuración. Catálogo valida la firma del JWT de forma local y autoriza
+`/api/v1/admin/productos` con los claims del token: no reenvía la cookie a
+Identidad, no consulta `api.usuarios` directamente ni importa código de
+Identidad (ver `GUIA_CATALOGO_INDEPENDIENTE.md`). Conservar la misma clave al
+hacer el corte permite reutilizar sesiones anteriores.
 
-Esta tarea extrae las cinco rutas existentes. No implementa refresh tokens,
-revocación, verificación de correo, recuperación de contraseña ni nuevas reglas
-Premium. El auto-login del registro y su mensaje sobre verificación se conservan
-como comportamiento previo; no se presentan como una verificación ya implementada.
+Desde SUP-242, las rutas protegidas de Identidad revalidan `api.usuarios` en cada
+petición: si la cuenta fue desactivada o su rol cambió, el JWT deja de conceder
+acceso sin esperar a su expiración. El rol vigente sale de la base de datos y el
+alias histórico `administrador` se normaliza a `admin`. Las actualizaciones
+administrativas usan una transacción con advisory lock para no dejar el sistema
+sin admins activos y registran al actor y los cambios en
+`api.auditoria_admin_usuarios` (migración `08_normalizar_rol_admin_y_auditoria.sql`).
+El listado devuelve `data` y `paginacion` (`total_registros`, `pagina_actual`,
+`total_paginas`, `limite`), con 20 filas por defecto y máximo 200. El plan
+comercial y `ultimo_acceso` viven en `api.usuarios` (migración
+`09_plan_y_ultimo_acceso.sql`); el plan se actualiza en un campo separado del rol.
+
+La extracción original mantiene las cinco rutas existentes y no implementa
+refresh tokens, verificación de correo ni recuperación de contraseña. SUP-242
+agrega la revalidación de estado/rol por petición y el panel administrativo; el
+plan comercial no cambia las reglas de acceso. El auto-login del registro y su
+mensaje sobre verificación se conservan como comportamiento previo; no se
+presentan como una verificación ya implementada.
 
 ## Configuración y permisos
 
@@ -80,7 +98,9 @@ La API sólo recibe `SCRAPING_DB_URL`; ya no recibe credencial de Identidad ni
 configuración Google. Su `JWT_SECRET` se conserva temporalmente para comprobar
 que el token interno de Catálogo sea distinto; no contiene emisor/verificador
 JWT ni rutas auth. Identidad no recibe claves de coordinación o ingesta.
-Los roles y Secrets separados provienen de SUP-271: no hay nueva migración SQL.
+Los roles y Secrets separados provienen de SUP-271. SUP-272 no agrega migración
+SQL; SUP-242 sí requiere aplicar `08_normalizar_rol_admin_y_auditoria.sql` y
+`09_plan_y_ultimo_acceso.sql` después de `06_propiedad_permisos.sql`.
 Cada proceso de Identidad y API dispone de un pool de máximo 5 conexiones,
 2 idle y vida de 30 minutos. Con HPA máximo de 4 por dominio y Catálogo a 10,
 el presupuesto runtime sigue en `4*5 + 4*5 + 4*10 = 80`. Otros clientes y sesiones

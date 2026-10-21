@@ -80,7 +80,7 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 
 ### `internal/middleware/jwt_auth.go` (package middleware)
 
-- `RequireAuth() gin.HandlerFunc`
+- `RequireAuth(repo domain.UsuarioRepository) gin.HandlerFunc`
 
 ### `internal/middleware/rate_limit.go` (package middleware)
 
@@ -95,15 +95,17 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 
 - Structs: gormUsuarioRepository
 - `NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository`
+- `NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository`
 - `(gormUsuarioRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
 - `(gormUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
 - `(gormUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
 - `(gormUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- `(gormUsuarioRepository).ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error`
 - `classifyWriteError(err error) error`
 
 ### `internal/routes/auth_routes.go` (package routes)
 
-- `RegistrarRutasAuth(rg *gin.RouterGroup, authHandler *handlers.AuthHandler, rdb *redis.Client)`
+- `RegistrarRutasAuth(rg *gin.RouterGroup, authHandler *handlers.AuthHandler, rdb *redis.Client, repo domain.UsuarioRepository)`
 
 ### `internal/security/jwt.go` (package security)
 
@@ -162,6 +164,7 @@ SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app
 - `(mockUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
 - `(mockUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
 - `(mockUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- `(mockUsuarioRepository).ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error`
 - `TestAuthService_PasswordComplexity(t *testing.T)`
 - `TestAuthService_RegistroExitoso(t *testing.T)`
 - `TestAuthService_Login(t *testing.T)`

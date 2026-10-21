@@ -1,8 +1,8 @@
 // Hooks del panel admin (SUP-255 / SUP-280).
-// PANEL SOLO VISUAL: sin VITE_API_URL no hay HTTP (retorno temprano a mocks).
-// Cuando exista backend (SUP-242/243/279), los hooks piden en paralelo y la UI
-// no cambia. 401/403 nunca inyectan mocks (fail-closed, auditoría H-03): se
-// cierra la sesión local y se vuelve a /login (SUP-256).
+// Sin VITE_API_URL no hay HTTP (retorno temprano a mocks). SUP-242 (usuarios)
+// ya tiene backend; SUP-243 (fuentes) y SUP-279 (métricas) se integran cuando
+// estén disponibles. 401/403 nunca inyectan mocks (fail-closed, auditoría
+// H-03): se cierra la sesión local y se vuelve a /login (SUP-256).
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -17,7 +17,9 @@ import {
   fetchCatalogoMetrics,
   fetchControlMetrics,
   fetchIdentidadMetrics,
+  isAdminApiError,
   isAdminAuthError,
+  isPersistableId,
   updateAdminSource,
   updateAdminUser,
   type CatalogoMetrics,
@@ -68,28 +70,82 @@ function useExpireSession(): () => void {
   }, []);
 }
 
-// --- Usuarios (SUP-242: listar + activar/desactivar + rol colaborador) ---
-export function useAdminUsers() {
-  const [users, setUsers] = useState<AdminUser[]>(adminUsers);
+// --- Usuarios (SUP-242: listar + activar/desactivar + rol + plan) ---
+export type AdminUsersParams = {
+  page?: number;
+  limit?: number;
+  q?: string;
+  rol?: AdminRole | 'Todos';
+};
+
+export type AdminUsersPagination = {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+};
+
+function userMutationMessage(prefix: string, err: unknown): string {
+  if (isAdminApiError(err)) {
+    if (err.status === 409) return err.message;
+    return `${prefix} ${err.message}${err.detail ? ` (${err.detail})` : ''}`;
+  }
+  return `${prefix} (${toMessage(err)})`;
+}
+
+// El hook serializa las mutaciones: si llega otra mientras hay una en vuelo,
+// se informa en vez de descartarla en silencio (SUP-242).
+const MUTACION_EN_CURSO =
+  'Hay otra actualización en curso. Espera a que termine antes de modificar otro usuario.';
+const MUTACION_EN_CURSO_FUENTE =
+  'Hay otra actualización en curso. Espera a que termine antes de modificar otra fuente.';
+
+export function useAdminUsers(params: AdminUsersParams = {}) {
+  const page = Math.max(1, params.page ?? 1);
+  const limit = params.limit ?? 20;
+  const q = (params.q ?? '').trim();
+  const rolFiltro = params.rol && params.rol !== 'Todos' ? adminRoleToBackend(params.rol) : '';
+
+  const [users, setUsers] = useState<AdminUser[]>(ADMIN_HAS_BACKEND ? [] : adminUsers);
+  const [pagination, setPagination] = useState<AdminUsersPagination>({ page, limit, total: 0, totalPages: 0 });
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const seq = useRef(0);
+  const pendingRef = useRef<string | null>(null);
   const expireSession = useExpireSession();
 
   const load = useCallback(async (signal?: AbortSignal) => {
+    // Un refresh durante una mutación podría devolver el estado anterior y
+    // pisar la actualización optimista. La mutación invalida cualquier load.
+    if (pendingRef.current) return;
+
     if (!ADMIN_HAS_BACKEND) {
-      setUsers(adminUsers);
+      const texto = q.toLowerCase();
+      const filtrados = adminUsers.filter((user) => {
+        const coincideTexto = !texto || `${user.name} ${user.email}`.toLowerCase().includes(texto);
+        const coincideRol = !rolFiltro
+          || (user.role !== 'Desconocido' && adminRoleToBackend(user.role) === rolFiltro);
+        return coincideTexto && coincideRol;
+      });
+      const inicio = (page - 1) * limit;
+      const totalPaginas = filtrados.length === 0 ? 0 : Math.ceil(filtrados.length / limit);
+      setUsers(filtrados.slice(inicio, inicio + limit));
+      setPagination({ page, limit, total: filtrados.length, totalPages: totalPaginas });
       setIsLoading(false);
       setError(null);
       return;
     }
+
     const current = ++seq.current;
     setIsLoading(true);
     setError(null);
     try {
-      const data = await fetchAdminUsers(signal);
-      if (seq.current === current) setUsers(data);
+      const result = await fetchAdminUsers({ page, limit, q, rol: rolFiltro }, signal);
+      if (seq.current === current) {
+        setUsers(result.users);
+        setPagination({ page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages });
+      }
     } catch (err) {
       if (signal?.aborted) return;
       // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks ni mantienen
@@ -100,14 +156,15 @@ export function useAdminUsers() {
           setError(authBlockedMessage('usuarios', err));
           expireSession();
         } else {
-          setUsers(adminUsers);
-          setError(`No se pudo cargar usuarios del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+          setUsers([]);
+          setPagination({ page: 1, limit, total: 0, totalPages: 0 });
+          setError(`No se pudo cargar usuarios del backend. (${toMessage(err)})`);
         }
       }
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, [expireSession]);
+  }, [expireSession, page, limit, q, rolFiltro]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -115,97 +172,136 @@ export function useAdminUsers() {
     return () => controller.abort();
   }, [load]);
 
+  const beginMutation = useCallback((id: string) => {
+    // Invalida cualquier GET en vuelo y bloquea refresh hasta terminar.
+    seq.current += 1;
+    pendingRef.current = id;
+    setPendingId(id);
+    setIsLoading(false);
+  }, []);
+
+  const endMutation = useCallback(() => {
+    pendingRef.current = null;
+    setPendingId(null);
+  }, []);
+
+  const aplicarActualizado = useCallback((id: string, actualizado: AdminUser) => {
+    if (rolFiltro && (actualizado.role === 'Desconocido' || adminRoleToBackend(actualizado.role) !== rolFiltro)) {
+      setUsers((prev) => prev.filter((user) => user.id !== id));
+      setPagination((prev) => {
+        const total = Math.max(0, prev.total - 1);
+        return { ...prev, total, totalPages: total === 0 ? 0 : Math.ceil(total / prev.limit) };
+      });
+      return;
+    }
+    setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+  }, [rolFiltro]);
+
   const toggleUserStatus = useCallback(async (id: string) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId) return;
+    if (!target) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
     const nextActive = target.status !== 'Activo';
-    setPendingId(id);
+    beginMutation(id);
     setUsers((prev) =>
       prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
     );
-    if (ADMIN_HAS_BACKEND) {
+    // Con backend sólo se persisten usuarios reales; los mocks de respaldo
+    // conservan el cambio en memoria para no enviar un id inválido.
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
-        await updateAdminUser(id, { esta_activo: nextActive });
+        const actualizado = await updateAdminUser(id, { esta_activo: nextActive });
+        aplicarActualizado(id, actualizado);
+        setError(null);
       } catch (err) {
-        // Revierte el optimista y muestra el error.
-        setUsers((prev) =>
-          prev.map((user): AdminUser => (user.id === id ? { ...user, status: target.status } : user)),
-        );
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
         if (isAdminAuthError(err)) {
           setError(authBlockedMessage('el usuario', err));
           expireSession();
         } else {
-          setError(`No se pudo actualizar el usuario. (${toMessage(err)})`);
+          setError(userMutationMessage('No se pudo actualizar el usuario.', err));
         }
       } finally {
-        setPendingId(null);
+        endMutation();
       }
     } else {
-      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { esta_activo }.
-      setPendingId(null);
+      endMutation();
     }
-  }, [users, pendingId, expireSession]);
+  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
 
   const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId || target.role === role) return;
-    const previous = target.role;
-    setPendingId(id);
+    if (!target || target.role === role) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
+    beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
-    if (ADMIN_HAS_BACKEND) {
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
-        await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+        const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+        aplicarActualizado(id, actualizado);
+        setError(null);
       } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role: previous } : user)));
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
         if (isAdminAuthError(err)) {
           setError(authBlockedMessage('el rol', err));
           expireSession();
         } else {
-          setError(`No se pudo asignar el rol. (${toMessage(err)})`);
+          setError(userMutationMessage('No se pudo asignar el rol.', err));
         }
       } finally {
-        setPendingId(null);
+        endMutation();
       }
     } else {
-      // TODO backend (SUP-242): PUT /api/v1/admin/usuarios/:id { rol }.
-      setPendingId(null);
+      endMutation();
     }
-  }, [users, pendingId, expireSession]);
+  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
 
-  // Plan comercial separado del rol (auditoría H-06). Optimista + reversión,
-  // igual que el rol; el backend lo persiste en su propio campo (no en `rol`).
   const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
     const target = users.find((user) => user.id === id);
-    if (!target || pendingId || target.plan === plan) return;
-    const previous = target.plan;
-    setPendingId(id);
+    if (!target || target.plan === plan) return;
+    if (pendingRef.current) {
+      setError(MUTACION_EN_CURSO);
+      return;
+    }
+    beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
-    if (ADMIN_HAS_BACKEND) {
+    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
       try {
-        await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
+        const actualizado = await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
+        setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+        setError(null);
       } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan: previous } : user)));
+        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
         if (isAdminAuthError(err)) {
           setError(authBlockedMessage('el plan', err));
           expireSession();
         } else {
-          setError(`No se pudo asignar el plan. (${toMessage(err)})`);
+          setError(userMutationMessage('No se pudo asignar el plan.', err));
         }
       } finally {
-        setPendingId(null);
+        endMutation();
       }
     } else {
-      // TODO backend: PUT /api/v1/admin/usuarios/:id { plan } (campo aparte).
-      setPendingId(null);
+      endMutation();
     }
-  }, [users, pendingId, expireSession]);
+  }, [users, beginMutation, endMutation, expireSession]);
 
-  return { users, isLoading, error, pendingId, refresh: () => { void load(); }, toggleUserStatus, changeUserRole, changeUserPlan };
+  const refresh = useCallback(() => {
+    if (!pendingRef.current) void load();
+  }, [load]);
+
+  return { users, pagination, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan };
 }
 
 // --- Fuentes (SUP-243: listar + habilitar/deshabilitar) ---
 export function useAdminSources() {
-  const [sources, setSources] = useState<AdminSource[]>(adminSources);
+  const [sources, setSources] = useState<AdminSource[]>(ADMIN_HAS_BACKEND ? [] : adminSources);
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -235,8 +331,8 @@ export function useAdminSources() {
           setError(authBlockedMessage('fuentes', err));
           expireSession();
         } else {
-          setSources(adminSources);
-          setError(`No se pudo cargar fuentes del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+          setSources([]);
+          setError(`No se pudo cargar fuentes del backend. (${toMessage(err)})`);
         }
       }
     } finally {
@@ -252,7 +348,11 @@ export function useAdminSources() {
 
   const toggleSource = useCallback(async (id: string) => {
     const target = sources.find((source) => source.id === id);
-    if (!target || pendingId) return;
+    if (!target) return;
+    if (pendingId) {
+      setError(MUTACION_EN_CURSO_FUENTE);
+      return;
+    }
     const habilitada = !target.habilitada;
     setPendingId(id);
     setSources((prev) =>
@@ -295,9 +395,15 @@ export type AdminMetricsState = {
 };
 
 export function useAdminMetrics(): AdminMetricsState {
-  const [identidad, setIdentidad] = useState<ServiceState<IdentidadMetrics>>({ data: adminMetricsMock.identidad, error: null });
-  const [catalogo, setCatalogo] = useState<ServiceState<CatalogoMetrics>>({ data: adminMetricsMock.catalogo, error: null });
-  const [control, setControl] = useState<ServiceState<ControlMetrics>>({ data: adminMetricsMock.control, error: null });
+  const [identidad, setIdentidad] = useState<ServiceState<IdentidadMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.identidad, error: null },
+  );
+  const [catalogo, setCatalogo] = useState<ServiceState<CatalogoMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.catalogo, error: null },
+  );
+  const [control, setControl] = useState<ServiceState<ControlMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.control, error: null },
+  );
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const seq = useRef(0);
   const expireSession = useExpireSession();

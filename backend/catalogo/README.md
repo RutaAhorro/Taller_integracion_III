@@ -24,6 +24,13 @@ el ejemplo habilita sólo dos puertos locales. Si está vacío, las peticiones c
 `Origin` reciben 403; las peticiones sin `Origin` siguen disponibles y requieren
 JWT/rol en administración. CORS no reemplaza autenticación ni protección CSRF.
 
+`JWT_SECRET` es la única dependencia de autenticación: Catálogo valida la firma
+HS256, la expiración y los claims del token sin llamar a Identidad. Una cuenta
+desactivada o degradada conserva acceso hasta que el token expire (24 h). Para
+invalidación inmediata se requiere una lista de revocación desacoplada o refresh
+tokens; no se debe reintroducir una consulta síncrona a Identidad en el camino
+de cada petición administrativa.
+
 ```bash
 go test -race ./...
 go vet ./...

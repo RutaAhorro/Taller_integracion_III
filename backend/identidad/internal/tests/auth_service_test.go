@@ -3,17 +3,22 @@ package tests
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // mockUsuarioRepository implementa UsuarioRepository en memoria para pruebas unitarias
 type mockUsuarioRepository struct {
-	usuarios map[string]*domain.Usuario
+	usuarios   map[string]*domain.Usuario
+	auditorias []domain.AuditoriaAdminUsuario
 }
 
 func newMockUsuarioRepository() *mockUsuarioRepository {
@@ -46,18 +51,27 @@ func (m *mockUsuarioRepository) Create(ctx context.Context, usuario *domain.Usua
 	return nil
 }
 
-func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
-	var target *domain.Usuario
+func (m *mockUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
+	var total, activos int64
 	for _, u := range m.usuarios {
-		if u.ID.String() == id {
-			target = u
-			break
+		total++
+		if u.EstaActivo {
+			activos++
 		}
 	}
-	if target == nil {
-		return errors.New("record not found")
-	}
+	return total, activos, nil
+}
 
+func (m *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
+	for _, u := range m.usuarios {
+		if u.ID.String() == id {
+			return u
+		}
+	}
+	return nil
+}
+
+func (m *mockUsuarioRepository) aplicarDatos(target *domain.Usuario, datos map[string]interface{}) {
 	if nombre, ok := datos["nombre_completo"].(string); ok {
 		target.NombreCompleto = nombre
 	}
@@ -80,7 +94,166 @@ func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 	if googleID, ok := datos["google_id"].(string); ok {
 		target.GoogleID = &googleID
 	}
+	if activo, ok := datos["esta_activo"].(bool); ok {
+		target.EstaActivo = activo
+	}
+	if rol, ok := datos["rol"].(string); ok {
+		target.Rol = rol
+	}
+	if plan, ok := datos["plan"].(string); ok {
+		target.Plan = plan
+	}
+	if ultimo, ok := datos["ultimo_acceso"].(time.Time); ok {
+		target.UltimoAcceso = &ultimo
+	}
+}
+
+func (m *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
+	target := m.buscarPorID(id)
+	if target == nil {
+		return gorm.ErrRecordNotFound
+	}
+	m.aplicarDatos(target, datos)
 	return nil
+}
+
+func (m *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
+	actorUUID, err := uuid.Parse(strings.TrimSpace(actorID))
+	if err != nil {
+		return errors.New("actor de auditoría inválido")
+	}
+
+	target := m.buscarPorID(id)
+	if target == nil {
+		return gorm.ErrRecordNotFound
+	}
+
+	rolActual, _ := domain.NormalizarRol(target.Rol)
+	if _, cambiaRol := datos["rol"]; !cambiaRol {
+		if canonico, ok := domain.NormalizarRol(target.Rol); ok && strings.TrimSpace(target.Rol) != canonico {
+			datos["rol"] = canonico
+		}
+	}
+
+	dejaDeSerAdmin := false
+	if rolActual == domain.RolAdmin && target.EstaActivo {
+		if activo, ok := datos["esta_activo"].(bool); ok && !activo {
+			dejaDeSerAdmin = true
+		}
+		if nuevoRol, ok := datos["rol"].(string); ok {
+			if canonico, _ := domain.NormalizarRol(nuevoRol); canonico != domain.RolAdmin {
+				dejaDeSerAdmin = true
+			}
+		}
+	}
+
+	if dejaDeSerAdmin {
+		var otros int64
+		for _, u := range m.usuarios {
+			if u.ID == target.ID {
+				continue
+			}
+			rol, ok := domain.NormalizarRol(u.Rol)
+			if ok && rol == domain.RolAdmin && u.EstaActivo {
+				otros++
+			}
+		}
+		if otros == 0 {
+			return domain.ErrUltimoAdmin
+		}
+		if actorUUID == target.ID {
+			return domain.ErrAutoModificacionAdmin
+		}
+	}
+
+	anteriorRol := target.Rol
+	anteriorActivo := target.EstaActivo
+	anteriorPlan := target.Plan
+	m.aplicarDatos(target, datos)
+
+	cambios := map[string]interface{}{}
+	if nuevo, ok := datos["rol"]; ok {
+		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorRol) {
+			cambios["rol"] = map[string]interface{}{"anterior": anteriorRol, "nuevo": nuevo}
+		}
+	}
+	if nuevo, ok := datos["esta_activo"]; ok {
+		if activo, esBool := nuevo.(bool); !esBool || activo != anteriorActivo {
+			cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
+		}
+	}
+	if nuevo, ok := datos["plan"]; ok {
+		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorPlan) {
+			cambios["plan"] = map[string]interface{}{"anterior": anteriorPlan, "nuevo": nuevo}
+		}
+	}
+	// Igual que el repositorio real: un PUT idempotente no genera auditoría.
+	if len(cambios) == 0 {
+		return nil
+	}
+	m.auditorias = append(m.auditorias, domain.AuditoriaAdminUsuario{
+		ActorID:    actorUUID,
+		ObjetivoID: target.ID,
+		Cambios:    cambios,
+	})
+	return nil
+}
+
+func (m *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
+	var resultado []domain.Usuario
+	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
+	rolFiltro := ""
+	if filtro.Rol != "" {
+		if canonico, ok := domain.NormalizarRol(filtro.Rol); ok {
+			rolFiltro = canonico
+		} else {
+			rolFiltro = strings.ToLower(strings.TrimSpace(filtro.Rol))
+		}
+	}
+	for _, u := range m.usuarios {
+		if rolFiltro != "" {
+			rolUsuario, ok := domain.NormalizarRol(u.Rol)
+			if !ok {
+				rolUsuario = strings.ToLower(strings.TrimSpace(u.Rol))
+			}
+			if rolUsuario != rolFiltro {
+				continue
+			}
+		}
+		if filtro.EstaActivo != nil && u.EstaActivo != *filtro.EstaActivo {
+			continue
+		}
+		if patron != "" && !strings.Contains(strings.ToLower(u.Correo), patron) && !strings.Contains(strings.ToLower(u.NombreCompleto), patron) {
+			continue
+		}
+		resultado = append(resultado, *u)
+	}
+	// Orden estable para probar paginación sin depender del mapa.
+	sort.Slice(resultado, func(i, j int) bool { return resultado[i].Correo < resultado[j].Correo })
+	total := int64(len(resultado))
+	if filtro.Offset > 0 {
+		if filtro.Offset >= len(resultado) {
+			return nil, total, nil
+		}
+		resultado = resultado[filtro.Offset:]
+	}
+	if filtro.Limit > 0 && filtro.Limit < len(resultado) {
+		resultado = resultado[:filtro.Limit]
+	}
+	return resultado, total, nil
+}
+
+func (m *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
+	var total int64
+	for _, u := range m.usuarios {
+		if u.ID.String() == excluirID {
+			continue
+		}
+		if rol, ok := domain.NormalizarRol(u.Rol); ok && rol == domain.RolAdmin && u.EstaActivo {
+			total++
+		}
+	}
+	return total, nil
 }
 
 func TestAuthService_PasswordComplexity(t *testing.T) {
@@ -151,6 +324,9 @@ func TestAuthService_RegistroExitoso(t *testing.T) {
 
 	if u.PasswordHash == nil || !security.CheckPasswordHash("SuperClave2026#", *u.PasswordHash) {
 		t.Errorf("El hash almacenado no coincide con la contraseña con bcrypt")
+	}
+	if u.Plan != domain.PlanBasico || u.UltimoAcceso == nil {
+		t.Errorf("El registro debía iniciar con plan básico y último acceso: %+v", u)
 	}
 
 	// Intento de registro duplicado
@@ -236,6 +412,9 @@ func TestAuthService_Login(t *testing.T) {
 		}
 		if u.Correo != "activo@uct.cl" {
 			t.Errorf("Esperaba correo activo@uct.cl, obtuve %s", u.Correo)
+		}
+		if u.UltimoAcceso == nil {
+			t.Error("El login debía registrar ultimo_acceso")
 		}
 	})
 }

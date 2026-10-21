@@ -14,3 +14,9 @@ type UsuarioRepository interface {
 }
 
 var ErrCorreoDuplicado = errors.New("el correo electrónico ya se encuentra registrado")
+
+// ErrUltimoAdmin impide desactivar o degradar al último administrador activo.
+var ErrUltimoAdmin = errors.New("no se puede dejar el sistema sin administradores activos")
+
+// ErrAutoModificacionAdmin impide que un admin se desactive o degrade a sí mismo.
+var ErrAutoModificacionAdmin = errors.New("un administrador no puede desactivar ni degradar su propia cuenta; la acción debe ser ejecutada por otro administrador")

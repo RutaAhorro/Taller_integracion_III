@@ -9,7 +9,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireAuth intercepta la petición HTTP validando el token en la cookie segura HttpOnly 'jwt'
+// RequireAuth valida la firma HS256 y la expiración del JWT local. Catálogo es
+// autónomo: no consulta Identidad en cada petición. La revocación inmediata de
+// cuentas desactivadas depende de la vigencia del access token; si se requiere
+// invalidación instantánea, debe resolverse con una lista de revocación
+// desacoplada o refresh tokens (ver GUIA_CATALOGO_INDEPENDIENTE.md).
 func RequireAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("jwt")
@@ -45,11 +49,24 @@ func RequireAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// Inyectar claims en el contexto de Gin para consumo de las rutas protegidas
-		c.Set("user_id", claims.UserID)
-		c.Set("rol", claims.Rol)
-		c.Set("provider", claims.Provider)
+		userID := strings.TrimSpace(claims.UserID)
+		rol := strings.ToLower(strings.TrimSpace(claims.Rol))
+		if rol == "administrador" {
+			rol = "admin"
+		}
+		if userID == "" || rol == "" {
+			ResponderError(
+				c,
+				http.StatusUnauthorized,
+				"Token inválido o expirado.",
+				errors.New("el token no identifica usuario y rol"),
+			)
+			return
+		}
 
+		c.Set("user_id", userID)
+		c.Set("rol", rol)
+		c.Set("provider", claims.Provider)
 		c.Next()
 	}
 }

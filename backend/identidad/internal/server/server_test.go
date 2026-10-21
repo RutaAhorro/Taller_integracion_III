@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/gin-gonic/gin"
@@ -18,7 +17,10 @@ func TestHTTPBoundariesCorsAndJWT(t *testing.T) {
 	t.Setenv("JWT_SECRET", strings.Repeat("j", 32))
 	cfg := config.Config{AllowedOrigins: []string{"https://frontend.example"}}
 	r := NewRouter(cfg, nil, nil, func(context.Context) error { return nil }, nil)
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": "fixture", "rol": "registrado", "provider": "local", "exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte(strings.Repeat("j", 32)))
+	// Sin DB el repositorio es cerrado: un token válido no se autoriza y la
+	// petición termina en 500 fail-closed, nunca en un bypass de la revalidación.
+	const usuarioID = "c14bd236-294a-41b8-8cbb-5473bb610415"
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": usuarioID, "rol": "registrado", "provider": "local", "exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte(strings.Repeat("j", 32)))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,8 +29,8 @@ func TestHTTPBoundariesCorsAndJWT(t *testing.T) {
 		status                                   int
 	}{
 		{"live", "GET", "/_identidad/live", "", "", "", 200}, {"ready without Redis", "GET", "/_identidad/ready", "", "", "", 503},
-		{"missing cookie", "GET", "/api/v1/auth/me", "", "", "", 401}, {"valid cookie", "GET", "/api/v1/auth/me", "", "", token, 200},
-		{"allowed CORS", "GET", "/api/v1/auth/me", "https://frontend.example", "", token, 200}, {"hostile CORS", "GET", "/api/v1/auth/me", "https://evil.example", "", token, 403},
+		{"missing cookie", "GET", "/api/v1/auth/me", "", "", "", 401}, {"valid cookie fails closed without DB", "GET", "/api/v1/auth/me", "", "", token, 500},
+		{"allowed CORS", "GET", "/api/v1/auth/me", "https://frontend.example", "", token, 500}, {"hostile CORS", "GET", "/api/v1/auth/me", "https://evil.example", "", token, 403},
 		{"hostile mutation", "PUT", "/api/v1/auth/me", "https://evil.example", `{"nombre_completo":"forged"}`, token, 403},
 		{"allowed preflight", "OPTIONS", "/api/v1/auth/me", "https://frontend.example", "", "", 204}, {"hostile preflight", "OPTIONS", "/api/v1/auth/me", "https://evil.example", "", "", 403},
 		{"fail closed registration", "POST", "/api/v1/auth/register", "", `{}`, "", 500}, {"fail closed login", "POST", "/api/v1/auth/login", "", `{}`, "", 500}, {"fail closed google", "POST", "/api/v1/auth/google", "", `{}`, "", 500},
@@ -56,13 +58,6 @@ func TestHTTPBoundariesCorsAndJWT(t *testing.T) {
 			}
 			if w.Code == 500 && strings.Contains(w.Body.String(), "detalle") {
 				t.Fatal("error interno expuesto")
-			}
-			if tc.name == "valid cookie" {
-				var body map[string]any
-				json.Unmarshal(w.Body.Bytes(), &body)
-				if body["rol"] != "registrado" || body["user_id"] != "fixture" {
-					t.Fatal("headers reemplazaron JWT")
-				}
 			}
 		})
 	}

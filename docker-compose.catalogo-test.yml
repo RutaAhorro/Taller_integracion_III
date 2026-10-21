@@ -54,6 +54,7 @@ services:
     ports: ['127.0.0.1:${SUP267_CATALOGO_PORT:-18083}:8080']
     depends_on:
       db: {condition: service_healthy}
+      api: {condition: service_healthy}
     read_only: true
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']

@@ -183,8 +183,16 @@ la API extraída ya no recibe IDENTITY_DB_URL.
    `esta_activa` de `scraper.cadenas_supermercado` (SUP-243). En bases que
    aplicaron una versión anterior de `06`, ejecutar
    `08_grants_catalogo_fuentes.sql` de forma idempotente; retira el grant de
-   tabla completa de versiones previas y vuelve a ejecutar el `06` actual
+   tabla completa de versiones previas, y volver a ejecutar el `06` actual
    también conserva el permiso acotado.
+   Para SUP-242, aplicar después `08_normalizar_rol_admin_y_auditoria.sql`:
+   normaliza el alias `administrador` a `admin` y crea la auditoría de cambios
+   administrativos. Luego aplicar `09_plan_y_ultimo_acceso.sql`, que agrega el
+   plan comercial y la marca de último acceso. El `09` ejecuta el DDL en una
+   transacción breve y valida el `CHECK` en otra posterior, para que el escaneo
+   no retenga el `AccessExclusiveLock`. Si se re-ejecuta `06`, éste
+   restaura los grants de auditoría cuando la tabla ya existe; `09` no concede
+   permisos nuevos.
 3. La migración crea el snapshot, elimina las dos dependencias externas de
    trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
    membresías, propiedad de objetos y permisos públicos/defaults que crucen

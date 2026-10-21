@@ -60,7 +60,7 @@ respuestas se extraen conservando su comportamiento actual.
 | GET | `/api/v1/productos` | Público; listado, filtros y paginación actuales |
 | GET | `/api/v1/productos/buscar` | Público; búsqueda con mínimo de 3 caracteres |
 | GET | `/api/v1/productos/:id` | Público; detalle e historial actuales |
-| GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` |
+| GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` vigente en Identidad |
 | GET | `/api/v1/admin/productos/` | Misma protección y respuesta administrativa |
 | GET | `/api/v1/admin/productos/fuentes` | Cookie JWT válida y rol `admin`; lista cadenas y expone `habilitada` (columna `esta_activa`) (SUP-243) |
 | PUT | `/api/v1/admin/productos/fuentes/:id` | Cookie JWT válida y rol `admin`; habilita/deshabilita la fuente y persiste `scraper.cadenas_supermercado` (SUP-243) |
@@ -107,15 +107,23 @@ las otras rutas de la API heredada quedan fuera de esta corrección de Catálogo
 
 ## Autenticación y datos
 
-Catálogo verifica directamente la cookie `jwt`, firma HS256, expiración y rol.
-Estos requisitos corresponden a los tokens que emite Identidad actualmente.
-Un visitante obtiene 401; un usuario registrado obtiene 403 en administración.
-No se aceptan identidades o roles declarados en `X-User-ID`/`X-User-Role`.
+Catálogo verifica la cookie `jwt` de forma local: firma HS256, expiración y
+claims de usuario/rol. No consulta Identidad por petición, por lo que mantiene
+su autonomía operativa: una caída de Identidad no bloquea la administración del
+catálogo. El rol autorizado es el claim firmado del token. Un visitante sin
+cookie obtiene 401 y un rol distinto de `admin` obtiene 403. No se aceptan
+identidades o roles declarados en `X-User-ID`/`X-User-Role`.
+
+La contrapartida es que una cuenta desactivada o degradada conserva su acceso
+hasta que expire el access token (24 h). La invalidación inmediata requiere una
+lista de revocación desacoplada (por ejemplo Redis) o refresh tokens con TTL
+corto; ambas alternativas quedan fuera de esta entrega y no deben reintroducir
+una llamada síncrona de Catálogo a Identidad.
 
 `JWT_SECRET` es obligatorio y no tiene fallback. Se comparte temporalmente con
 Identidad: al conocer un secreto HMAC, un verificador técnicamente también puede
 firmar. Migrar a claves asimétricas/JWKS requerirá una tarea de compatibilidad y
-rotación; no se incorpora implícitamente en esta extracción. El nuevo verificador
+rotación; no se incorpora implícitamente en esta extracción. El verificador
 rechaza algoritmos distintos de HS256 y tokens sin expiración; la API heredada
 acepta otros HMAC y no exige ese claim. Los tokens reales del emisor actual son
 HS256 con expiración y se comprueban en las pruebas de integración.

@@ -2,7 +2,7 @@
 
 ## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
+Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede directamente a usuarios, trabajos ni outboxes de coordinación: `/api/v1/admin/productos` autoriza con la firma y claims del JWT local, sin consultar Identidad por petición. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
 **27 archivos .go** detectados
 
@@ -119,7 +119,7 @@ Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sól
 
 ### `internal/server/server.go` (package server)
 
-- `NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine`
+- `NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, sessionValidator auth.SessionValidator, internal ...ingesta.Config) *gin.Engine`
 - `cors(allowedOrigins []string) gin.HandlerFunc`
 - `observe(logger *slog.Logger) gin.HandlerFunc`
 

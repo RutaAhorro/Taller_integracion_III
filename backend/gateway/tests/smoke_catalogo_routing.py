@@ -132,6 +132,7 @@ elif args.mode == 'catalog-down':
 elif args.mode == 'api-down':
     catalog(args.gateway_url)
     catalog(args.frontend_url)
+    # Sin Identidad, Catálogo valida el JWT localmente y su administración sigue disponible.
     check(args.gateway_url, '/api/v1/admin/productos', opener=admin_session())
     error, _ = check(args.gateway_url, '/api/v1/auth/me', 502)
     assert error['error'] == 'identidad_unavailable'

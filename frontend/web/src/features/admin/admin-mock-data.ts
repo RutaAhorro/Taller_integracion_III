@@ -2,11 +2,13 @@ export type AdminSection = 'overview' | 'users' | 'sources' | 'metrics';
 
 // Roles RBAC del panel (SUP-255: Editor -> Colaborador).
 // El plan comercial va aparte (auditoría H-06): no se mezcla con el rol.
-// Mapeo backend pendiente (SUP-242, api.usuarios): admin <-> 'admin',
-// colaborador <-> 'colaborador', usuario <-> 'registrado'. El plan premium
-// viaja como campo aparte (p. ej. plan='premium'), no como rol.
+// Mapeo backend implementado en admin-api.ts (SUP-242, api.usuarios):
+// admin <-> 'admin', colaborador <-> 'colaborador', usuario <-> 'registrado'.
+// El plan premium viaja como campo aparte (p. ej. plan='premium'), no como rol.
 export const ADMIN_ROLES = ['Administrador', 'Colaborador', 'Usuario'] as const;
 export type AdminRole = (typeof ADMIN_ROLES)[number];
+// Un rol no reconocido se muestra, pero no se puede convertir en otro por accidente.
+export type AdminUserRole = AdminRole | 'Desconocido';
 
 export const ADMIN_PLANS = ['Básico', 'Premium'] as const;
 export type AdminPlan = (typeof ADMIN_PLANS)[number];
@@ -15,8 +17,9 @@ export type AdminUser = {
   id: string;
   name: string;
   email: string;
-  role: AdminRole;
-  plan: AdminPlan;
+  role: AdminUserRole;
+  // null cuando el backend no informa un plan reconocido (se muestra "—").
+  plan: AdminPlan | null;
   status: 'Activo' | 'Inactivo';
   lastAccess: string;
   initials: string;
@@ -35,7 +38,9 @@ export type AdminSource = {
   habilitada: boolean;
 };
 
-// Datos de ejemplo solo visuales (el panel aún no consume backend).
+// Datos de ejemplo para desarrollo sin VITE_API_URL. Con backend configurado,
+// los usuarios reales vienen de Identidad; ante un fallo de red sin 401/403 el
+// panel vuelve temporalmente a estos datos.
 // Correos ficticios en dominio reservado RFC 2606 para no exponer PII en el bundle.
 export const adminUsers: AdminUser[] = [
   { id: 'usr-001', name: 'Camila Torres', email: 'camila.torres@example.com', role: 'Administrador', plan: 'Premium', status: 'Activo', lastAccess: 'Hace 12 min', initials: 'CT' },

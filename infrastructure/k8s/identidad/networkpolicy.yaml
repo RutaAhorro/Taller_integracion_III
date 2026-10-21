@@ -11,5 +11,7 @@ spec:
     - from:
         - podSelector:
             matchLabels: {app: gateway}
+        - podSelector:
+            matchLabels: {app: catalogo}
       ports:
         - {protocol: TCP, port: 8080}
