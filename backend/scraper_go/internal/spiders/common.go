@@ -5,9 +5,17 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
+	"golang.org/x/net/html"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
+
+var formatPattern = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|g|ml|lt|l|un(?:idad(?:es)?)?)\b`)
 
 func readCategoryURLs(file string) []string {
 	body, err := os.ReadFile(file)
@@ -117,4 +125,137 @@ func validateHTTPSHost(rawURL string, hosts map[string]struct{}, message string)
 		return fmt.Errorf("%s", message)
 	}
 	return nil
+}
+
+func firstText(selection *goquery.Selection, selector string) string {
+	return selection.Find(selector).First().Text()
+}
+
+// allText replica el " ".join(text()) de Scrapy: conserva el límite entre
+// nodos de texto, que importa para detectar frases como "Available for
+// Despacho" aunque el HTML las tenga en elementos separados.
+func allText(selection *goquery.Selection) string {
+	var parts []string
+	for _, node := range selection.Nodes {
+		collectText(node, &parts)
+	}
+	return strings.Join(parts, " ")
+}
+
+func collectText(node *html.Node, parts *[]string) {
+	if node.Type == html.TextNode {
+		*parts = append(*parts, node.Data)
+		return
+	}
+	for child := node.FirstChild; child != nil; child = child.NextSibling {
+		collectText(child, parts)
+	}
+}
+
+func firstAttr(selection *goquery.Selection, selector, attribute string) string {
+	value, _ := selection.Find(selector).First().Attr(attribute)
+	return value
+}
+
+// texts concatena los nodos que coinciden con el selector. goquery Text()
+// pega los textos sin separación; los sitios que separan títulos en varios
+// spans necesitan el mismo espacio que usa Scrapy.
+func texts(selection *goquery.Selection, selector, separator string) string {
+	var parts []string
+	selection.Find(selector).Each(func(_ int, node *goquery.Selection) {
+		parts = append(parts, node.Text())
+	})
+	return strings.Join(parts, separator)
+}
+
+func formatFromText(value string) *string {
+	match := formatPattern.FindString(value)
+	if match == "" {
+		return nil
+	}
+	return normalize.Texto(match)
+}
+
+func firstNonNilString(values ...*string) *string {
+	for _, value := range values {
+		if value != nil && *value != "" {
+			return value
+		}
+	}
+	return nil
+}
+
+func nonEmptyStringPtr(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
+}
+
+func lastPathSegment(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	segments := strings.Split(strings.TrimRight(parsed.Path, "/"), "/")
+	if len(segments) == 0 {
+		return ""
+	}
+	return segments[len(segments)-1]
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func appendQueryParam(rawURL, key, value string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	pairs := queryPairs(parsed.RawQuery)
+	filtered := pairs[:0]
+	for _, pair := range pairs {
+		name, _, _ := strings.Cut(pair, "=")
+		if name == key {
+			continue
+		}
+		filtered = append(filtered, pair)
+	}
+	filtered = append(filtered, url.QueryEscape(key)+"="+url.QueryEscape(value))
+	parsed.RawQuery = strings.Join(filtered, "&")
+	return parsed.String()
+}
+
+func removeQueryParam(rawURL, key string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	pairs := queryPairs(parsed.RawQuery)
+	filtered := pairs[:0]
+	for _, pair := range pairs {
+		name, _, _ := strings.Cut(pair, "=")
+		if name == key {
+			continue
+		}
+		filtered = append(filtered, pair)
+	}
+	parsed.RawQuery = strings.Join(filtered, "&")
+	return parsed.String()
+}
+
+func queryPairs(rawQuery string) []string {
+	if rawQuery == "" {
+		return nil
+	}
+	return strings.Split(rawQuery, "&")
 }

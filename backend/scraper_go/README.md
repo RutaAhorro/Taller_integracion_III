@@ -15,9 +15,9 @@ rollback mientras ambos convivan.
 | --- | --- |
 | Jumbo | Implementado: JSON-LD, paginación, modo producto y enriquecimiento EAN |
 | Santa Isabel | Implementado: renderData, paginación y filtro por seller |
-| Cugat | Pendiente de portar |
-| Acuenta | Pendiente de portar |
-| Lider | Pendiente de portar |
+| Cugat | Implementado: tarjetas WooCommerce, JSON-LD y modo producto |
+| Acuenta | Implementado: RSC, promociones, referencias EAN/imagen y tarjetas |
+| Lider | Implementado: `__NEXT_DATA__`, tarjetas y paginación |
 
 La base del worker ya está implementada: configuración, cliente de Control de
 Scraping, outbox SQLite, cola Redis con lease y heartbeat, crawler con
@@ -31,7 +31,7 @@ cmd/worker
   └── internal/worker          orquesta lease, spool, crawl, entrega y cierre
         ├── internal/queue     Redis Streams: receive, renew, ack, dead-letter
         ├── internal/spool     outbox SQLite por trabajo (items, batches, progress)
-        ├── internal/spiders   registro de spiders y Jumbo
+        ├── internal/spiders   registro de spiders y extracción por supermercado
         │     └── internal/crawler   HTTP, robots.txt, throttle, reintentos
         ├── internal/controlscraping contrato HTTP e idempotencia
         ├── internal/normalize paridad de precios, EAN y texto con Python
@@ -81,9 +81,11 @@ producto.
 | `SCRAPER_RETRY_TIMES` | `3` | Reintentos HTTP |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
-`JUMBO_CATEGORY_URLS` permite agregar categorías separadas por coma sin editar
-el archivo. El campo `add_url` de un trabajo agrega la categoría al archivo
-`jumbo_categories.txt` del directorio configurado.
+`JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
+`ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
+separadas por coma sin editar el archivo. El campo `add_url` de un trabajo
+agrega la categoría al archivo `<spider>_categories.txt` del directorio
+configurado.
 
 ## Desarrollo y pruebas
 
@@ -125,11 +127,11 @@ Para el cutover:
    spool es el mismo.
 
 Borrar `backend/scraper` sólo después de que el cutover esté estable y de que
-los cuatro spiders restantes tengan pruebas de paridad.
+todos los spiders tengan pruebas de paridad y una validación contra el HTML
+real de producción.
 
 ## Pendientes
 
-- Portar Cugat, Acuenta y Lider con fixtures y pruebas doradas.
 - Agregar el gate de RAM en CI (objetivo de trabajo: 150 MB de RSS; el worker
   Go debería quedar en 60–100 MB).
 - Agregar un smoke de compose que ejecute un trabajo real contra Redis y una

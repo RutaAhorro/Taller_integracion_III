@@ -54,7 +54,7 @@ func TestParseJob(t *testing.T) {
 	}
 }
 
-func TestParseJobAcceptsKnownButPendingSpider(t *testing.T) {
+func TestParseJobAcceptsKnownSpider(t *testing.T) {
 	w := testWorker(t)
 	job, err := w.parseJob(`{"trabajo_id":"` + uuid.NewString() + `","spider":"santa_isabel_rsc"}`)
 	if err != nil {
