@@ -89,17 +89,18 @@ configurado.
 
 ## Desarrollo y pruebas
 
-Go no se instala en el host: las pruebas se ejecutan en Docker.
+Go no se instala en el host: las pruebas se ejecutan en Docker. Desde la raíz
+del repositorio:
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
-  -v "$PWD:/src" -w /src golang:1.26-alpine \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
   sh -c 'gofmt -w . && go test ./... && go vet ./... && go build ./cmd/worker'
 ```
 
-Desde la raíz del repositorio, con el contexto de build en la raíz para tomar
-las categorías de `backend/scraper/research`:
+La imagen usa el contexto de build en la raíz para tomar las categorías de
+`backend/scraper/research`:
 
 ```bash
 docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
