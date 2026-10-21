@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/auth"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
@@ -19,11 +18,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func sessionWithRole(rol string) *fakeSessionValidator {
-	return &fakeSessionValidator{session: &auth.Session{UserID: "test-user", Rol: rol}}
-}
-
-func fuenteHTTPRouter(repo *mockFuenteRepository, validator auth.SessionValidator) *gin.Engine {
+func fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	return server.NewRouter(
 		services.NewProductoService(&mockProductoRepository{}),
@@ -32,7 +27,6 @@ func fuenteHTTPRouter(repo *mockFuenteRepository, validator auth.SessionValidato
 		nil,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		nil,
-		validator,
 	)
 }
 
@@ -71,21 +65,21 @@ func TestFuenteHandler_HTTP(t *testing.T) {
 	}
 
 	t.Run("GET sin cookie", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo(), adminSession()), http.MethodGet, "/api/v1/admin/productos/fuentes", "", "")
+		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", "", "")
 		if response.Code != http.StatusUnauthorized {
 			t.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
 		}
 	})
 
 	t.Run("GET con rol registrado", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo(), sessionWithRole("registrado")), http.MethodGet, "/api/v1/admin/productos/fuentes", registered, "")
+		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", registered, "")
 		if response.Code != http.StatusForbidden {
 			t.Fatalf("HTTP %d; esperado 403: %s", response.Code, response.Body)
 		}
 	})
 
 	t.Run("GET con admin", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo(), adminSession()), http.MethodGet, "/api/v1/admin/productos/fuentes", admin, "")
+		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", admin, "")
 		if response.Code != http.StatusOK {
 			t.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
 		}
@@ -100,7 +94,7 @@ func TestFuenteHandler_HTTP(t *testing.T) {
 
 	t.Run("PUT deshabilita y persiste", func(t *testing.T) {
 		repo := nuevaRepo()
-		response := solicitarFuente(t, fuenteHTTPRouter(repo, adminSession()), http.MethodPut, "/api/v1/admin/productos/fuentes/1", admin, `{"habilitada":false}`)
+		response := solicitarFuente(t, fuenteHTTPRouter(repo), http.MethodPut, "/api/v1/admin/productos/fuentes/1", admin, `{"habilitada":false}`)
 		if response.Code != http.StatusOK {
 			t.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
 		}
@@ -114,18 +108,18 @@ func TestFuenteHandler_HTTP(t *testing.T) {
 	})
 
 	for _, tc := range []struct {
-		name, path, cookie, body, rol string
-		status                        int
-		contains                      string
+		name, path, cookie, body string
+		status                   int
+		contains                 string
 	}{
-		{"PUT sin cookie", "/api/v1/admin/productos/fuentes/1", "", `{"habilitada":false}`, "admin", http.StatusUnauthorized, ""},
-		{"PUT con rol registrado", "/api/v1/admin/productos/fuentes/1", registered, `{"habilitada":false}`, "registrado", http.StatusForbidden, ""},
-		{"PUT con ID inválido", "/api/v1/admin/productos/fuentes/abc", admin, `{"habilitada":false}`, "admin", http.StatusBadRequest, "ID de fuente inválido"},
-		{"PUT sin estado", "/api/v1/admin/productos/fuentes/1", admin, `{}`, "admin", http.StatusBadRequest, "estado de la fuente"},
-		{"PUT de fuente inexistente", "/api/v1/admin/productos/fuentes/99", admin, `{"habilitada":true}`, "admin", http.StatusNotFound, "no encontrada"},
+		{"PUT sin cookie", "/api/v1/admin/productos/fuentes/1", "", `{"habilitada":false}`, http.StatusUnauthorized, ""},
+		{"PUT con rol registrado", "/api/v1/admin/productos/fuentes/1", registered, `{"habilitada":false}`, http.StatusForbidden, ""},
+		{"PUT con ID inválido", "/api/v1/admin/productos/fuentes/abc", admin, `{"habilitada":false}`, http.StatusBadRequest, "ID de fuente inválido"},
+		{"PUT sin estado", "/api/v1/admin/productos/fuentes/1", admin, `{}`, http.StatusBadRequest, "estado de la fuente"},
+		{"PUT de fuente inexistente", "/api/v1/admin/productos/fuentes/99", admin, `{"habilitada":true}`, http.StatusNotFound, "no encontrada"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo(), sessionWithRole(tc.rol)), http.MethodPut, tc.path, tc.cookie, tc.body)
+			response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodPut, tc.path, tc.cookie, tc.body)
 			if response.Code != tc.status {
 				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
 			}

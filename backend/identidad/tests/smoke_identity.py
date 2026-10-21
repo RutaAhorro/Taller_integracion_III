@@ -275,11 +275,11 @@ check_kubernetes_probes()
 assert state('identidad')==before
 
 # Single-domain outages never cause fallback or withdraw the edge Gateway.
-# Catálogo revalida el rol contra Identidad y falla cerrado si no puede hacerlo.
+# Catálogo valida el JWT localmente: la caída de Identidad no bloquea su administración.
 compose('stop','identidad')
 try:
     body,_=request('/api/v1/auth/me',502,opener=new_client); assert body['error']=='identidad_unavailable'
-    request('/api/v1/admin/productos',503,opener=new_client)
+    request('/api/v1/admin/productos',opener=new_client)
     request('/api/v1/scraper/trabajos',201,method='POST',data={'cadena_id':1})
     request('/_gateway/ready')
     body,_=request('/_gateway/dependencies',503); assert body['checks']['backend']=='ok' and body['checks']['catalogo']=='ok' and body['checks']['identidad']=='error'
@@ -319,8 +319,8 @@ compose('stop','identidad')
 try:
     request('/api/v1/auth/me',opener=new_client)
     # El rollback sustituye Identidad, no Catálogo: la lectura administrativa
-    # sigue fallando cerrada mientras no haya un validador de sesión disponible.
-    request('/api/v1/admin/productos',503,opener=new_client)
+    # sigue disponible porque Catálogo valida el JWT localmente.
+    request('/api/v1/admin/productos',opener=new_client)
     request('/api/v1/auth/register',201,method='POST',data={'correo':'sup272.rollback@example.test','password':'Sup272FixturePassword123!','nombre_completo':'Rollback Fixture'})
 finally:
     compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad','control_scraping','gateway')

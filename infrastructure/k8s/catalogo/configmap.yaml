@@ -8,6 +8,3 @@ data:
   DB_MAX_OPEN_CONNS: "10"
   DB_MAX_IDLE_CONNS: "5"
   DB_CONN_MAX_LIFETIME: "30m"
-  # Identidad es el dueño de api.usuarios. Catálogo revalida ahí la cookie
-  # antes de autorizar /api/v1/admin/productos.
-  IDENTIDAD_URL: "http://identidad:8080"

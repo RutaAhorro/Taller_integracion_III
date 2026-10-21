@@ -107,12 +107,18 @@ las otras rutas de la API heredada quedan fuera de esta corrección de Catálogo
 
 ## Autenticación y datos
 
-Catálogo verifica la cookie `jwt`, firma HS256 y expiración, y desde SUP-242
-revalida la sesión contra `GET /api/v1/auth/me` en `IDENTIDAD_URL`. El rol
-vigente sale de `api.usuarios`, no del claim: una cuenta desactivada obtiene 401
-y una cuenta degradada obtiene 403 en administración. Si Identidad no responde,
-la administración falla cerrada con 503. Un visitante sin cookie obtiene 401. No
-se aceptan identidades o roles declarados en `X-User-ID`/`X-User-Role`.
+Catálogo verifica la cookie `jwt` de forma local: firma HS256, expiración y
+claims de usuario/rol. No consulta Identidad por petición, por lo que mantiene
+su autonomía operativa: una caída de Identidad no bloquea la administración del
+catálogo. El rol autorizado es el claim firmado del token. Un visitante sin
+cookie obtiene 401 y un rol distinto de `admin` obtiene 403. No se aceptan
+identidades o roles declarados en `X-User-ID`/`X-User-Role`.
+
+La contrapartida es que una cuenta desactivada o degradada conserva su acceso
+hasta que expire el access token (24 h). La invalidación inmediata requiere una
+lista de revocación desacoplada (por ejemplo Redis) o refresh tokens con TTL
+corto; ambas alternativas quedan fuera de esta entrega y no deben reintroducir
+una llamada síncrona de Catálogo a Identidad.
 
 `JWT_SECRET` es obligatorio y no tiene fallback. Se comparte temporalmente con
 Identidad: al conocer un secreto HMAC, un verificador técnicamente también puede
@@ -144,7 +150,6 @@ responsabilidad de SUP-271, sin cambiar usuarios de base de datos reales aquí.
 |---|---|
 | `DB_URL` | Obligatoria; PostgreSQL con el esquema existente |
 | `JWT_SECRET` | Obligatoria; misma clave que Identidad |
-| `IDENTIDAD_URL` | Origen interno de Identidad; vacío mantiene el catálogo público pero la administración responde 503 |
 | `CORS_ALLOWED_ORIGINS` | Vacía; rechaza peticiones con `Origin` hasta configurar una lista exacta |
 | `PORT` | `8080` |
 | `DB_MAX_OPEN_CONNS` | `10` por proceso |

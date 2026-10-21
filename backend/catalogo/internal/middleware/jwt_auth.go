@@ -9,15 +9,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// RequireAuth valida la firma del JWT y, si recibe un validador, revalida la
-// cookie contra Identidad para usar el estado y rol vigentes de api.usuarios.
-// Sin validador falla cerrado: la administración queda en 503.
-func RequireAuth(secret string, validators ...auth.SessionValidator) gin.HandlerFunc {
-	var validator auth.SessionValidator
-	if len(validators) > 0 {
-		validator = validators[0]
-	}
-
+// RequireAuth valida la firma HS256 y la expiración del JWT local. Catálogo es
+// autónomo: no consulta Identidad en cada petición. La revocación inmediata de
+// cuentas desactivadas depende de la vigencia del access token; si se requiere
+// invalidación instantánea, debe resolverse con una lista de revocación
+// desacoplada o refresh tokens (ver GUIA_CATALOGO_INDEPENDIENTE.md).
+func RequireAuth(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, err := c.Cookie("jwt")
 		if err != nil || strings.TrimSpace(tokenString) == "" {
@@ -52,45 +49,22 @@ func RequireAuth(secret string, validators ...auth.SessionValidator) gin.Handler
 			return
 		}
 
-		if validator == nil {
-			ResponderError(
-				c,
-				http.StatusServiceUnavailable,
-				"No se pudo validar la sesión.",
-				errors.New("validador de sesión de Identidad no configurado"),
-			)
-			return
-		}
-
-		session, err := validator.Validate(c.Request.Context(), c.Request.Header.Get("Cookie"))
-		if err != nil {
-			if errors.Is(err, auth.ErrSesionInactiva) {
-				ResponderError(c, http.StatusUnauthorized, "La sesión ya no está activa.", nil)
-				return
-			}
-			ResponderError(
-				c,
-				http.StatusServiceUnavailable,
-				"No se pudo validar la sesión.",
-				err,
-			)
-			return
-		}
-		// Identidad debe devolver el mismo sujeto que el token firmado. Un
-		// identificador vacío o distinto se rechaza para no aceptar sesiones
-		// ambiguas aunque el rol devuelto sea correcto.
-		if strings.TrimSpace(session.UserID) == "" || session.UserID != claims.UserID {
-			ResponderError(c, http.StatusUnauthorized, "Token inválido o expirado.", nil)
-			return
-		}
-
-		// El rol vigente es el de Identidad/api.usuarios, no el claim firmado.
-		rol := strings.ToLower(strings.TrimSpace(session.Rol))
+		userID := strings.TrimSpace(claims.UserID)
+		rol := strings.ToLower(strings.TrimSpace(claims.Rol))
 		if rol == "administrador" {
 			rol = "admin"
 		}
+		if userID == "" || rol == "" {
+			ResponderError(
+				c,
+				http.StatusUnauthorized,
+				"Token inválido o expirado.",
+				errors.New("el token no identifica usuario y rol"),
+			)
+			return
+		}
 
-		c.Set("user_id", session.UserID)
+		c.Set("user_id", userID)
 		c.Set("rol", rol)
 		c.Set("provider", claims.Provider)
 		c.Next()

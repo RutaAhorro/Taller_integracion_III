@@ -121,8 +121,6 @@ services:
       PORT: '8080'
       DB_URL: postgres://app_catalogo:${CATALOGO_DB_PASSWORD:?}@db:5432/${DB_NAME}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el entorno local}
-      # Revalidación de sesión/rol en Identidad para /api/v1/admin/productos.
-      IDENTIDAD_URL: http://identidad:8080
       CATALOGO_INTERNAL_TOKEN: ${CATALOGO_INTERNAL_TOKEN:?Define un token interno distinto de JWT_SECRET}
       CORS_ALLOWED_ORIGINS: ${CATALOGO_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       DB_MAX_OPEN_CONNS: '10'

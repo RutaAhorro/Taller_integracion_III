@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/auth"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/repositories"
@@ -57,18 +56,9 @@ func run(log *slog.Logger) error {
 	}
 	service := services.NewProductoService(repositories.NewProductoRepository(db))
 	fuenteService := services.NewFuenteService(repositories.NewFuenteRepository(db))
-	var sessionValidator auth.SessionValidator
-	if cfg.IdentidadURL != "" {
-		sessionValidator, err = auth.NewHTTPValidator(cfg.IdentidadURL)
-		if err != nil {
-			return err
-		}
-	} else {
-		log.Warn("catalogo_identity_validation_disabled", "reason", "IDENTIDAD_URL vacío; /api/v1/admin/productos responderá 503")
-	}
 	ready := sqlDB.PingContext
 	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins, sessionValidator,
+		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
 			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),
 		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
 		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,

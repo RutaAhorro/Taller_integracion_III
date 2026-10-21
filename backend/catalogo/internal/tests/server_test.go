@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/auth"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
@@ -21,34 +20,9 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-type fakeSessionValidator struct {
-	session *auth.Session
-	err     error
-	calls   int
-}
-
-func (f *fakeSessionValidator) Validate(context.Context, string) (*auth.Session, error) {
-	f.calls++
-	if f.err != nil {
-		return nil, f.err
-	}
-	if f.session == nil {
-		return &auth.Session{UserID: "test-user", Rol: "admin"}, nil
-	}
-	return f.session, nil
-}
-
-func adminSession() *fakeSessionValidator {
-	return &fakeSessionValidator{session: &auth.Session{UserID: "test-user", Rol: "admin"}}
-}
-
-func catalogRouterWithValidator(repo *mockProductoRepository, ping func(context.Context) error, validator auth.SessionValidator) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	return server.NewRouter(services.NewProductoService(repo), services.NewFuenteService(&mockFuenteRepository{}), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil, validator)
-}
-
 func catalogRouter(repo *mockProductoRepository, ping func(context.Context) error) *gin.Engine {
-	return catalogRouterWithValidator(repo, ping, adminSession())
+	gin.SetMode(gin.TestMode)
+	return server.NewRouter(services.NewProductoService(repo), services.NewFuenteService(&mockFuenteRepository{}), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
 }
 
 func signedToken(t *testing.T, role string, method jwt.SigningMethod, key string, expires *time.Time) string {
@@ -74,22 +48,21 @@ func TestCatalogAdministrationAuthorization(t *testing.T) {
 	wrongAlgorithm := signedToken(t, "admin", jwt.SigningMethodHS384, "catalog-test-only-key", &future)
 	missingExpiry := signedToken(t, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", nil)
 	for _, tc := range []struct {
-		name, cookie, role string
-		status             int
+		name, cookie string
+		status       int
 	}{
-		{"sin cookie ni confianza en cabeceras", "", "admin", 401},
-		{"token malformado", "invalid", "admin", 401},
-		{"firma incorrecta", wrongKey, "admin", 401},
-		{"expirado", expired, "admin", 401},
-		{"algoritmo distinto del emisor", wrongAlgorithm, "admin", 401},
-		{"sin expiración", missingExpiry, "admin", 401},
-		{"registrado", registered, "registrado", 403},
-		{"admin", admin, "admin", 200},
+		{"sin cookie ni confianza en cabeceras", "", 401},
+		{"token malformado", "invalid", 401},
+		{"firma incorrecta", wrongKey, 401},
+		{"expirado", expired, 401},
+		{"algoritmo distinto del emisor", wrongAlgorithm, 401},
+		{"sin expiración", missingExpiry, 401},
+		{"registrado", registered, 403},
+		{"admin", admin, 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &mockProductoRepository{adminItems: []domain.ProductoAdminDTO{{ID: "product", SKU: "sku-test"}}, total: 1}
-			validator := &fakeSessionValidator{session: &auth.Session{UserID: "test-user", Rol: tc.role}}
-			router := catalogRouterWithValidator(repo, nil, validator)
+			router := catalogRouter(repo, nil)
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/productos/", nil)
 			req.Header.Set("X-User-ID", "forged-user")
 			req.Header.Set("X-User-Role", "admin")
@@ -113,59 +86,6 @@ func TestCatalogAdministrationAuthorization(t *testing.T) {
 				t.Fatal("se consultó persistencia antes de autorizar al usuario")
 			}
 		})
-	}
-}
-
-func TestCatalogRevalidatesSessionAgainstIdentity(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	admin := signedToken(t, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
-	for _, tc := range []struct {
-		name   string
-		err    error
-		role   string
-		status int
-	}{
-		{"cuenta desactivada", auth.ErrSesionInactiva, "", 401},
-		{"rol degradado en base", nil, "colaborador", 403},
-		{"identidad no disponible", auth.ErrSesionNoDisponible, "", 503},
-		{"rol vigente admin", nil, "admin", 200},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			repo := &mockProductoRepository{adminItems: []domain.ProductoAdminDTO{{ID: "product", SKU: "sku-test"}}, total: 1}
-			validator := &fakeSessionValidator{session: &auth.Session{UserID: "test-user", Rol: tc.role}, err: tc.err}
-			router := catalogRouterWithValidator(repo, nil, validator)
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/productos", nil)
-			req.AddCookie(&http.Cookie{Name: "jwt", Value: admin})
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, req)
-			if response.Code != tc.status {
-				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
-			}
-			if validator.calls != 1 {
-				t.Fatalf("se esperaba una revalidación, se hicieron %d", validator.calls)
-			}
-			if tc.status != 200 && repo.lastFilter.Limit != 0 {
-				t.Fatal("se consultó persistencia antes de revalidar la sesión")
-			}
-		})
-	}
-}
-
-func TestCatalogRejectsMismatchedSessionSubject(t *testing.T) {
-	future := time.Now().Add(time.Hour)
-	admin := signedToken(t, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
-	repo := &mockProductoRepository{adminItems: []domain.ProductoAdminDTO{{ID: "product", SKU: "sku-test"}}, total: 1}
-	validator := &fakeSessionValidator{session: &auth.Session{UserID: "otro-usuario", Rol: "admin"}}
-	router := catalogRouterWithValidator(repo, nil, validator)
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/productos", nil)
-	req.AddCookie(&http.Cookie{Name: "jwt", Value: admin})
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, req)
-	if response.Code != http.StatusUnauthorized {
-		t.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
-	}
-	if repo.lastFilter.Limit != 0 {
-		t.Fatal("se consultó persistencia con un sujeto que no coincide")
 	}
 }
 
@@ -210,7 +130,7 @@ func TestCatalogHealthAndDomainIsolation(t *testing.T) {
 
 func TestCatalogRequestCorrelation(t *testing.T) {
 	var logs bytes.Buffer
-	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil, nil)
+	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
 	for _, received := range []string{"gateway-request-267", strings.Repeat("x", 129)} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/productos/buscar?q=le", nil)
 		req.Header.Set("X-Request-ID", received)
