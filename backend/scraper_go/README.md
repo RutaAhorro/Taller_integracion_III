@@ -105,6 +105,22 @@ las categorías de `backend/scraper/research`:
 docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
 ```
 
+### Gate de RAM
+
+El pipeline real de spool, lotes y entrega se mide con un catálogo sintético.
+El test lee `VmHWM` de `/proc/self/status` y falla si el RSS pico supera el
+límite. En CI se ejecutan 50.000 productos con un tope de 150 MB:
+
+```bash
+SCRAPER_MEMORY_GATE=1 \
+SCRAPER_MEMORY_ITEMS=50000 \
+SCRAPER_MEMORY_LIMIT_MB=150 \
+go test -run TestMemoryGate -count=1 -timeout 10m ./internal/worker
+```
+
+El gate no corre en la suite normal para no mezclar la medición de RSS con
+`-race`; el workflow `scraper-go-checks` lo ejecuta como paso separado.
+
 ## Marcha paralela y cutover
 
 El servicio de compose `scraper_worker_go` está detrás del perfil
@@ -132,8 +148,6 @@ real de producción.
 
 ## Pendientes
 
-- Agregar el gate de RAM en CI (objetivo de trabajo: 150 MB de RSS; el worker
-  Go debería quedar en 60–100 MB).
 - Agregar un smoke de compose que ejecute un trabajo real contra Redis y una
   API simulada, incluyendo bloqueo 403/429 y recuperación de lease.
 - Confirmar el umbral de frescura y los identificadores `SUP-XXX` de la tarjeta.

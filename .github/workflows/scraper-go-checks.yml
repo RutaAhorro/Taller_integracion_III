@@ -56,6 +56,13 @@ jobs:
         env:
           REDIS_TEST_URL: redis://localhost:6379/15
         run: go test -race ./...
+      - name: Gate de RAM
+        working-directory: backend/scraper_go
+        env:
+          SCRAPER_MEMORY_GATE: '1'
+          SCRAPER_MEMORY_ITEMS: '50000'
+          SCRAPER_MEMORY_LIMIT_MB: '150'
+        run: go test -run TestMemoryGate -count=1 -timeout 10m ./internal/worker
       - name: Vet y build
         working-directory: backend/scraper_go
         run: |

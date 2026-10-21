@@ -271,20 +271,21 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 		if !ok {
 			return "", fmt.Errorf("spider aún no implementado en Go: %s", job.Spider)
 		}
+		pending := 0
 		emit := func(item domain.Item) error {
 			market := item.Supermercado
 			if err := store.Add(item.Product, &market); err != nil {
 				return err
 			}
-			count, err := store.Unbatched()
-			if err != nil {
-				return err
-			}
-			if count >= w.cfg.BatchSize {
+			pending++
+			if pending >= w.cfg.BatchSize {
 				if err := store.Seal(w.cfg.BatchSize); err != nil {
 					return err
 				}
-				return store.Replay(ctx, w.api)
+				if err := store.Replay(ctx, w.api); err != nil {
+					return err
+				}
+				pending = 0
 			}
 			return nil
 		}
