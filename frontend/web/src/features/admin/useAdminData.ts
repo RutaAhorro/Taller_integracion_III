@@ -149,10 +149,9 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
           setError(authBlockedMessage('usuarios', err));
           expireSession();
         } else {
-          const totalPaginas = adminUsers.length === 0 ? 0 : Math.ceil(adminUsers.length / limit);
-          setUsers(adminUsers);
-          setPagination({ page: 1, limit, total: adminUsers.length, totalPages: totalPaginas });
-          setError(`No se pudo cargar usuarios del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+          setUsers([]);
+          setPagination({ page: 1, limit, total: 0, totalPages: 0 });
+          setError(`No se pudo cargar usuarios del backend. (${toMessage(err)})`);
         }
       }
     } finally {
@@ -283,7 +282,7 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
 
 // --- Fuentes (SUP-243: listar + habilitar/deshabilitar) ---
 export function useAdminSources() {
-  const [sources, setSources] = useState<AdminSource[]>(adminSources);
+  const [sources, setSources] = useState<AdminSource[]>(ADMIN_HAS_BACKEND ? [] : adminSources);
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -313,8 +312,8 @@ export function useAdminSources() {
           setError(authBlockedMessage('fuentes', err));
           expireSession();
         } else {
-          setSources(adminSources);
-          setError(`No se pudo cargar fuentes del backend. Mostrando datos de ejemplo. (${toMessage(err)})`);
+          setSources([]);
+          setError(`No se pudo cargar fuentes del backend. (${toMessage(err)})`);
         }
       }
     } finally {
@@ -373,9 +372,15 @@ export type AdminMetricsState = {
 };
 
 export function useAdminMetrics(): AdminMetricsState {
-  const [identidad, setIdentidad] = useState<ServiceState<IdentidadMetrics>>({ data: adminMetricsMock.identidad, error: null });
-  const [catalogo, setCatalogo] = useState<ServiceState<CatalogoMetrics>>({ data: adminMetricsMock.catalogo, error: null });
-  const [control, setControl] = useState<ServiceState<ControlMetrics>>({ data: adminMetricsMock.control, error: null });
+  const [identidad, setIdentidad] = useState<ServiceState<IdentidadMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.identidad, error: null },
+  );
+  const [catalogo, setCatalogo] = useState<ServiceState<CatalogoMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.catalogo, error: null },
+  );
+  const [control, setControl] = useState<ServiceState<ControlMetrics>>(
+    ADMIN_HAS_BACKEND ? { data: null, error: null } : { data: adminMetricsMock.control, error: null },
+  );
   const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
   const seq = useRef(0);
   const expireSession = useExpireSession();

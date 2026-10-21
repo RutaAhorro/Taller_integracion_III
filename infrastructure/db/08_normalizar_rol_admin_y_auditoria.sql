@@ -2,6 +2,8 @@
 -- Aplicar después de 06_propiedad_permisos.sql. Es idempotente.
 
 BEGIN;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '60s';
 
 -- El alias "administrador" deja de existir como valor de negocio: se persiste
 -- siempre como "admin". El código también lo normaliza al leer datos históricos.
