@@ -21,6 +21,7 @@ var (
 	ErrLoteExcedeMaximo      = errors.New("el lote excede el tamaño máximo permitido de 1000 productos")
 	ErrEstadoTrabajoInvalido = errors.New("el estado debe ser 'completado' o 'fallido'")
 	ErrUUIDInvalido          = errors.New("el identificador proporcionado no es un UUID válido")
+	ErrFuenteDeshabilitada   = errors.New("la fuente de scraping se encuentra deshabilitada")
 	ErrCatalogoNoDisponible  = errors.New("Catálogo no está disponible")
 	ErrCatalogoTimeout       = errors.New("Catálogo no respondió a tiempo")
 	ErrContadorPendiente     = errors.New("Catálogo confirmó el lote y el contador está pendiente; conservar la clave del lote")
@@ -35,6 +36,7 @@ type ScraperService interface {
 	IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)
 	FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)
 	ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)
+	ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)
 	IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)
 }
 
@@ -61,6 +63,9 @@ func (s *scraperService) IniciarTrabajo(ctx context.Context, input domain.Inicia
 	}
 	if cadena == nil {
 		return nil, ErrCadenaNoEncontrada
+	}
+	if !cadena.EstaActiva {
+		return nil, ErrFuenteDeshabilitada
 	}
 
 	var usuarioUUID *uuid.UUID
@@ -146,6 +151,20 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
 }
 
+// ObtenerCadena consulta una cadena de supermercado en Catálogo por ID o nombre.
+// El contrato HTTP usa 404 para ausente; se traduce al error de dominio para que
+// los handlers no confundan una fuente inexistente con una respuesta vacía.
+func (s *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
+	cadena, err := s.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
+	if err != nil {
+		return nil, err
+	}
+	if cadena == nil {
+		return nil, ErrCadenaNoEncontrada
+	}
+	return cadena, nil
+}
+
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios
 func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
 	if s.entregas != nil {
@@ -189,6 +208,11 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 			return nil, err
 		}
 		if cadena != nil {
+			// La ingesta directa no tiene un trabajo que ya haya sido autorizado
+			// al inicio; debe respetar el flag de la fuente (SUP-243).
+			if parsedTrabajoUUID == nil && !cadena.EstaActiva {
+				return nil, ErrFuenteDeshabilitada
+			}
 			cadenaID = cadena.ID
 		}
 	}
@@ -200,6 +224,17 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	}
 	if sucursal == nil {
 		return nil, ErrSucursalNoEncontrada
+	}
+	if parsedTrabajoUUID == nil && cadenaID == 0 {
+		// La ingesta directa también puede identificar la fuente sólo por
+		// sucursal; en ese caso se valida la cadena antes de escribir.
+		cadena, err := s.ingesta.ObtenerCadena(ctx, sucursal.CadenaID, "")
+		if err != nil {
+			return nil, err
+		}
+		if cadena != nil && !cadena.EstaActiva {
+			return nil, ErrFuenteDeshabilitada
+		}
 	}
 
 	// Ejecutar la persistencia en lote

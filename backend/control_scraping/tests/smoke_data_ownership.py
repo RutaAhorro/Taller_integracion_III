@@ -208,7 +208,7 @@ http('GET', '/_identidad/ready', base=identity_url)
 # Contar consultas reales en el log PostgreSQL del rol, no en un mock del probe.
 # log_statement se activa sólo para Catálogo en esta DB efímera; no para el
 # operador de credenciales ni para Identidad. Se restablece antes de continuar.
-privilege_query = re.compile(r'\bSELECT\s+has_(?:schema|table|sequence)_privilege\(', re.I)
+privilege_query = re.compile(r'\bSELECT\s+has_(?:schema|table|sequence|column)_privilege\(', re.I)
 def privilege_queries():
     return len(privilege_query.findall(compose('logs', '--no-color', 'db').stdout))
 
@@ -218,7 +218,8 @@ try:
     compose('restart', 'catalogo')
     compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'catalogo')
     startup_queries = privilege_queries()
-    assert startup_queries - initial_queries == 15, 'validación inicial no ejecutada una vez'
+    # 1 esquema + 5 SELECT + 5 INSERT + 2 UPDATE (tabla y columna) + 3 secuencias (SUP-243).
+    assert startup_queries - initial_queries == 16, 'validación inicial no ejecutada una vez'
     for _ in range(3):
         catalog_probe('/_catalogo/ready')
     catalog_probe('/_catalogo/live')
@@ -281,5 +282,5 @@ assert sql("SELECT count(*) FROM scraper.capturas_precios cp JOIN scraper.produc
 print(json.dumps({'task': 'SUP-271', 'passed': http_passed, 'failed': 0,
                   'sql_checks': sql_passed, 'roles': list(allowed), 'migration': 'idempotent',
                   'health': '503 on DB outage; live 200; recovery without restart',
-                  'catalog_permission_queries': '15 at startup; 0 per readiness',
+                  'catalog_permission_queries': '16 at startup; 0 per readiness',
                   'rollback': 'SUP-270 and back with restricted credentials'}))

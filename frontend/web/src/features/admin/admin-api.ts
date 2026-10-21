@@ -262,16 +262,49 @@ export async function updateAdminUser(
   return adminUserFromBackend(usuario);
 }
 
-// Fuentes (SUP-243). GET lista, PUT { habilitada } por id.
-export function fetchAdminSources(signal?: AbortSignal): Promise<AdminSource[]> {
-  return request<AdminSource[]>(ADMIN_ENDPOINTS.fuentes, { signal });
+// Fuentes (SUP-243). El backend devuelve el contrato de Catálogo en español;
+// se adapta aquí al modelo de la UI para no acoplar los componentes al DTO.
+type FuenteBackend = {
+  id: number;
+  nombre: string;
+  habilitada: boolean;
+  sucursales: number;
+  productos: number;
+  ultima_extraccion?: string | null;
+};
+
+function formatLastSync(value?: string | null): string {
+  if (!value) return 'Sin registros';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Sin registros';
+  return date.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-export function updateAdminSource(id: string, patch: { habilitada: boolean }): Promise<AdminSource> {
-  return request<AdminSource>(`${ADMIN_ENDPOINTS.fuentes}/${encodeURIComponent(id)}`, {
+export function adminSourceFromBackend(fuente: FuenteBackend): AdminSource {
+  return {
+    id: String(fuente.id),
+    name: fuente.nombre,
+    type: 'Supermercado',
+    status: fuente.habilitada ? 'Operativa' : 'Inactiva',
+    lastSync: formatLastSync(fuente.ultima_extraccion),
+    products: fuente.productos,
+    branches: fuente.sucursales,
+    habilitada: fuente.habilitada,
+  };
+}
+
+// Fuentes (SUP-243). GET lista, PUT { habilitada } por id.
+export async function fetchAdminSources(signal?: AbortSignal): Promise<AdminSource[]> {
+  const fuentes = await request<FuenteBackend[]>(ADMIN_ENDPOINTS.fuentes, { signal });
+  return fuentes.map(adminSourceFromBackend);
+}
+
+export async function updateAdminSource(id: string, patch: { habilitada: boolean }): Promise<AdminSource> {
+  const fuente = await request<FuenteBackend>(`${ADMIN_ENDPOINTS.fuentes}/${encodeURIComponent(id)}`, {
     method: 'PUT',
     body: JSON.stringify(patch),
   });
+  return adminSourceFromBackend(fuente);
 }
 
 // Métricas (SUP-279). Cada servicio se pide por separado; el hook las combina

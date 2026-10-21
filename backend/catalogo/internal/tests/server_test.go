@@ -44,7 +44,7 @@ func adminSession() *fakeSessionValidator {
 
 func catalogRouterWithValidator(repo *mockProductoRepository, ping func(context.Context) error, validator auth.SessionValidator) *gin.Engine {
 	gin.SetMode(gin.TestMode)
-	return server.NewRouter(services.NewProductoService(repo), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil, validator)
+	return server.NewRouter(services.NewProductoService(repo), services.NewFuenteService(&mockFuenteRepository{}), "catalog-test-only-key", ping, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil, validator)
 }
 
 func catalogRouter(repo *mockProductoRepository, ping func(context.Context) error) *gin.Engine {
@@ -210,7 +210,7 @@ func TestCatalogHealthAndDomainIsolation(t *testing.T) {
 
 func TestCatalogRequestCorrelation(t *testing.T) {
 	var logs bytes.Buffer
-	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil, nil)
+	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil, nil)
 	for _, received := range []string{"gateway-request-267", strings.Repeat("x", 129)} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/productos/buscar?q=le", nil)
 		req.Header.Set("X-Request-ID", received)

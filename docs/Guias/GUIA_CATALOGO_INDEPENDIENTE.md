@@ -62,6 +62,8 @@ respuestas se extraen conservando su comportamiento actual.
 | GET | `/api/v1/productos/:id` | Público; detalle e historial actuales |
 | GET | `/api/v1/admin/productos` | Cookie JWT válida y rol `admin` vigente en Identidad |
 | GET | `/api/v1/admin/productos/` | Misma protección y respuesta administrativa |
+| GET | `/api/v1/admin/productos/fuentes` | Cookie JWT válida y rol `admin`; lista cadenas y expone `habilitada` (columna `esta_activa`) (SUP-243) |
+| PUT | `/api/v1/admin/productos/fuentes/:id` | Cookie JWT válida y rol `admin`; habilita/deshabilita la fuente y persiste `scraper.cadenas_supermercado` (SUP-243) |
 | GET | `/_catalogo/live` | Vida del proceso, independiente de PostgreSQL |
 | GET | `/_catalogo/ready` | Conexión PostgreSQL; 503 si falla |
 | GET | `/health` | Alias de readiness del nuevo servicio |
@@ -87,7 +89,8 @@ internos mediante `detalle`. El servicio nuevo corrige ambos comportamientos:
 - Sin configuración se rechazan peticiones que incluyan `Origin`. Las peticiones
   sin esa cabecera continúan funcionando, sin conceder permisos CORS. La lista
   debe configurarse para el frontend de cada entorno al activar SUP-268.
-- Los preflights permitidos anuncian sólo GET/OPTIONS y las cabeceras
+- Los preflights permitidos anuncian sólo los métodos y las cabeceras en uso
+  (`GET, PUT, OPTIONS` desde SUP-243) y las cabeceras
   `Content-Type`, `Authorization` y `X-Request-ID`.
 - Los errores 500 y panics devuelven mensajes genéricos sin `detalle`. El
   diagnóstico se registra con `slog`, ruta normalizada e ID de petición. Los
@@ -126,9 +129,12 @@ Las consultas sólo leen estas tablas existentes:
 - `scraper.sucursales_supermercado`.
 - `scraper.cadenas_supermercado`.
 
-No hay `AutoMigrate`, creación de usuarios ni escrituras de ingesta. En las
-pruebas aisladas Catálogo usa un rol PostgreSQL con lectura de estas cuatro
-tablas y sin acceso a `api.usuarios`. Esto comprueba sus necesidades mínimas;
+La administración de fuentes (SUP-243) es la única escritura nueva: el PUT
+actualiza únicamente `esta_activa` en `scraper.cadenas_supermercado`; el rol
+recibe UPDATE a nivel de esa columna, no de toda la tabla. No hay `AutoMigrate`,
+creación de usuarios ni escrituras de ingesta. En las pruebas aisladas Catálogo
+usa un rol PostgreSQL con lectura de estas cuatro tablas, escritura del flag de
+cadenas y sin acceso a `api.usuarios`. Esto comprueba sus necesidades mínimas;
 el provisionamiento de roles y permisos en entornos existentes sigue siendo
 responsabilidad de SUP-271, sin cambiar usuarios de base de datos reales aquí.
 

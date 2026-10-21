@@ -32,7 +32,12 @@ func VerifyStorage(ctx context.Context, db *gorm.DB, writer bool) error {
 	if writer {
 		var permitted bool
 		if err := db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.productos_crudos', 'UPDATE')").Scan(&permitted).Error; err != nil || !permitted {
-			return errors.New("faltan permisos de actualización de productos")
+			return errors.New("faltan permisos de actualización de scraper.productos_crudos")
+		}
+		// El catálogo sólo modifica `esta_activa`; no se concede UPDATE de tabla
+		// completa sobre cadenas para no exponer nombre, URLs u otros campos.
+		if err := db.WithContext(ctx).Raw("SELECT has_column_privilege(current_user, 'scraper.cadenas_supermercado', 'esta_activa', 'UPDATE')").Scan(&permitted).Error; err != nil || !permitted {
+			return errors.New("faltan permisos de actualización de scraper.cadenas_supermercado.esta_activa")
 		}
 		for _, sequence := range []string{"scraper.cadenas_supermercado_id_seq", "scraper.sucursales_supermercado_id_seq", "scraper.capturas_precios_id_seq"} {
 			if err := db.WithContext(ctx).Raw("SELECT has_sequence_privilege(current_user, ?, 'USAGE')", sequence).Scan(&permitted).Error; err != nil || !permitted {
