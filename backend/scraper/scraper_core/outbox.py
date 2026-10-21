@@ -73,7 +73,9 @@ class Outbox:
                 self.db.executemany("UPDATE items SET batch_id=? WHERE id=?", [(batch_id, row[0]) for row in rows])
 
     def replay(self, client, cancelled=None):
-        for batch_id, data in self.db.execute("SELECT id,payload FROM batches WHERE delivered=0 ORDER BY rowid").fetchall():
+        # Iterar el cursor en vez de fetchall(): si la API estuvo caída durante
+        # todo el crawl, no se cargan todos los lotes pendientes en memoria.
+        for batch_id, data in self.db.execute("SELECT id,payload FROM batches WHERE delivered=0 ORDER BY rowid"):
             if cancelled and cancelled.is_set():
                 raise RuntimeError("Se perdió la lease del trabajo")
             payload = json.loads(data)

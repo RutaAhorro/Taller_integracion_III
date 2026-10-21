@@ -163,7 +163,43 @@ Para actualizar un producto concreto, pasa su URL pública:
 python -m scraper_core.runtime --product-url "https://www.jumbo.cl/ruta-del-producto"
 ```
 
-El runtime captura los items en un feed JSONL temporal y retorna los objetos en `result["items"]`. Para persistirlos mediante la API se debe usar el worker y el flujo disparado desde la API descrito arriba.
+El modo CLI captura los items en un feed JSONL temporal y los imprime por `stdout`. El worker, en cambio, no carga el catálogo en memoria: entrega cada producto al spool SQLite mediante el pipeline y sólo conserva el estado del trabajo.
+
+### Medición de memoria
+
+El worker no debe retener el catálogo completo. Para verificar el consumo antes y después, hay un benchmark reproducible que compara los tres modos en procesos separados:
+
+```bash
+.venv/bin/python research/bench_memory.py --items 150000
+```
+
+Salida esperada en un equipo de referencia:
+
+```
+Modo                            RSS pico     Δ vs base
+antes (lista completa)          234.1 MB       217.5 MB
+ahora (worker)                   16.7 MB         0.0 MB
+CLI (collect_items=True)        234.2 MB       217.5 MB
+```
+
+`--max-worker-mb 120` hace que el script falle si el modo worker vuelve a retener ítems, por lo que puede usarse como gate de CI.
+
+Para medir un crawl real dentro del contenedor, muestrea el cgroup mientras corre el trabajo:
+
+```bash
+docker exec python_scraper_worker sh -c '
+while :; do
+  cur=$(cat /sys/fs/cgroup/memory.current)
+  anon=$(awk "/^anon /{print \$2}" /sys/fs/cgroup/memory.stat)
+  file=$(awk "/^file /{print \$2}" /sys/fs/cgroup/memory.stat)
+  printf "%s current=%sMB anon=%sMB file=%sMB\n" \
+    "$(date +%T)" "$((cur/1048576))" "$((anon/1048576))" "$((file/1048576))"
+  sleep 2
+done'
+```
+
+`anon` es memoria real del proceso; `file` es page cache y no debe interpretarse como consumo del scraper. Un `OOMKilled=true` en `docker inspect` confirma que el límite del cgroup fue el problema.
+
 
 Cada producto conserva los campos básicos (`producto`, `precio`, `categoria`, `imagen`) y puede incluir `ean_gtin`, `sku`, `precio_normal`, `precio_oferta`, `marca`, `formato_crudo`, `mecanica_promocion`, `en_stock` y `url_producto`. Los campos no publicados por el supermercado origen quedan como `null`.
 
