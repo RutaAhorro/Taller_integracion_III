@@ -317,7 +317,7 @@ cinco spiders extraen productos del HTML vigente:
 | Lider | `lider_rsc` | 44 |
 
 También se validó el modo producto de Jumbo y Cugat (1 producto cada uno).
-También se validó una página de cada categoría nueva agregada para Jumbo,
+Además, se validó una página de cada categoría nueva agregada para Jumbo,
 Santa Isabel, Cugat y Acuenta (26/10/2026):
 
 | Cadena | Categorías nuevas validadas | Productos por página |
@@ -407,11 +407,12 @@ docker run --rm --network host --user "$(id -u):$(id -g)" \
   sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
 ```
 
-La última medición local fue 30,7 MB de RSS pico y 16,7 MB de `RssAnon` para
+La última medición local fue 29,9 MB de RSS pico y 16,3 MB de `RssAnon` para
 200.000 productos. El binario precompilado pasó además con un cgroup de 192 MB
-sin ser `OOMKilled`. El gate no corre en la suite normal para no mezclar la
-medición de RAM con `-race`; el workflow `scraper-go-checks` lo ejecuta como
-paso separado.
+sin ser `OOMKilled`: 25,7 MB de RSS pico, 14,0 MB de `RssAnon` y 156,2 MB de
+pico del cgroup (incluye `tmpfs` y la base de `alpine`). El gate no corre en la
+suite normal para no mezclar la medición de RAM con `-race`; el workflow
+`scraper-go-checks` lo ejecuta como paso separado.
 
 ### Recuperación y reintentos
 
