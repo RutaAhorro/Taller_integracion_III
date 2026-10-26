@@ -83,11 +83,11 @@ producto.
 
 `JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
 `ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
-separadas por coma sin editar el archivo. El worker también acepta `add_url`
-en el payload, pero el endpoint
-`POST /api/v1/scraper/trabajos/{id}/ejecutar` de Control todavía no lo expone;
-para agregar categorías desde la API o el bot falta ese campo. Por ahora se
-usa el archivo o las variables de entorno.
+separadas por coma sin editar el archivo. El endpoint
+`POST /api/v1/scraper/trabajos/{id}/ejecutar` acepta `add_url` y
+`enrich_ean`; el worker valida el host de `add_url` por cadena antes de
+escribir la categoría en el volumen compartido. `enrich_ean` lo aplica el
+spider de Jumbo.
 
 La fuente de verdad de las categorías es `backend/scraper_go/categories/`.
 Python las sigue leyendo desde `/app/research` mediante un montaje de compose;
@@ -501,8 +501,6 @@ real de producción.
 - Validar los cinco spiders contra HTML real de producción, no sólo fixtures.
 - Agregar un smoke de compose que ejecute un trabajo real contra Redis y una
   API simulada, incluyendo bloqueo 403/429 y recuperación de lease.
-- Crear el manifiesto K8s para la imagen Go y publicar esa imagen; el manifiesto
-  actual `infrastructure/k8s/scraper/deployment.yaml` sigue apuntando a Python.
-- Exponer `add_url` y `enrich_ean` en el endpoint de Control si se necesitan
-  desde la API o el bot.
+- Ejecutar el corte real a la imagen Go y medir el rollback con trabajos
+  pendientes en el entorno de despliegue.
 - Confirmar el umbral de frescura y los identificadores `SUP-XXX` de la tarjeta.

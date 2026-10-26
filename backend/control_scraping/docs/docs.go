@@ -649,6 +649,12 @@ const docTemplate = `{
         "handlers.ejecutarScraperRequest": {
             "type": "object",
             "properties": {
+                "add_url": {
+                    "type": "string"
+                },
+                "enrich_ean": {
+                    "type": "boolean"
+                },
                 "producto_id": {
                     "type": "string"
                 },
