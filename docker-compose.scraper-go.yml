@@ -3,6 +3,8 @@ services:
     build:
       context: .
       dockerfile: backend/scraper_go/Dockerfile
+    image: ghcr.io/danirc2024/taller_integracion_iii-scraper-go:${SCRAPER_GO_IMAGE_TAG:-develop}
+    pull_policy: missing
     container_name: go_scraper_worker
     profiles: ["scraper-go"]
     environment:
