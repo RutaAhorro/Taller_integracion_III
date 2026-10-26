@@ -312,6 +312,13 @@ productos. Un trabajo bloqueado o sin productos queda `fallido` con
 `registro_errores` que empieza con `bloqueo:` o `sin productos:`; no se debe
 reintentar como si fuera una categoría vacía.
 
+Prueba local de ciclo de vida (26/10/2026): detener Python, levantar
+`go_scraper_worker` hasta `healthy`, detenerlo y restaurar `scraper_worker`
+tomó 18 segundos. Se usó una cola/grupo aislados para no consumir trabajos
+reales. Esta medición valida el cambio de contenedor, no la recuperación de
+trabajos en vuelo; esa parte se cubre con las pruebas de lease/spool y debe
+repetirse en el entorno de despliegue con trabajos pendientes.
+
 ## Verificación
 
 ```bash
