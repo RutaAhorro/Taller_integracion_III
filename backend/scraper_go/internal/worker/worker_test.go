@@ -122,6 +122,7 @@ type fakeSpider struct {
 	name  string
 	items []domain.Item
 	err   error
+	calls int
 }
 
 func (f *fakeSpider) Name() string {
@@ -129,6 +130,7 @@ func (f *fakeSpider) Name() string {
 }
 
 func (f *fakeSpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error {
+	f.calls++
 	for _, item := range f.items {
 		if err := emit(item); err != nil {
 			return err

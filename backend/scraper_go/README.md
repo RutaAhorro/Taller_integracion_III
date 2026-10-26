@@ -380,6 +380,33 @@ sin ser `OOMKilled`. El gate no corre en la suite normal para no mezclar la
 medición de RAM con `-race`; el workflow `scraper-go-checks` lo ejecuta como
 paso separado.
 
+### Recuperación y reintentos
+
+Los casos críticos del worker de Python tienen equivalentes Go, sin depender de
+los sitios reales:
+
+- `TestProcessJobDoesNotCrawlTerminalJob`: un trabajo ya `completado` no vuelve
+  a ejecutar el spider.
+- `TestProcessJobWithCrawlDoneFinalizesWithoutCrawling`: si el crawl alcanzó a
+  terminar, se reintenta la entrega y el cierre sin repetir el crawl.
+- `TestProcessJobStopsAfterThreeCrawlAttempts`: tres intentos agotados se
+  derivan a revisión (`ErrCrawlExhausted`) sin ejecutar el spider.
+- `TestReplayRetriesSamePayloadAndIdempotencyKey`: una respuesta perdida
+  reenvía el mismo lote, payload e `Idempotency-Key`.
+- `TestReplayDoesNotSendWithCancelledContext`: una lease perdida no envía
+  lotes pendientes.
+- `TestQueueAckOwnershipAndDeadLetter` y
+  `TestCleanupSpoolRespectsExecutionLock`: ACK, dead-letter y limpieza no
+  borran un spool bloqueado.
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -e REDIS_TEST_URL=redis://host.docker.internal:6379/15 \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'go test -v -run "TestProcessJob|TestReplay|TestQueueAck|TestCleanupSpool" ./internal/...'
+```
+
 ### Extracción real con Compose
 
 Con el stack base levantado y el token de `.env` exportado:
