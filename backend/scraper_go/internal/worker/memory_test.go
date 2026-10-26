@@ -36,7 +36,7 @@ func TestMemoryGate(t *testing.T) {
 	}
 
 	items := envIntTest("SCRAPER_MEMORY_ITEMS", 50_000)
-	limitMB := envFloatTest("SCRAPER_MEMORY_LIMIT_MB", 150)
+	limitMB := envFloatTest("SCRAPER_MEMORY_LIMIT_MB", 100)
 	if items < 1 {
 		t.Fatal("SCRAPER_MEMORY_ITEMS debe ser mayor que cero")
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,6 +26,46 @@ func testClient() *Client {
 		MaxRetries: 1,
 		Logger:     testLogger(),
 	})
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
+
+func TestRobotsCacheCachesFailure(t *testing.T) {
+	var calls atomic.Int32
+	cache := newRobotsCache(&http.Client{
+		Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			calls.Add(1)
+			return nil, errors.New("robots no disponible")
+		}),
+	}, "TallerIntegracionIII/1.0", testLogger())
+
+	target, err := url.Parse("https://example.test/frutas")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	allowed, _, err := cache.Allowed(context.Background(), target)
+	if err == nil {
+		t.Fatal("la primera consulta debe devolver el error de robots")
+	}
+	if !allowed {
+		t.Fatal("un fallo de robots debe permitir el crawl (fail-open)")
+	}
+
+	allowed, _, err = cache.Allowed(context.Background(), target)
+	if err != nil {
+		t.Fatalf("la segunda consulta no debe repetir el error: %v", err)
+	}
+	if !allowed {
+		t.Fatal("la cache de fallos debe seguir permitiendo el crawl")
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("robots.txt se consulto %d veces; se esperaba 1", got)
+	}
 }
 
 func TestFetchReturns404ForSpiderPagination(t *testing.T) {

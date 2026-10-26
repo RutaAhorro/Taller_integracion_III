@@ -234,7 +234,7 @@ done | tail -1
 `VmHWM` es el máximo de memoria residente (`High Water Mark`) del proceso, en
 kB. No es el uso actual: eso es `VmRSS`. Como el scraper es el PID 1 del
 contenedor, este valor corresponde al pico real del scraper y se puede comparar
-con el gate de 150 MB.
+con el gate de 100 MB.
 
 Para probar las cinco cadenas secuencialmente y obtener el pico de RAM de cada
 una al finalizar:
@@ -324,20 +324,22 @@ que hicieron posible la paridad fueron:
 - Todas: el cliente HTTP conserva cookies entre `robots.txt` y la página.
 
 Cugat puede registrar `scraper_robots_unavailable` porque su `robots.txt`
-redirige en bucle; el aviso no impide la extracción.
+redirige en bucle; el aviso no impide la extracción. Cuando `robots.txt` falla,
+el cliente guarda el fallo durante 10 minutos por dominio: el crawl sigue en
+modo fail-open y no repite el warning en cada categoría.
 
 ### Gate de RAM
 
 El pipeline real de spool, lotes y entrega se mide con un catálogo sintético.
 El test lee `VmHWM` de `/proc/self/status` y falla si el RSS pico supera el
-límite. En CI se ejecutan 50.000 productos con un tope de 150 MB:
+límite. En CI se ejecutan 50.000 productos con un tope de 100 MB:
 
 ```bash
 docker run --rm --network host --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
   -e SCRAPER_MEMORY_GATE=1 \
   -e SCRAPER_MEMORY_ITEMS=50000 \
-  -e SCRAPER_MEMORY_LIMIT_MB=150 \
+  -e SCRAPER_MEMORY_LIMIT_MB=100 \
   -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
   sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
 ```
@@ -402,7 +404,7 @@ grep -E 'VmRSS|VmHWM' /proc/$PID/status
 ```
 
 `VmHWM` es el pico desde que arrancó el proceso. El límite de Compose es de
-200 MB y el gate de CI usa 150 MB.
+128 MB, con una reserva de 64 MB, y el gate de CI usa 100 MB.
 
 ## Marcha paralela y cutover
 

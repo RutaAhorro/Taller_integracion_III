@@ -355,9 +355,15 @@ type robotsEntry struct {
 	fetched    time.Time
 }
 
+const (
+	robotsCacheTTL   = time.Hour
+	robotsFailureTTL = 10 * time.Minute
+)
+
 type robotsCache struct {
 	mu        sync.Mutex
 	entries   map[string]*robotsEntry
+	failures  map[string]time.Time
 	http      *http.Client
 	userAgent string
 	logger    *slog.Logger
@@ -366,6 +372,7 @@ type robotsCache struct {
 func newRobotsCache(client *http.Client, userAgent string, logger *slog.Logger) *robotsCache {
 	return &robotsCache{
 		entries:   make(map[string]*robotsEntry),
+		failures:  make(map[string]time.Time),
 		http:      client,
 		userAgent: userAgent,
 		logger:    logger,
@@ -376,16 +383,29 @@ func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.
 	base := target.Scheme + "://" + target.Host
 	r.mu.Lock()
 	entry := r.entries[base]
+	failedAt, failed := r.failures[base]
 	r.mu.Unlock()
 
-	if entry == nil || time.Since(entry.fetched) > time.Hour {
+	if entry == nil || time.Since(entry.fetched) > robotsCacheTTL {
+		if failed && time.Since(failedAt) < robotsFailureTTL {
+			// Fail-open sin repetir el aviso en cada pagina. Cugat, por
+			// ejemplo, redirige robots.txt en bucle; sin esta cache el
+			// worker registraria un warning por cada categoria.
+			return true, 0, nil
+		}
 		fetched, err := r.fetch(ctx, base)
 		if err != nil {
+			if ctx.Err() == nil {
+				r.mu.Lock()
+				r.failures[base] = time.Now()
+				r.mu.Unlock()
+			}
 			return true, 0, err
 		}
 		entry = fetched
 		r.mu.Lock()
 		r.entries[base] = entry
+		delete(r.failures, base)
 		r.mu.Unlock()
 	}
 
