@@ -4,11 +4,15 @@ package crawler
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	_ "embed"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strconv"
 	"strings"
@@ -17,6 +21,13 @@ import (
 
 	"github.com/temoto/robotstxt"
 )
+
+// Acuenta no envía el certificado intermedio en el handshake TLS. El
+// intermedio público de GlobalSign se agrega como ancla adicional para poder
+// verificar la cadena sin desactivar la validación. Vence el 21/11/2028.
+//
+//go:embed certs/globalsign-rsa-ov-ssl-ca-2018.pem
+var extraCACert []byte
 
 var (
 	ErrRobotsDisallowed = errors.New("robots.txt no permite la URL")
@@ -83,9 +94,7 @@ func New(opts Options) *Client {
 		opts.Logger = slog.Default()
 	}
 	client := &Client{
-		http: &http.Client{
-			Timeout: opts.Timeout,
-		},
+		http:       newHTTPClient(opts.Timeout),
 		userAgent:  opts.UserAgent,
 		delay:      opts.Delay,
 		maxSize:    opts.MaxSize,
@@ -95,6 +104,33 @@ func New(opts Options) *Client {
 	}
 	client.robots = newRobotsCache(client.http, client.userAgent, client.logger)
 	return client
+}
+
+func newHTTPClient(timeout time.Duration) *http.Client {
+	roots, err := x509.SystemCertPool()
+	if err != nil || roots == nil {
+		roots = x509.NewCertPool()
+	}
+	if len(extraCACert) > 0 {
+		roots.AppendCertsFromPEM(extraCACert)
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{
+		RootCAs:    roots,
+		MinVersion: tls.VersionTLS12,
+	}
+	// Scrapy usa HTTP/1.1. Forzarlo evita que algunos anti-bot rechacen la
+	// huella HTTP/2 de Go.
+	transport.ForceAttemptHTTP2 = false
+
+	// El jar conserva las cookies entre robots.txt y la página, igual que Scrapy.
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{
+		Transport: transport,
+		Jar:       jar,
+		Timeout:   timeout,
+	}
 }
 
 // Fetch aplica robots, throttle y reintentos. Un 404 se devuelve como
@@ -242,15 +278,20 @@ func retryAfter(header http.Header) time.Duration {
 	return 0
 }
 
+// No se busca "captcha" a secas: las páginas normales de Cugat incluyen el
+// CSS de reCAPTCHA y se marcaban como bloqueadas sin estarlo. Los marcadores
+// deben identificar el challenge, no cualquier script de terceros.
 var blockMarkers = []string{
 	"just a moment",
 	"cf-chl",
-	"captcha",
-	"access denied",
-	"unusual traffic",
 	"challenge-platform",
+	"unusual traffic",
 	"enable javascript and cookies",
-	"cloudflare",
+	"robot or human?",
+	"px-captcha",
+	"captcha-delivery",
+	"verify you are human",
+	"attention required!",
 }
 
 func detectBlock(status int, body []byte) string {

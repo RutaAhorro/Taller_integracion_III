@@ -304,7 +304,7 @@ func extractJumboProducts(body []byte) []domain.Product {
 			}
 			seen[*name] = struct{}{}
 
-			offer := jumboOffer(entry)
+			offer := schemaOffer(entry)
 			normalPrice := extractNormalPrice(entry)
 			offerPrice := firstPrice(offer, "price")
 			if offerPrice == nil {
@@ -362,7 +362,7 @@ func extractJumboProducts(body []byte) []domain.Product {
 	return products
 }
 
-func jumboOffer(entry map[string]any) map[string]any {
+func schemaOffer(entry map[string]any) map[string]any {
 	switch raw := entry["offers"].(type) {
 	case map[string]any:
 		return raw

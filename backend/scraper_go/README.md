@@ -14,10 +14,10 @@ rollback mientras ambos convivan.
 | Supermercado | Estado |
 | --- | --- |
 | Jumbo | Implementado: JSON-LD, paginación, modo producto y enriquecimiento EAN |
-| Santa Isabel | Implementado: renderData, paginación y filtro por seller |
-| Cugat | Implementado: tarjetas WooCommerce, JSON-LD y modo producto |
-| Acuenta | Implementado: RSC, promociones, referencias EAN/imagen y tarjetas |
-| Lider | Implementado: `__NEXT_DATA__`, tarjetas y paginación |
+| Santa Isabel | Implementado: renderData + fallback JSON-LD, paginación y filtro por seller |
+| Cugat | Implementado: tarjetas WooCommerce, JSON-LD, modo producto y detección de bloqueo ajustada |
+| Acuenta | Implementado: RSC, promociones, referencias EAN/imagen, tarjetas y CA intermedia |
+| Lider | Implementado: `__NEXT_DATA__`, tarjetas, paginación, HTTP/1.1 y cookies |
 
 La base del worker ya está implementada: configuración, cliente de Control de
 Scraping, outbox SQLite, cola Redis con lease y heartbeat, crawler con
@@ -190,6 +190,38 @@ jq -s '.[0]' /tmp/jumbo.jsonl
 Si el archivo queda vacío, revisa el `stderr` del comando: ahí aparecen
 `*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
 `*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+
+### Validación contra sitios reales (26/10/2026)
+
+Con la imagen local y una página por cadena (`-max-pages 1`, `-delay 0`) los
+cinco spiders extraen productos del HTML vigente:
+
+| Cadena | Spider | Productos |
+| --- | --- | ---: |
+| Jumbo | `jumbo_rsc` | 40 |
+| Santa Isabel | `santa_isabel_rsc` | 40 |
+| Cugat | `cugat_rsc` | 25 |
+| Acuenta | `acuenta_rsc` | 43 |
+| Lider | `lider_rsc` | 44 |
+
+También se validó el modo producto de Jumbo y Cugat (1 producto cada uno).
+Esta prueba cubre una página por cadena, no el catálogo completo. Los cambios
+que hicieron posible la paridad fueron:
+
+- Cugat: se dejó de tratar cualquier aparición de `captcha` como bloqueo. La
+  página normal incluye el CSS de reCAPTCHA y antes se descartaba completa.
+- Santa Isabel: el sitio dejó de publicar `window.__renderData`. Se conserva
+  ese parser y se agregó un fallback que lee el `ItemList` de JSON-LD.
+- Acuenta: el servidor no envía el certificado intermedio de GlobalSign. Se
+  embebe el intermedio público en `internal/crawler/certs/` y se agrega al
+  pool de confianza; no se desactiva la verificación TLS.
+- Lider: se usa HTTP/1.1 y un cookie jar como Scrapy. La página sigue detrás de
+  PerimeterX; si devuelve `Robot or human?` hay que reintentar más tarde, no
+  evadir el challenge.
+- Todas: el cliente HTTP conserva cookies entre `robots.txt` y la página.
+
+Cugat puede registrar `scraper_robots_unavailable` porque su `robots.txt`
+redirige en bucle; el aviso no impide la extracción.
 
 ### Gate de RAM
 

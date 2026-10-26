@@ -1,6 +1,7 @@
 package spiders
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
@@ -146,6 +149,15 @@ func validateSantaIsabelURL(rawURL string) error {
 }
 
 func extractSantaIsabelProducts(body []byte, baseURL *url.URL) []domain.Product {
+	// El sitio dejó de publicar window.__renderData en 2026. Se mantiene el
+	// parser anterior para rollback y se usa JSON-LD (ItemList) como fallback.
+	if products := extractSantaIsabelRenderData(body, baseURL); len(products) > 0 {
+		return products
+	}
+	return extractSantaIsabelJSONLD(body, baseURL)
+}
+
+func extractSantaIsabelRenderData(body []byte, baseURL *url.URL) []domain.Product {
 	match := renderDataPattern.FindSubmatch(body)
 	if len(match) < 2 {
 		return nil
@@ -256,6 +268,100 @@ func extractSantaIsabelProducts(body []byte, baseURL *url.URL) []domain.Product 
 			Imagen:            image,
 		})
 	}
+	return products
+}
+
+func extractSantaIsabelJSONLD(body []byte, baseURL *url.URL) []domain.Product {
+	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+
+	var products []domain.Product
+	seen := make(map[string]struct{})
+	document.Find(`script[type="application/ld+json"]`).Each(func(_ int, selection *goquery.Selection) {
+		var data any
+		decoder := json.NewDecoder(strings.NewReader(selection.Text()))
+		decoder.UseNumber()
+		if err := decoder.Decode(&data); err != nil {
+			return
+		}
+		for _, value := range walkJSON(data) {
+			entry, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			typeValue, _ := entry["@type"].(string)
+			if typeValue != "Product" {
+				continue
+			}
+			name := normalize.Texto(entry["name"])
+			if name == nil {
+				continue
+			}
+
+			offer := schemaOffer(entry)
+			price := firstPrice(offer, "price")
+			if price == nil {
+				price = firstPrice(entry, "price")
+			}
+			if price == nil {
+				continue
+			}
+
+			normalPrice := firstPrice(offer, "listPrice", "priceWithoutDiscount")
+			var offerPrice *float64
+			if normalPrice != nil && *normalPrice > *price {
+				offerPrice = price
+			} else {
+				normalPrice = price
+			}
+
+			rawURL, _ := entry["url"].(string)
+			var productURL *string
+			if rawURL != "" {
+				resolved := resolveURL(baseURL, rawURL)
+				productURL = &resolved
+			}
+			key := strings.ToLower(*name)
+			if productURL != nil {
+				key += "|" + *productURL
+			}
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
+
+			var image *string
+			switch value := entry["image"].(type) {
+			case string:
+				image = &value
+			case []any:
+				if len(value) > 0 {
+					if first, ok := value[0].(string); ok {
+						image = &first
+					}
+				}
+			}
+			var brand any = entry["brand"]
+			if brandMap, ok := brand.(map[string]any); ok {
+				brand = brandMap["name"]
+			}
+
+			products = append(products, domain.Product{
+				Producto:          *name,
+				Precio:            price,
+				PrecioNormal:      normalPrice,
+				PrecioOferta:      offerPrice,
+				EanGtin:           normalize.EAN(firstValue(entry, "gtin", "gtin8", "gtin12", "gtin13", "ean")),
+				Marca:             normalize.Texto(brand),
+				EnStock:           stockValue(offer["availability"]),
+				URLProducto:       productURL,
+				Imagen:            image,
+				MecanicaPromocion: normalize.Texto(firstValue(offer, "promotion", "promotionMechanic", "description")),
+			})
+		}
+	})
 	return products
 }
 

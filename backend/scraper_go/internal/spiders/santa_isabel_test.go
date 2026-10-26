@@ -110,6 +110,81 @@ func TestExtractSantaIsabelProducts(t *testing.T) {
 	}
 }
 
+func TestExtractSantaIsabelJSONLD(t *testing.T) {
+	body := []byte(`<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ItemList",
+  "numberOfItems": 2,
+  "itemListElement": [
+    {
+      "@type": "ListItem",
+      "position": 1,
+      "item": {
+        "@type": "Product",
+        "name": "Plátano Extra Granel (1 a 2 un. Aprox)",
+        "url": "https://www.santaisabel.cl/platano-granel/p",
+        "image": "https://santaisabel.vteximg.com.br/platano.jpg",
+        "brand": {"@type": "Brand", "name": "Frutas y Verduras Propias"},
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "CLP",
+          "price": 745,
+          "availability": "https://schema.org/InStock"
+        }
+      }
+    },
+    {
+      "@type": "ListItem",
+      "position": 2,
+      "item": {
+        "@type": "Product",
+        "name": "Palta Hass Malla 1 kg",
+        "url": "https://www.santaisabel.cl/palta-hass-malla-1-kg/p",
+        "image": ["https://santaisabel.vteximg.com.br/palta.jpg"],
+        "brand": {"@type": "Brand", "name": "Frutas y Verduras Propias"},
+        "offers": {
+          "@type": "Offer",
+          "priceCurrency": "CLP",
+          "price": 3590,
+          "availability": "https://schema.org/OutOfStock"
+        }
+      }
+    }
+  ]
+}
+</script>`)
+	products := extractSantaIsabelProducts(body, mustURL("https://www.santaisabel.cl/frutas-y-verduras"))
+	if len(products) != 2 {
+		t.Fatalf("productos = %d, want 2", len(products))
+	}
+	first := products[0]
+	if first.Producto != "Plátano Extra Granel (1 a 2 un. Aprox)" {
+		t.Errorf("producto = %q", first.Producto)
+	}
+	if first.Precio == nil || *first.Precio != 745 {
+		t.Errorf("precio = %v", first.Precio)
+	}
+	if first.PrecioNormal == nil || *first.PrecioNormal != 745 {
+		t.Errorf("precio_normal = %v", first.PrecioNormal)
+	}
+	if first.PrecioOferta != nil {
+		t.Errorf("precio_oferta = %v, want nil", first.PrecioOferta)
+	}
+	if first.Marca == nil || *first.Marca != "Frutas y Verduras Propias" {
+		t.Errorf("marca = %v", first.Marca)
+	}
+	if first.URLProducto == nil || *first.URLProducto != "https://www.santaisabel.cl/platano-granel/p" {
+		t.Errorf("url = %v", first.URLProducto)
+	}
+	if first.EnStock == nil || !*first.EnStock {
+		t.Errorf("en_stock = %v", first.EnStock)
+	}
+	if products[1].EnStock == nil || *products[1].EnStock {
+		t.Errorf("en_stock segundo = %v", products[1].EnStock)
+	}
+}
+
 func TestSantaIsabelOnlyUsesOwnSeller(t *testing.T) {
 	payload := map[string]any{
 		"plp": map[string]any{

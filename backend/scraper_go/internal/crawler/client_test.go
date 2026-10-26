@@ -87,6 +87,23 @@ func TestFetchReportsPersistentBlock(t *testing.T) {
 	}
 }
 
+func TestDetectBlockIgnoresRecaptchaOnNormalPage(t *testing.T) {
+	body := []byte(`<html><head><title>Frutas y Verduras - Supermercado Cugat</title></head>` +
+		`<body><style>/* Hides the reCAPTCHA on every page */ .grecaptcha-badge { display:none; }</style>` +
+		`<div class="product">Palta Hass</div></body></html>`)
+	if reason := detectBlock(http.StatusOK, body); reason != "" {
+		t.Errorf("detectBlock() = %q, want empty", reason)
+	}
+}
+
+func TestDetectBlockRecognizesPerimeterX(t *testing.T) {
+	body := []byte(`<html><head><title>Robot or human?</title></head>` +
+		`<body><div id="px-captcha"></div></body></html>`)
+	if reason := detectBlock(http.StatusOK, body); reason == "" {
+		t.Fatal("detectBlock() no detectó el challenge de PerimeterX")
+	}
+}
+
 func TestFetchHonorsRobots(t *testing.T) {
 	var pageCalls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
