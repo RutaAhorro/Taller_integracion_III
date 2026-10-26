@@ -83,26 +83,35 @@ producto.
 
 `JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
 `ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
-separadas por coma sin editar el archivo. El campo `add_url` de un trabajo
-agrega la categoría al archivo `<spider>_categories.txt` del directorio
-configurado.
+separadas por coma sin editar el archivo. El worker también acepta `add_url`
+en el payload, pero el endpoint
+`POST /api/v1/scraper/trabajos/{id}/ejecutar` de Control todavía no lo expone;
+para agregar categorías desde la API o el bot falta ese campo. Por ahora se
+usa el archivo o las variables de entorno.
 
 La fuente de verdad de las categorías es `backend/scraper_go/categories/`.
 Python las sigue leyendo desde `/app/research` mediante un montaje de compose;
 en el host, `backend/scraper/research/*_categories.txt` son enlaces simbólicos
-temporales a esa carpeta para no romper el rollback. Al borrar
+temporales a esa carpeta para no romper el rollback en Compose. Al borrar
 `backend/scraper`, los enlaces desaparecen pero las categorías quedan en Go.
+
+Una imagen Python reconstruida desde `backend/scraper` no incluye los TXT
+reales, porque los symlinks apuntan fuera del contexto de build. Para un
+rollback, usar la imagen Python ya construida o restaurar copias reales en
+`backend/scraper/research` antes de reconstruirla.
 
 ## Desarrollo y pruebas
 
 Go no se instala en el host: las pruebas se ejecutan en Docker. Desde la raíz
-del repositorio:
+del repositorio.
+
+### Suite completa
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
   -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
-  sh -c 'gofmt -w . && go test ./... && go vet ./... && go build ./cmd/worker'
+  sh -c 'gofmt -w . && go test ./... && go vet ./... && go build -o /tmp/scraper-worker ./cmd/worker'
 ```
 
 La imagen usa el contexto de build en la raíz para tomar las categorías de
@@ -112,6 +121,76 @@ La imagen usa el contexto de build en la raíz para tomar las categorías de
 docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
 ```
 
+### Extracción y paginación sin red
+
+Los tests de `internal/spiders` usan HTML de fixtures y validan JSON-LD, RSC,
+`__NEXT_DATA__`, paginación, modo producto y normalización. No consultan los
+sitios reales:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'go test -v -count=1 ./internal/spiders'
+```
+
+### Extracción directa de URLs sin API
+
+`cmd/extract` ejecuta un spider contra URLs concretas y escribe un producto por
+línea (JSONL) en `stdout`. No usa Redis, la API ni el spool, así que sirve para
+probar el HTML real sin crear un trabajo. Primero construye la imagen local:
+
+```bash
+docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
+```
+
+Probar una categoría de Jumbo (limita a la primera página para que sea rápido):
+
+```bash
+docker run --rm --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc \
+  -url 'https://www.jumbo.cl/frutas-y-verduras' \
+  -max-pages 1 \
+  > /tmp/jumbo.jsonl
+```
+
+Probar una ficha de producto. Sólo Jumbo y Cugat tienen modo producto:
+
+```bash
+docker run --rm --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc -product \
+  -url 'https://www.jumbo.cl/palta-hass-jumbo-malla-1-kg/p' \
+  > /tmp/producto.jsonl
+```
+
+Para varias categorías se puede repetir `-url` o usar un archivo:
+
+```bash
+docker run --rm --network host \
+  -v "$PWD/mis_urls.txt:/urls.txt:ro" \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider acuenta_rsc -file /urls.txt \
+  > /tmp/acuenta.jsonl
+```
+
+El archivo acepta una URL por línea y comentarios con `#`. Si omites `-url` y
+`-file`, el spider usa todas las categorías de
+`backend/scraper_go/categories/<cadena>_categories.txt`. Para Acuenta, Santa
+Isabel y Lider el modo producto no existe: se prueban por categoría. Revisa los
+resultados con:
+
+```bash
+wc -l /tmp/jumbo.jsonl
+jq -s 'length' /tmp/jumbo.jsonl
+jq -s '.[0]' /tmp/jumbo.jsonl
+```
+
+Si el archivo queda vacío, revisa el `stderr` del comando: ahí aparecen
+`*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
+`*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+
 ### Gate de RAM
 
 El pipeline real de spool, lotes y entrega se mide con un catálogo sintético.
@@ -119,14 +198,76 @@ El test lee `VmHWM` de `/proc/self/status` y falla si el RSS pico supera el
 límite. En CI se ejecutan 50.000 productos con un tope de 150 MB:
 
 ```bash
-SCRAPER_MEMORY_GATE=1 \
-SCRAPER_MEMORY_ITEMS=50000 \
-SCRAPER_MEMORY_LIMIT_MB=150 \
-go test -run TestMemoryGate -count=1 -timeout 10m ./internal/worker
+docker run --rm --network host --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -e SCRAPER_MEMORY_GATE=1 \
+  -e SCRAPER_MEMORY_ITEMS=50000 \
+  -e SCRAPER_MEMORY_LIMIT_MB=150 \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
 ```
 
 El gate no corre en la suite normal para no mezclar la medición de RSS con
 `-race`; el workflow `scraper-go-checks` lo ejecuta como paso separado.
+
+### Extracción real con Compose
+
+Con el stack base levantado y el token de `.env` exportado:
+
+```bash
+export SCRAPING_SERVICE_TOKEN='...'
+docker compose stop scraper_worker
+docker compose --profile scraper-go up -d --build scraper_worker_go
+docker logs -f go_scraper_worker
+```
+
+Crear un trabajo y ejecutar un producto puntual. Reemplaza `cadena_id` por el
+ID real de la cadena y la URL por un producto vigente. Jumbo y Cugat aceptan
+`producto_url`; para las demás cadenas se ejecuta la categoría completa:
+
+```bash
+JOB=$(curl -sS -X POST http://localhost:8080/api/v1/scraper/trabajos \
+  -H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cadena_id":1}' | jq -r .id)
+
+curl -sS -X POST \
+  "http://localhost:8080/api/v1/scraper/trabajos/$JOB/ejecutar" \
+  -H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"spider":"jumbo_rsc","producto_url":"https://www.jumbo.cl/p/URL-DE-UN-PRODUCTO"}'
+```
+
+Consultar el avance y el total extraído:
+
+```bash
+watch -n 5 "curl -sS \
+  -H 'Authorization: Bearer $SCRAPING_SERVICE_TOKEN' \
+  http://localhost:8080/api/v1/scraper/trabajos/$JOB \
+  | jq '{estado, elementos_extraidos, registro_errores}'"
+```
+
+Un resultado correcto termina con `estado: "completado"` y
+`elementos_extraidos` mayor que cero. Si queda en cero, revisar en los logs
+`*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
+`*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+
+Para probar una categoría completa, omitir `producto_url` y usar por ejemplo
+`{"spider":"jumbo_rsc"}`. Para Acuenta, Santa Isabel y Lider no hay modo
+producto; se prueba por categoría.
+
+### RAM del contenedor en vivo
+
+Durante un trabajo real:
+
+```bash
+docker stats --no-stream go_scraper_worker
+PID=$(docker inspect -f '{{.State.Pid}}' go_scraper_worker)
+grep -E 'VmRSS|VmHWM' /proc/$PID/status
+```
+
+`VmHWM` es el pico desde que arrancó el proceso. El límite de Compose es de
+200 MB y el gate de CI usa 150 MB.
 
 ## Marcha paralela y cutover
 
@@ -155,6 +296,11 @@ real de producción.
 
 ## Pendientes
 
+- Validar los cinco spiders contra HTML real de producción, no sólo fixtures.
 - Agregar un smoke de compose que ejecute un trabajo real contra Redis y una
   API simulada, incluyendo bloqueo 403/429 y recuperación de lease.
+- Crear el manifiesto K8s para la imagen Go y publicar esa imagen; el manifiesto
+  actual `infrastructure/k8s/scraper/deployment.yaml` sigue apuntando a Python.
+- Exponer `add_url` y `enrich_ean` en el endpoint de Control si se necesitan
+  desde la API o el bot.
 - Confirmar el umbral de frescura y los identificadores `SUP-XXX` de la tarjeta.

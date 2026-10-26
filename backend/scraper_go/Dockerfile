@@ -10,7 +10,12 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
     -trimpath \
     -ldflags="-s -w" \
     -o /out/scraper-worker \
-    ./cmd/worker
+    ./cmd/worker \
+    && CGO_ENABLED=0 GOOS=linux go build \
+    -trimpath \
+    -ldflags="-s -w" \
+    -o /out/scraper-extract \
+    ./cmd/extract
 
 FROM alpine:3.22
 
@@ -21,6 +26,7 @@ FROM alpine:3.22
 RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 COPY --from=build /out/scraper-worker /app/scraper-worker
+COPY --from=build /out/scraper-extract /app/scraper-extract
 # Las categorías son la fuente de verdad del servicio Go. Se copian a
 # /app/research para mantener el mismo SCRAPER_CATEGORY_DIR que Python.
 COPY backend/scraper_go/categories/*_categories.txt /app/research/
