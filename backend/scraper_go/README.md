@@ -341,7 +341,9 @@ URL, el trabajo termina `fallido` y `registro_errores` empieza con:
 bloqueo: N respuestas bloqueadas (motivo=...)
 ```
 
-Si la primera página de una categoría responde `200` sin los selectores
+El mismo conteo se envía en `respuestas_bloqueadas` al finalizar el trabajo y
+queda disponible en el DTO de Control y en la columna homónima de
+`scraper.trabajos_scraper`. Si la primera página de una categoría responde `200` sin los selectores
 esperados, se trata como bloqueo (`missing_selectors`) y no como una categoría
 vacía. Un crawl que termina sin ningún producto también se cierra como
 `fallido` (`sin productos`) en vez de declarar `completado` con
@@ -441,7 +443,7 @@ Consultar el avance y el total extraído:
 watch -n 5 "curl -sS \
   -H 'Authorization: Bearer $SCRAPING_SERVICE_TOKEN' \
   http://localhost:8080/api/v1/scraper/trabajos/$JOB \
-  | jq '{estado, elementos_extraidos, registro_errores}'"
+  | jq '{estado, elementos_extraidos, respuestas_bloqueadas, registro_errores}'"
 ```
 
 Un resultado correcto termina con `estado: "completado"` y

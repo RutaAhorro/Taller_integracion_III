@@ -14,6 +14,7 @@ import (
 func TestIngestBatchAndFinalizeWork(t *testing.T) {
 	var received ingestPayload
 	var idempotency string
+	var finalPayload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/scraper/trabajos/work-1/productos":
@@ -32,6 +33,9 @@ func TestIngestBatchAndFinalizeWork(t *testing.T) {
 				"actualizados":        0,
 			})
 		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/scraper/trabajos/work-1/finalizar":
+			if err := json.NewDecoder(r.Body).Decode(&finalPayload); err != nil {
+				t.Errorf("decode finalizar: %v", err)
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "work-1", "estado": "completado"})
 		default:
@@ -63,12 +67,16 @@ func TestIngestBatchAndFinalizeWork(t *testing.T) {
 		t.Errorf("resultado = %+v", result)
 	}
 
-	final, err := client.FinalizeWork(context.Background(), "work-1", "completado", nil, "")
+	blocked := 4
+	final, err := client.FinalizeWork(context.Background(), "work-1", "completado", nil, &blocked, "")
 	if err != nil {
 		t.Fatalf("FinalizeWork() error = %v", err)
 	}
 	if final["estado"] != "completado" {
 		t.Errorf("estado = %v", final["estado"])
+	}
+	if finalPayload["respuestas_bloqueadas"] != float64(4) {
+		t.Errorf("respuestas_bloqueadas = %v", finalPayload["respuestas_bloqueadas"])
 	}
 }
 

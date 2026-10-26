@@ -316,6 +316,7 @@ type workerRunState struct {
 	sync.Mutex
 	finalized    string
 	finalMessage string
+	blocked      int
 	batches      int
 	products     int
 	streamLength int64
@@ -388,8 +389,9 @@ func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRun
 			})
 		case r.Method == http.MethodPut && r.URL.Path == base+"/finalizar":
 			var payload struct {
-				Estado          string  `json:"estado"`
-				RegistroErrores *string `json:"registro_errores"`
+				Estado               string  `json:"estado"`
+				RespuestasBloqueadas *int    `json:"respuestas_bloqueadas"`
+				RegistroErrores      *string `json:"registro_errores"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Errorf("decode finalizar: %v", err)
@@ -397,6 +399,9 @@ func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRun
 			}
 			state.Lock()
 			state.finalized = payload.Estado
+			if payload.RespuestasBloqueadas != nil {
+				state.blocked = *payload.RespuestasBloqueadas
+			}
 			if payload.RegistroErrores != nil {
 				state.finalMessage = *payload.RegistroErrores
 			}
@@ -481,6 +486,9 @@ func TestWorkerFinalizesBlockedJob(t *testing.T) {
 	}
 	if !strings.Contains(state.finalMessage, "bloqueo: 3 respuestas bloqueadas") {
 		t.Errorf("registro_errores = %q", state.finalMessage)
+	}
+	if state.blocked != 3 {
+		t.Errorf("respuestas_bloqueadas = %d, want 3", state.blocked)
 	}
 	if state.batches != 0 {
 		t.Errorf("lotes = %d, want 0", state.batches)

@@ -260,6 +260,9 @@ Requisitos previos:
    anterior.
 4. La API responde `POST /api/v1/scraper/productos` y
    `PUT /trabajos/{id}/finalizar` con el contrato actual.
+5. En una base existente se aplicó
+   `infrastructure/db/07_respuestas_bloqueadas.sql`; el Control y el worker
+   nuevos envían y leen `respuestas_bloqueadas` en la finalización.
 
 Compose, con el worker Python aún activo:
 

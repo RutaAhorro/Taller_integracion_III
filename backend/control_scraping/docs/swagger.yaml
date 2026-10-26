@@ -9,6 +9,8 @@ definitions:
         type: string
       registro_errores:
         type: string
+      respuestas_bloqueadas:
+        type: integer
     required:
     - estado
     type: object
@@ -121,6 +123,8 @@ definitions:
         type: string
       registro_errores:
         type: string
+      respuestas_bloqueadas:
+        type: integer
     type: object
   handlers.ejecutarScraperRequest:
     properties:

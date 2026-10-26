@@ -153,11 +153,15 @@ func (c *Client) FinalizeWork(
 	workID string,
 	status string,
 	extractedItems *int,
+	blockedResponses *int,
 	errorMessage string,
 ) (map[string]any, error) {
 	payload := map[string]any{"estado": status}
 	if extractedItems != nil {
 		payload["elementos_extraidos"] = *extractedItems
+	}
+	if blockedResponses != nil {
+		payload["respuestas_bloqueadas"] = *blockedResponses
 	}
 	if errorMessage != "" {
 		payload["registro_errores"] = errorMessage

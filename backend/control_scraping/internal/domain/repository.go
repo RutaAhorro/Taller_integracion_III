@@ -10,7 +10,7 @@ import (
 type TrabajoRepository interface {
 	CrearTrabajo(ctx context.Context, trabajo *TrabajoScraper) error
 	ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*TrabajoScraper, error)
-	FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*TrabajoScraper, error)
+	FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*TrabajoScraper, error)
 	IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error
 }
 

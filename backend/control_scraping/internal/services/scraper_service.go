@@ -114,7 +114,7 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 		return nil, ErrTrabajoYaFinalizado
 	}
 
-	actualizado, err := s.trabajos.FinalizarTrabajo(ctx, trabajoUUID, estado, input.ElementosExtraidos, input.RegistroErrores)
+	actualizado, err := s.trabajos.FinalizarTrabajo(ctx, trabajoUUID, estado, input.ElementosExtraidos, input.RespuestasBloqueadas, input.RegistroErrores)
 	if err != nil {
 		return nil, err
 	}
@@ -223,15 +223,16 @@ func (s *scraperService) mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre
 	}
 
 	return &domain.TrabajoScraperDTO{
-		ID:                 t.ID.String(),
-		CadenaID:           t.CadenaID,
-		CadenaNombre:       cadenaNombre,
-		Estado:             t.Estado,
-		IniciadoEl:         t.IniciadoEl,
-		FinalizadoEl:       t.FinalizadoEl,
-		DuracionSegundos:   duracion,
-		ElementosExtraidos: t.ElementosExtraidos,
-		RegistroErrores:    t.RegistroErrores,
+		ID:                   t.ID.String(),
+		CadenaID:             t.CadenaID,
+		CadenaNombre:         cadenaNombre,
+		Estado:               t.Estado,
+		IniciadoEl:           t.IniciadoEl,
+		FinalizadoEl:         t.FinalizadoEl,
+		DuracionSegundos:     duracion,
+		ElementosExtraidos:   t.ElementosExtraidos,
+		RespuestasBloqueadas: t.RespuestasBloqueadas,
+		RegistroErrores:      t.RegistroErrores,
 	}
 }
 

@@ -54,7 +54,7 @@ func (m *mockScraperRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid
 	return t, nil
 }
 
-func (m *mockScraperRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error) {
+func (m *mockScraperRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -67,6 +67,9 @@ func (m *mockScraperRepository) FinalizarTrabajo(ctx context.Context, id uuid.UU
 	t.FinalizadoEl = &ahora
 	if elementosExtraidos != nil {
 		t.ElementosExtraidos = *elementosExtraidos
+	}
+	if respuestasBloqueadas != nil {
+		t.RespuestasBloqueadas = *respuestasBloqueadas
 	}
 	t.RegistroErrores = registroErrores
 	return t, nil
@@ -208,9 +211,11 @@ func TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T) {
 
 	// 2. Finalización exitosa
 	items := 150
+	blocked := 2
 	trabajoFin, err := service.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
-		Estado:             "completado",
-		ElementosExtraidos: &items,
+		Estado:               "completado",
+		ElementosExtraidos:   &items,
+		RespuestasBloqueadas: &blocked,
 	})
 	if err != nil {
 		t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
@@ -220,6 +225,9 @@ func TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T) {
 	}
 	if trabajoFin.ElementosExtraidos != 150 {
 		t.Errorf("se esperaba 150 items, se obtuvo: %d", trabajoFin.ElementosExtraidos)
+	}
+	if trabajoFin.RespuestasBloqueadas != 2 {
+		t.Errorf("se esperaban 2 respuestas bloqueadas, se obtuvo: %d", trabajoFin.RespuestasBloqueadas)
 	}
 	if trabajoFin.DuracionSegundos == nil || *trabajoFin.DuracionSegundos <= 0 {
 		t.Errorf("se esperaba duracion calculada positiva, se obtuvo: %v", trabajoFin.DuracionSegundos)

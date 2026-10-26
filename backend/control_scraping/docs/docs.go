@@ -477,6 +477,9 @@ const docTemplate = `{
                 },
                 "registro_errores": {
                     "type": "string"
+                },
+                "respuestas_bloqueadas": {
+                    "type": "integer"
                 }
             }
         },
@@ -643,6 +646,9 @@ const docTemplate = `{
                 },
                 "registro_errores": {
                     "type": "string"
+                },
+                "respuestas_bloqueadas": {
+                    "type": "integer"
                 }
             }
         },

@@ -171,12 +171,14 @@ func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
 		if permanent {
 			failureMessage := "Trabajo enviado a revisión; consultar spool y entregas"
 			reason := "delivery_rejected"
+			var blockedResponses *int
 			switch {
 			case blockedFailure:
 				blockedCount := blocked.BlockedResponses
 				if blockedCount < 1 {
 					blockedCount = 1
 				}
+				blockedResponses = &blockedCount
 				failureMessage = fmt.Sprintf(
 					"bloqueo: %d respuestas bloqueadas (motivo=%s)",
 					blockedCount,
@@ -204,6 +206,7 @@ func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
 					job.WorkID,
 					"fallido",
 					nil,
+					blockedResponses,
 					failureMessage,
 				); finalizeErr != nil {
 					w.logger.Warn("worker_finalize_failed", "trabajo_id", job.WorkID, "error", finalizeErr)
@@ -353,7 +356,7 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 	if itemCount == 0 {
 		return "", ErrNoProducts
 	}
-	final, err := w.api.FinalizeWork(ctx, job.WorkID, "completado", nil, "")
+	final, err := w.api.FinalizeWork(ctx, job.WorkID, "completado", nil, nil, "")
 	if err != nil {
 		return "", err
 	}

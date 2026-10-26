@@ -12,22 +12,24 @@ type IniciarTrabajoDTO struct {
 // TrabajoScraperDTO representa la información detallada de una ejecución de scraping,
 // optimizada para auditoría, endpoints de control y consumo por el bot de Discord.
 type TrabajoScraperDTO struct {
-	ID                 string     `json:"id"`
-	CadenaID           int        `json:"cadena_id"`
-	CadenaNombre       string     `json:"cadena_nombre,omitempty"`
-	Estado             string     `json:"estado"`
-	IniciadoEl         time.Time  `json:"iniciado_el"`
-	FinalizadoEl       *time.Time `json:"finalizado_el,omitempty"`
-	DuracionSegundos   *float64   `json:"duracion_segundos,omitempty"`
-	ElementosExtraidos int        `json:"elementos_extraidos"`
-	RegistroErrores    *string    `json:"registro_errores,omitempty"`
+	ID                   string     `json:"id"`
+	CadenaID             int        `json:"cadena_id"`
+	CadenaNombre         string     `json:"cadena_nombre,omitempty"`
+	Estado               string     `json:"estado"`
+	IniciadoEl           time.Time  `json:"iniciado_el"`
+	FinalizadoEl         *time.Time `json:"finalizado_el,omitempty"`
+	DuracionSegundos     *float64   `json:"duracion_segundos,omitempty"`
+	ElementosExtraidos   int        `json:"elementos_extraidos"`
+	RespuestasBloqueadas int        `json:"respuestas_bloqueadas"`
+	RegistroErrores      *string    `json:"registro_errores,omitempty"`
 }
 
 // FinalizarTrabajoDTO define el payload para dar término a una ejecución de scraping.
 type FinalizarTrabajoDTO struct {
-	Estado             string  `json:"estado" binding:"required"` // 'completado' o 'fallido'
-	ElementosExtraidos *int    `json:"elementos_extraidos,omitempty"`
-	RegistroErrores    *string `json:"registro_errores,omitempty"`
+	Estado               string  `json:"estado" binding:"required"` // 'completado' o 'fallido'
+	ElementosExtraidos   *int    `json:"elementos_extraidos,omitempty"`
+	RespuestasBloqueadas *int    `json:"respuestas_bloqueadas,omitempty"`
+	RegistroErrores      *string `json:"registro_errores,omitempty"`
 }
 
 // ProductoScrapeadoDTO representa cada item extraído por los spiders (Jumbo, Santa Isabel, etc.)

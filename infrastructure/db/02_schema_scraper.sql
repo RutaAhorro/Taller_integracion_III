@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS scraper.trabajos_scraper (
     iniciado_el TIMESTAMP NOT NULL DEFAULT NOW(),
     finalizado_el TIMESTAMP,
     elementos_extraidos INTEGER DEFAULT 0,
+    respuestas_bloqueadas INTEGER DEFAULT 0,
     registro_errores TEXT
 );
 
