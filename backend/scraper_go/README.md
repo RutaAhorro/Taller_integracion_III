@@ -63,6 +63,11 @@ de `scraper.productos_crudos`: `producto` 255; `sku`, `marca`, `categoria` y
 descripción comercial más larga que la columna no provoca `lote_rechazado` ni
 pierde el lote completo. El recorte es por runas para no romper UTF-8.
 
+Si una ficha no publica SKU, el worker lo deriva de la URL del producto: usa el
+ID numérico final (`...-1993238/p`) o, si no existe, el slug de la ficha
+(por ejemplo Cugat). Catálogo exige `sku`, y sin este fallback un lote completo
+se rechazaba por un solo producto sin identificador.
+
 ## Configuración
 
 | Variable | Default | Uso |
@@ -324,7 +329,9 @@ Santa Isabel, Cugat y Acuenta (26/10/2026):
 
 La validación de Cugat detectó que la configuración de WPForms incluye la
 palabra `captcha` en páginas normales; el detector se ajustó para exigir una
-instrucción de resolución o un campo exacto del desafío. Lider respondió con el
+instrucción de resolución o un campo exacto del desafío. Santa Isabel y Cugat
+no siempre publican SKU en el HTML; se derivó de la URL y las 20 páginas
+validadas quedaron sin SKU nulos ni duplicados. Lider respondió con el
 challenge de PerimeterX (`Robot or human?`) en las URLs nuevas durante esa
 pasada, por lo que no se validó su extracción: el cliente lo clasifica como
 bloqueo y el trabajo no se cierra como vacío.

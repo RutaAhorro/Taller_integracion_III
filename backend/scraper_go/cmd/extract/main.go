@@ -135,6 +135,7 @@ func run() error {
 	encoder := json.NewEncoder(os.Stdout)
 	emitted := 0
 	emit := func(item domain.Item) error {
+		item = spiders.CompleteItem(item)
 		if err := encoder.Encode(item); err != nil {
 			return err
 		}

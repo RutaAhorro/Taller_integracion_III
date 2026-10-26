@@ -85,3 +85,29 @@ func TestTruncar(t *testing.T) {
 		t.Errorf("TruncarPtr(nil) = %v", got)
 	}
 }
+
+func TestSKUFromURL(t *testing.T) {
+	cases := []struct {
+		url  string
+		want string
+	}{
+		{"https://www.santaisabel.cl/mas-limonada-frambuesa-con-gas-1600cc-1993238/p", "1993238"},
+		{"https://www.santaisabel.cl/mas-limonada-frambuesa-con-gas-1600cc-1993238/p/", "1993238"},
+		{"https://cugat.cl/producto/leche-entera-pitrufquen-1lt/", "leche-entera-pitrufquen-1lt"},
+		{"https://www.jumbo.cl/palta-hass-jumbo-malla-1-kg/p?foo=bar", "palta-hass-jumbo-malla-1-kg"},
+		{"https://example.test/producto/12345", "12345"},
+		{"", ""},
+	}
+	for _, tc := range cases {
+		got := SKUFromURL(tc.url)
+		if tc.want == "" {
+			if got != nil {
+				t.Errorf("SKUFromURL(%q) = %q, want nil", tc.url, *got)
+			}
+			continue
+		}
+		if got == nil || *got != tc.want {
+			t.Errorf("SKUFromURL(%q) = %v, want %q", tc.url, got, tc.want)
+		}
+	}
+}

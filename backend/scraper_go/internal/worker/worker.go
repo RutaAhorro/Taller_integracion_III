@@ -307,6 +307,7 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 		}
 		pending := 0
 		emit := func(item domain.Item) error {
+			item = spiders.CompleteItem(item)
 			market := item.Supermercado
 			if err := store.Add(item.Product, &market); err != nil {
 				return err

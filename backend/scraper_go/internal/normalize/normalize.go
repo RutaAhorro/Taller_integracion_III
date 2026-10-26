@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -14,11 +15,12 @@ import (
 )
 
 var (
-	moneyCleanup = regexp.MustCompile(`(?i)\s|\$|CLP`)
-	priceChars   = regexp.MustCompile(`^-?[0-9.,]+$`)
-	maxPrice     = big.NewRat(999999999999, 100) // 9.999.999.999,99
-	oneHundred   = big.NewRat(100, 1)
-	oneHalf      = big.NewRat(1, 2)
+	moneyCleanup     = regexp.MustCompile(`(?i)\s|\$|CLP`)
+	priceChars       = regexp.MustCompile(`^-?[0-9.,]+$`)
+	skuSuffixPattern = regexp.MustCompile(`-([0-9]+)$`)
+	maxPrice         = big.NewRat(999999999999, 100) // 9.999.999.999,99
+	oneHundred       = big.NewRat(100, 1)
+	oneHalf          = big.NewRat(1, 2)
 )
 
 // PrecioCLP convierte un importe en texto o número a un float con dos
@@ -236,6 +238,58 @@ func TruncarPtr(value *string, max int) *string {
 	}
 	truncated := Truncar(*value, max)
 	return &truncated
+}
+
+// SKUFromURL obtiene un identificador estable de la URL de una ficha cuando
+// el HTML no publica SKU. Prefiere el ID numérico final del slug
+// ("...-1993238/p"); si no existe, usa el slug completo, que también es único
+// por producto en las cadenas WooCommerce como Cugat.
+func SKUFromURL(rawURL string) *string {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return nil
+	}
+	segments := make([]string, 0, 8)
+	for _, segment := range strings.Split(parsed.Path, "/") {
+		if segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	for len(segments) > 0 {
+		last := segments[len(segments)-1]
+		if strings.EqualFold(last, "p") || strings.EqualFold(last, "product") || strings.EqualFold(last, "producto") {
+			segments = segments[:len(segments)-1]
+			continue
+		}
+		break
+	}
+	if len(segments) == 0 {
+		return nil
+	}
+
+	candidate := segments[len(segments)-1]
+	if isDigits(candidate) {
+		return &candidate
+	}
+	if match := skuSuffixPattern.FindStringSubmatch(candidate); len(match) == 2 {
+		return &match[1]
+	}
+	if len([]rune(candidate)) < 3 {
+		return nil
+	}
+	return &candidate
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, character := range value {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // Texto colapsa espacios y devuelve nil para cadenas vacías.

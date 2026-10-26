@@ -276,6 +276,11 @@ func limitProducts(products []domain.Product) []domain.Product {
 	limited := make([]domain.Product, len(products))
 	for index, product := range products {
 		product.Producto = normalize.Truncar(product.Producto, 255)
+		if product.SKU == nil || strings.TrimSpace(*product.SKU) == "" {
+			if product.URLProducto != nil {
+				product.SKU = normalize.SKUFromURL(*product.URLProducto)
+			}
+		}
 		product.SKU = normalize.TruncarPtr(product.SKU, 100)
 		product.EanGtin = normalize.TruncarPtr(product.EanGtin, 50)
 		product.Marca = normalize.TruncarPtr(product.Marca, 100)

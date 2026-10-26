@@ -347,6 +347,10 @@ func extractSantaIsabelJSONLD(body []byte, baseURL *url.URL) []domain.Product {
 			if brandMap, ok := brand.(map[string]any); ok {
 				brand = brandMap["name"]
 			}
+			sku := firstTruthyString(entry["sku"], entry["productID"], entry["productId"], entry["mpn"])
+			if sku == nil {
+				sku = normalize.SKUFromURL(rawURL)
+			}
 
 			products = append(products, domain.Product{
 				Producto:          *name,
@@ -354,6 +358,7 @@ func extractSantaIsabelJSONLD(body []byte, baseURL *url.URL) []domain.Product {
 				PrecioNormal:      normalPrice,
 				PrecioOferta:      offerPrice,
 				EanGtin:           normalize.EAN(firstValue(entry, "gtin", "gtin8", "gtin12", "gtin13", "ean")),
+				SKU:               sku,
 				Marca:             normalize.Texto(brand),
 				EnStock:           stockValue(offer["availability"]),
 				URLProducto:       productURL,

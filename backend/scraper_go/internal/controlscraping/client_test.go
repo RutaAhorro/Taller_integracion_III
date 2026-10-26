@@ -101,6 +101,7 @@ func TestIngestBatchLimitsDatabaseColumns(t *testing.T) {
 	long := strings.Repeat("á", 400)
 	sku := strings.Repeat("s", 120)
 	ean := strings.Repeat("9", 60)
+	productURL := "https://www.santaisabel.cl/producto-1993238/p"
 	client := New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	_, err := client.IngestBatch(context.Background(), []domain.Product{{
 		Producto:          long,
@@ -110,12 +111,15 @@ func TestIngestBatchLimitsDatabaseColumns(t *testing.T) {
 		Categoria:         long,
 		FormatoCrudo:      &long,
 		MecanicaPromocion: &long,
+	}, {
+		Producto:    "Agua saborizada",
+		URLProducto: &productURL,
 	}}, nil, "work-1", "batch-1")
 	if err != nil {
 		t.Fatalf("IngestBatch() error = %v", err)
 	}
 
-	if len(received.Productos) != 1 {
+	if len(received.Productos) != 2 {
 		t.Fatalf("productos = %d", len(received.Productos))
 	}
 	product := received.Productos[0]
@@ -139,6 +143,9 @@ func TestIngestBatchLimitsDatabaseColumns(t *testing.T) {
 		if got := utf8.RuneCountInString(check.got); got != check.max {
 			t.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.max)
 		}
+	}
+	if got := received.Productos[1].SKU; got == nil || *got != "1993238" {
+		t.Errorf("sku derivado de URL = %v, want 1993238", got)
 	}
 }
 

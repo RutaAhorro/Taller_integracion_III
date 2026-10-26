@@ -174,6 +174,9 @@ func TestExtractSantaIsabelJSONLD(t *testing.T) {
 	if first.Marca == nil || *first.Marca != "Frutas y Verduras Propias" {
 		t.Errorf("marca = %v", first.Marca)
 	}
+	if first.SKU == nil || *first.SKU != "platano-granel" {
+		t.Errorf("sku = %v", first.SKU)
+	}
 	if first.URLProducto == nil || *first.URLProducto != "https://www.santaisabel.cl/platano-granel/p" {
 		t.Errorf("url = %v", first.URLProducto)
 	}

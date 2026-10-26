@@ -117,6 +117,20 @@ func TestExtractCugatDetail(t *testing.T) {
 	}
 }
 
+func TestExtractCugatDetailDerivesSKUFromURL(t *testing.T) {
+	body := `<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Product","name":"Bebida Cugat",
+"gtin13":"7800000000001","offers":{"price":"1.290","availability":"https://schema.org/InStock"}}
+</script>`
+	product := extractCugatDetail([]byte(body), mustURL("https://cugat.cl/producto/bebida-cugat/"))
+	if product == nil {
+		t.Fatal("producto nil")
+	}
+	if product.SKU == nil || *product.SKU != "bebida-cugat" {
+		t.Errorf("sku = %v, want bebida-cugat", product.SKU)
+	}
+}
+
 func TestValidateCugatURLs(t *testing.T) {
 	if err := validateCugatCategoryURL("https://example.com/categoria/"); err == nil {
 		t.Fatal("se esperaba error para host no confiable")

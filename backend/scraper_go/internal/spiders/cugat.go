@@ -252,6 +252,9 @@ func extractCugatProducts(body []byte, responseURL *url.URL) []domain.Product {
 			value := resolveURL(responseURL, image)
 			imageURL = &value
 		}
+		if sku == nil && productURL != nil {
+			sku = normalize.SKUFromURL(*productURL)
+		}
 
 		var offer *float64
 		if normalPrice != nil && offerPrice != nil && *offerPrice < *normalPrice {
@@ -315,7 +318,7 @@ func extractCugatDetail(body []byte, responseURL *url.URL) *domain.Product {
 				Precio:       price,
 				PrecioNormal: price,
 				EanGtin:      normalize.EAN(eanValue),
-				SKU:          normalize.Texto(firstValue(object, "sku")),
+				SKU:          firstNonNilString(normalize.Texto(firstValue(object, "sku")), normalize.SKUFromURL(productURL)),
 				Marca:        normalize.Texto(brand),
 				FormatoCrudo: normalize.Texto(firstValue(object, "description")),
 				EnStock:      stockValue(firstValue(offers, "availability")),
