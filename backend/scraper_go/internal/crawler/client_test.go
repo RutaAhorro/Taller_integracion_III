@@ -188,7 +188,9 @@ func TestDetectBlockClassifiesStatusesAndBodies(t *testing.T) {
 		{name: "unusual traffic", status: http.StatusOK, body: "Our systems have detected unusual traffic", want: "unusual traffic"},
 		{name: "standalone captcha", status: http.StatusOK, body: `<div id="captcha"></div>`, want: "captcha"},
 		{name: "captcha word boundary", status: http.StatusOK, body: "please solve the captcha.", want: "captcha"},
+		{name: "captcha verification", status: http.StatusOK, body: "captcha verification required", want: "captcha"},
 		{name: "recaptcha is normal", status: http.StatusOK, body: "grecaptcha-badge reCAPTCHA", want: ""},
+		{name: "wpforms captcha config is normal", status: http.StatusOK, body: `<div class="wpforms-recaptcha-container"></div><script>{"readOnlyDisallowedFields":["captcha","repeater"]}</script>`, want: ""},
 		{name: "normal page", status: http.StatusOK, body: "<h1>Frutas</h1>", want: ""},
 	}
 	for _, test := range tests {
@@ -275,6 +277,8 @@ func TestFetchRetriesTimeout(t *testing.T) {
 func TestDetectBlockIgnoresRecaptchaOnNormalPage(t *testing.T) {
 	body := []byte(`<html><head><title>Frutas y Verduras - Supermercado Cugat</title></head>` +
 		`<body><style>/* Hides the reCAPTCHA on every page */ .grecaptcha-badge { display:none; }</style>` +
+		`<div class="wpforms-recaptcha-container wpforms-is-recaptcha"></div>` +
+		`<script>var config={"readOnlyDisallowedFields":["captcha","repeater"]};</script>` +
 		`<div class="product">Palta Hass</div></body></html>`)
 	if reason := detectBlock(http.StatusOK, body); reason != "" {
 		t.Errorf("detectBlock() = %q, want empty", reason)

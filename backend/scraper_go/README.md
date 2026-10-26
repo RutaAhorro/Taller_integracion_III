@@ -57,7 +57,11 @@ interfaces `Fetcher` y `Emitter`, no de Redis ni de SQLite.
 
 Un producto conserva los campos y los `null` del contrato de Python. El
 supermercado viaja en el nivel superior del lote y la categoría dentro del
-producto.
+producto. Antes de enviar el lote, el worker recorta los textos a los límites
+de `scraper.productos_crudos`: `producto` 255; `sku`, `marca`, `categoria` y
+`formato_crudo` 100; `ean_gtin` 50; `mecanica_promocion` 255. Así una
+descripción comercial más larga que la columna no provoca `lote_rechazado` ni
+pierde el lote completo. El recorte es por runas para no romper UTF-8.
 
 ## Configuración
 
@@ -308,11 +312,31 @@ cinco spiders extraen productos del HTML vigente:
 | Lider | `lider_rsc` | 44 |
 
 También se validó el modo producto de Jumbo y Cugat (1 producto cada uno).
-Esta prueba cubre una página por cadena, no el catálogo completo. Los cambios
-que hicieron posible la paridad fueron:
+También se validó una página de cada categoría nueva agregada para Jumbo,
+Santa Isabel, Cugat y Acuenta (26/10/2026):
+
+| Cadena | Categorías nuevas validadas | Productos por página |
+| --- | ---: | ---: |
+| Jumbo | 4 | 40 |
+| Santa Isabel | 4 | 40 |
+| Cugat | 6 | 25 |
+| Acuenta | 6 | 50 |
+
+La validación de Cugat detectó que la configuración de WPForms incluye la
+palabra `captcha` en páginas normales; el detector se ajustó para exigir una
+instrucción de resolución o un campo exacto del desafío. Lider respondió con el
+challenge de PerimeterX (`Robot or human?`) en las URLs nuevas durante esa
+pasada, por lo que no se validó su extracción: el cliente lo clasifica como
+bloqueo y el trabajo no se cierra como vacío.
+
+Esta prueba cubre una página por cadena y por categoría, no el catálogo
+completo. Los cambios que hicieron posible la paridad fueron:
 
 - Cugat: se dejó de tratar cualquier aparición de `captcha` como bloqueo. La
-  página normal incluye el CSS de reCAPTCHA y antes se descartaba completa.
+  página normal incluye el CSS de reCAPTCHA y la configuración de WPForms, que
+  contienen esa palabra. Ahora sólo se reconoce en instrucciones de resolución
+  o en campos exactos del desafío; los scripts de reCAPTCHA no bloquean la
+  extracción.
 - Santa Isabel: el sitio dejó de publicar `window.__renderData`. Se conserva
   ese parser y se agregó un fallback que lee el `ItemList` de JSON-LD.
 - Acuenta: el servidor no envía el certificado intermedio de GlobalSign. Se
@@ -500,9 +524,10 @@ real de producción.
 
 ## Pendientes
 
-- Validar los cinco spiders contra HTML real de producción, no sólo fixtures.
-- Agregar un smoke de compose que ejecute un trabajo real contra Redis y una
-  API simulada, incluyendo bloqueo 403/429 y recuperación de lease.
+- Completar la validación de las categorías nuevas contra el catálogo real,
+  más allá de una página por cadena.
 - Ejecutar el corte real a la imagen Go y medir el rollback con trabajos
   pendientes en el entorno de despliegue.
+- Medir la mediana de tres ejecuciones de crawl e ingesta frente a Python y
+  confirmar que no supera el +15 %.
 - Confirmar el umbral de frescura y los identificadores `SUP-XXX` de la tarjeta.

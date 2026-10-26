@@ -299,10 +299,10 @@ func retryAfter(header http.Header) time.Duration {
 }
 
 // No se busca "captcha" como subcadena: las páginas normales de Cugat
-// incluyen el CSS de reCAPTCHA y se marcaban como bloqueadas sin estarlo. Los
-// marcadores deben identificar el challenge, no cualquier script de terceros.
-// El patrón de "captcha" exige límites de palabra para no confundir
-// reCAPTCHA/grecaptcha con un desafío real.
+// incluyen el CSS y la configuración de reCAPTCHA/WPForms, y se marcaban como
+// bloqueadas sin estarlo. Los marcadores deben identificar el challenge, no
+// cualquier script de terceros. Por eso "captcha" sólo cuenta si aparece en
+// una instrucción de resolución o en un campo exacto del desafío.
 var (
 	blockMarkers = []string{
 		"just a moment",
@@ -317,7 +317,11 @@ var (
 		"attention required!",
 		"access denied",
 	}
-	standaloneCaptcha = regexp.MustCompile(`(?i)(^|[^a-z])captcha([^a-z]|$)`)
+	standaloneCaptcha = regexp.MustCompile(
+		`(?i)(solve|complete|enter|verify|type|submit)\s+(the\s+)?captcha` +
+			`|captcha\s+(required|verification|challenge|test|code)` +
+			`|(id|name)\s*=\s*["']captcha["']`,
+	)
 )
 
 func detectBlock(status int, body []byte) string {
