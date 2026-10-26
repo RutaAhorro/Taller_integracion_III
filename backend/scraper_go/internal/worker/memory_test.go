@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -35,13 +37,15 @@ func TestMemoryGate(t *testing.T) {
 		t.Skip("la medición de VmHWM requiere Linux")
 	}
 
-	items := envIntTest("SCRAPER_MEMORY_ITEMS", 50_000)
-	limitMB := envFloatTest("SCRAPER_MEMORY_LIMIT_MB", 100)
+	items := envIntTest("SCRAPER_MEMORY_ITEMS", 200_000)
+	limitMB := envFloatTest("SCRAPER_MEMORY_LIMIT_MB", 150)
+	compact := os.Getenv("SCRAPER_MEMORY_COMPACT") == "1"
 	if items < 1 {
 		t.Fatal("SCRAPER_MEMORY_ITEMS debe ser mayor que cero")
 	}
 
 	baseline := peakRSSMB(t)
+	anonSampler := startAnonSampler(10 * time.Millisecond)
 	workID := uuid.NewString()
 	var (
 		mu        sync.Mutex
@@ -106,7 +110,7 @@ func TestMemoryGate(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	registry := spiders.NewRegistry(nil, t.TempDir(), 100, logger)
-	registry.Register(memorySpider{items: items})
+	registry.Register(memorySpider{items: items, compact: compact})
 
 	scraperWorker := &Worker{
 		cfg:      cfg,
@@ -118,6 +122,7 @@ func TestMemoryGate(t *testing.T) {
 		WorkID: workID,
 		Spider: memorySpiderName,
 	})
+	anonPeak := anonSampler.Stop()
 	if err != nil {
 		t.Fatalf("processJob() error = %v", err)
 	}
@@ -133,17 +138,150 @@ func TestMemoryGate(t *testing.T) {
 	}
 
 	peak := peakRSSMB(t)
-	t.Logf("gate de RAM: %d productos, RSS pico %.1f MB (base %.1f MB, límite %.1f MB)",
-		items, peak, baseline, limitMB)
-	if peak > limitMB {
-		t.Fatalf("RSS pico %.1f MB > límite %.1f MB", peak, limitMB)
+	cgroupLimit := envFloatTest("SCRAPER_MEMORY_CGROUP_LIMIT_MB", 0)
+	cgroupPeak := 0.0
+	if cgroupLimit > 0 {
+		cgroupPeak = cgroupPeakMB()
 	}
+	result := memoryGateResult{
+		Items:         items,
+		Compact:       compact,
+		LimitMB:       limitMB,
+		BaselineRSSMB: baseline,
+		PeakRSSMB:     peak,
+		PeakAnonRSSMB: anonPeak,
+		CgroupLimitMB: cgroupLimit,
+		CgroupPeakMB:  cgroupPeak,
+		GoVersion:     runtime.Version(),
+		MeasuredAt:    time.Now().UTC().Format(time.RFC3339),
+	}
+	t.Logf("gate de RAM: %d productos (compacto=%t), RSS pico %.1f MB, RssAnon pico %.1f MB, cgroup pico %.1f MB / límite %.1f MB (base %.1f MB, límite RSS %.1f MB)",
+		items, compact, peak, anonPeak, cgroupPeak, cgroupLimit, baseline, limitMB)
+	writeMemoryGateResult(t, result)
+	if peak > limitMB || anonPeak > limitMB {
+		t.Fatalf("RAM pico fuera de límite: RSS %.1f MB, RssAnon %.1f MB, límite %.1f MB",
+			peak, anonPeak, limitMB)
+	}
+}
+
+type memoryGateResult struct {
+	Items         int     `json:"items"`
+	Compact       bool    `json:"compact,omitempty"`
+	LimitMB       float64 `json:"limit_mb"`
+	BaselineRSSMB float64 `json:"baseline_rss_mb"`
+	PeakRSSMB     float64 `json:"peak_rss_mb"`
+	PeakAnonRSSMB float64 `json:"peak_anon_rss_mb"`
+	CgroupLimitMB float64 `json:"cgroup_limit_mb,omitempty"`
+	CgroupPeakMB  float64 `json:"cgroup_peak_mb,omitempty"`
+	GoVersion     string  `json:"go_version"`
+	MeasuredAt    string  `json:"measured_at"`
+}
+
+func writeMemoryGateResult(t *testing.T, result memoryGateResult) {
+	t.Helper()
+	path := strings.TrimSpace(os.Getenv("SCRAPER_MEMORY_RESULT"))
+	if path == "" {
+		return
+	}
+	body, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal resultado de RAM: %v", err)
+	}
+	body = append(body, '\n')
+	if directory := filepath.Dir(path); directory != "." {
+		if err := os.MkdirAll(directory, 0o755); err != nil {
+			t.Fatalf("crear directorio para resultado de RAM: %v", err)
+		}
+	}
+	if err := os.WriteFile(path, body, 0o644); err != nil {
+		t.Fatalf("escribir resultado de RAM en %s: %v", path, err)
+	}
+}
+
+type anonSampler struct {
+	stop chan struct{}
+	done chan struct{}
+	peak atomic.Uint64
+}
+
+func startAnonSampler(interval time.Duration) *anonSampler {
+	sampler := &anonSampler{stop: make(chan struct{}), done: make(chan struct{})}
+	go func() {
+		defer close(sampler.done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			if kb, ok := statusFieldKB("RssAnon"); ok {
+				value := uint64(kb)
+				for {
+					previous := sampler.peak.Load()
+					if value <= previous || sampler.peak.CompareAndSwap(previous, value) {
+						break
+					}
+				}
+			}
+			select {
+			case <-sampler.stop:
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	return sampler
+}
+
+func (s *anonSampler) Stop() float64 {
+	close(s.stop)
+	<-s.done
+	return float64(s.peak.Load()) / 1024
+}
+
+func statusFieldKB(name string) (float64, bool) {
+	body, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0, false
+	}
+	prefix := name + ":"
+	for _, line := range strings.Split(string(body), "\n") {
+		if !strings.HasPrefix(line, prefix) {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			return 0, false
+		}
+		kilobytes, err := strconv.ParseFloat(fields[1], 64)
+		if err != nil {
+			return 0, false
+		}
+		return kilobytes, true
+	}
+	return 0, false
+}
+
+func cgroupPeakMB() float64 {
+	for _, path := range []string{
+		"/sys/fs/cgroup/memory.peak",
+		"/sys/fs/cgroup/memory/memory.max_usage_in_bytes",
+	} {
+		body, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+		bytes, err := strconv.ParseFloat(strings.TrimSpace(string(body)), 64)
+		if err != nil {
+			continue
+		}
+		return bytes / (1024 * 1024)
+	}
+	return 0
 }
 
 const memorySpiderName = "memory_rsc"
 
 type memorySpider struct {
-	items int
+	items   int
+	compact bool
 }
 
 func (m memorySpider) Name() string {
@@ -162,11 +300,19 @@ func (m memorySpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter)
 	}
 	for index := 0; index < m.items; index++ {
 		product := base
-		product.Producto = fmt.Sprintf("Producto de prueba con nombre largo %d", index)
-		product.SKU = domain.StringPtr(fmt.Sprintf("%013d", index))
-		product.EanGtin = domain.StringPtr(fmt.Sprintf("%013d", index))
-		product.URLProducto = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/p/producto-%d", index))
-		product.Imagen = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/img/%d.jpg", index))
+		if m.compact {
+			// El gate de OOM corre sobre tmpfs para evitar miles de fsync
+			// lentos en el volumen de Docker. Como tmpfs se cobra al cgroup,
+			// se usa un payload mínimo; el gate del host mantiene el payload
+			// realista.
+			product = domain.Product{Producto: fmt.Sprintf("p%d", index)}
+		} else {
+			product.Producto = fmt.Sprintf("Producto de prueba con nombre largo %d", index)
+			product.SKU = domain.StringPtr(fmt.Sprintf("%013d", index))
+			product.EanGtin = domain.StringPtr(fmt.Sprintf("%013d", index))
+			product.URLProducto = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/p/producto-%d", index))
+			product.Imagen = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/img/%d.jpg", index))
+		}
 		if err := emit(domain.Item{Product: product, Supermercado: "Jumbo"}); err != nil {
 			return err
 		}

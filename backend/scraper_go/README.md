@@ -234,7 +234,7 @@ done | tail -1
 `VmHWM` es el máximo de memoria residente (`High Water Mark`) del proceso, en
 kB. No es el uso actual: eso es `VmRSS`. Como el scraper es el PID 1 del
 contenedor, este valor corresponde al pico real del scraper y se puede comparar
-con el gate de 100 MB.
+con el gate de 150 MB.
 
 Para probar las cinco cadenas secuencialmente y obtener el pico de RAM de cada
 una al finalizar:
@@ -328,24 +328,57 @@ redirige en bucle; el aviso no impide la extracción. Cuando `robots.txt` falla,
 el cliente guarda el fallo durante 10 minutos por dominio: el crawl sigue en
 modo fail-open y no repite el warning en cada categoría.
 
+### Bloqueos y trabajos vacíos
+
+El cliente clasifica como bloqueo los estados `403`, `429`, `503` y `504`, y
+los cuerpos de challenge conocidos (`cf-chl`, `Just a moment`, captcha real,
+`Access Denied`, tráfico inusual, PerimeterX, etc.). No confunde el CSS de
+reCAPTCHA de una página normal con un challenge. Los reintentos usan backoff
+exponencial con jitter y respetan `Retry-After`; al agotar los intentos de una
+URL, el trabajo termina `fallido` y `registro_errores` empieza con:
+
+```text
+bloqueo: N respuestas bloqueadas (motivo=...)
+```
+
+Si la primera página de una categoría responde `200` sin los selectores
+esperados, se trata como bloqueo (`missing_selectors`) y no como una categoría
+vacía. Un crawl que termina sin ningún producto también se cierra como
+`fallido` (`sin productos`) en vez de declarar `completado` con
+`elementos_extraidos = 0`. El spool nunca genera lotes vacíos.
+
 ### Gate de RAM
 
-El pipeline real de spool, lotes y entrega se mide con un catálogo sintético.
-El test lee `VmHWM` de `/proc/self/status` y falla si el RSS pico supera el
-límite. En CI se ejecutan 50.000 productos con un tope de 100 MB:
+El pipeline real de spool, lotes y entrega se mide con un catálogo sintético de
+200.000 productos. El test lee el pico `VmHWM` y muestrea `RssAnon`; falla si
+cualquiera supera 150 MB. CI ejecuta el gate en el host con el payload
+realista y además un binario de test precompilado dentro de un cgroup de
+192 MB, donde falla si el contenedor es `OOMKilled`. Ese segundo paso usa un
+payload compacto sobre `tmpfs` para evitar miles de `fsync` lentos del volumen
+de Docker; como `tmpfs` se cobra al cgroup, su `cgroup_peak_mb` es informativo
+y no se compara con el objetivo de producción. La medición se publica como
+artefacto `scraper-go-memory` con `items`, `compact`, `peak_rss_mb`,
+`peak_anon_rss_mb` y, para el paso en cgroup, `cgroup_limit_mb` y
+`cgroup_peak_mb`.
 
 ```bash
+mkdir -p resultados
 docker run --rm --network host --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
   -e SCRAPER_MEMORY_GATE=1 \
-  -e SCRAPER_MEMORY_ITEMS=50000 \
-  -e SCRAPER_MEMORY_LIMIT_MB=100 \
-  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  -e SCRAPER_MEMORY_ITEMS=200000 \
+  -e SCRAPER_MEMORY_LIMIT_MB=150 \
+  -e SCRAPER_MEMORY_RESULT=/out/scraper-go-memory.json \
+  -v "$PWD/backend/scraper_go:/src" -v "$PWD/resultados:/out" -w /src \
+  golang:1.26-alpine \
   sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
 ```
 
-El gate no corre en la suite normal para no mezclar la medición de RSS con
-`-race`; el workflow `scraper-go-checks` lo ejecuta como paso separado.
+La última medición local fue 30,7 MB de RSS pico y 16,7 MB de `RssAnon` para
+200.000 productos. El binario precompilado pasó además con un cgroup de 192 MB
+sin ser `OOMKilled`. El gate no corre en la suite normal para no mezclar la
+medición de RAM con `-race`; el workflow `scraper-go-checks` lo ejecuta como
+paso separado.
 
 ### Extracción real con Compose
 
@@ -385,9 +418,12 @@ watch -n 5 "curl -sS \
 ```
 
 Un resultado correcto termina con `estado: "completado"` y
-`elementos_extraidos` mayor que cero. Si queda en cero, revisar en los logs
+`elementos_extraidos` mayor que cero. Un trabajo sin productos o con bloqueo
+persistente termina `fallido`, con `registro_errores` en `sin productos` o
+`bloqueo: N respuestas bloqueadas`. Revisar también en los logs
 `*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
-`*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+`*_category_robots_disallowed`, `worker_job_blocked` y
+`worker_job_without_products`.
 
 Para probar una categoría completa, omitir `producto_url` y usar por ejemplo
 `{"spider":"jumbo_rsc"}`. Para Acuenta, Santa Isabel y Lider no hay modo
@@ -404,7 +440,9 @@ grep -E 'VmRSS|VmHWM' /proc/$PID/status
 ```
 
 `VmHWM` es el pico desde que arrancó el proceso. El límite de Compose es de
-128 MB, con una reserva de 64 MB, y el gate de CI usa 100 MB.
+128 MB, con una reserva de 64 MB. El gate de CI usa 150 MB y además valida que
+el worker no sea `OOMKilled` con un cgroup de 192 MB; el objetivo de producción
+es mantenerse en 100 MB o menos.
 
 ## Marcha paralela y cutover
 

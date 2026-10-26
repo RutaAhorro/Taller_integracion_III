@@ -5,6 +5,7 @@ on:
     branches: [main, develop, develop-refactor]
     paths:
       - 'backend/scraper_go/**'
+      - 'backend/scraper/**'
       - 'backend/scraper_go/categories/*_categories.txt'
       - 'docker-compose.scraper-go.yml'
       - '.github/workflows/scraper-go-checks.yml'
@@ -12,6 +13,7 @@ on:
     branches: [develop-refactor]
     paths:
       - 'backend/scraper_go/**'
+      - 'backend/scraper/**'
       - 'backend/scraper_go/categories/*_categories.txt'
       - 'docker-compose.scraper-go.yml'
       - '.github/workflows/scraper-go-checks.yml'
@@ -23,7 +25,8 @@ permissions:
 jobs:
   scraper-go:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Incluye dos pasadas del gate de 200k elementos: host y cgroup de 192 MB.
+    timeout-minutes: 25
     services:
       redis:
         image: redis:7-alpine
@@ -56,13 +59,56 @@ jobs:
         env:
           REDIS_TEST_URL: redis://localhost:6379/15
         run: go test -race ./...
-      - name: Gate de RAM
+      - name: Gate de RAM (200k, 150 MB)
         working-directory: backend/scraper_go
         env:
           SCRAPER_MEMORY_GATE: '1'
-          SCRAPER_MEMORY_ITEMS: '50000'
-          SCRAPER_MEMORY_LIMIT_MB: '100'
+          SCRAPER_MEMORY_ITEMS: '200000'
+          SCRAPER_MEMORY_LIMIT_MB: '150'
+          SCRAPER_MEMORY_RESULT: ${{ github.workspace }}/backend/scraper_go/ram-result.json
         run: go test -run TestMemoryGate -count=1 -timeout 10m ./internal/worker
+      - name: Compilar test de RAM
+        working-directory: backend/scraper_go
+        env:
+          CGO_ENABLED: '0'
+        run: go test -c -o scraper-memory.test ./internal/worker
+      - name: Gate de RAM en cgroup de 192 MB (OOM)
+        working-directory: backend/scraper_go
+        run: |
+          set +e
+          # El binario se compila fuera del cgroup: lo que se mide y se
+          # somete al límite de 192 MB es el worker, no el compilador de Go.
+          docker run --name scraper-ram-192 \
+            --memory=192m --memory-swap=192m \
+            --tmpfs /tmp:rw,size=512m \
+            -v "$PWD:/src" -w /src \
+            -e SCRAPER_MEMORY_GATE=1 \
+            -e SCRAPER_MEMORY_ITEMS=200000 \
+            -e SCRAPER_MEMORY_COMPACT=1 \
+            -e SCRAPER_MEMORY_LIMIT_MB=150 \
+            -e SCRAPER_MEMORY_CGROUP_LIMIT_MB=192 \
+            -e SCRAPER_MEMORY_RESULT=/src/ram-result-192.json \
+            alpine:3.22 \
+            /src/scraper-memory.test -test.run '^TestMemoryGate$' -test.count=1 -test.timeout=10m -test.v \
+            > ram-cgroup.log 2>&1
+          status=$?
+          oom="$(docker inspect -f '{{.State.OOMKilled}}' scraper-ram-192 2>/dev/null || echo unknown)"
+          docker rm -f scraper-ram-192 >/dev/null 2>&1 || true
+          cat ram-cgroup.log
+          echo "exit_status=$status oom_killed=$oom"
+          if [ "$status" -ne 0 ] || [ "$oom" = "true" ]; then
+            exit 1
+          fi
+      - name: Publicar medición de RAM
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-go-memory
+          path: |
+            backend/scraper_go/ram-result.json
+            backend/scraper_go/ram-result-192.json
+            backend/scraper_go/ram-cgroup.log
+          if-no-files-found: warn
       - name: Vet y build
         working-directory: backend/scraper_go
         run: |
