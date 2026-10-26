@@ -144,6 +144,14 @@ probar el HTML real sin crear un trabajo. Primero construye la imagen local:
 docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
 ```
 
+Los ejemplos guardan los resultados en `resultados/`, en la raíz del
+repositorio. La carpeta está ignorada por Git para no mezclar archivos de prueba
+con el código. Crearla antes de ejecutar:
+
+```bash
+mkdir -p resultados
+```
+
 Probar una categoría de Jumbo (limita a la primera página para que sea rápido):
 
 ```bash
@@ -152,7 +160,7 @@ docker run --rm --network host \
   -spider jumbo_rsc \
   -url 'https://www.jumbo.cl/frutas-y-verduras' \
   -max-pages 1 \
-  > /tmp/jumbo.jsonl
+  > resultados/jumbo.jsonl
 ```
 
 Probar una ficha de producto. Sólo Jumbo y Cugat tienen modo producto:
@@ -162,7 +170,7 @@ docker run --rm --network host \
   --entrypoint /app/scraper-extract scraper-go:local \
   -spider jumbo_rsc -product \
   -url 'https://www.jumbo.cl/palta-hass-jumbo-malla-1-kg/p' \
-  > /tmp/producto.jsonl
+  > resultados/producto.jsonl
 ```
 
 Para varias categorías se puede repetir `-url` o usar un archivo:
@@ -172,7 +180,7 @@ docker run --rm --network host \
   -v "$PWD/mis_urls.txt:/urls.txt:ro" \
   --entrypoint /app/scraper-extract scraper-go:local \
   -spider acuenta_rsc -file /urls.txt \
-  > /tmp/acuenta.jsonl
+  > resultados/acuenta.jsonl
 ```
 
 El archivo acepta una URL por línea y comentarios con `#`. Si omites `-url` y
@@ -182,14 +190,109 @@ Isabel y Lider el modo producto no existe: se prueban por categoría. Revisa los
 resultados con:
 
 ```bash
-wc -l /tmp/jumbo.jsonl
-jq -s 'length' /tmp/jumbo.jsonl
-jq -s '.[0]' /tmp/jumbo.jsonl
+wc -l resultados/jumbo.jsonl
+jq -s 'length' resultados/jumbo.jsonl
+jq -s '.[0]' resultados/jumbo.jsonl
 ```
 
 Si el archivo queda vacío, revisa el `stderr` del comando: ahí aparecen
 `*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
 `*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+
+### Prueba general y RAM en vivo con `cmd/extract`
+
+Para ejecutar todas las categorías de una cadena, omite `-url` y `-file`. El
+contenedor se llama `scraper-ram` para poder monitorearlo:
+
+```bash
+docker run --rm --name scraper-ram --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc \
+  -max-pages 10 \
+  -delay 2s \
+  > resultados/jumbo-all.jsonl
+```
+
+`-max-pages 10` mantiene la prueba acotada. Para recorrer todas las páginas,
+usa `-max-pages 100` o elimina el flag.
+
+Con el proceso en ejecución, en otra terminal:
+
+```bash
+docker stats scraper-ram
+```
+
+Para obtener el pico de RAM del scraper:
+
+```bash
+while docker inspect -f '{{.State.Running}}' scraper-ram 2>/dev/null | grep -q true; do
+  docker exec scraper-ram grep VmHWM /proc/1/status 2>/dev/null
+  sleep 1
+done | tail -1
+```
+
+`VmHWM` es el máximo de memoria residente (`High Water Mark`) del proceso, en
+kB. No es el uso actual: eso es `VmRSS`. Como el scraper es el PID 1 del
+contenedor, este valor corresponde al pico real del scraper y se puede comparar
+con el gate de 150 MB.
+
+Para probar las cinco cadenas secuencialmente y obtener el pico de RAM de cada
+una al finalizar:
+
+```bash
+for spider in jumbo_rsc santa_isabel_rsc cugat_rsc acuenta_rsc lider_rsc; do
+  echo "=== $spider ==="
+  docker run --rm --name "scraper-${spider}" --network host \
+    -e SPIDER="$spider" \
+    --entrypoint sh scraper-go:local -c '
+      /app/scraper-extract \
+        -spider "$SPIDER" \
+        -max-pages 10 \
+        -delay 2s &
+      pid=$!
+      peak=""
+      while kill -0 "$pid" 2>/dev/null; do
+        hwm=$(grep VmHWM /proc/$pid/status 2>/dev/null)
+        [ -n "$hwm" ] && peak="$hwm"
+        sleep 1
+      done
+      wait "$pid"; status=$?
+      echo "pico_ram: $peak" >&2
+      exit $status
+    ' > "resultados/${spider}-all.jsonl" \
+      2> "resultados/${spider}-all.log"
+  echo "exit=$?"
+  tail -n 1 "resultados/${spider}-all.log"
+done
+```
+
+Al final de cada cadena verás algo como:
+
+```text
+pico_ram: VmHWM: 36864 kB
+```
+
+`VmHWM` es el máximo de memoria residente del proceso scraper. Para convertirlo
+a MB, divide los kB por 1024: `36864 / 1024 ≈ 36 MB`.
+
+El JSONL y el log quedan en el host:
+
+```text
+resultados/jumbo_rsc-all.jsonl
+resultados/jumbo_rsc-all.log
+...
+```
+
+Mientras corre el bucle, `docker stats` muestra el contenedor activo con el
+nombre `scraper-${spider}`. Al terminar, revisa los resultados:
+
+```bash
+wc -l resultados/jumbo_rsc-all.jsonl
+head -n 1 resultados/jumbo_rsc-all.jsonl
+grep -E 'pico_ram|extraidos=' resultados/jumbo_rsc-all.log
+```
+
+El `.log` debe incluir `extraidos=N` y el pico de RAM de esa cadena.
 
 ### Validación contra sitios reales (26/10/2026)
 
