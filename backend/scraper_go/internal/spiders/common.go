@@ -13,6 +13,7 @@ import (
 	"github.com/PuerkitoBio/goquery"
 	"golang.org/x/net/html"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
@@ -91,6 +92,23 @@ func envCategoryURLs(name string) []string {
 		}
 	}
 	return urls
+}
+
+// missingCategorySelectors distingue el fin normal de la paginación de una
+// respuesta 200 que no contiene los selectores esperados. Sólo la primera
+// página de una categoría se considera bloqueo: una página posterior vacía
+// es el final natural de la paginación. Así un challenge que no trae ninguno
+// de los marcadores conocidos no se confunde con una categoría sin stock.
+func missingCategorySelectors(pageURL string, status, page int) error {
+	if page != 1 {
+		return nil
+	}
+	return &crawler.BlockedError{
+		URL:              pageURL,
+		Status:           status,
+		Reason:           "missing_selectors",
+		BlockedResponses: 1,
+	}
 }
 
 func dedupeStrings(values []string) []string {

@@ -11,9 +11,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +47,11 @@ type BlockedError struct {
 	URL    string
 	Status int
 	Reason string
+	// BlockedResponses cuenta las respuestas bloqueadas de esta URL,
+	// incluyendo reintentos. El worker la incluye en el cierre del trabajo
+	// para que un fallo por bloqueo no se confunda con un crawl vacío o un
+	// error de red.
+	BlockedResponses int
 }
 
 func (e *BlockedError) Error() string {
@@ -157,6 +164,7 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 		delay = crawlDelay
 	}
 
+	blockedResponses := 0
 	for attempt := 0; attempt <= c.maxRetries; attempt++ {
 		if err := c.throttle.Wait(ctx, parsed.Hostname(), delay); err != nil {
 			return nil, err
@@ -176,6 +184,7 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 		}
 
 		if reason := detectBlock(response.Status, response.Body); reason != "" {
+			blockedResponses++
 			c.logger.Warn("scraper_blocked",
 				"url", rawURL,
 				"status", response.Status,
@@ -188,7 +197,12 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 				}
 				continue
 			}
-			return nil, &BlockedError{URL: rawURL, Status: response.Status, Reason: reason}
+			return nil, &BlockedError{
+				URL:              rawURL,
+				Status:           response.Status,
+				Reason:           reason,
+				BlockedResponses: blockedResponses,
+			}
 		}
 
 		if response.Status >= 500 {
@@ -244,9 +258,15 @@ func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Durat
 		if base < 10*time.Millisecond {
 			base = 10 * time.Millisecond
 		}
-		wait = base * time.Duration(1<<min(attempt, 7))
+		exponential := base * time.Duration(1<<min(attempt, 7))
+		// Jitter completo sobre la mitad superior: conserva el crecimiento
+		// exponencial y evita que varios workers reintenten a la vez.
+		half := exponential / 2
+		wait = half + time.Duration(rand.Int64N(int64(half)+1))
 	}
-	if wait > 120*time.Second {
+	// Retry-After es una instrucción del servidor: se respeta incluso si es
+	// mayor que el techo del backoff propio. El techo sólo aplica al jitter.
+	if retryAfter <= 0 && wait > 120*time.Second {
 		wait = 120 * time.Second
 	}
 	timer := time.NewTimer(wait)
@@ -278,21 +298,27 @@ func retryAfter(header http.Header) time.Duration {
 	return 0
 }
 
-// No se busca "captcha" a secas: las páginas normales de Cugat incluyen el
-// CSS de reCAPTCHA y se marcaban como bloqueadas sin estarlo. Los marcadores
-// deben identificar el challenge, no cualquier script de terceros.
-var blockMarkers = []string{
-	"just a moment",
-	"cf-chl",
-	"challenge-platform",
-	"unusual traffic",
-	"enable javascript and cookies",
-	"robot or human?",
-	"px-captcha",
-	"captcha-delivery",
-	"verify you are human",
-	"attention required!",
-}
+// No se busca "captcha" como subcadena: las páginas normales de Cugat
+// incluyen el CSS de reCAPTCHA y se marcaban como bloqueadas sin estarlo. Los
+// marcadores deben identificar el challenge, no cualquier script de terceros.
+// El patrón de "captcha" exige límites de palabra para no confundir
+// reCAPTCHA/grecaptcha con un desafío real.
+var (
+	blockMarkers = []string{
+		"just a moment",
+		"cf-chl",
+		"challenge-platform",
+		"unusual traffic",
+		"enable javascript and cookies",
+		"robot or human?",
+		"px-captcha",
+		"captcha-delivery",
+		"verify you are human",
+		"attention required!",
+		"access denied",
+	}
+	standaloneCaptcha = regexp.MustCompile(`(?i)(^|[^a-z])captcha([^a-z]|$)`)
+)
 
 func detectBlock(status int, body []byte) string {
 	switch status {
@@ -307,6 +333,9 @@ func detectBlock(status int, body []byte) string {
 		if strings.Contains(lower, marker) {
 			return marker
 		}
+	}
+	if standaloneCaptcha.MatchString(lower) {
+		return "captcha"
 	}
 	return ""
 }

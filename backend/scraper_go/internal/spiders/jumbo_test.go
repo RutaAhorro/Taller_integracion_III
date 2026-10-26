@@ -2,6 +2,7 @@ package spiders
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -46,6 +47,26 @@ func mustURL(rawURL string) *url.URL {
 
 func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func TestJumboEmptyFirstCategoryPageReturnsBlockedError(t *testing.T) {
+	categoryURL := jumboDefaultCategories[0]
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		categoryURL: response(categoryURL, `<html><body><h1>Sin selectores</h1></body></html>`),
+	}}
+	spider := NewJumbo(fetcher, t.TempDir(), 1, quietLogger())
+
+	err := spider.Run(context.Background(), domain.Job{}, func(domain.Item) error { return nil })
+	var blocked *crawler.BlockedError
+	if !errors.As(err, &blocked) {
+		t.Fatalf("error = %T %v, want *crawler.BlockedError", err, err)
+	}
+	if blocked.Reason != "missing_selectors" {
+		t.Errorf("motivo = %q", blocked.Reason)
+	}
+	if blocked.BlockedResponses != 1 {
+		t.Errorf("respuestas bloqueadas = %d, want 1", blocked.BlockedResponses)
+	}
 }
 
 func TestExtractJumboProducts(t *testing.T) {

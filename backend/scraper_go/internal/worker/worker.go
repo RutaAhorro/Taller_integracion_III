@@ -20,6 +20,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
@@ -30,6 +31,7 @@ import (
 var (
 	ErrCrawlExhausted = errors.New("el crawl agotó 3 intentos; el spool se conserva")
 	ErrLeaseLost      = errors.New("se perdió la lease del trabajo")
+	ErrNoProducts     = errors.New("el crawl terminó sin productos")
 )
 
 type Worker struct {
@@ -161,23 +163,52 @@ func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
 
 		var apiErr *controlscraping.Error
 		apiFailure := errors.As(err, &apiErr)
-		permanent := errors.Is(err, ErrCrawlExhausted) || (apiFailure && apiErr.Permanent())
+		var blocked *crawler.BlockedError
+		blockedFailure := errors.As(err, &blocked)
+		noProducts := errors.Is(err, ErrNoProducts)
+		permanent := errors.Is(err, ErrCrawlExhausted) || noProducts || blockedFailure ||
+			(apiFailure && apiErr.Permanent())
 		if permanent {
+			failureMessage := "Trabajo enviado a revisión; consultar spool y entregas"
+			reason := "delivery_rejected"
+			switch {
+			case blockedFailure:
+				blockedCount := blocked.BlockedResponses
+				if blockedCount < 1 {
+					blockedCount = 1
+				}
+				failureMessage = fmt.Sprintf(
+					"bloqueo: %d respuestas bloqueadas (motivo=%s)",
+					blockedCount,
+					blocked.Reason,
+				)
+				reason = "blocked"
+				w.logger.Warn("worker_job_blocked",
+					"trabajo_id", job.WorkID,
+					"url", blocked.URL,
+					"status", blocked.Status,
+					"motivo", blocked.Reason,
+					"respuestas_bloqueadas", blockedCount,
+				)
+			case noProducts:
+				failureMessage = "sin productos: el crawl no extrajo elementos; no se ingirió un lote vacío"
+				reason = "no_products"
+				w.logger.Warn("worker_job_without_products", "trabajo_id", job.WorkID)
+			case errors.Is(err, ErrCrawlExhausted):
+				failureMessage = "crawl agotado: se conserva el spool para revisión"
+				reason = "attempts_exhausted"
+			}
 			if !apiFailure || apiErr.Status != 404 {
 				if _, finalizeErr := w.api.FinalizeWork(
 					heartbeatCtx,
 					job.WorkID,
 					"fallido",
 					nil,
-					"Trabajo enviado a revisión; consultar spool y entregas",
+					failureMessage,
 				); finalizeErr != nil {
 					w.logger.Warn("worker_finalize_failed", "trabajo_id", job.WorkID, "error", finalizeErr)
 					return
 				}
-			}
-			reason := "delivery_rejected"
-			if errors.Is(err, ErrCrawlExhausted) {
-				reason = "attempts_exhausted"
 			}
 			if _, ackErr := w.queue.Ack(heartbeatCtx, message.ID, raw, job.WorkID, reason); ackErr != nil {
 				w.logger.Warn("worker_ack_failed", "trabajo_id", job.WorkID, "error", ackErr)
@@ -290,6 +321,12 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 			return nil
 		}
 		if err := spider.Run(ctx, job, emit); err != nil {
+			var blocked *crawler.BlockedError
+			if errors.As(err, &blocked) {
+				// Se conserva en el spool para diagnóstico y para que el
+				// operador pueda distinguir el bloqueo de un fallo de red.
+				_ = store.SetProgress("blocked_responses", blocked.BlockedResponses)
+			}
 			return "", err
 		}
 		if err := store.SetProgress("crawl_done", 1); err != nil {
@@ -305,6 +342,16 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 	}
 	if queue.IsLost(lost) {
 		return "", ErrLeaseLost
+	}
+	// Un crawl sin selectores puede terminar sin error y sin lotes. No se
+	// declara completado: se cierra como fallido para no publicar un catálogo
+	// vacío como éxito.
+	itemCount, err := store.Count()
+	if err != nil {
+		return "", err
+	}
+	if itemCount == 0 {
+		return "", ErrNoProducts
 	}
 	final, err := w.api.FinalizeWork(ctx, job.WorkID, "completado", nil, "")
 	if err != nil {

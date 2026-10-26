@@ -135,6 +135,15 @@ func (s *Spool) Unbatched() (int, error) {
 	return count, err
 }
 
+// Count devuelve todos los productos persistidos, entregados o no. El worker
+// lo usa para no declarar completado un trabajo que terminó con cero
+// elementos, incluso si el crawl no devolvió un error explícito.
+func (s *Spool) Count() (int, error) {
+	var count int
+	err := s.db.QueryRow("SELECT count(*) FROM items").Scan(&count)
+	return count, err
+}
+
 // Seal agrupa los items pendientes por supermercado. Nunca mezcla mercados en
 // un mismo lote y conserva el payload exacto que se enviará.
 func (s *Spool) Seal(batchSize int) error {

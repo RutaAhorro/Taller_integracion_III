@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
@@ -119,6 +121,7 @@ func TestIsTerminal(t *testing.T) {
 type fakeSpider struct {
 	name  string
 	items []domain.Item
+	err   error
 }
 
 func (f *fakeSpider) Name() string {
@@ -131,7 +134,7 @@ func (f *fakeSpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter) 
 			return err
 		}
 	}
-	return nil
+	return f.err
 }
 
 func TestWorkerProcessesJobEndToEnd(t *testing.T) {
@@ -304,6 +307,203 @@ func TestWorkerProcessesJobEndToEnd(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(cfg.StateDir, workID)); !os.IsNotExist(err) {
 		t.Errorf("el spool debería haberse limpiado: %v", err)
+	}
+}
+
+type workerRunState struct {
+	sync.Mutex
+	finalized    string
+	finalMessage string
+	batches      int
+	products     int
+	streamLength int64
+}
+
+func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRunState {
+	t.Helper()
+	redisURL := os.Getenv("REDIS_TEST_URL")
+	if redisURL == "" {
+		redisURL = "redis://localhost:6379/15"
+	}
+	redisOptions, err := redis.ParseURL(redisURL)
+	if err != nil {
+		t.Fatalf("REDIS_TEST_URL inválida: %v", err)
+	}
+	redisOptions.DialTimeout = 500 * time.Millisecond
+	redisOptions.ReadTimeout = 2 * time.Second
+	redisOptions.WriteTimeout = 2 * time.Second
+	redisClient := redis.NewClient(redisOptions)
+
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer pingCancel()
+	if err := redisClient.Ping(pingCtx).Err(); err != nil {
+		_ = redisClient.Close()
+		t.Skipf("Redis no disponible: %v", err)
+	}
+
+	prefix := "scraper:test:worker:" + uuid.NewString()
+	stream := prefix + ":stream"
+	group := prefix + ":group"
+	index := prefix + ":index"
+	dead := prefix + ":dead"
+	closedPrefix := prefix + ":closed:"
+	t.Cleanup(func() {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = redisClient.Del(cleanupCtx, stream, index, dead, closedPrefix+workID).Err()
+		_ = redisClient.Close()
+	})
+
+	state := &workerRunState{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		base := "/api/v1/scraper/trabajos/" + workID
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == base:
+			state.Lock()
+			status := "en_progreso"
+			if state.finalized != "" {
+				status = state.finalized
+			}
+			state.Unlock()
+			writeJSON(w, map[string]any{"id": workID, "estado": status})
+		case r.Method == http.MethodPost && r.URL.Path == base+"/productos":
+			var payload struct {
+				Productos []domain.Product `json:"productos"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Errorf("decode productos: %v", err)
+				return
+			}
+			state.Lock()
+			state.batches++
+			state.products += len(payload.Productos)
+			state.Unlock()
+			writeJSON(w, map[string]any{
+				"total_recibidos":     len(payload.Productos),
+				"precios_registrados": len(payload.Productos),
+				"insertados":          len(payload.Productos),
+				"actualizados":        0,
+			})
+		case r.Method == http.MethodPut && r.URL.Path == base+"/finalizar":
+			var payload struct {
+				Estado          string  `json:"estado"`
+				RegistroErrores *string `json:"registro_errores"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Errorf("decode finalizar: %v", err)
+				return
+			}
+			state.Lock()
+			state.finalized = payload.Estado
+			if payload.RegistroErrores != nil {
+				state.finalMessage = *payload.RegistroErrores
+			}
+			state.Unlock()
+			writeJSON(w, map[string]any{"id": workID, "estado": payload.Estado})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	queueClient, err := queue.New(redisClient, queue.Options{
+		Stream:       stream,
+		Group:        group,
+		Lease:        10 * time.Second,
+		Consumer:     "worker-test",
+		IndexKey:     index,
+		DeadLetter:   dead,
+		ClosedPrefix: closedPrefix,
+	})
+	if err != nil {
+		t.Fatalf("queue.New() error = %v", err)
+	}
+	if err := queueClient.EnsureGroup(context.Background()); err != nil {
+		t.Fatalf("EnsureGroup() error = %v", err)
+	}
+	raw := `{"trabajo_id":"` + workID + `","spider":"` + spider.Name() + `"}`
+	messageID, err := redisClient.XAdd(context.Background(), &redis.XAddArgs{
+		Stream: stream,
+		Values: map[string]any{"payload": raw},
+	}).Result()
+	if err != nil {
+		t.Fatalf("XAdd() error = %v", err)
+	}
+	if err := redisClient.HSet(context.Background(), index, workID, messageID).Err(); err != nil {
+		t.Fatalf("HSet() error = %v", err)
+	}
+
+	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	registry.Register(spider)
+	cfg := config.Config{
+		APIURL:          server.URL + "/api/v1/scraper/productos",
+		Token:           "token",
+		StateDir:        t.TempDir(),
+		MinFreeBytes:    1 << 20,
+		FailedRetention: time.Hour,
+		APITimeout:      2 * time.Second,
+		BatchSize:       2,
+		Lease:           10 * time.Second,
+	}
+	scraperWorker := New(cfg, controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout), queueClient,
+		registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	receiveCtx, receiveCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer receiveCancel()
+	message, err := queueClient.Receive(receiveCtx)
+	if err != nil || message == nil {
+		t.Fatalf("Receive() = %+v, %v", message, err)
+	}
+	scraperWorker.HandleMessage(receiveCtx, message)
+	state.Lock()
+	state.streamLength, _ = redisClient.XLen(context.Background(), stream).Result()
+	state.Unlock()
+	return state
+}
+
+func TestWorkerFinalizesBlockedJob(t *testing.T) {
+	state := runWorkerJob(t, uuid.NewString(), &fakeSpider{
+		name: spiders.SantaIsabelName,
+		err: &crawler.BlockedError{
+			URL:              "https://www.santaisabel.cl/despensa",
+			Status:           429,
+			Reason:           "http_429",
+			BlockedResponses: 3,
+		},
+	})
+
+	state.Lock()
+	defer state.Unlock()
+	if state.finalized != "fallido" {
+		t.Errorf("estado final = %q, want fallido", state.finalized)
+	}
+	if !strings.Contains(state.finalMessage, "bloqueo: 3 respuestas bloqueadas") {
+		t.Errorf("registro_errores = %q", state.finalMessage)
+	}
+	if state.batches != 0 {
+		t.Errorf("lotes = %d, want 0", state.batches)
+	}
+	if state.streamLength != 0 {
+		t.Errorf("stream length = %d, want 0 (mensaje ACK)", state.streamLength)
+	}
+}
+
+func TestWorkerRejectsEmptyCrawl(t *testing.T) {
+	state := runWorkerJob(t, uuid.NewString(), &fakeSpider{name: spiders.CugatName})
+
+	state.Lock()
+	defer state.Unlock()
+	if state.finalized != "fallido" {
+		t.Errorf("estado final = %q, want fallido", state.finalized)
+	}
+	if !strings.Contains(state.finalMessage, "sin productos") {
+		t.Errorf("registro_errores = %q", state.finalMessage)
+	}
+	if state.batches != 0 {
+		t.Errorf("lotes = %d, want 0", state.batches)
+	}
+	if state.streamLength != 0 {
+		t.Errorf("stream length = %d, want 0 (mensaje ACK)", state.streamLength)
 	}
 }
 
