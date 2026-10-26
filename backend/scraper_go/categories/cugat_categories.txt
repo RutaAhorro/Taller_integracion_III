@@ -14,3 +14,21 @@ https://cugat.cl/categoria-producto/despensa/
 
 # Categoria Carnes y Pescados
 https://cugat.cl/categoria-producto/carniceria/
+
+# Categoria bebidas alcoholicas
+https://cugat.cl/categoria-producto/bebidas-alcoholicas/
+
+# Categoria bebidas, jugos y aguas
+https://cugat.cl/categoria-producto/bebidas-jugos-y-aguas/
+
+# Categoria panaderia y pasteleria
+https://cugat.cl/categoria-producto/panaderia-y-pasteleria/
+
+# Categoria limpieza
+https://cugat.cl/categoria-producto/limpieza-y-aseo/
+
+# Categoria Cuidado Personal
+https://cugat.cl/categoria-producto/cuidado-personal/
+
+# Categoria hogar
+https://cugat.cl/categoria-producto/hogar/

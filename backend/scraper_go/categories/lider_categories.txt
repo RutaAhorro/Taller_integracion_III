@@ -82,3 +82,126 @@ https://super.lider.cl/browse/carnes-y-pescados/pavo/21856785_66365889
 
 # carnes y pescados: pescados y mariscos
 https://super.lider.cl/browse/carnes-y-pescados/pescados-y-mariscos/21856785_89519682
+
+# Categoria bebidas alcoholicas
+# botilleria: espumantes
+https://super.lider.cl/browse/la-boti/espumantes/60338008_75569554
+
+# botilleria: destilados
+https://super.lider.cl/browse/la-boti/destilados/60338008_18800914
+
+# botilleria: cerveza
+https://super.lider.cl/browse/la-boti/cerveza/60338008_25254512
+
+# botilleria: sin alcohol
+https://super.lider.cl/browse/la-boti/sin-alcohol/60338008_15483971
+
+# botilleria: coctel
+https://super.lider.cl/browse/la-boti/coctel/60338008_30587707
+
+# botilleria: vinos
+https://super.lider.cl/browse/la-boti/vinos/60338008_85836428
+
+# Categoria bebidas y snacks
+# bebidas y snacks: bebidas
+https://super.lider.cl/browse/bebidas-y-snacks/bebidas/13901022_56657077
+
+# bebidas y snacks: refrigerados
+https://super.lider.cl/browse/bebidas-y-snacks/refrigerados/13901022_41934663
+
+# bebidas y snacks: aguas
+https://super.lider.cl/browse/bebidas-y-snacks/aguas/13901022_67311042
+
+# bebidas y snacks: jugos
+https://super.lider.cl/browse/bebidas-y-snacks/jugos/13901022_61163586
+
+# bebidas y snacks: bebidas funcionales
+https://super.lider.cl/browse/bebidas-y-snacks/bebidas-funcionales/13901022_63687960
+
+# bebidas y snacks: snacks y picoteo
+https://super.lider.cl/browse/bebidas-y-snacks/snacks-y-picoteo/13901022_66742898
+
+# Categoria panaderia y pasteleria
+# panaderia y pasteleria: panaderia envasada
+https://super.lider.cl/browse/panaderia-y-pasteleria/panaderia-envasada/73535247_22477361
+
+# panaderia y pasteleria: panaderia granel
+https://super.lider.cl/browse/panaderia-y-pasteleria/panaderia-granel/73535247_87066079
+
+# panaderia y pasteleria: pasteleria
+https://super.lider.cl/browse/panaderia-y-pasteleria/pasteleria/73535247_90671850
+
+# panaderia y pasteleria: reposteria
+https://super.lider.cl/browse/panaderia-y-pasteleria/reposteria/73535247_58054857
+
+# Categoria limpieza y aseo
+# limpieza y aseo: detergentes
+https://super.lider.cl/browse/limpieza-y-aseo/detergentes/43390617_23557375
+
+# limpieza y aseo: papeles
+https://super.lider.cl/browse/limpieza-y-aseo/papeles/43390617_72719306
+
+# limpieza y aseo: ambientadores
+https://super.lider.cl/browse/limpieza-y-aseo/ambientadores/43390617_32024397
+
+# limpieza y aseo: mas sustentables
+https://super.lider.cl/browse/limpieza-y-aseo/mas-sustentables/43390617_56006489
+
+# limpieza y aseo: bano y cocina
+https://super.lider.cl/browse/limpieza-y-aseo/bano-y-cocina/43390617_15090475
+
+# limpieza y aseo: desinfeccion
+https://super.lider.cl/browse/limpieza-y-aseo/desinfeccion/43390617_57052803
+
+# limpieza y aseo: pisos y muebles
+https://super.lider.cl/browse/limpieza-y-aseo/pisos-y-muebles/43390617_45008163
+
+# limpieza y aseo: accesorios aseo
+https://super.lider.cl/browse/limpieza-y-aseo/accesorios-aseo/43390617_61764352
+
+# limpieza y aseo: insecticidas y control de plagas
+https://super.lider.cl/browse/limpieza-y-aseo/insecticidas-y-control-de-plagas/43390617_74938748
+
+# limpieza y aseo: mascotas en casa
+https://super.lider.cl/browse/limpieza-y-aseo/mascotas-en-casa/43390617_43573441
+
+# Categoria higiene y cuidado personal
+# higiene y cuidado personal: cuidado bucal
+https://super.lider.cl/browse/higiene-y-cuidado-personal/cuidado-bucal/72387472_88733049
+
+# higiene y cuidado personal: jabones
+https://super.lider.cl/browse/higiene-y-cuidado-personal/jabones/72387472_38253071
+
+# higiene y cuidado personal: salud y suplementos
+https://super.lider.cl/browse/higiene-y-cuidado-personal/salud-y-suplementos/72387472_67725176
+
+# higiene y cuidado personal: desodorantes y cuidado corporal
+https://super.lider.cl/browse/higiene-y-cuidado-personal/desodorantes-y-cuidado-corporal/72387472_37200412
+
+# higiene y cuidado personal: proteccion femenina
+https://super.lider.cl/browse/higiene-y-cuidado-personal/proteccion-femenina/72387472_69099803
+
+# higiene y cuidado personal: cuidado adulto mayor
+https://super.lider.cl/browse/higiene-y-cuidado-personal/cuidado-adulto-mayor/72387472_32027656
+
+# Categoria Hogar
+# hogar: menaje cocina
+https://super.lider.cl/browse/hogar/menaje-cocina/24339485_51854813
+
+# hogar: muebles y decoracion
+https://super.lider.cl/browse/hogar/muebles-y-decoracion/24339485_98345941
+
+# hogar: dormitorio
+https://super.lider.cl/browse/hogar/dormitorio/24339485_72053831
+
+# hogar: menaje comedor
+https://super.lider.cl/browse/hogar/menaje-comedor/24339485_83561084
+
+# hogar: Organizacion
+https://super.lider.cl/browse/hogar/organizacion/24339485_47664950
+
+# hogar: Baño
+https://super.lider.cl/browse/hogar/bano/24339485_73420017
+
+# hogar: terraza
+https://super.lider.cl/browse/hogar/terraza/24339485_08770197
