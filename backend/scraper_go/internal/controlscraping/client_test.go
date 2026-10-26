@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
@@ -78,6 +80,73 @@ func TestIngestBatchAndFinalizeWork(t *testing.T) {
 	if finalPayload["respuestas_bloqueadas"] != float64(4) {
 		t.Errorf("respuestas_bloqueadas = %v", finalPayload["respuestas_bloqueadas"])
 	}
+}
+
+func TestIngestBatchLimitsDatabaseColumns(t *testing.T) {
+	var received ingestPayload
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode payload: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"total_recibidos":     len(received.Productos),
+			"precios_registrados": len(received.Productos),
+			"insertados":          len(received.Productos),
+			"actualizados":        0,
+		})
+	}))
+	defer server.Close()
+
+	long := strings.Repeat("á", 400)
+	sku := strings.Repeat("s", 120)
+	ean := strings.Repeat("9", 60)
+	client := New(server.URL+"/api/v1/scraper/productos", "", time.Second)
+	_, err := client.IngestBatch(context.Background(), []domain.Product{{
+		Producto:          long,
+		SKU:               &sku,
+		EanGtin:           &ean,
+		Marca:             &long,
+		Categoria:         long,
+		FormatoCrudo:      &long,
+		MecanicaPromocion: &long,
+	}}, nil, "work-1", "batch-1")
+	if err != nil {
+		t.Fatalf("IngestBatch() error = %v", err)
+	}
+
+	if len(received.Productos) != 1 {
+		t.Fatalf("productos = %d", len(received.Productos))
+	}
+	product := received.Productos[0]
+	checks := []struct {
+		name string
+		got  string
+		max  int
+	}{
+		{"producto", product.Producto, 255},
+		{"sku", value(product.SKU), 100},
+		{"ean_gtin", value(product.EanGtin), 50},
+		{"marca", value(product.Marca), 100},
+		{"categoria", product.Categoria, 100},
+		{"formato_crudo", value(product.FormatoCrudo), 100},
+		{"mecanica_promocion", value(product.MecanicaPromocion), 255},
+	}
+	for _, check := range checks {
+		if !utf8.ValidString(check.got) {
+			t.Errorf("%s no es UTF-8 válido", check.name)
+		}
+		if got := utf8.RuneCountInString(check.got); got != check.max {
+			t.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.max)
+		}
+	}
+}
+
+func value(pointer *string) string {
+	if pointer == nil {
+		return ""
+	}
+	return *pointer
 }
 
 func TestIngestBatchRejectsInconsistentReceipt(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
 // Error representa un rechazo de la API. Permanent indica que reintentar el
@@ -88,7 +89,7 @@ func (c *Client) IngestBatch(
 		return map[string]any{"total_recibidos": 0}, nil
 	}
 
-	payload := ingestPayload{Productos: products}
+	payload := ingestPayload{Productos: limitProducts(products)}
 	if supermarket != nil && *supermarket != "" {
 		payload.Supermercado = supermarket
 	}
@@ -265,6 +266,25 @@ func (c *Client) ingestionEndpoint(workID string) string {
 		return c.endpoint
 	}
 	return c.endpoint + "/productos"
+}
+
+// limitProducts ajusta los campos a los límites de scraper.productos_crudos.
+// Los spiders pueden entregar descripciones comerciales más largas que el
+// varchar del esquema; recortar en el límite de entrega evita que Catálogo
+// rechace el lote completo.
+func limitProducts(products []domain.Product) []domain.Product {
+	limited := make([]domain.Product, len(products))
+	for index, product := range products {
+		product.Producto = normalize.Truncar(product.Producto, 255)
+		product.SKU = normalize.TruncarPtr(product.SKU, 100)
+		product.EanGtin = normalize.TruncarPtr(product.EanGtin, 50)
+		product.Marca = normalize.TruncarPtr(product.Marca, 100)
+		product.Categoria = normalize.Truncar(product.Categoria, 100)
+		product.FormatoCrudo = normalize.TruncarPtr(product.FormatoCrudo, 100)
+		product.MecanicaPromocion = normalize.TruncarPtr(product.MecanicaPromocion, 255)
+		limited[index] = product
+	}
+	return limited
 }
 
 func asInt(value any) (int, bool) {

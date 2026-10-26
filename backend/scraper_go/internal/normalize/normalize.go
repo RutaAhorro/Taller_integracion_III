@@ -216,6 +216,28 @@ func EAN(value any) *string {
 	return &result
 }
 
+// Truncar limita una cadena al número de caracteres (runas) que acepta el
+// esquema PostgreSQL. No corta bytes de una secuencia UTF-8.
+func Truncar(value string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max])
+}
+
+// TruncarPtr aplica Truncar conservando nil.
+func TruncarPtr(value *string, max int) *string {
+	if value == nil {
+		return nil
+	}
+	truncated := Truncar(*value, max)
+	return &truncated
+}
+
 // Texto colapsa espacios y devuelve nil para cadenas vacías.
 func Texto(value any) *string {
 	if value == nil {

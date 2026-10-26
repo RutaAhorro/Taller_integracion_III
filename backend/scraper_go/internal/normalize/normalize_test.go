@@ -2,7 +2,9 @@ package normalize
 
 import (
 	"math"
+	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestPrecioCLP(t *testing.T) {
@@ -58,5 +60,28 @@ func TestTexto(t *testing.T) {
 	}
 	if got := Texto(" \n "); got != nil {
 		t.Errorf("Texto vacío = %v, want nil", *got)
+	}
+}
+
+func TestTruncar(t *testing.T) {
+	if got := Truncar("Leche entera", 100); got != "Leche entera" {
+		t.Errorf("Truncar corto = %q", got)
+	}
+	if got := Truncar("Leche entera", 5); got != "Leche" {
+		t.Errorf("Truncar = %q, want %q", got, "Leche")
+	}
+	got := Truncar("Bebida azúcar 1 L", 8)
+	if got != "Bebida a" || !utf8.ValidString(got) {
+		t.Errorf("Truncar UTF-8 = %q, válido=%v", got, utf8.ValidString(got))
+	}
+	if got := Truncar("Leche", 0); got != "" {
+		t.Errorf("Truncar con límite 0 = %q", got)
+	}
+	value := strings.Repeat("a", 120)
+	if got := TruncarPtr(&value, 100); got == nil || len(*got) != 100 {
+		t.Errorf("TruncarPtr = %v", got)
+	}
+	if got := TruncarPtr(nil, 100); got != nil {
+		t.Errorf("TruncarPtr(nil) = %v", got)
 	}
 }
