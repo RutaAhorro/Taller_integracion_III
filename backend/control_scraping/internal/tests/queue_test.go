@@ -26,6 +26,7 @@ func (q *sqlQueue) PosponerPublicacion(context.Context, uuid.UUID) error   { ret
 func TestExecutionWithoutRedisClientStillPersistsSQL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockScraperRepository()
+	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
 	id := uuid.New()
 	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
 	h := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
@@ -45,6 +46,7 @@ func TestExecutionWithoutRedisClientStillPersistsSQL(t *testing.T) {
 func TestExecutionForwardsAddURLAndEnrichEAN(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockScraperRepository()
+	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
 	id := uuid.New()
 	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
 	h := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
@@ -78,6 +80,7 @@ func TestExecutionForwardsAddURLAndEnrichEAN(t *testing.T) {
 func TestExecutionRejectsEmptyAddURL(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	repo := newMockScraperRepository()
+	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
 	id := uuid.New()
 	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
 	h := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
