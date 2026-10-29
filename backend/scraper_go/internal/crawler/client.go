@@ -329,7 +329,11 @@ func detectBlock(status int, body []byte) string {
 	case http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 		return fmt.Sprintf("http_%d", status)
 	}
-	if len(body) == 0 {
+	// Los marcadores de challenge sólo se evalúan en respuestas 200: son las
+	// que un CDN/WAF usa para servir la página de verificación sin cambiar el
+	// status. En 4xx/5xx no bloqueantes (por ejemplo 404) el cuerpo se deja al
+	// spider, que decide si es fin de paginación o un producto inexistente.
+	if status != http.StatusOK || len(body) == 0 {
 		return ""
 	}
 	lower := strings.ToLower(string(body))

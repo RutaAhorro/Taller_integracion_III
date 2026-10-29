@@ -79,6 +79,9 @@ func (a *Acuenta) Name() string {
 }
 
 func (a *Acuenta) Run(ctx context.Context, job domain.Job, emit Emitter) error {
+	if job.ProductURL != "" {
+		return a.runProduct(ctx, job, emit)
+	}
 	if job.AddURL != "" {
 		if err := a.appendCategoryURL(job.AddURL); err != nil {
 			return err
@@ -94,6 +97,29 @@ func (a *Acuenta) Run(ctx context.Context, job domain.Job, emit Emitter) error {
 		}
 	}
 	return nil
+}
+
+// runProduct atiende un scraping puntual de /p/. Si la ficha no entrega un
+// producto identificable no se emite nada ni se recorre el catálogo completo.
+func (a *Acuenta) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
+	if err := validateAcuentaProductURL(job.ProductURL); err != nil {
+		return err
+	}
+	response, err := a.fetcher.Fetch(ctx, job.ProductURL)
+	if err != nil {
+		return err
+	}
+	if response.Status == 404 {
+		a.logger.Warn("acuenta_product_not_found", "url", job.ProductURL)
+		return nil
+	}
+	products := extractAcuentaProducts(response.Body, response.URL)
+	selected := selectProductByURL(products, job.ProductURL, response.URL)
+	if selected == nil {
+		a.logger.Warn("acuenta_product_without_data", "url", job.ProductURL, "candidatos", len(products))
+		return nil
+	}
+	return emit(toAcuentaItem(*selected, "producto", job.ProductURL))
 }
 
 func (a *Acuenta) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
@@ -166,6 +192,18 @@ func validateAcuentaCategoryURL(rawURL string) error {
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil || !strings.HasPrefix(parsed.Path, "/ca/") {
+		return errors.New(message)
+	}
+	return nil
+}
+
+func validateAcuentaProductURL(rawURL string) error {
+	message := "product_url debe ser una URL HTTPS /p/ de acuenta.cl"
+	if err := validateHTTPSHost(rawURL, acuentaAllowedHosts, message); err != nil {
+		return err
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || !strings.HasPrefix(parsed.Path, "/p/") {
 		return errors.New(message)
 	}
 	return nil

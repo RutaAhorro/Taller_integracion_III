@@ -1,6 +1,8 @@
 package spiders
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -14,6 +16,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
@@ -312,4 +315,100 @@ func queryPairs(rawQuery string) []string {
 		return nil
 	}
 	return strings.Split(rawQuery, "&")
+}
+
+// selectProductByURL elige el producto solicitado dentro de los candidatos que
+// devuelve un parser de listado o de detalle. Compara host+path para ignorar
+// query strings de tracking. Si no hay coincidencia y el documento sólo trae un
+// producto, se acepta ese único candidato (es el caso normal de una ficha).
+// Si hay varios y ninguno coincide, devuelve nil: nunca se emite el producto
+// equivocado ni se cae al crawl masivo de categorías.
+func selectProductByURL(products []domain.Product, requested string, responseURL *url.URL) *domain.Product {
+	if len(products) == 0 {
+		return nil
+	}
+	wanted := canonicalProductURL(requested)
+	if wanted != "" {
+		for index := range products {
+			if products[index].URLProducto == nil {
+				continue
+			}
+			candidate := resolveURL(responseURL, *products[index].URLProducto)
+			if canonicalProductURL(candidate) == wanted {
+				return &products[index]
+			}
+		}
+	}
+	if len(products) == 1 {
+		return &products[0]
+	}
+	return nil
+}
+
+// extractJSONLDProduct lee la primera ficha schema.org/Product publicada como
+// JSON-LD. Es el camino común de las páginas de detalle cuando el sitio no
+// expone un objeto propio de producto.
+func extractJSONLDProduct(body []byte, responseURL *url.URL) *domain.Product {
+	products := extractJSONLDProducts(body, responseURL)
+	if len(products) == 0 {
+		return nil
+	}
+	return &products[0]
+}
+
+// extractJSONLDProducts devuelve todas las fichas schema.org/Product del
+// documento. Una página de detalle puede incluir recomendaciones, por eso el
+// modo product_url filtra después por URL en vez de quedarse con la primera.
+func extractJSONLDProducts(body []byte, responseURL *url.URL) []domain.Product {
+	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+	var products []domain.Product
+	scripts := document.Find(`script[type="application/ld+json"]`)
+	for index := 0; index < scripts.Length(); index++ {
+		var data any
+		decoder := json.NewDecoder(strings.NewReader(scripts.Eq(index).Text()))
+		decoder.UseNumber()
+		if err := decoder.Decode(&data); err != nil {
+			continue
+		}
+		for _, entry := range walkJSON(data) {
+			object, ok := entry.(map[string]any)
+			if !ok || !isProductType(object["@type"]) {
+				continue
+			}
+			offers := firstMapValue(object["offers"])
+			price := normalize.PrecioCLP(firstValue(offers, "price"))
+			image := cugatImageURL(object["image"])
+			brand := object["brand"]
+			if brandMap, ok := brand.(map[string]any); ok {
+				brand = brandMap["name"]
+			}
+			eanValue := firstValue(object, "gtin13")
+			if eanValue == nil || eanValue == "" {
+				eanValue = firstValue(object, "gtin")
+			}
+			productURL := urlString(responseURL)
+			if value, ok := object["url"].(string); ok && value != "" {
+				productURL = resolveURL(responseURL, value)
+			}
+			product := domain.Product{
+				Precio:       price,
+				PrecioNormal: price,
+				EanGtin:      normalize.EAN(eanValue),
+				SKU:          firstNonNilString(normalize.Texto(firstValue(object, "sku")), normalize.SKUFromURL(productURL)),
+				Marca:        normalize.Texto(brand),
+				FormatoCrudo: normalize.Texto(firstValue(object, "description")),
+				EnStock:      stockValue(firstValue(offers, "availability")),
+				URLProducto:  &productURL,
+				Imagen:       image,
+			}
+			if name := normalize.Texto(firstValue(object, "name")); name != nil {
+				product.Producto = *name
+			}
+			products = append(products, product)
+		}
+	}
+	return products
 }

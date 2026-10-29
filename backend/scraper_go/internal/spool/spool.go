@@ -4,11 +4,8 @@
 package spool
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,7 +96,7 @@ func (s *Spool) Close() error {
 // Add guarda un producto antes de enviarlo. Si el mismo producto ya está en
 // el spool, la huella UNIQUE evita duplicarlo.
 func (s *Spool) Add(product domain.Product, market *string) error {
-	data, err := canonicalJSON(product)
+	data, err := canonicalProductJSON(product)
 	if err != nil {
 		return err
 	}
@@ -107,16 +104,10 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 		return err
 	}
 
-	var marketValue any
-	if market != nil {
-		marketValue = *market
-	}
-	fingerprintBytes, err := canonicalJSON([]any{marketValue, string(data)})
+	fingerprint, err := pythonFingerprint(market, data)
 	if err != nil {
 		return err
 	}
-	sum := sha256.Sum256(fingerprintBytes)
-	fingerprint := hex.EncodeToString(sum[:])
 
 	var marketArg any
 	if market != nil {
@@ -323,14 +314,4 @@ func (s *Spool) SetProgress(key string, value int) error {
 		key, value,
 	)
 	return err
-}
-
-func canonicalJSON(value any) ([]byte, error) {
-	var buffer bytes.Buffer
-	encoder := json.NewEncoder(&buffer)
-	encoder.SetEscapeHTML(false)
-	if err := encoder.Encode(value); err != nil {
-		return nil, err
-	}
-	return bytes.TrimSuffix(buffer.Bytes(), []byte("\n")), nil
 }

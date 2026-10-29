@@ -3,7 +3,6 @@ package spiders
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/url"
@@ -282,56 +281,7 @@ func cugatPriceFrom(card *goquery.Selection, selector string) *float64 {
 }
 
 func extractCugatDetail(body []byte, responseURL *url.URL) *domain.Product {
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
-		return nil
-	}
-	scripts := document.Find(`script[type="application/ld+json"]`)
-	for index := 0; index < scripts.Length(); index++ {
-		var data any
-		decoder := json.NewDecoder(strings.NewReader(scripts.Eq(index).Text()))
-		decoder.UseNumber()
-		if err := decoder.Decode(&data); err != nil {
-			continue
-		}
-		for _, entry := range walkJSON(data) {
-			object, ok := entry.(map[string]any)
-			if !ok || !isProductType(object["@type"]) {
-				continue
-			}
-			offers := firstMapValue(object["offers"])
-			price := normalize.PrecioCLP(firstValue(offers, "price"))
-			image := cugatImageURL(object["image"])
-			brand := object["brand"]
-			if brandMap, ok := brand.(map[string]any); ok {
-				brand = brandMap["name"]
-			}
-			eanValue := firstValue(object, "gtin13")
-			if eanValue == nil || eanValue == "" {
-				eanValue = firstValue(object, "gtin")
-			}
-			productURL := urlString(responseURL)
-			if value, ok := object["url"].(string); ok && value != "" {
-				productURL = value
-			}
-			product := domain.Product{
-				Precio:       price,
-				PrecioNormal: price,
-				EanGtin:      normalize.EAN(eanValue),
-				SKU:          firstNonNilString(normalize.Texto(firstValue(object, "sku")), normalize.SKUFromURL(productURL)),
-				Marca:        normalize.Texto(brand),
-				FormatoCrudo: normalize.Texto(firstValue(object, "description")),
-				EnStock:      stockValue(firstValue(offers, "availability")),
-				URLProducto:  &productURL,
-				Imagen:       image,
-			}
-			if name := normalize.Texto(firstValue(object, "name")); name != nil {
-				product.Producto = *name
-			}
-			return &product
-		}
-	}
-	return nil
+	return extractJSONLDProduct(body, responseURL)
 }
 
 func cugatImageURL(value any) *string {

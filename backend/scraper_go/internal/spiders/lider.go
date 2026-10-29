@@ -57,6 +57,9 @@ func (l *Lider) Name() string {
 }
 
 func (l *Lider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
+	if job.ProductURL != "" {
+		return l.runProduct(ctx, job, emit)
+	}
 	if job.AddURL != "" {
 		if err := l.appendCategoryURL(job.AddURL); err != nil {
 			return err
@@ -72,6 +75,28 @@ func (l *Lider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
 		}
 	}
 	return nil
+}
+
+// runProduct atiende un scraping puntual de /ip/. Si la ficha no entrega un
+// producto identificable no se emite nada ni se recorre el catálogo completo.
+func (l *Lider) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
+	if err := validateLiderProductURL(job.ProductURL); err != nil {
+		return err
+	}
+	response, err := l.fetcher.Fetch(ctx, job.ProductURL)
+	if err != nil {
+		return err
+	}
+	if response.Status == 404 {
+		l.logger.Warn("lider_product_not_found", "url", job.ProductURL)
+		return nil
+	}
+	product := extractLiderProduct(response.Body, response.URL, job.ProductURL)
+	if product == nil {
+		l.logger.Warn("lider_product_without_data", "url", job.ProductURL)
+		return nil
+	}
+	return emit(toLiderItem(*product, "producto", job.ProductURL))
 }
 
 func (l *Lider) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
@@ -218,14 +243,8 @@ func extractLiderProducts(body []byte, responseURL *url.URL) []domain.Product {
 }
 
 func extractLiderNextData(document *goquery.Document, responseURL *url.URL) ([]domain.Product, bool) {
-	script := document.Find("script#__NEXT_DATA__").First()
-	if script.Length() == 0 {
-		return nil, false
-	}
-	var payload map[string]any
-	decoder := json.NewDecoder(strings.NewReader(script.Text()))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	payload, ok := liderNextDataPayload(document)
+	if !ok {
 		return nil, false
 	}
 
@@ -253,71 +272,126 @@ func extractLiderNextData(document *goquery.Document, responseURL *url.URL) ([]d
 			if !ok {
 				continue
 			}
-			name := normalize.Texto(item["name"])
-			productCode := normalize.EAN(item["usItemId"])
-			currentPrice := normalize.PrecioCLP(item["price"])
-			if name == nil || productCode == nil || currentPrice == nil {
-				continue
+			if product, ok := liderProductFromItem(item, responseURL); ok {
+				products = append(products, product)
 			}
-
-			priceInfo, _ := item["priceInfo"].(map[string]any)
-			normalPrice := normalize.PrecioCLP(firstValue(priceInfo, "wasPrice"))
-			if normalPrice == nil {
-				normalPrice = normalize.PrecioCLP(firstValue(priceInfo, "itemPrice"))
-			}
-			if normalPrice == nil {
-				normalPrice = currentPrice
-			}
-
-			canonical, ok := item["canonicalUrl"].(string)
-			if !ok || canonical == "" {
-				continue
-			}
-			productURL := resolveURL(responseURL, canonical)
-			if err := validateLiderProductURL(productURL); err != nil {
-				continue
-			}
-
-			var image *string
-			imageInfo, _ := item["imageInfo"].(map[string]any)
-			if thumbnail, ok := imageInfo["thumbnailUrl"].(string); ok && thumbnail != "" {
-				value := resolveURL(responseURL, thumbnail)
-				image = &value
-			}
-
-			var inStock *bool
-			if outOfStock, ok := item["isOutOfStock"].(bool); ok {
-				value := !outOfStock
-				inStock = &value
-			}
-
-			sku := normalize.Texto(item["sku"])
-			if sku == nil {
-				sku = productCode
-			}
-			var offer *float64
-			var mechanics *string
-			if *currentPrice < *normalPrice {
-				offer = currentPrice
-				mechanics = domain.StringPtr("promoción")
-			}
-			products = append(products, domain.Product{
-				Producto:          *name,
-				Precio:            currentPrice,
-				PrecioNormal:      normalPrice,
-				PrecioOferta:      offer,
-				EanGtin:           productCode,
-				SKU:               sku,
-				Marca:             normalize.Texto(item["brand"]),
-				FormatoCrudo:      formatFromText(*name, liderFormatPattern),
-				MecanicaPromocion: mechanics,
-				EnStock:           inStock,
-				URLProducto:       &productURL,
-				Imagen:            image,
-			})
 		}
 	}
 	return products, true
+}
+
+func liderNextDataPayload(document *goquery.Document) (map[string]any, bool) {
+	script := document.Find("script#__NEXT_DATA__").First()
+	if script.Length() == 0 {
+		return nil, false
+	}
+	var payload map[string]any
+	decoder := json.NewDecoder(strings.NewReader(script.Text()))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, false
+	}
+	return payload, true
+}
+
+// extractLiderProduct reconstruye una ficha /ip/. Prueba, en orden, JSON-LD,
+// el objeto de producto de __NEXT_DATA__ y las tarjetas del HTML. Sólo acepta
+// un candidato cuya URL coincida con la solicitada (o el único disponible).
+func extractLiderProduct(body []byte, responseURL *url.URL, requested string) *domain.Product {
+	if products := extractJSONLDProducts(body, responseURL); len(products) > 0 {
+		if selected := selectProductByURL(products, requested, responseURL); selected != nil {
+			if resolved := resolveURL(responseURL, *selected.URLProducto); validateLiderProductURL(resolved) == nil {
+				selected.URLProducto = &resolved
+				return selected
+			}
+		}
+	}
+
+	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
+	if err != nil {
+		return nil
+	}
+	if payload, ok := liderNextDataPayload(document); ok {
+		var products []domain.Product
+		for _, value := range walkJSON(payload) {
+			item, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			if product, ok := liderProductFromItem(item, responseURL); ok {
+				products = append(products, product)
+			}
+		}
+		if selected := selectProductByURL(products, requested, responseURL); selected != nil {
+			return selected
+		}
+	}
+	return selectProductByURL(extractLiderCards(document, responseURL), requested, responseURL)
+}
+
+func liderProductFromItem(item map[string]any, responseURL *url.URL) (domain.Product, bool) {
+	name := normalize.Texto(item["name"])
+	productCode := normalize.EAN(item["usItemId"])
+	currentPrice := normalize.PrecioCLP(item["price"])
+	if name == nil || productCode == nil || currentPrice == nil {
+		return domain.Product{}, false
+	}
+
+	priceInfo, _ := item["priceInfo"].(map[string]any)
+	normalPrice := normalize.PrecioCLP(firstValue(priceInfo, "wasPrice"))
+	if normalPrice == nil {
+		normalPrice = normalize.PrecioCLP(firstValue(priceInfo, "itemPrice"))
+	}
+	if normalPrice == nil {
+		normalPrice = currentPrice
+	}
+
+	canonical, ok := item["canonicalUrl"].(string)
+	if !ok || canonical == "" {
+		return domain.Product{}, false
+	}
+	productURL := resolveURL(responseURL, canonical)
+	if err := validateLiderProductURL(productURL); err != nil {
+		return domain.Product{}, false
+	}
+
+	var image *string
+	imageInfo, _ := item["imageInfo"].(map[string]any)
+	if thumbnail, ok := imageInfo["thumbnailUrl"].(string); ok && thumbnail != "" {
+		value := resolveURL(responseURL, thumbnail)
+		image = &value
+	}
+
+	var inStock *bool
+	if outOfStock, ok := item["isOutOfStock"].(bool); ok {
+		value := !outOfStock
+		inStock = &value
+	}
+
+	sku := normalize.Texto(item["sku"])
+	if sku == nil {
+		sku = productCode
+	}
+	var offer *float64
+	var mechanics *string
+	if *currentPrice < *normalPrice {
+		offer = currentPrice
+		mechanics = domain.StringPtr("promoción")
+	}
+	return domain.Product{
+		Producto:          *name,
+		Precio:            currentPrice,
+		PrecioNormal:      normalPrice,
+		PrecioOferta:      offer,
+		EanGtin:           productCode,
+		SKU:               sku,
+		Marca:             normalize.Texto(item["brand"]),
+		FormatoCrudo:      formatFromText(*name, liderFormatPattern),
+		MecanicaPromocion: mechanics,
+		EnStock:           inStock,
+		URLProducto:       &productURL,
+		Imagen:            image,
+	}, true
 }
 
 func extractLiderCards(document *goquery.Document, responseURL *url.URL) []domain.Product {

@@ -282,3 +282,53 @@ func TestAcuentaRunPagination(t *testing.T) {
 		}
 	}
 }
+
+func TestAcuentaProductMode(t *testing.T) {
+	productURL := "https://www.acuenta.cl/p/helado-chocolate-1-l-savory-1075736"
+	body := `<script>self.__next_f.push([1,` +
+		`\"sku\":\"1075736\",\"name\":\"Helado Chocolate Suizo 1 L Savory\",\"ean\":null,\"maxQty\":1,` +
+		`\"slug\":\"helado-chocolate-1-l-savory-1075736\",\"brand\":\"Savory\",\"stock\":1,` +
+		`\"priceBeforeTaxes\":3490,\"promotion\":null` +
+		`])</script>`
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		productURL: response(productURL, body),
+	}}
+	spider := NewAcuenta(fetcher, t.TempDir(), 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{ProductURL: productURL}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	item := items[0]
+	// Igual que Python, el nombre del payload sólo se conserva si coincide con
+	// el slug; aquí se reconstruye desde el slug.
+	if item.Producto != "Helado Chocolate 1 L Savory" || item.Categoria != "producto" || item.Supermercado != "A Cuenta" {
+		t.Errorf("item = %+v", item)
+	}
+	if item.URLProducto == nil || *item.URLProducto != productURL {
+		t.Errorf("url = %v", item.URLProducto)
+	}
+	if len(fetcher.calls) != 1 || fetcher.calls[0] != productURL {
+		t.Errorf("calls = %v, want sólo la ficha", fetcher.calls)
+	}
+}
+
+func TestAcuentaRejectsNonProductURL(t *testing.T) {
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{}}
+	spider := NewAcuenta(fetcher, t.TempDir(), 100, quietLogger())
+	err := spider.Run(context.Background(), domain.Job{ProductURL: "https://www.acuenta.cl/ca/congelados/04"}, func(domain.Item) error {
+		return nil
+	})
+	if err == nil {
+		t.Fatal("Run() debió rechazar una categoría como product_url")
+	}
+	if len(fetcher.calls) != 0 {
+		t.Errorf("requests = %v", fetcher.calls)
+	}
+}

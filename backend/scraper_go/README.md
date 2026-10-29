@@ -63,6 +63,14 @@ de `scraper.productos_crudos`: `producto` 255; `sku`, `marca`, `categoria` y
 descripción comercial más larga que la columna no provoca `lote_rechazado` ni
 pierde el lote completo. El recorte es por runas para no romper UTF-8.
 
+La columna `product` y el fingerprint SHA-256 del spool se serializan byte a
+byte como `outbox.py`: claves ordenadas, floats con `.0` cuando son enteros,
+UTF-8 sin escapar en el producto y `ensure_ascii=True` en el arreglo
+`[market, data]` del hash. Esa igualdad es obligatoria para que un rollback a
+Python reutilice la restricción `UNIQUE` y no duplique
+`scraper.capturas_precios`. Las pruebas con hashes fijos viven en
+`internal/spool/pythonjson_test.go`.
+
 Si una ficha no publica SKU, el worker lo deriva de la URL del producto: usa el
 ID numérico final (`...-1993238/p`) o, si no existe, el slug de la ficha
 (por ejemplo Cugat). Catálogo exige `sku`, y sin este fallback un lote completo
@@ -529,6 +537,30 @@ Para el cutover:
 Borrar `backend/scraper` sólo después de que el cutover esté estable y de que
 todos los spiders tengan pruebas de paridad y una validación contra el HTML
 real de producción.
+
+## Deuda técnica acordada para después del merge
+
+Estos puntos no bloquean el cutover, pero quedan registrados para revisarlos
+con datos de producción:
+
+- **`robots.txt` con cache negativa.** Un fallo de red se recuerda durante
+  `robotsFailureTTL` (10 min) y se responde fail-open, igual que Scrapy. Un
+  `robots.txt` inexistente se cachea como reglas vacías durante una hora. El
+  riesgo es que una caída transitoria deje de consultar `robots.txt` durante
+  esa ventana; la cache es acotada y el conjunto de hosts es fijo (cinco
+  cadenas), por lo que no crece sin límite. Si se quiere un comportamiento más
+  estricto, bajar el TTL o distinguir errores de red de respuestas 4xx.
+- **Guardarraíl de concurrencia en `XPending`.** `Queue.Receive` consulta
+  `XPENDING` a nivel de grupo: si existe cualquier mensaje pendiente, no lee
+  trabajo nuevo. Con `replicas: 1` protege contra duplicados, pero al escalar
+  horizontalmente un trabajo en vuelo de otro consumidor frena a los demás.
+  Antes de subir réplicas hay que acotar la consulta al consumidor propio
+  (`XPENDING ... consumer`) o sustituirla por una métrica de backpressure.
+- **Memoria bajo el cgroup de 200 MiB.** La medición local con 200.000
+  productos dio 29,9 MB de RSS pico (16,3 MB `RssAnon`) en el host y 25,7 MB
+  (14,0 MB `RssAnon`) dentro de un cgroup de 192 MB, sin `OOMKilled`. Queda
+  pendiente repetir la medición en el cgroup real de 200 MiB con tráfico y
+  lotes de producción, y decidir si conviene fijar `GOMEMLIMIT`.
 
 ## Pendientes
 

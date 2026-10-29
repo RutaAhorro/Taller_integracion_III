@@ -83,6 +83,30 @@ func TestFetchReturns404ForSpiderPagination(t *testing.T) {
 	}
 }
 
+// Un 200 real con scripts públicos de Cloudflare/CDN no es un challenge: el
+// cuerpo debe entregarse al spider en vez de abortar el raspado.
+func TestFetchAcceptsPageWithCDNScripts(t *testing.T) {
+	body := `<html><head><script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>` +
+		`<script src="https://static.cloudflareinsights.com/beacon.min.js"></script></head>` +
+		`<body><h1>Leche Entera</h1></body></html>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/robots.txt" {
+			http.NotFound(w, r)
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+
+	response, err := testClient().Fetch(context.Background(), server.URL+"/producto")
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if string(response.Body) != body {
+		t.Errorf("body = %q", response.Body)
+	}
+}
+
 func TestFetchRetriesTransientStatus(t *testing.T) {
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +215,10 @@ func TestDetectBlockClassifiesStatusesAndBodies(t *testing.T) {
 		{name: "captcha verification", status: http.StatusOK, body: "captcha verification required", want: "captcha"},
 		{name: "recaptcha is normal", status: http.StatusOK, body: "grecaptcha-badge reCAPTCHA", want: ""},
 		{name: "wpforms captcha config is normal", status: http.StatusOK, body: `<div class="wpforms-recaptcha-container"></div><script>{"readOnlyDisallowedFields":["captcha","repeater"]}</script>`, want: ""},
+		{name: "cdnjs cloudflare script is normal", status: http.StatusOK, body: `<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script><h1>Leche</h1>`, want: ""},
+		{name: "cloudflare insights is normal", status: http.StatusOK, body: `<script src="https://static.cloudflareinsights.com/beacon.min.js"></script>`, want: ""},
+		{name: "cloudflare word in product name is normal", status: http.StatusOK, body: `<h1>Set Cloudflare 4 unidades</h1>`, want: ""},
+		{name: "404 keeps status for the spider", status: http.StatusNotFound, body: "Access Denied", want: ""},
 		{name: "normal page", status: http.StatusOK, body: "<h1>Frutas</h1>", want: ""},
 	}
 	for _, test := range tests {

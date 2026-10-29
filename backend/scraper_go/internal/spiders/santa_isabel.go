@@ -57,6 +57,9 @@ func (s *SantaIsabel) Name() string {
 }
 
 func (s *SantaIsabel) Run(ctx context.Context, job domain.Job, emit Emitter) error {
+	if job.ProductURL != "" {
+		return s.runProduct(ctx, job, emit)
+	}
 	if job.AddURL != "" {
 		if err := s.appendCategoryURL(job.AddURL); err != nil {
 			return err
@@ -72,6 +75,29 @@ func (s *SantaIsabel) Run(ctx context.Context, job domain.Job, emit Emitter) err
 		}
 	}
 	return nil
+}
+
+// runProduct atiende un scraping puntual. Nunca cae al crawl de categorías:
+// un target inválido, inexistente o ambiguo termina sin emitir productos.
+func (s *SantaIsabel) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
+	if err := validateSantaIsabelProductURL(job.ProductURL); err != nil {
+		return err
+	}
+	response, err := s.fetcher.Fetch(ctx, job.ProductURL)
+	if err != nil {
+		return err
+	}
+	if response.Status == 404 {
+		s.logger.Warn("santa_isabel_product_not_found", "url", job.ProductURL)
+		return nil
+	}
+	products := extractSantaIsabelProducts(response.Body, response.URL)
+	selected := selectProductByURL(products, job.ProductURL, response.URL)
+	if selected == nil {
+		s.logger.Warn("santa_isabel_product_without_data", "url", job.ProductURL, "candidatos", len(products))
+		return nil
+	}
+	return emit(toSantaIsabelItem(*selected, "producto", job.ProductURL))
 }
 
 func (s *SantaIsabel) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
@@ -146,6 +172,25 @@ func validateSantaIsabelURL(rawURL string) error {
 		santaIsabelAllowedHosts,
 		"La categoría debe ser una URL HTTPS pública de santaisabel.cl",
 	)
+}
+
+// validateSantaIsabelProductURL exige una ficha VTEX: termina en /p y no
+// apunta a una categoría. Evita que un product_url se use para saltar el
+// catálogo autorizado.
+func validateSantaIsabelProductURL(rawURL string) error {
+	message := "product_url debe ser una URL HTTPS de ficha /p de santaisabel.cl"
+	if err := validateHTTPSHost(rawURL, santaIsabelAllowedHosts, message); err != nil {
+		return err
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return errors.New(message)
+	}
+	path := strings.TrimRight(parsed.Path, "/")
+	if !strings.HasSuffix(path, "/p") || path == "/p" {
+		return errors.New(message)
+	}
+	return nil
 }
 
 func extractSantaIsabelProducts(body []byte, baseURL *url.URL) []domain.Product {

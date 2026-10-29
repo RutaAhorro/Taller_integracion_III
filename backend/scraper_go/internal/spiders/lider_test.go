@@ -226,3 +226,80 @@ func TestLiderRunPagination(t *testing.T) {
 		}
 	}
 }
+
+func TestLiderProductMode(t *testing.T) {
+	productURL := "https://super.lider.cl/ip/leche-entera/12345678"
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		productURL: response(productURL, `<script type="application/ld+json">
+{"@type":"Product","name":"Leche Entera 1 L","url":"/ip/leche-entera/12345678",
+ "gtin13":"7800000000001","sku":"L-1","brand":{"name":"Lider"},
+ "offers":{"price":"1290","availability":"https://schema.org/InStock"}}
+</script>`),
+	}}
+	spider := NewLider(fetcher, t.TempDir(), 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{ProductURL: productURL}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("items = %d, want 1", len(items))
+	}
+	item := items[0]
+	if item.Producto != "Leche Entera 1 L" || item.Categoria != "producto" || item.Supermercado != "Lider" {
+		t.Errorf("item = %+v", item)
+	}
+	if item.URLProducto == nil || *item.URLProducto != productURL {
+		t.Errorf("url = %v", item.URLProducto)
+	}
+	if len(fetcher.calls) != 1 || fetcher.calls[0] != productURL {
+		t.Errorf("calls = %v, want sólo la ficha", fetcher.calls)
+	}
+}
+
+func TestLiderProductModeReadsNextDataProduct(t *testing.T) {
+	productURL := "https://super.lider.cl/ip/leche-entera/12345678"
+	nextData := `{"props":{"pageProps":{"product":{` +
+		`"name":"Leche Entera 1 L","usItemId":"12345678","price":1290,` +
+		`"canonicalUrl":"/ip/leche-entera/12345678","sku":"L-1","brand":"Lider",` +
+		`"isOutOfStock":false,"imageInfo":{"thumbnailUrl":"/img/leche.webp"}}}}}`
+	body := `<html><body><script id="__NEXT_DATA__" type="application/json">` + nextData + `</script></body></html>`
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
+		productURL: response(productURL, body),
+	}}
+	spider := NewLider(fetcher, t.TempDir(), 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{ProductURL: productURL}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if len(items) != 1 || items[0].Producto != "Leche Entera 1 L" {
+		t.Fatalf("items = %+v", items)
+	}
+	if items[0].Precio == nil || *items[0].Precio != 1290 {
+		t.Errorf("precio = %v", items[0].Precio)
+	}
+	if items[0].URLProducto == nil || *items[0].URLProducto != productURL {
+		t.Errorf("url = %v", items[0].URLProducto)
+	}
+}
+
+func TestLiderRejectsNonProductURL(t *testing.T) {
+	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{}}
+	spider := NewLider(fetcher, t.TempDir(), 100, quietLogger())
+	err := spider.Run(context.Background(), domain.Job{ProductURL: "https://super.lider.cl/browse/frutas/22884697_93034836"}, func(domain.Item) error {
+		return nil
+	})
+	if err == nil {
+		t.Fatal("Run() debió rechazar una categoría como product_url")
+	}
+	if len(fetcher.calls) != 0 {
+		t.Errorf("requests = %v", fetcher.calls)
+	}
+}
