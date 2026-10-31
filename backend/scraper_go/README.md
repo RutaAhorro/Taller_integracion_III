@@ -1,0 +1,588 @@
+# Scraper Go
+
+Microservicio que reemplaza de forma gradual al worker de scraping de
+`backend/scraper` (Python/Scrapy). Mantiene el contrato HTTP con Control de
+Scraping, el stream y el grupo de Redis, el esquema del spool SQLite y los
+nombres de las variables de entorno.
+
+El worker de Python sigue siendo el proceso activo hasta completar la marcha
+paralela y el cutover. Este servicio es el camino de reemplazo y el mecanismo de
+rollback mientras ambos convivan.
+
+## Estado de la migración
+
+| Supermercado | Estado |
+| --- | --- |
+| Jumbo | Implementado: JSON-LD, paginación, modo producto y enriquecimiento EAN |
+| Santa Isabel | Implementado: renderData + fallback JSON-LD, paginación y filtro por seller |
+| Cugat | Implementado: tarjetas WooCommerce, JSON-LD, modo producto y detección de bloqueo ajustada |
+| Acuenta | Implementado: RSC, promociones, referencias EAN/imagen, tarjetas y CA intermedia |
+| Lider | Implementado: `__NEXT_DATA__`, tarjetas, paginación, HTTP/1.1 y cookies |
+
+La base del worker ya está implementada: configuración, cliente de Control de
+Scraping, outbox SQLite, cola Redis con lease y heartbeat, crawler con
+robots.txt/throttle/reintentos, detección de bloqueos, retención de spools y
+orquestación.
+
+## Arquitectura
+
+```text
+cmd/worker
+  └── internal/worker          orquesta lease, spool, crawl, entrega y cierre
+        ├── internal/queue     Redis Streams: receive, renew, ack, dead-letter
+        ├── internal/spool     outbox SQLite por trabajo (items, batches, progress)
+        ├── internal/spiders   registro de spiders y extracción por supermercado
+        │     └── internal/crawler   HTTP, robots.txt, throttle, reintentos
+        ├── internal/controlscraping contrato HTTP e idempotencia
+        ├── internal/normalize paridad de precios, EAN y texto con Python
+        ├── internal/storage   capacidad, limpieza y retención
+        └── internal/config    variables de entorno y límites
+```
+
+Un solo microservicio, con módulos internos. Los spiders dependen de las
+interfaces `Fetcher` y `Emitter`, no de Redis ni de SQLite.
+
+## Contrato
+
+- Cola: `scraper:jobs:stream`, grupo `scraper-workers`, índice
+  `scraper:jobs:index`, cerrados `scraper:jobs:closed:<trabajo_id>` y
+  dead-letter `scraper:jobs:dead`.
+- Ingesta: `POST /api/v1/scraper/trabajos/{id}/productos` con
+  `Idempotency-Key`.
+- Cierre: `PUT /api/v1/scraper/trabajos/{id}/finalizar`.
+- Estado: `GET /api/v1/scraper/trabajos/{id}`.
+- Autorización: `Authorization: Bearer $SCRAPING_SERVICE_TOKEN`.
+- Spool: `items`, `batches` y `progress`, compatible con
+  `backend/scraper/scraper_core/outbox.py`.
+
+Un producto conserva los campos y los `null` del contrato de Python. El
+supermercado viaja en el nivel superior del lote y la categoría dentro del
+producto. `CompleteItem` recorta los textos a los límites de
+`scraper.productos_crudos` **antes de guardar el item en el spool**:
+`producto` 255; `sku`, `marca`, `categoria` y `formato_crudo` 100; `ean_gtin`
+50; `mecanica_promocion` 255. Así el documento almacenado ya cumple el esquema
+y un rollback a Python sobre el mismo PVC no reenvía valores largos que
+Catálogo rechazaría con `lote_rechazado`. El cliente HTTP repite el límite
+como defensa para lotes reenviados. El recorte es por runas para no romper
+UTF-8.
+
+La columna `product` y el fingerprint SHA-256 del spool se serializan byte a
+byte como `outbox.py`: claves ordenadas, floats con `.0` cuando son enteros,
+UTF-8 sin escapar en el producto y `ensure_ascii=True` en el arreglo
+`[market, data]` del hash. Esa igualdad es obligatoria para que un rollback a
+Python reutilice la restricción `UNIQUE` y no duplique
+`scraper.capturas_precios`. Las pruebas con hashes fijos viven en
+`internal/spool/pythonjson_test.go`.
+
+Si una ficha no publica SKU, el worker lo deriva de la URL del producto: usa el
+ID numérico final (`...-1993238/p`) o, si no existe, el slug de la ficha
+(por ejemplo Cugat). Catálogo exige `sku`, y sin este fallback un lote completo
+se rechazaba por un solo producto sin identificador.
+
+## Configuración
+
+| Variable | Default | Uso |
+| --- | --- | --- |
+| `REDIS_URL` | `redis://localhost:6379/0` | Broker |
+| `SCRAPER_API_URL` | `http://localhost:8082/api/v1/scraper/productos` | Ingesta |
+| `SCRAPING_SERVICE_TOKEN` | vacío | Obligatorio en ejecución |
+| `SCRAPER_STATE_DIR` | `/var/lib/scraper` | Spools |
+| `SCRAPER_LEASE_MS` | `60000` | Lease mínima de 10 s |
+| `SCRAPER_STATE_MIN_FREE_BYTES` | `67108864` | Reserva mínima de 64 MiB |
+| `SCRAPER_FAILED_RETENTION_SECONDS` | `86400` | Retención de fallidos |
+| `SCRAPER_API_TIMEOUT` | `30` | Timeout de ingesta en segundos |
+| `SCRAPER_API_BATCH_SIZE` | `100` | Productos por lote (1..1000) |
+| `SCRAPER_QUEUE_NAME` | `scraper:jobs:stream` | Stream |
+| `SCRAPER_GROUP` | `scraper-workers` | Grupo de consumo |
+| `SCRAPER_CATEGORY_DIR` | `/app/research` | Archivos de categorías |
+| `SCRAPER_DOWNLOAD_DELAY_MS` | `2000` | Throttle por dominio |
+| `SCRAPER_DOWNLOAD_TIMEOUT` | `30` | Timeout HTTP |
+| `SCRAPER_DOWNLOAD_MAXSIZE` | `5242880` | Tamaño máximo de respuesta |
+| `SCRAPER_RETRY_TIMES` | `3` | Reintentos HTTP |
+| `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+`JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
+`ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
+separadas por coma sin editar el archivo. El endpoint
+`POST /api/v1/scraper/trabajos/{id}/ejecutar` acepta `add_url` y
+`enrich_ean`; el worker valida el host de `add_url` por cadena antes de
+escribir la categoría en el volumen compartido. `enrich_ean` lo aplica el
+spider de Jumbo.
+
+La fuente de verdad de las categorías es `backend/scraper_go/categories/`.
+Python las sigue leyendo desde `/app/research` mediante un montaje de compose;
+en el host, `backend/scraper/research/*_categories.txt` son enlaces simbólicos
+temporales a esa carpeta para no romper el rollback en Compose. Al borrar
+`backend/scraper`, los enlaces desaparecen pero las categorías quedan en Go.
+
+Una imagen Python reconstruida desde `backend/scraper` no incluye los TXT
+reales, porque los symlinks apuntan fuera del contexto de build. Para un
+rollback, usar la imagen Python ya construida o restaurar copias reales en
+`backend/scraper/research` antes de reconstruirla.
+
+## Desarrollo y pruebas
+
+Go no se instala en el host: las pruebas se ejecutan en Docker. Desde la raíz
+del repositorio.
+
+### Suite completa
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'gofmt -w . && go test ./... && go vet ./... && go build -o /tmp/scraper-worker ./cmd/worker'
+```
+
+La imagen usa el contexto de build en la raíz para tomar las categorías de
+`backend/scraper_go/categories`:
+
+```bash
+docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
+```
+
+### Extracción y paginación sin red
+
+Los tests de `internal/spiders` usan HTML de fixtures y validan JSON-LD, RSC,
+`__NEXT_DATA__`, paginación, modo producto y normalización. No consultan los
+sitios reales:
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'go test -v -count=1 ./internal/spiders'
+```
+
+### Extracción directa de URLs sin API
+
+`cmd/extract` ejecuta un spider contra URLs concretas y escribe un producto por
+línea (JSONL) en `stdout`. No usa Redis, la API ni el spool, así que sirve para
+probar el HTML real sin crear un trabajo. Primero construye la imagen local:
+
+```bash
+docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
+```
+
+Los ejemplos guardan los resultados en `resultados/`, en la raíz del
+repositorio. La carpeta está ignorada por Git para no mezclar archivos de prueba
+con el código. Crearla antes de ejecutar:
+
+```bash
+mkdir -p resultados
+```
+
+Probar una categoría de Jumbo (limita a la primera página para que sea rápido):
+
+```bash
+docker run --rm --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc \
+  -url 'https://www.jumbo.cl/frutas-y-verduras' \
+  -max-pages 1 \
+  > resultados/jumbo.jsonl
+```
+
+Probar una ficha de producto. Sólo Jumbo y Cugat tienen modo producto:
+
+```bash
+docker run --rm --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc -product \
+  -url 'https://www.jumbo.cl/palta-hass-jumbo-malla-1-kg/p' \
+  > resultados/producto.jsonl
+```
+
+Para varias categorías se puede repetir `-url` o usar un archivo:
+
+```bash
+docker run --rm --network host \
+  -v "$PWD/mis_urls.txt:/urls.txt:ro" \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider acuenta_rsc -file /urls.txt \
+  > resultados/acuenta.jsonl
+```
+
+El archivo acepta una URL por línea y comentarios con `#`. Si omites `-url` y
+`-file`, el spider usa todas las categorías de
+`backend/scraper_go/categories/<cadena>_categories.txt`. Para Acuenta, Santa
+Isabel y Lider el modo producto no existe: se prueban por categoría. Revisa los
+resultados con:
+
+```bash
+wc -l resultados/jumbo.jsonl
+jq -s 'length' resultados/jumbo.jsonl
+jq -s '.[0]' resultados/jumbo.jsonl
+```
+
+Si el archivo queda vacío, revisa el `stderr` del comando: ahí aparecen
+`*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
+`*_category_robots_disallowed` y los bloqueos `403/429/503/504`.
+
+### Prueba general y RAM en vivo con `cmd/extract`
+
+Para ejecutar todas las categorías de una cadena, omite `-url` y `-file`. El
+contenedor se llama `scraper-ram` para poder monitorearlo:
+
+```bash
+docker run --rm --name scraper-ram --network host \
+  --entrypoint /app/scraper-extract scraper-go:local \
+  -spider jumbo_rsc \
+  -max-pages 10 \
+  -delay 2s \
+  > resultados/jumbo-all.jsonl
+```
+
+`-max-pages 10` mantiene la prueba acotada. Para recorrer todas las páginas,
+usa `-max-pages 100` o elimina el flag.
+
+Con el proceso en ejecución, en otra terminal:
+
+```bash
+docker stats scraper-ram
+```
+
+Para obtener el pico de RAM del scraper:
+
+```bash
+while docker inspect -f '{{.State.Running}}' scraper-ram 2>/dev/null | grep -q true; do
+  docker exec scraper-ram grep VmHWM /proc/1/status 2>/dev/null
+  sleep 1
+done | tail -1
+```
+
+`VmHWM` es el máximo de memoria residente (`High Water Mark`) del proceso, en
+kB. No es el uso actual: eso es `VmRSS`. Como el scraper es el PID 1 del
+contenedor, este valor corresponde al pico real del scraper y se puede comparar
+con el gate de 150 MB.
+
+Para probar las cinco cadenas secuencialmente y obtener el pico de RAM de cada
+una al finalizar:
+
+```bash
+for spider in jumbo_rsc santa_isabel_rsc cugat_rsc acuenta_rsc lider_rsc; do
+  echo "=== $spider ==="
+  docker run --rm --name "scraper-${spider}" --network host \
+    -e SPIDER="$spider" \
+    --entrypoint sh scraper-go:local -c '
+      /app/scraper-extract \
+        -spider "$SPIDER" \
+        -max-pages 10 \
+        -delay 2s &
+      pid=$!
+      peak=""
+      while kill -0 "$pid" 2>/dev/null; do
+        hwm=$(grep VmHWM /proc/$pid/status 2>/dev/null)
+        [ -n "$hwm" ] && peak="$hwm"
+        sleep 1
+      done
+      wait "$pid"; status=$?
+      echo "pico_ram: $peak" >&2
+      exit $status
+    ' > "resultados/${spider}-all.jsonl" \
+      2> "resultados/${spider}-all.log"
+  echo "exit=$?"
+  tail -n 1 "resultados/${spider}-all.log"
+done
+```
+
+Al final de cada cadena verás algo como:
+
+```text
+pico_ram: VmHWM: 36864 kB
+```
+
+`VmHWM` es el máximo de memoria residente del proceso scraper. Para convertirlo
+a MB, divide los kB por 1024: `36864 / 1024 ≈ 36 MB`.
+
+El JSONL y el log quedan en el host:
+
+```text
+resultados/jumbo_rsc-all.jsonl
+resultados/jumbo_rsc-all.log
+...
+```
+
+Mientras corre el bucle, `docker stats` muestra el contenedor activo con el
+nombre `scraper-${spider}`. Al terminar, revisa los resultados:
+
+```bash
+wc -l resultados/jumbo_rsc-all.jsonl
+head -n 1 resultados/jumbo_rsc-all.jsonl
+grep -E 'pico_ram|extraidos=' resultados/jumbo_rsc-all.log
+```
+
+El `.log` debe incluir `extraidos=N` y el pico de RAM de esa cadena.
+
+### Validación contra sitios reales (26/10/2026)
+
+Con la imagen local y una página por cadena (`-max-pages 1`, `-delay 0`) los
+cinco spiders extraen productos del HTML vigente:
+
+| Cadena | Spider | Productos |
+| --- | --- | ---: |
+| Jumbo | `jumbo_rsc` | 40 |
+| Santa Isabel | `santa_isabel_rsc` | 40 |
+| Cugat | `cugat_rsc` | 25 |
+| Acuenta | `acuenta_rsc` | 43 |
+| Lider | `lider_rsc` | 44 |
+
+También se validó el modo producto de Jumbo y Cugat (1 producto cada uno).
+Además, se validó una página de cada categoría nueva agregada para Jumbo,
+Santa Isabel, Cugat y Acuenta (26/10/2026):
+
+| Cadena | Categorías nuevas validadas | Productos por página |
+| --- | ---: | ---: |
+| Jumbo | 4 | 40 |
+| Santa Isabel | 4 | 40 |
+| Cugat | 6 | 25 |
+| Acuenta | 6 | 50 |
+
+La validación de Cugat detectó que la configuración de WPForms incluye la
+palabra `captcha` en páginas normales; el detector se ajustó para exigir una
+instrucción de resolución o un campo exacto del desafío. Santa Isabel y Cugat
+no siempre publican SKU en el HTML; se derivó de la URL y las 20 páginas
+validadas quedaron sin SKU nulos ni duplicados. Lider respondió con el
+challenge de PerimeterX (`Robot or human?`) en las URLs nuevas durante esa
+pasada, por lo que no se validó su extracción: el cliente lo clasifica como
+bloqueo y el trabajo no se cierra como vacío.
+
+Esta prueba cubre una página por cadena y por categoría, no el catálogo
+completo. Los cambios que hicieron posible la paridad fueron:
+
+- Cugat: se dejó de tratar cualquier aparición de `captcha` como bloqueo. La
+  página normal incluye el CSS de reCAPTCHA y la configuración de WPForms, que
+  contienen esa palabra. Ahora sólo se reconoce en instrucciones de resolución
+  o en campos exactos del desafío; los scripts de reCAPTCHA no bloquean la
+  extracción.
+- Santa Isabel: el sitio dejó de publicar `window.__renderData`. Se conserva
+  ese parser y se agregó un fallback que lee el `ItemList` de JSON-LD.
+- Acuenta: el servidor no envía el certificado intermedio de GlobalSign. Se
+  embebe el intermedio público en `internal/crawler/certs/` y se agrega al
+  pool de confianza; no se desactiva la verificación TLS.
+- Lider: se usa HTTP/1.1 y un cookie jar como Scrapy. La página sigue detrás de
+  PerimeterX; si devuelve `Robot or human?` hay que reintentar más tarde, no
+  evadir el challenge.
+- Todas: el cliente HTTP conserva cookies entre `robots.txt` y la página.
+
+Cugat puede registrar `scraper_robots_unavailable` porque su `robots.txt`
+redirige en bucle; el aviso no impide la extracción. Cuando `robots.txt` falla,
+el cliente guarda el fallo durante 10 minutos por dominio: el crawl sigue en
+modo fail-open y no repite el warning en cada categoría.
+
+### Bloqueos y trabajos vacíos
+
+El cliente clasifica como bloqueo los estados `403`, `429`, `503` y `504`, y
+los cuerpos de challenge conocidos (`cf-chl`, `Just a moment`, captcha real,
+`Access Denied`, tráfico inusual, PerimeterX, etc.). No confunde el CSS de
+reCAPTCHA de una página normal con un challenge. Los reintentos usan backoff
+exponencial con jitter y respetan `Retry-After`; al agotar los intentos de una
+URL, el trabajo termina `fallido` y `registro_errores` empieza con:
+
+```text
+bloqueo: N respuestas bloqueadas (motivo=...)
+```
+
+El mismo conteo se envía en `respuestas_bloqueadas` al finalizar el trabajo y
+queda disponible en el DTO de Control y en la columna homónima de
+`scraper.trabajos_scraper`. Una categoría `200` sin productos ya no aborta el
+trabajo: se registra `*_category_without_products` y se continúa con la
+siguiente categoría, porque puede estar estacionalmente vacía o discontinuada
+(y Líder tiene más de 100 categorías). El bloqueo real se sigue detectando en
+el cliente HTTP por status o por marcadores de challenge. Si al final el crawl
+no produjo ningún producto, el trabajo se cierra como `fallido` (`sin
+productos`) en vez de declarar `completado` con `elementos_extraidos = 0`. El
+spool nunca genera lotes vacíos.
+
+### Gate de RAM
+
+El pipeline real de spool, lotes y entrega se mide con un catálogo sintético de
+200.000 productos. El test lee el pico `VmHWM` y muestrea `RssAnon`; falla si
+cualquiera supera 150 MB. CI ejecuta el gate en el host con el payload
+realista y además un binario de test precompilado dentro de un cgroup de
+192 MB, donde falla si el contenedor es `OOMKilled`. Ese segundo paso usa un
+payload compacto sobre `tmpfs` para evitar miles de `fsync` lentos del volumen
+de Docker; como `tmpfs` se cobra al cgroup, su `cgroup_peak_mb` es informativo
+y no se compara con el objetivo de producción. La medición se publica como
+artefacto `scraper-go-memory` con `items`, `compact`, `peak_rss_mb`,
+`peak_anon_rss_mb` y, para el paso en cgroup, `cgroup_limit_mb` y
+`cgroup_peak_mb`.
+
+```bash
+mkdir -p resultados
+docker run --rm --network host --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -e SCRAPER_MEMORY_GATE=1 \
+  -e SCRAPER_MEMORY_ITEMS=200000 \
+  -e SCRAPER_MEMORY_LIMIT_MB=150 \
+  -e SCRAPER_MEMORY_RESULT=/out/scraper-go-memory.json \
+  -v "$PWD/backend/scraper_go:/src" -v "$PWD/resultados:/out" -w /src \
+  golang:1.26-alpine \
+  sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
+```
+
+La última medición local fue 29,9 MB de RSS pico y 16,3 MB de `RssAnon` para
+200.000 productos. El binario precompilado pasó además con un cgroup de 192 MB
+sin ser `OOMKilled`: 25,7 MB de RSS pico, 14,0 MB de `RssAnon` y 156,2 MB de
+pico del cgroup (incluye `tmpfs` y la base de `alpine`). El gate no corre en la
+suite normal para no mezclar la medición de RAM con `-race`; el workflow
+`scraper-go-checks` lo ejecuta como paso separado.
+
+### Recuperación y reintentos
+
+Los casos críticos del worker de Python tienen equivalentes Go, sin depender de
+los sitios reales:
+
+- `TestProcessJobDoesNotCrawlTerminalJob`: un trabajo ya `completado` no vuelve
+  a ejecutar el spider.
+- `TestProcessJobWithCrawlDoneFinalizesWithoutCrawling`: si el crawl alcanzó a
+  terminar, se reintenta la entrega y el cierre sin repetir el crawl.
+- `TestProcessJobStopsAfterThreeCrawlAttempts`: tres intentos agotados se
+  derivan a revisión (`ErrCrawlExhausted`) sin ejecutar el spider.
+- `TestReplayRetriesSamePayloadAndIdempotencyKey`: una respuesta perdida
+  reenvía el mismo lote, payload e `Idempotency-Key`.
+- `TestReplayDoesNotSendWithCancelledContext`: una lease perdida no envía
+  lotes pendientes.
+- `TestQueueAckOwnershipAndDeadLetter` y
+  `TestCleanupSpoolRespectsExecutionLock`: ACK, dead-letter y limpieza no
+  borran un spool bloqueado.
+
+```bash
+docker run --rm --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
+  -e REDIS_TEST_URL=redis://host.docker.internal:6379/15 \
+  -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
+  sh -c 'go test -v -run "TestProcessJob|TestReplay|TestQueueAck|TestCleanupSpool" ./internal/...'
+```
+
+### Extracción real con Compose
+
+Con el stack base levantado y el token de `.env` exportado:
+
+```bash
+export SCRAPING_SERVICE_TOKEN='...'
+docker compose stop scraper_worker
+docker compose --profile scraper-go up -d --build scraper_worker_go
+docker logs -f go_scraper_worker
+```
+
+Crear un trabajo y ejecutar un producto puntual. Reemplaza `cadena_id` por el
+ID real de la cadena y la URL por un producto vigente. Jumbo y Cugat aceptan
+`producto_url`; para las demás cadenas se ejecuta la categoría completa:
+
+```bash
+JOB=$(curl -sS -X POST http://localhost:8080/api/v1/scraper/trabajos \
+  -H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"cadena_id":1}' | jq -r .id)
+
+curl -sS -X POST \
+  "http://localhost:8080/api/v1/scraper/trabajos/$JOB/ejecutar" \
+  -H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"spider":"jumbo_rsc","producto_url":"https://www.jumbo.cl/p/URL-DE-UN-PRODUCTO"}'
+```
+
+Consultar el avance y el total extraído:
+
+```bash
+watch -n 5 "curl -sS \
+  -H 'Authorization: Bearer $SCRAPING_SERVICE_TOKEN' \
+  http://localhost:8080/api/v1/scraper/trabajos/$JOB \
+  | jq '{estado, elementos_extraidos, respuestas_bloqueadas, registro_errores}'"
+```
+
+Un resultado correcto termina con `estado: "completado"` y
+`elementos_extraidos` mayor que cero. Un trabajo sin productos o con bloqueo
+persistente termina `fallido`, con `registro_errores` en `sin productos` o
+`bloqueo: N respuestas bloqueadas`. Revisar también en los logs
+`*_category_without_products`, `*_product_not_found`, `*_product_without_data`,
+`*_category_robots_disallowed`, `worker_job_blocked` y
+`worker_job_without_products`.
+
+Para probar una categoría completa, omitir `producto_url` y usar por ejemplo
+`{"spider":"jumbo_rsc"}`. Para Acuenta, Santa Isabel y Lider no hay modo
+producto; se prueba por categoría.
+
+### RAM del contenedor en vivo
+
+Durante un trabajo real:
+
+```bash
+docker stats --no-stream go_scraper_worker
+PID=$(docker inspect -f '{{.State.Pid}}' go_scraper_worker)
+grep -E 'VmRSS|VmHWM' /proc/$PID/status
+```
+
+`VmHWM` es el pico desde que arrancó el proceso. El límite de Compose es de
+128 MB, con una reserva de 64 MB. El gate de CI usa 150 MB y además valida que
+el worker no sea `OOMKilled` con un cgroup de 192 MB; el objetivo de producción
+es mantenerse en 100 MB o menos.
+
+## Marcha paralela y cutover
+
+El servicio de compose `scraper_worker_go` está detrás del perfil
+`scraper-go` y usa por defecto el mismo stream y grupo que Python. Para una
+marcha paralela, usar una cola y un grupo propios:
+
+```bash
+SCRAPER_GO_QUEUE_NAME=scraper:jobs:stream:go \
+SCRAPER_GO_GROUP=scraper-workers-go \
+docker compose --profile scraper-go up -d scraper_worker_go
+```
+
+Para el cutover:
+
+1. Aplicar la migración `infrastructure/db/07_respuestas_bloqueadas.sql` en la
+   base de Control **antes de actualizar los pods**. Sin esa columna, la
+   finalización de trabajos con `respuestas_bloqueadas` falla y el trabajo no
+   se cierra correctamente.
+2. Detener el worker de Python: `docker compose stop scraper_worker`.
+3. Levantar Go con los valores por defecto (mismo stream y grupo):
+   `docker compose --profile scraper-go up -d scraper_worker_go`.
+4. Verificar ACK, finalización y limpieza de spools en los logs.
+5. Rollback: detener Go y volver a levantar `scraper_worker`. El esquema del
+   spool es el mismo y los documentos ya están truncados al esquema de Catálogo.
+
+En Kubernetes, `infrastructure/k8s/scraper-go/deployment.yaml` fija
+`GOMEMLIMIT=105MiB` para dejar holgura de GC bajo el límite de 128 MiB del
+contenedor. La medición de producción sigue pendiente.
+
+Borrar `backend/scraper` sólo después de que el cutover esté estable y de que
+todos los spiders tengan pruebas de paridad y una validación contra el HTML
+real de producción.
+
+## Deuda técnica acordada para después del merge
+
+Estos puntos no bloquean el cutover, pero quedan registrados para revisarlos
+con datos de producción:
+
+- **`robots.txt` con cache negativa.** Un fallo de red se recuerda durante
+  `robotsFailureTTL` (10 min) y se responde fail-open, igual que Scrapy. Un
+  `robots.txt` inexistente se cachea como reglas vacías durante una hora. El
+  riesgo es que una caída transitoria deje de consultar `robots.txt` durante
+  esa ventana; la cache es acotada y el conjunto de hosts es fijo (cinco
+  cadenas), por lo que no crece sin límite. Si se quiere un comportamiento más
+  estricto, bajar el TTL o distinguir errores de red de respuestas 4xx.
+- **Guardarraíl de concurrencia en `XPending`.** `Queue.Receive` consulta
+  `XPENDING` a nivel de grupo: si existe cualquier mensaje pendiente, no lee
+  trabajo nuevo. Con `replicas: 1` protege contra duplicados, pero al escalar
+  horizontalmente un trabajo en vuelo de otro consumidor frena a los demás.
+  Antes de subir réplicas hay que acotar la consulta al consumidor propio
+  (`XPENDING ... consumer`) o sustituirla por una métrica de backpressure.
+- **Memoria bajo el cgroup de 128 MiB.** La medición local con 200.000
+  productos dio 29,9 MB de RSS pico (16,3 MB `RssAnon`) en el host y 25,7 MB
+  (14,0 MB `RssAnon`) dentro de un cgroup de 192 MB, sin `OOMKilled`. El
+  deployment de K8s fija `GOMEMLIMIT=105MiB` bajo el límite de 128 MiB. Queda
+  pendiente repetir la medición en el cgroup real con tráfico y lotes de
+  producción.
+
+## Pendientes
+
+- Completar la validación de las categorías nuevas contra el catálogo real,
+  más allá de una página por cadena.
+- Ejecutar el corte real a la imagen Go y medir el rollback con trabajos
+  pendientes en el entorno de despliegue.
+- Medir la mediana de tres ejecuciones de crawl e ingesta frente a Python y
+  confirmar que no supera el +15 %.
+- Confirmar el umbral de frescura y los identificadores `SUP-XXX` de la tarjeta.

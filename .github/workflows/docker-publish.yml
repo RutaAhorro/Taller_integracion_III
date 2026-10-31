@@ -5,18 +5,31 @@ on:
     branches:
       - main
       - develop
+      - develop-refactor
     paths:
-      - 'backend/api/**'
+      - 'backend/control_scraping/**'
+      - 'backend/identidad/**'
+      - 'backend/catalogo/**'
+      - 'backend/gateway/**'
+      - 'backend/motor_rutas/**'
       - 'backend/bot_discord/**'
+      - 'backend/scraper/**'
+      - 'backend/scraper_go/**'
+      - 'docker-compose.scraper-go.yml'
       - 'frontend/web/**'
       - '.github/workflows/**'
 
 env:
   REGISTRY: ghcr.io
   # GitHub convierte automáticamente esto al formato: ghcr.io/danirc2024/taller_integracion_iii
-  IMAGE_NAME_API: ${{ github.repository }}-api
+  IMAGE_NAME_CONTROL_SCRAPING: ${{ github.repository }}-control-scraping
+  IMAGE_NAME_IDENTIDAD: ${{ github.repository }}-identidad
+  IMAGE_NAME_CATALOGO: ${{ github.repository }}-catalogo
   IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
   IMAGE_NAME_SCRAPER: ${{ github.repository }}-scraper
+  IMAGE_NAME_SCRAPER_GO: ${{ github.repository }}-scraper-go
+  IMAGE_NAME_GATEWAY: ${{ github.repository }}-gateway
+  IMAGE_NAME_MOTOR_RUTAS: ${{ github.repository }}-motor-rutas
 
 jobs:
   build-and-push:
@@ -36,24 +49,135 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ==== BUILD API ====
-      - name: Extract metadata for API
-        id: meta-api
+      - name: Extract metadata for Gateway
+        id: meta-gateway
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_API }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_GATEWAY }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=sha
 
-      - name: Build and push API image
+      - name: Test Gateway image
         uses: docker/build-push-action@v5
         with:
-          context: ./backend/api
+          context: ./backend/gateway
+          target: test
+          push: false
+
+      - name: Build and push Gateway image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/gateway
           push: true
-          tags: ${{ steps.meta-api.outputs.tags }}
-          labels: ${{ steps.meta-api.outputs.labels }}
+          tags: ${{ steps.meta-gateway.outputs.tags }}
+          labels: ${{ steps.meta-gateway.outputs.labels }}
+
+      # ==== BUILD CONTROL DE SCRAPING ====
+      - name: Extract metadata for Control de scraping
+        id: meta-control-scraping
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_CONTROL_SCRAPING }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Control de scraping image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/control_scraping
+          target: test
+          push: false
+
+      - name: Build and push Control de scraping image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/control_scraping
+          push: true
+          tags: ${{ steps.meta-control-scraping.outputs.tags }}
+          labels: ${{ steps.meta-control-scraping.outputs.labels }}
+
+      # ==== BUILD IDENTIDAD ====
+      - name: Extract metadata for Identidad
+        id: meta-identidad
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_IDENTIDAD }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Identidad image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/identidad
+          target: test
+          push: false
+
+      - name: Build and push Identidad image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/identidad
+          push: true
+          tags: ${{ steps.meta-identidad.outputs.tags }}
+          labels: ${{ steps.meta-identidad.outputs.labels }}
+
+      # ==== BUILD MOTOR DE RUTAS ====
+      - name: Extract metadata for Motor de rutas
+        id: meta-motor-rutas
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_MOTOR_RUTAS }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Motor de rutas image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/motor_rutas
+          target: test
+          push: false
+
+      - name: Build and push Motor de rutas image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/motor_rutas
+          target: runtime
+          push: true
+          tags: ${{ steps.meta-motor-rutas.outputs.tags }}
+          labels: ${{ steps.meta-motor-rutas.outputs.labels }}
+
+      # ==== BUILD CATALOGO ====
+      - name: Extract metadata for Catalogo
+        id: meta-catalogo
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_CATALOGO }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Test Catalogo image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/catalogo
+          target: test
+          push: false
+
+      - name: Build and push Catalogo image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/catalogo
+          push: true
+          tags: ${{ steps.meta-catalogo.outputs.tags }}
+          labels: ${{ steps.meta-catalogo.outputs.labels }}
 
       # ==== BUILD FRONTEND ====
       - name: Extract metadata for Frontend
@@ -92,6 +216,28 @@ jobs:
           push: true
           tags: ${{ steps.meta-scraper.outputs.tags }}
           labels: ${{ steps.meta-scraper.outputs.labels }}
+
+      # ==== BUILD SCRAPER GO ====
+      # Se publica en paralelo al worker Python para poder hacer el cutover y
+      # el rollback sin reconstruir la imagen en producción.
+      - name: Extract metadata for Scraper Go
+        id: meta-scraper-go
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_SCRAPER_GO }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Build and push Scraper Go image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/scraper_go/Dockerfile
+          push: true
+          tags: ${{ steps.meta-scraper-go.outputs.tags }}
+          labels: ${{ steps.meta-scraper-go.outputs.labels }}
 
       # ==== BUILD DISCORD BOT ====
       - name: Extract metadata for Bot Discord

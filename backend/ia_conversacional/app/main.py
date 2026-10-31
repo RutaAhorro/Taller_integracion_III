@@ -31,15 +31,25 @@ app = FastAPI(
 )
 
 
+origenes_cors = [
+    origin.strip()
+    for origin in config.CORS_ALLOWED_ORIGINS.split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origenes_cors,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-repositorio_productos = ProductoRepositorio(config.PRODUCTOS_PATH)
+repositorio_productos = ProductoRepositorio(
+    base_url=config.CATALOGO_INTERNAL_URL,
+    timeout=config.CATALOGO_TIMEOUT,
+)
 
 proveedor_groq = GroqProveedor(
     api_key=config.GROQ_API_KEY,
@@ -74,7 +84,8 @@ def health_check():
     return {
         "status": "ok",
         "service": "ia_conversacional",
-        "productos_cargados": len(repositorio_productos)
+        "productos_cargados": len(repositorio_productos),
+        "fuente": repositorio_productos.fuente,
     }
 
 # --------------------------------------------------------------------------
@@ -82,4 +93,11 @@ def health_check():
 # --------------------------------------------------------------------------
 
 app.include_router(crear_router_productos(repositorio_productos))
-app.include_router(crear_router_chat(repositorio_productos, proveedor_groq, proveedor_gemini))
+app.include_router(
+    crear_router_chat(
+        repositorio=repositorio_productos,
+        proveedor_fallback=proveedor_fallback,
+        proveedor_groq=proveedor_groq,
+        proveedor_gemini=proveedor_gemini,
+    )
+)

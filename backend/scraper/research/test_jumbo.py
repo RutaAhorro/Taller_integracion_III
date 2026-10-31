@@ -461,7 +461,7 @@ class JumboExtractionTest(unittest.TestCase):
             )
             return type("Completed", (), {"returncode": 0, "stdout": "items", "stderr": ""})()
 
-        executor = ScrapyCommandExecutor(command_runner=run_command)
+        executor = ScrapyCommandExecutor(command_runner=run_command, collect_items=True)
         result = executor({})
 
         self.assertEqual(result["status"], "completed")
@@ -470,6 +470,18 @@ class JumboExtractionTest(unittest.TestCase):
         self.assertIn("crawl", commands[0][0])
         self.assertIn("-O", commands[0][0])
         self.assertTrue(commands[0][0][commands[0][0].index("-O") + 1].endswith(".jsonl"))
+
+    def test_scrapy_executor_worker_mode_does_not_load_catalog_in_memory(self):
+        commands = []
+
+        def run_command(command, **kwargs):
+            commands.append(command)
+            return type("Completed", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+        result = ScrapyCommandExecutor(command_runner=run_command)({})
+
+        self.assertNotIn("-O", commands[0])
+        self.assertNotIn("items", result)
 
     def test_runtime_cli_emits_extracted_items_as_jsonlines(self):
         item = {"sku": "sku-42", "precio": 990.0}
@@ -494,6 +506,7 @@ class JumboExtractionTest(unittest.TestCase):
         executor_class.return_value.assert_called_once_with(
             {"product_url": "https://www.jumbo.cl/p/42"}
         )
+        executor_class.assert_called_once_with(collect_items=True)
         self.assertEqual(stdout.getvalue(), json.dumps(item, ensure_ascii=False) + "\n")
         self.assertEqual(stderr.getvalue(), "scrapy stderr\nscrapy stdout\n")
 

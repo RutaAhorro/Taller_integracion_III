@@ -1,0 +1,70 @@
+# SUP-267: comparación aislada. No cambia el tráfico de la Gateway ni el Compose principal.
+services:
+  db:
+    image: postgis/postgis:15-3.3-alpine
+    environment:
+      POSTGRES_USER: sup267
+      POSTGRES_PASSWORD: ${SUP267_DB_PASSWORD:?}
+      POSTGRES_DB: sup267
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ${SUP267_INIT_DIR:?}:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -h 127.0.0.1 -U sup267 -d sup267']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  api:
+    image: sup267-api:local
+    build:
+      context: ${SUP267_REFERENCE_API_DIR:-./backend/control_scraping}
+      secrets: [network_ca]
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://sup267:${SUP267_DB_PASSWORD}@db:5432/sup267?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${SUP267_JWT_SECRET:?}
+      GOOGLE_CLIENT_ID: ''
+    ports: ['127.0.0.1:${SUP267_API_PORT:-18084}:8080']
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/health']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  catalogo:
+    image: sup267-catalogo:local
+    build:
+      context: ./backend/catalogo
+      secrets: [network_ca]
+    environment:
+      PORT: '8080'
+      DB_URL: postgres://sup267_catalog_reader:${SUP267_READER_PASSWORD}@db:5432/sup267?sslmode=disable
+      JWT_SECRET: ${SUP267_JWT_SECRET:?}
+      CORS_ALLOWED_ORIGINS: https://frontend.example
+    ports: ['127.0.0.1:${SUP267_CATALOGO_PORT:-18083}:8080']
+    depends_on:
+      db: {condition: service_healthy}
+      api: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: [CMD, wget, '-q', '--spider', 'http://127.0.0.1:8080/_catalogo/ready']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes:
+  pgdata:
+secrets:
+  network_ca:
+    file: ${SUP267_CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}

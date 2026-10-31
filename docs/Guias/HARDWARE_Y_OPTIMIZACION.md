@@ -1,37 +1,34 @@
 # Guía de Hardware y Optimización
 
-Dado que el servidor de despliegue y desarrollo es un procesador de gama básica (Intel Pentium), los recursos computacionales son estrictamente limitados. Para asegurar que la plataforma entera fluya sin congelar el sistema ni agotar la RAM, se implementaron reglas defensivas en la arquitectura de Docker.
+Nuestra arquitectura se divide estrictamente en dos entornos: **Producción** (Clúster Kubernetes UCT) y **Desarrollo** (Local vía Docker). Por exigencia del proyecto, **TODA la producción (incluido el Frontend) debe alojarse en el clúster**.
 
-## 1. Contención por Cgroups (Docker Compose)
-Los procesos matemáticos o de red agresivos pueden hacer que el procesador alcance el *Thermal Throttling* (ralentización por temperatura). Para evitarlo, en `docker-compose.yml` se configuraron límites duros (Hardware Limits):
+Ambos entornos tienen recursos estrictamente limitados, por lo que la plataforma entera debe diseñarse con reglas defensivas para no agotar la RAM ni asfixiar la CPU.
 
-- **Web Scraper (`web_scraper_alimentos`)**: 
-  - **Límite RAM**: `3GB`
-  - **Límite CPU**: `1.0` (un solo núcleo lógico).
-  - *Justificación*: Scrapy encolará miles de peticiones asíncronas para extraer catálogos. El límite de RAM previene un "Out of Memory" (OOM) en el host.
-- **Motor de Rutas (`spatial_optimizer`)**: 
-  - **Límite RAM**: `2GB`
-  - **Límite CPU**: `0.8` (80% de un núcleo).
-  - *Justificación*: Procesar grafos espaciales (NetworkX / OSMnx) es carga pesada para la CPU. El límite garantiza que la API Gateway no se caiga por culpa de que el motor de rutas asfixie el hardware.
-- **Bot de Discord (Scrum Master y Alertas)**: 
-  - **Límite RAM**: `100MB`
-  - **Límite CPU**: `0.2` (20% de un núcleo).
-  - *Justificación*: El bot, desarrollado en Go (`discordgo`), es una herramienta de gestión y comunicación extremadamente ligera. Sus responsabilidades incluyen escuchar eventos para enviar avisos de pusheos en Git, listar PR activos, notificar asignaciones o cierres de tareas desde Linear, e incluir botones para gatillar el web scraping manual. Al ser impulsado por eventos I/O asíncronos y no procesar grandes volúmenes de memoria, asignarle más recursos del procesador básico sería innecesario.
+## 1. Producción: Clúster Kubernetes UCT
+El clúster aloja **todos** los microservicios: Frontend (React/Vite), API Gateway (Go), Scraper (Python), Bot de Discord, Base de Datos (PostgreSQL) y Redis. La restricción principal aquí es por Pod:
 
-> *La Base de Datos (PostgreSQL) y el API Gateway no tienen límites estrictos para asegurar que no sufran latencias en las peticiones web, confiando en que su uso es estable.*
+* **Límites de Pod en K8s:** `512MB de RAM` y `2 Núcleos (Cores)` máximo por Pod.
+* *Justificación:* Al tener solo 512MB de RAM, **ningún servicio puede derrochar memoria**. El motor de rutas, el scraper y el backend en Go deben ser extremadamente cuidadosos con las estructuras (evitando cargar datasets enteros a la RAM). Un _memory leak_ o falta de paginación matará el Pod inmediatamente por *OOMKilled*.
 
-## 2. Dieta de los Dockerfiles (Ahorro de Disco y Memoria)
-Revisando los `Dockerfile` del Frontend, API, Scraper y Motor, todos están estandarizados bajo técnicas de "Slimming":
+## 2. Desarrollo: Entorno Local (Docker Compose)
+El desarrollo se realiza en computadoras locales (como procesadores Intel Pentium básicos) utilizando `docker-compose`. 
+
+* **Límites en Docker Compose (Local):**
+  * Para asegurar que el código no falle en producción, el entorno local debe emular las restricciones del clúster usando `deploy.resources.limits` en el archivo `docker-compose.yml`.
+  * Se asignan límites bajos (ej. 100MB al Bot, 200MB al API) para no asfixiar la máquina física local mientras corren todos los contenedores al mismo tiempo.
+
+## 3. Dieta de los Dockerfiles (Ahorro de Disco y Memoria)
+Para cumplir con estos límites tan estrictos de K8s, todos los `Dockerfile` del proyecto están estandarizados bajo técnicas de "Slimming":
 
 1. **Imágenes Base Enanas:** 
-   - Backend: `python:3.11-slim` (Solo las librerías base de Debian, omitiendo interfaces gráficas y paquetes pesados de Ubuntu completo).
-   - Frontend: `node:20-alpine` (La distribución más diminuta de Linux, apenas unos megabytes).
-2. **Prevención de Basura en Disco:** 
-   - `ENV PYTHONDONTWRITEBYTECODE=1`: Instruye a Python a no crear archivos intermedios `.pyc`, salvando operaciones de disco (I/O) en el Pentium.
+   - Backend (Python): `python:3.11-slim` (Solo las librerías base de Debian, omitiendo el peso de un Ubuntu completo).
+   - Backend y Bot (Go): Las binarias de Go se sirven en contenedores `-alpine` o `distroless`.
+   - Frontend: `node:20-alpine` o `nginx:alpine` para servir los estáticos ocupando el mínimo espacio.
+2. **Prevención de Basura en Disco/Memoria:** 
+   - `ENV PYTHONDONTWRITEBYTECODE=1`: Instruye a Python a no crear archivos intermedios `.pyc`.
    - `pip install --no-cache-dir`: Evita que pip guarde copias ocultas de las librerías tras instalarlas.
-   - `apt-get install --no-install-recommends`: Instala solo las librerías de C++ críticas, rechazando el bloatware recomendado por el sistema operativo.
 
 ## Manteniendo la Optimización a Futuro
-Para el equipo de desarrollo, si agregan un nuevo microservicio, la regla de oro es:
-1. Iniciar con imágenes `-slim` o `-alpine`.
-2. Definir un límite en `docker-compose.yml` (`deploy.resources.limits`) si sospechan que el proceso hace cálculos pesados en *loops*.
+Para el equipo de desarrollo, la regla de oro al agregar o modificar servicios es:
+1. Iniciar siempre con imágenes `-slim` o `-alpine`.
+2. Vigilar el consumo de RAM en las iteraciones. Con un límite de 512MB en Kubernetes, nunca hagas peticiones `SELECT *` completas a la base de datos sin paginación.

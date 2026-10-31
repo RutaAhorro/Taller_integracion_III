@@ -64,6 +64,7 @@ No perceptiblemente. El script tarda menos de 1 segundo en analizar todo el proy
 | Servicio | Lenguaje | Archivos |
 |---|---|---|
 | `backend/api/` | Go | `.go` |
+| `backend/catalogo/` | Go | `.go` |
 | `backend/ia_conversacional/` | Python | `.py` |
 | `backend/motor_rutas/` | Python | `.py` |
 | `backend/scraper/` | Python | `.py` |

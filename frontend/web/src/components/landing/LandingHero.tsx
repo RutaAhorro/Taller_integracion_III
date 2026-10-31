@@ -8,7 +8,7 @@ export function LandingHero() {
     <section className="relative py-20 overflow-hidden">
       {/* Deco orbs pastel eliminadas a petición del usuario */}
 
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6 grid grid-cols-1 md:grid-cols-[1.1fr_1fr] gap-[3rem] md:gap-[4rem] items-center relative z-10">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6 grid grid-cols-1 md:grid-cols-[1.1fr_1fr] gap-[3rem] md:gap-[4rem] items-center relative z-10">
         {/* Columna izquierda */}
         <div>
           <h1 className="font-['Fredoka'] italic text-[2.25rem] md:text-[clamp(2.25rem,4.5vw,3.5rem)] font-bold text-foreground leading-[1.1] md:leading-[1.08] mb-4 md:mb-6 tracking-[-0.01em]">

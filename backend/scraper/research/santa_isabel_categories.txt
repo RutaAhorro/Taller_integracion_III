@@ -1,14 +1,1 @@
-# categoria frutas y verduras
-https://www.santaisabel.cl/frutas-y-verduras
-
-# Categoria Lacteos, Huevos y Congelados
-https://www.santaisabel.cl/lacteos-huevos-y-congelados
-
-# Categoria quesos y fiambres
-https://www.santaisabel.cl/quesos-y-fiambres
-
-# Categoria despensa
-https://www.santaisabel.cl/despensa
-
-# Categoria Carnes y Pescados
-https://www.santaisabel.cl/carnes-y-pescados
+../../scraper_go/categories/santa_isabel_categories.txt

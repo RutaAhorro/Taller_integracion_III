@@ -6,7 +6,6 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   ChevronDown,
   Flame,
-  Heart,
   MapPin,
   Percent,
   Store,
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Link } from 'react-router-dom'
+import { useRole } from '@/hooks/useRole'
 import type { UiSupermarket } from '@/types'
 
 type SideBarProps = {
@@ -42,6 +42,11 @@ const featured = [
 ]
 
 const departments: { id: string; label: string; items: string[] }[] = [
+  {
+    id: 'frutas-verduras',
+    label: 'Frutas y Verduras',
+    items: ['Frutas', 'Verduras'],
+  },
   {
     id: 'lacteos',
     label: 'Lácteos, Huevos y Refrigerados',
@@ -108,6 +113,8 @@ export function SideBar({
   const [openDept, setOpenDept] = useState<string | null>(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
+  // SUP-256: Misiones solo colaborador o admin.
+  const { canAccessColaborador } = useRole()
 
   const handleCategoryClick = (category: string, closeSidebar = true) => {
     onSelectCategory(category)
@@ -218,71 +225,6 @@ export function SideBar({
             </ul>
           </nav>
 
-          {/* HERRAMIENTAS IA */}
-          <nav aria-label="Asistente IA">
-            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Herramientas IA
-            </p>
-            <ul className="flex flex-col gap-1">
-              <li>
-                <Link
-                  to="/chat"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/chat')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Bot className="h-4.5 w-4.5" aria-hidden="true" />
-                  Chat Inteligente
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/history"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/history')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Map className="h-4.5 w-4.5" aria-hidden="true" />
-                  Listas y Rutas
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/recetas"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/recetas')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <ChefHat className="h-4.5 w-4.5" aria-hidden="true" />
-                  Recetas IA
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/colaborador"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/colaborador')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Users className="h-4.5 w-4.5" aria-hidden="true" />
-                  Misiones
-                </Link>
-              </li>
-            </ul>
-          </nav>
-
           {/* DEPARTAMENTOS Y CATEGORÍAS */}
           <nav aria-label="Departamentos y categorías">
             <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -355,9 +297,132 @@ export function SideBar({
               })}
             </ul>
           </nav>
+
+          {/* SUPERMERCADOS */}
+          <nav aria-label="Supermercados">
+            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Supermercados
+            </p>
+            <ul className="flex flex-col gap-1">
+              <li>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectMarket(null)
+                    navigate('/dashboard')
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    activeMarket === null
+                      ? 'bg-accent text-accent-foreground font-bold'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <Store
+                    className={`h-4.5 w-4.5 ${
+                      activeMarket === null ? 'text-foreground' : 'text-muted-foreground'
+                    }`}
+                    aria-hidden="true"
+                  />
+                  Todos
+                </button>
+              </li>
+              {availableMarkets.map((market) => (
+                <li key={market.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectMarket(activeMarket === market.id ? null : market.id)
+                      navigate('/dashboard')
+                    }}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                      activeMarket === market.id
+                        ? 'bg-accent text-accent-foreground font-bold'
+                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <Store
+                      className={`h-4.5 w-4.5 ${
+                        activeMarket === market.id ? 'text-foreground' : 'text-muted-foreground'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {market.name}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
+          {/* HERRAMIENTAS IA */}
+          <nav aria-label="Asistente IA">
+            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Herramientas IA
+            </p>
+            <ul className="flex flex-col gap-1">
+              <li>
+                <Link
+                  to="/chat"
+                  onClick={onClose}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    pathname.startsWith('/chat')
+                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <Bot className="h-4.5 w-4.5" aria-hidden="true" />
+                  Chat Inteligente
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/history"
+                  onClick={onClose}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    pathname.startsWith('/history')
+                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <Map className="h-4.5 w-4.5" aria-hidden="true" />
+                  Listas y Rutas
+                </Link>
+              </li>
+              <li>
+                <Link
+                  to="/recetas"
+                  onClick={onClose}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    pathname.startsWith('/recetas')
+                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                  }`}
+                >
+                  <ChefHat className="h-4.5 w-4.5" aria-hidden="true" />
+                  Recetas IA
+                </Link>
+              </li>
+              {/* SUP-256: Misiones solo colaborador o admin. */}
+              {canAccessColaborador && (
+                <li>
+                  <Link
+                    to="/colaborador"
+                    onClick={onClose}
+                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                      pathname.startsWith('/colaborador')
+                        ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+                    }`}
+                  >
+                    <Users className="h-4.5 w-4.5" aria-hidden="true" />
+                    Misiones
+                  </Link>
+                </li>
+              )}
+            </ul>
+          </nav>
         </div>
 
-        <div className="border-t border-border px-4 py-4 space-y-3">
+        <div className="border-t border-border px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-3">
           {/* Plan Container */}
           <Link
             to="/planes"

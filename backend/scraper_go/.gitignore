@@ -1,0 +1,4 @@
+/worker
+/scraper-worker
+*.test
+coverage.out

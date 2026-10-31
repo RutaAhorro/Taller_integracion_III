@@ -20,7 +20,7 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://go_service:8080',
+        target: 'http://api:8080',
         changeOrigin: true,
       },
     },

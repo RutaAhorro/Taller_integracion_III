@@ -20,6 +20,28 @@ spec:
       - env:
         - name: PGDATA
           value: /var/lib/postgresql/data/pgdata
+        - name: IDENTITY_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: identity-db-secret
+              key: DB_PASSWORD
+        - name: SCRAPING_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: scraping-db-secret
+              key: DB_PASSWORD
+        - name: CATALOGO_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: catalogo-db-secret
+              key: DB_PASSWORD
+        # SUP-240: sólo inicializa volúmenes nuevos; opcional para no detener la DB existente.
+        - name: RUTAS_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rutas-db-secret
+              key: DB_PASSWORD
+              optional: true
         envFrom:
         - secretRef:
             name: db-secret
