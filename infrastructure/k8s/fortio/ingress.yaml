@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: fortio-ingress
+  labels:
+    app: fortio
+  annotations:
+    external-dns.alpha.kubernetes.io/target: "proxy.inf.uct.cl"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: fortio-vmatus.dev.censei.cl
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: fortio
+            port:
+              number: 8080

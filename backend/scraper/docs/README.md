@@ -18,14 +18,16 @@ La API y el worker se conectan mediante Redis. Primero se inicia el worker desde
 
 ```bash
 REDIS_URL=redis://localhost:6379/0 \
-SCRAPER_API_URL=http://localhost:8080/api/v1/scraper/productos \
+SCRAPING_SERVICE_TOKEN="$SCRAPING_SERVICE_TOKEN" \
+SCRAPER_API_URL=http://localhost:8082/api/v1/scraper/productos \
 .venv/bin/python -m scraper_core.worker
 ```
 
 En otra terminal, se registra y encola un trabajo:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/scraper/trabajos \
+curl -X POST http://localhost:8082/api/v1/scraper/trabajos \
+	-H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
 	-H "Content-Type: application/json" \
 	-d '{"cadena_id":1}'
 ```
@@ -33,10 +35,14 @@ curl -X POST http://localhost:8080/api/v1/scraper/trabajos \
 Con el `id` devuelto, se dispara el spider:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/scraper/trabajos/{ID}/ejecutar \
+curl -X POST http://localhost:8082/api/v1/scraper/trabajos/{ID}/ejecutar \
+	-H "Authorization: Bearer $SCRAPING_SERVICE_TOKEN" \
 	-H "Content-Type: application/json" \
 	-d '{"spider":"jumbo_rsc"}'
 ```
+
+Control de scraping exige `SCRAPING_SERVICE_TOKEN` (el mismo valor del `.env`) como
+`Authorization: Bearer` en todas las rutas `/api/v1/scraper/*`; sin él responde 401.
 
 Los spiders permitidos son `jumbo_rsc`, `santa_isabel_rsc`, `cugat_rsc`, `acuenta_rsc` y `lider_rsc`. El estado se consulta con `GET /api/v1/scraper/trabajos/{ID}` y debe avanzar de `en_progreso` a `completado` o `fallido`. La ingesta se realiza por lotes en `POST /api/v1/scraper/trabajos/{ID}/productos`.
 
@@ -157,7 +163,43 @@ Para actualizar un producto concreto, pasa su URL pública:
 python -m scraper_core.runtime --product-url "https://www.jumbo.cl/ruta-del-producto"
 ```
 
-El runtime captura los items en un feed JSONL temporal y retorna los objetos en `result["items"]`. Para persistirlos mediante la API se debe usar el worker y el flujo disparado desde la API descrito arriba.
+El modo CLI captura los items en un feed JSONL temporal y los imprime por `stdout`. El worker, en cambio, no carga el catálogo en memoria: entrega cada producto al spool SQLite mediante el pipeline y sólo conserva el estado del trabajo.
+
+### Medición de memoria
+
+El worker no debe retener el catálogo completo. Para verificar el consumo antes y después, hay un benchmark reproducible que compara los tres modos en procesos separados:
+
+```bash
+.venv/bin/python research/bench_memory.py --items 150000
+```
+
+Salida esperada en un equipo de referencia:
+
+```
+Modo                            RSS pico     Δ vs base
+antes (lista completa)          234.1 MB       217.5 MB
+ahora (worker)                   16.7 MB         0.0 MB
+CLI (collect_items=True)        234.2 MB       217.5 MB
+```
+
+`--max-worker-mb 120` hace que el script falle si el modo worker vuelve a retener ítems, por lo que puede usarse como gate de CI.
+
+Para medir un crawl real dentro del contenedor, muestrea el cgroup mientras corre el trabajo:
+
+```bash
+docker exec python_scraper_worker sh -c '
+while :; do
+  cur=$(cat /sys/fs/cgroup/memory.current)
+  anon=$(awk "/^anon /{print \$2}" /sys/fs/cgroup/memory.stat)
+  file=$(awk "/^file /{print \$2}" /sys/fs/cgroup/memory.stat)
+  printf "%s current=%sMB anon=%sMB file=%sMB\n" \
+    "$(date +%T)" "$((cur/1048576))" "$((anon/1048576))" "$((file/1048576))"
+  sleep 2
+done'
+```
+
+`anon` es memoria real del proceso; `file` es page cache y no debe interpretarse como consumo del scraper. Un `OOMKilled=true` en `docker inspect` confirma que el límite del cgroup fue el problema.
+
 
 Cada producto conserva los campos básicos (`producto`, `precio`, `categoria`, `imagen`) y puede incluir `ean_gtin`, `sku`, `precio_normal`, `precio_oferta`, `marca`, `formato_crudo`, `mecanica_promocion`, `en_stock` y `url_producto`. Los campos no publicados por el supermercado origen quedan como `null`.
 

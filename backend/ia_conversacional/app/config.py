@@ -17,8 +17,25 @@ load_dotenv(PROJECT_ROOT / ".env")
 PRODUCTOS_PATH = BASE_DIR / "productos.json"
 
 # --------------------------------------------------------------------------
-# Groq
+# Seguridad y Autenticación (JWT emitido por Identidad)
 # --------------------------------------------------------------------------
+JWT_SECRET = os.getenv("JWT_SECRET")
+
+# --------------------------------------------------------------------------
+# CORS
+# --------------------------------------------------------------------------
+CORS_ALLOWED_ORIGINS = os.getenv(
+    "IA_CORS_ALLOWED_ORIGINS",
+    os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173"),
+)
+
+# --------------------------------------------------------------------------
+# Catálogo interno (SUP-246 / RNF-05: HTTP interno, sin credenciales de BD)
+# --------------------------------------------------------------------------
+
+CATALOGO_INTERNAL_URL = os.getenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
+CATALOGO_TIMEOUT = float(os.getenv("CATALOGO_TIMEOUT", "5.0"))
+
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"

@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: scraper-go
+  name: scraper-go
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: scraper-go
+  template:
+    metadata:
+      labels:
+        app: scraper-go
+    spec:
+      containers:
+      - env:
+        - name: REDIS_URL
+          value: redis://redis:6379/0
+        - name: SCRAPER_API_URL
+          value: http://api:8080/api/v1/scraper/productos
+        - name: SCRAPING_SERVICE_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: scraping-service-secret
+              key: token
+        - name: SCRAPER_STATE_DIR
+          value: /var/lib/scraper
+        - name: SCRAPER_CATEGORY_DIR
+          value: /app/research
+        - name: SCRAPER_LEASE_MS
+          value: '60000'
+        - name: SCRAPER_STATE_MIN_FREE_BYTES
+          value: '67108864'
+        - name: SCRAPER_FAILED_RETENTION_SECONDS
+          value: '86400'
+        - name: SCRAPER_API_TIMEOUT
+          value: '30'
+        - name: SCRAPER_API_BATCH_SIZE
+          value: '100'
+        - name: SCRAPER_QUEUE_NAME
+          value: scraper:jobs:stream
+        - name: SCRAPER_GROUP
+          value: scraper-workers
+        - name: GOMEMLIMIT
+          value: 105MiB
+        - name: LOG_LEVEL
+          value: INFO
+        image: ghcr.io/danirc2024/taller_integracion_iii-scraper-go:develop
+        imagePullPolicy: Always
+        name: scraper-go
+        securityContext:
+          allowPrivilegeEscalation: false
+        resources:
+          limits:
+            cpu: 500m
+            memory: 128Mi
+          requests:
+            cpu: 50m
+            memory: 64Mi
+        volumeMounts:
+        - name: scraper-state
+          mountPath: /var/lib/scraper
+        - name: tmp
+          mountPath: /tmp
+      volumes:
+      - name: scraper-state
+        persistentVolumeClaim:
+          claimName: scraper-state
+      - name: tmp
+        emptyDir:
+          sizeLimit: 256Mi

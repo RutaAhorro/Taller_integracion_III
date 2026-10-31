@@ -4,7 +4,7 @@ import { buttonVariants } from "@/components/ui/button";
 export function LandingCTA() {
   return (
     <section className="py-[2.5rem] md:py-[3.5rem] px-0 md:px-0 pt-0">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6">
         <div className="relative overflow-hidden rounded-[var(--radius)] p-[2.5rem_1.5rem] md:p-[3.5rem_3rem] bg-gradient-to-br from-brand-dark-2 to-brand-dark text-primary-foreground border-2 border-border shadow-[10px_10px_0_var(--color-border)] text-center">
           <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(45deg, transparent 0 40px, oklch(1 0 0 / 0.04) 40px 41px)" }} />
           

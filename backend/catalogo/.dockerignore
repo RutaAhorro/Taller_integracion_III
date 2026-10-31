@@ -1,0 +1,7 @@
+.env
+.env.*
+*.log
+*.test
+coverage*
+tests/
+README.md

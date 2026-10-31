@@ -35,6 +35,12 @@ func main() {
 		log.Fatal("DISCORD_CHANNEL_ID no configurado en entorno")
 	}
 
+	// Control de scraping responde 401 sin este token: fallar al arrancar y no
+	// recién cuando alguien presiona un botón.
+	if os.Getenv("SCRAPING_SERVICE_TOKEN") == "" {
+		log.Fatal("SCRAPING_SERVICE_TOKEN no configurado en entorno")
+	}
+
 	pushChannelID := os.Getenv("DISCORD_PUSH_CHANNEL_ID")
 	if pushChannelID == "" {
 		// Fallback por si no lo configuran de inmediato

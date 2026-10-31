@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: identidad-ingress
+spec:
+  podSelector:
+    matchLabels: {app: identidad}
+  policyTypes: [Ingress]
+  # Los probes exec del Deployment usan loopback; no necesitan ampliar este ingreso.
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: gateway}
+        - podSelector:
+            matchLabels: {app: catalogo}
+      ports:
+        - {protocol: TCP, port: 8080}

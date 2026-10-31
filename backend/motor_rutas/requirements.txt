@@ -5,3 +5,7 @@ pydantic>=2.0.0
 # Reemplazados por OR-Tools (Algoritmo TSP exacto) y httpx (Llamadas a OTP Docker)
 ortools>=9.7.0
 httpx>=0.24.1
+# SUP-240: rutas.* con el rol app_rutas y validación del JWT de Identidad (HS256)
+psycopg[binary]>=3.2
+psycopg-pool>=3.2
+PyJWT>=2.8

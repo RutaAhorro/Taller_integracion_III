@@ -23,7 +23,7 @@ export function LandingNavbar() {
 
   return (
     <nav className="sticky top-0 z-50 bg-[oklch(0.958_0.015_90/0.85)] backdrop-blur-[14px] border-b-2 border-border">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6 flex items-center justify-between gap-8 h-[76px]">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6 flex items-center justify-between gap-8 h-[76px]">
         <Link to="/" className="flex items-center gap-3 no-underline text-foreground">
           <span className="relative w-[44px] h-[44px] rounded-[var(--radius)] flex items-center justify-center text-[1.25rem] text-primary-foreground bg-gradient-to-br from-[var(--brand)] to-[var(--brand-dark)] border-2 border-border shadow-[3px_3px_0_var(--color-border)] overflow-hidden">
             <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(115deg, transparent 0 5px, oklch(0.2 0.02 60 / 0.12) 5px 6px)" }} />

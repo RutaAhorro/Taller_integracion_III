@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: motor-rutas
+  labels:
+    app: motor-rutas
+spec:
+  type: ClusterIP
+  selector:
+    app: motor-rutas
+  ports:
+    - name: http
+      port: 8001
+      targetPort: http
+      protocol: TCP

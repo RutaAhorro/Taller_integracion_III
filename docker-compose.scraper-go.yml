@@ -1,0 +1,47 @@
+services:
+  scraper_worker_go:
+    build:
+      context: .
+      dockerfile: backend/scraper_go/Dockerfile
+    image: ghcr.io/danirc2024/taller_integracion_iii-scraper-go:${SCRAPER_GO_IMAGE_TAG:-develop}
+    pull_policy: missing
+    container_name: go_scraper_worker
+    profiles: ["scraper-go"]
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - SCRAPER_API_URL=http://api:8080/api/v1/scraper/productos
+      - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
+      - SCRAPER_STATE_DIR=/var/lib/scraper
+      - SCRAPER_CATEGORY_DIR=/app/research
+      - SCRAPER_LEASE_MS=60000
+      - SCRAPER_STATE_MIN_FREE_BYTES=67108864
+      - SCRAPER_FAILED_RETENTION_SECONDS=86400
+      - SCRAPER_API_TIMEOUT=30
+      - SCRAPER_API_BATCH_SIZE=100
+      - SCRAPER_QUEUE_NAME=${SCRAPER_GO_QUEUE_NAME:-scraper:jobs:stream}
+      - SCRAPER_GROUP=${SCRAPER_GO_GROUP:-scraper-workers}
+      - SCRAPER_DOWNLOAD_DELAY_MS=2000
+      - SCRAPER_DOWNLOAD_TIMEOUT=30
+      - SCRAPER_DOWNLOAD_MAXSIZE=5242880
+      - SCRAPER_RETRY_TIMES=3
+      - LOG_LEVEL=INFO
+    depends_on:
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    volumes:
+      - ./backend/scraper_go/categories:/app/research
+      - scraperdata:/var/lib/scraper
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    networks:
+      - microservices_net
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 128M
+        reservations:
+          memory: 64M

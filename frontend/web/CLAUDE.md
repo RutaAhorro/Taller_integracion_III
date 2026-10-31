@@ -75,7 +75,7 @@ src/
 
 ## Mapa auto-generado: Frontend (React + TypeScript)
 
-**70 archivos activos** (excluidos kebab-case obsoletos)
+**86 archivos activos** (excluidos kebab-case obsoletos)
 
 
 ### `core/routes.ts`
@@ -87,20 +87,78 @@ src/
 - Exports: HOME, discountPct, formatPrice, mockUser, products, supermarketById, supermarkets
 - Imports locales: ../types
 
+### `features/admin/admin-api.ts`
+
+- Exports: ADMIN_ENDPOINTS, ADMIN_HAS_BACKEND, adminPlanFromBackend, adminPlanToBackend, adminRoleFromBackend, adminRoleToBackend, adminSourceFromBackend, adminUserFromBackend, fetchCatalogoMetrics, fetchControlMetrics, fetchIdentidadMetrics, isAdminApiError, isAdminAuthError, isPersistableId
+- Tipos: AdminUsersPage, AdminUsersQuery, CatalogoMetrics, ControlMetrics, ErrorBackend, FuenteBackend, IdentidadMetrics, PaginaUsuariosBackend, PaginacionBackend, UsuarioBackend
+- Imports locales: ./admin-mock-data
+
+### `features/admin/admin-mock-data.ts`
+
+- Exports: ADMIN_PLANS, ADMIN_ROLES, adminMetricsMock, adminSources, adminUsers
+- Tipos: AdminPlan, AdminRole, AdminSection, AdminSource, AdminUser, AdminUserRole
+
+### `features/admin/useAdminData.ts`
+
+- Exports: useAdminMetrics, useAdminSources, useAdminUsers
+- Tipos: AdminMetricsState, AdminPlan, AdminRole, AdminSource, AdminUser, AdminUsersPagination, AdminUsersParams, CatalogoMetrics, ControlMetrics, IdentidadMetrics, ServiceState
+- Imports locales: ./admin-api, ./admin-mock-data, @/core/routes, @/hooks/useAuth
+
+### `features/listas/listas-api.ts`
+
+- Exports: listasApi
+- Tipos: EstadoLista, Lista, ListaDetalle
+
 ### `hooks/useAuth.ts`
 
 - Exports: useAuth
 - Imports locales: ../contexts/AuthContext
+
+### `hooks/useCatalog.ts`
+
+- Exports: useCatalog
+- Imports locales: @/layouts/MainLayout, @/lib/formatters, @/lib/products-api, @/types
+
+### `hooks/useChatbot.ts`
+
+- Exports: useChatbot
+- Tipos: Message, MessageType
+- Imports locales: @/hooks/useAuth
+
+### `hooks/useGoogleAuth.ts`
+
+- Exports: useGoogleAuth
+- Imports locales: ./useAuth
+
+### `hooks/useRole.ts`
+
+- Exports: useRole
+- Imports locales: ./useAuth, @/lib/roles
+
+### `hooks/useRouteOptimization.ts`
+
+- Exports: useRouteOptimization
+- Tipos: OptimizedStore
+- Imports locales: @/data/mock
 
 ### `layouts/useActiveTab.ts`
 
 - Exports: useActiveTab
 - Tipos: ActiveTab
 
+### `lib/constants.ts`
+
+- Exports: HOME, supermarketById, supermarkets
+- Imports locales: ../types
+
 ### `lib/data.ts`
 
 - Exports: HOME, discountPct, formatPrice, products, supermarketById, supermarkets
 - Tipos: Product, Supermarket
+
+### `lib/formatters.ts`
+
+- Exports: calculateDiscountPct, calculateSavings, formatPrice
 
 ### `lib/logger.ts`
 
@@ -108,9 +166,13 @@ src/
 
 ### `lib/products-api.ts`
 
-- Exports: toUiProduct
+- Exports: FALLBACK_MARKET_NAME, marketMeta, slugifyMarket, toUiProduct
 - Tipos: ApiPriceHistory, ApiProduct, ApiProductDetail, ProductPage
-- Imports locales: @/data/mock, @/types
+- Imports locales: ./constants, @/types
+
+### `lib/roles.ts`
+
+- Exports: ROLE_ADMIN, ROLE_COLABORADOR, ROLE_REGISTRADO, hasAllowedRole, normalizeRole
 
 ### `lib/utils.ts`
 
@@ -124,18 +186,18 @@ src/
 ### `app/router.tsx`
 
 - Exports: AppRouter
-- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/layouts/MainLayout, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/mocks/MockShell
+- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/features/admin/AdminDashboard, @/layouts/MainLayout, @/lib/roles, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/ShoppingLists, @/pages/Terms, @/pages/mocks/MockShell
 
 ### `components/BottomNav.tsx`
 
 - Exports: BottomNav
 - Tipos: BottomNavProps
-- Imports locales: @/lib/utils
+- Imports locales: @/hooks/useRole, @/lib/utils
 
 ### `components/CartSidebar.tsx`
 
 - Exports: CartSidebar
-- Imports locales: @/components/ui/button, @/contexts/CartContext, @/data/mock
+- Imports locales: @/components/ui/button, @/contexts/CartContext, @/lib/formatters
 
 ### `components/ErrorBoundary.tsx`
 
@@ -150,7 +212,7 @@ src/
 
 - Exports: ProductCard
 - Tipos: ProductCardProps
-- Imports locales: @/components/ui/button, @/core/routes, @/data/mock, @/types
+- Imports locales: @/components/ui/button, @/core/routes, @/lib/formatters, @/lib/utils, @/types
 
 ### `components/ProductCarousel.tsx`
 
@@ -166,12 +228,12 @@ src/
 
 - Exports: SideBar
 - Tipos: SideBarProps
-- Imports locales: @/components/ui/button, @/data/mock
+- Imports locales: @/components/ui/button, @/hooks/useRole, @/types
 
 ### `components/TopNav.tsx`
 
 - Exports: TopNav
-- Tipos: TopNavProps
+- Tipos: FormEvent, TopNavProps
 - Imports locales: @/components/ui/button, @/core/routes, @/hooks/useAuth
 
 ### `components/auth/AuthPanel.tsx`
@@ -191,12 +253,12 @@ src/
 ### `components/auth/ProtectedRoute.tsx`
 
 - Exports: ProtectedRoute
-- Imports locales: @/hooks/useAuth
+- Imports locales: @/contexts/ToastContext, @/core/routes, @/hooks/useAuth, @/lib/roles
 
 ### `components/auth/SocialButtons.tsx`
 
 - Exports: SocialButtons
-- Imports locales: @/components/ui/button
+- Imports locales: @/hooks/useGoogleAuth
 
 ### `components/chatbot/OutOfStockAlert.tsx`
 
@@ -207,8 +269,8 @@ src/
 ### `components/chatbot/RichRecipeCard.tsx`
 
 - Exports: RichRecipeCard
-- Tipos: RichRecipeCardProps
-- Imports locales: @/data/mock, @/lib/utils
+- Tipos: RecipeItem, RichRecipeCardProps
+- Imports locales: @/lib/formatters, @/lib/utils
 
 ### `components/chatbot/TypingIndicator.tsx`
 
@@ -337,6 +399,18 @@ src/
 - Tipos: ReactNode, Toast, ToastContextType, ToastType
 - Imports locales: @/lib/utils
 
+### `features/admin/AdminDashboard.tsx`
+
+- Exports: AdminDashboard
+- Tipos: AdminMetricsState, AdminSection
+- Imports locales: ./AdminLayout, ./admin-api, ./admin-mock-data, ./useAdminData, @/components/ui/input, @/core/routes, @/hooks/useAuth
+
+### `features/admin/AdminLayout.tsx`
+
+- Exports: AdminLayout
+- Tipos: AdminLayoutProps, ReactNode
+- Imports locales: ./admin-mock-data, @/core/routes, @/hooks/useAuth
+
 ### `layouts/AppShell.tsx`
 
 - Exports: AppShell
@@ -347,23 +421,22 @@ src/
 
 - Exports: MainLayout, useLayoutContext
 - Tipos: LayoutContextType
-- Imports locales: @/components/BottomNav, @/components/CartSidebar, @/components/Sidebar, @/components/TopNav
+- Imports locales: @/components/BottomNav, @/components/CartSidebar, @/components/Sidebar, @/components/TopNav, @/contexts/CartContext, @/lib/products-api, @/types
 
 ### `pages/Chatbot.tsx`
 
 - Exports: Chatbot
-- Tipos: Message
-- Imports locales: @/components/chatbot/OutOfStockAlert, @/components/chatbot/RichRecipeCard, @/components/chatbot/TypingIndicator, @/contexts/ToastContext, @/data/mock, @/hooks/useAuth, @/lib/utils
+- Imports locales: @/components/chatbot/OutOfStockAlert, @/components/chatbot/RichRecipeCard, @/components/chatbot/TypingIndicator, @/contexts/ToastContext, @/hooks/useChatbot, @/lib/utils
 
 ### `pages/Crowdsourcing.tsx`
 
 - Exports: Crowdsourcing
-- Imports locales: @/components/Footer, @/components/ui/SuccessCard, @/contexts/ToastContext, @/data/mock, @/lib/utils
+- Imports locales: @/components/Footer, @/components/ui/SuccessCard, @/contexts/ToastContext, @/hooks/useAuth, @/lib/formatters, @/lib/utils
 
 ### `pages/Dashboard.tsx`
 
 - Exports: Page
-- Imports locales: @/components/Footer, @/components/ProductCard, @/components/ui/ProductSkeleton, @/contexts/CartContext, @/data/mock, @/layouts/MainLayout, @/lib/products-api, @/types
+- Imports locales: @/components/Footer, @/components/ProductCard, @/components/ui/ProductSkeleton, @/contexts/CartContext, @/hooks/useCatalog, @/layouts/MainLayout, @/types
 
 ### `pages/History.tsx`
 
@@ -393,23 +466,34 @@ src/
 ### `pages/Planes.tsx`
 
 - Exports: Planes
-- Imports locales: @/data/mock, @/pages/mocks/MockShell
+- Imports locales: @/hooks/useAuth, @/pages/mocks/MockShell
 
 ### `pages/ProductDetail.tsx`
 
 - Exports: ProductDetail
-- Imports locales: @/components/Footer, @/components/ProductCarousel, @/components/ui/button, @/contexts/CartContext, @/data/mock, @/lib/products-api, @/types
+- Imports locales: @/components/Footer, @/components/ProductCarousel, @/components/ui/button, @/contexts/CartContext, @/lib/formatters, @/lib/products-api, @/types
 
 ### `pages/Profile.tsx`
 
 - Exports: Profile
-- Imports locales: @/data/mock, @/lib/utils, @/pages/mocks/MockShell
+- Imports locales: @/hooks/useAuth, @/lib/utils, @/pages/mocks/MockShell
 
 ### `pages/RouteViewer.tsx`
 
 - Exports: RouteViewer
 - Tipos: as
-- Imports locales: @/components/ui/skeleton, @/data/mock, @/lib/utils
+- Imports locales: @/components/ui/skeleton, @/hooks/useRouteOptimization, @/lib/utils
+
+### `pages/ShoppingLists.tsx`
+
+- Exports: ShoppingLists
+- Tipos: EstadoLista, FormEvent, Lista, ListaDetalle
+- Imports locales: @/components/ui/button, @/components/ui/input, @/contexts/ToastContext, @/core/routes, @/features/listas/listas-api, @/hooks/useAuth
+
+### `pages/Terms.tsx`
+
+- Exports: Terms
+- Imports locales: @/components/ui/button
 
 ### `pages/mocks/MockShell.tsx`
 

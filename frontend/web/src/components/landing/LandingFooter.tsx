@@ -4,7 +4,7 @@ import { Coffee, Brain, ShoppingBasket } from "lucide-react";
 export function LandingFooter() {
   return (
     <footer className="bg-[var(--brand-dark-2)] text-[oklch(0.85_0.02_83)] p-[2.5rem_0_1.25rem] mt-[1.5rem] border-t-[3px] border-border">
-      <div className="max-w-[1440px] mx-auto px-4 md:px-6">
+      <div className="max-w-[1300px] mx-auto px-4 md:px-6">
         <div className="grid grid-cols-1 md:grid-cols-[2fr_1fr] gap-[1.5rem] md:gap-[2.25rem] mb-[2rem]">
 
           <div>

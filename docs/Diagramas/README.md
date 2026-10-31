@@ -6,15 +6,15 @@ Esta carpeta contiene los archivos de Diagramas de Secuencia en formato **PlantU
 
 ## 📁 Archivos Disponibles
 
-1. **[`secuencia_invitado.puml`](file:///home/vixomatu/Documentos/Sexto_Semestre/Taller_Integracion_III/Taller_integracion_III/docs/diagramas/secuencia_invitado.puml)**
+1. **[`secuencia_invitado.puml`](secuencia_invitado.puml)**
    - **Actor:** Usuario Invitado (No Registrado).
    - **Casos de Uso:** Búsqueda y filtrado de catálogo (`ucCatalogo`), Registro con ubicación y preferencias dietéticas (`ucRegistro`), Recuperación de contraseña (`ucRecuperacion`).
 
-2. **[`secuencia_registrado.puml`](file:///home/vixomatu/Documentos/Sexto_Semestre/Taller_Integracion_III/Taller_integracion_III/docs/diagramas/secuencia_registrado.puml)**
+2. **[`secuencia_registrado.puml`](secuencia_registrado.puml)**
    - **Actor:** Usuario Registrado.
    - **Casos de Uso:** Login y carga de perfil/carrito (`ucLogin`, `ucPerfil`), Asistente IA para recetas y reemplazo de productos (`ucIA`, `ucReemplazo`), Optimización geoespacial de rutas de compra y medio de transporte (`ucRuta`, `ucHorarios`).
 
-3. **[`secuencia_superadmin.puml`](file:///home/vixomatu/Documentos/Sexto_Semestre/Taller_Integracion_III/Taller_integracion_III/docs/diagramas/secuencia_superadmin.puml)**
+3. **[`secuencia_superadmin.puml`](secuencia_superadmin.puml)**
    - **Actor:** Super Admin.
    - **Casos de Uso:** Autenticación administrativa (`ucAuthAdmin`), Gestión y ejecución de Web Scraping (`ucScraping`, `ucFuentes`), Gestión de usuarios y suscripciones (`ucUsuarios`), Definición de equivalencias semánticas de productos (`ucEquivalencias`), Dashboard de Monitoreo del sistema (`ucMonitoreo`).
 

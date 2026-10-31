@@ -84,7 +84,7 @@ export default function ProductDetail() {
   const pct = calculateDiscountPct(product.originalPrice, product.price)
 
   return (
-    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col overflow-hidden px-4 py-6 pb-32 sm:pb-6 md:px-6">
+    <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-6 pb-32 sm:pb-6 md:px-6">
 
       <div className="flex flex-1 flex-col gap-6 md:flex-row md:items-center lg:gap-10">
         <section className="flex w-full md:w-5/12 flex-col items-center justify-center overflow-hidden rounded-3xl border border-border bg-secondary/50 p-6 shadow-inner">
