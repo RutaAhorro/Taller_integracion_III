@@ -125,7 +125,7 @@ func (l *Lider) runCategory(ctx context.Context, categoryURL string, emit Emitte
 		products := extractLiderProducts(response.Body, response.URL)
 		if len(products) == 0 {
 			l.logger.Warn("lider_category_without_products", "url", pageURL, "page", page)
-			return missingCategorySelectors(pageURL, response.Status, page)
+			return nil
 		}
 		for _, product := range products {
 			item := toLiderItem(product, category, urlString(response.URL))

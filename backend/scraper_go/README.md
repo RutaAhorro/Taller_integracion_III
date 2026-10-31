@@ -57,11 +57,14 @@ interfaces `Fetcher` y `Emitter`, no de Redis ni de SQLite.
 
 Un producto conserva los campos y los `null` del contrato de Python. El
 supermercado viaja en el nivel superior del lote y la categoría dentro del
-producto. Antes de enviar el lote, el worker recorta los textos a los límites
-de `scraper.productos_crudos`: `producto` 255; `sku`, `marca`, `categoria` y
-`formato_crudo` 100; `ean_gtin` 50; `mecanica_promocion` 255. Así una
-descripción comercial más larga que la columna no provoca `lote_rechazado` ni
-pierde el lote completo. El recorte es por runas para no romper UTF-8.
+producto. `CompleteItem` recorta los textos a los límites de
+`scraper.productos_crudos` **antes de guardar el item en el spool**:
+`producto` 255; `sku`, `marca`, `categoria` y `formato_crudo` 100; `ean_gtin`
+50; `mecanica_promocion` 255. Así el documento almacenado ya cumple el esquema
+y un rollback a Python sobre el mismo PVC no reenvía valores largos que
+Catálogo rechazaría con `lote_rechazado`. El cliente HTTP repite el límite
+como defensa para lotes reenviados. El recorte es por runas para no romper
+UTF-8.
 
 La columna `product` y el fingerprint SHA-256 del spool se serializan byte a
 byte como `outbox.py`: claves ordenadas, floats con `.0` cuando son enteros,
@@ -382,11 +385,14 @@ bloqueo: N respuestas bloqueadas (motivo=...)
 
 El mismo conteo se envía en `respuestas_bloqueadas` al finalizar el trabajo y
 queda disponible en el DTO de Control y en la columna homónima de
-`scraper.trabajos_scraper`. Si la primera página de una categoría responde `200` sin los selectores
-esperados, se trata como bloqueo (`missing_selectors`) y no como una categoría
-vacía. Un crawl que termina sin ningún producto también se cierra como
-`fallido` (`sin productos`) en vez de declarar `completado` con
-`elementos_extraidos = 0`. El spool nunca genera lotes vacíos.
+`scraper.trabajos_scraper`. Una categoría `200` sin productos ya no aborta el
+trabajo: se registra `*_category_without_products` y se continúa con la
+siguiente categoría, porque puede estar estacionalmente vacía o discontinuada
+(y Líder tiene más de 100 categorías). El bloqueo real se sigue detectando en
+el cliente HTTP por status o por marcadores de challenge. Si al final el crawl
+no produjo ningún producto, el trabajo se cierra como `fallido` (`sin
+productos`) en vez de declarar `completado` con `elementos_extraidos = 0`. El
+spool nunca genera lotes vacíos.
 
 ### Gate de RAM
 
@@ -527,12 +533,20 @@ docker compose --profile scraper-go up -d scraper_worker_go
 
 Para el cutover:
 
-1. Detener el worker de Python: `docker compose stop scraper_worker`.
-2. Levantar Go con los valores por defecto (mismo stream y grupo):
+1. Aplicar la migración `infrastructure/db/07_respuestas_bloqueadas.sql` en la
+   base de Control **antes de actualizar los pods**. Sin esa columna, la
+   finalización de trabajos con `respuestas_bloqueadas` falla y el trabajo no
+   se cierra correctamente.
+2. Detener el worker de Python: `docker compose stop scraper_worker`.
+3. Levantar Go con los valores por defecto (mismo stream y grupo):
    `docker compose --profile scraper-go up -d scraper_worker_go`.
-3. Verificar ACK, finalización y limpieza de spools en los logs.
-4. Rollback: detener Go y volver a levantar `scraper_worker`. El esquema del
-   spool es el mismo.
+4. Verificar ACK, finalización y limpieza de spools en los logs.
+5. Rollback: detener Go y volver a levantar `scraper_worker`. El esquema del
+   spool es el mismo y los documentos ya están truncados al esquema de Catálogo.
+
+En Kubernetes, `infrastructure/k8s/scraper-go/deployment.yaml` fija
+`GOMEMLIMIT=105MiB` para dejar holgura de GC bajo el límite de 128 MiB del
+contenedor. La medición de producción sigue pendiente.
 
 Borrar `backend/scraper` sólo después de que el cutover esté estable y de que
 todos los spiders tengan pruebas de paridad y una validación contra el HTML
@@ -556,11 +570,12 @@ con datos de producción:
   horizontalmente un trabajo en vuelo de otro consumidor frena a los demás.
   Antes de subir réplicas hay que acotar la consulta al consumidor propio
   (`XPENDING ... consumer`) o sustituirla por una métrica de backpressure.
-- **Memoria bajo el cgroup de 200 MiB.** La medición local con 200.000
+- **Memoria bajo el cgroup de 128 MiB.** La medición local con 200.000
   productos dio 29,9 MB de RSS pico (16,3 MB `RssAnon`) en el host y 25,7 MB
-  (14,0 MB `RssAnon`) dentro de un cgroup de 192 MB, sin `OOMKilled`. Queda
-  pendiente repetir la medición en el cgroup real de 200 MiB con tráfico y
-  lotes de producción, y decidir si conviene fijar `GOMEMLIMIT`.
+  (14,0 MB `RssAnon`) dentro de un cgroup de 192 MB, sin `OOMKilled`. El
+  deployment de K8s fija `GOMEMLIMIT=105MiB` bajo el límite de 128 MiB. Queda
+  pendiente repetir la medición en el cgroup real con tráfico y lotes de
+  producción.
 
 ## Pendientes
 

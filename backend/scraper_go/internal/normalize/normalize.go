@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
 var (
@@ -238,6 +240,27 @@ func TruncarPtr(value *string, max int) *string {
 	}
 	truncated := Truncar(*value, max)
 	return &truncated
+}
+
+// LimitarProducto recorta los campos que Catálogo persiste en columnas
+// VARCHAR de scraper.productos_crudos y deriva el SKU si falta. Se aplica antes
+// de guardar en el spool, no sólo antes del POST: si se activa el rollback a
+// Python, outbox.replay reenvía el documento almacenado sin volver a truncar y
+// Catálogo rechazaría el lote completo.
+func LimitarProducto(product domain.Product) domain.Product {
+	if product.SKU == nil || strings.TrimSpace(*product.SKU) == "" {
+		if product.URLProducto != nil {
+			product.SKU = SKUFromURL(*product.URLProducto)
+		}
+	}
+	product.Producto = Truncar(product.Producto, 255)
+	product.SKU = TruncarPtr(product.SKU, 100)
+	product.EanGtin = TruncarPtr(product.EanGtin, 50)
+	product.Marca = TruncarPtr(product.Marca, 100)
+	product.Categoria = Truncar(product.Categoria, 100)
+	product.FormatoCrudo = TruncarPtr(product.FormatoCrudo, 100)
+	product.MecanicaPromocion = TruncarPtr(product.MecanicaPromocion, 255)
+	return product
 }
 
 // SKUFromURL obtiene un identificador estable de la URL de una ficha cuando

@@ -347,9 +347,9 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 	if queue.IsLost(lost) {
 		return "", ErrLeaseLost
 	}
-	// Un crawl sin selectores puede terminar sin error y sin lotes. No se
-	// declara completado: se cierra como fallido para no publicar un catálogo
-	// vacío como éxito.
+	// Un crawl con categorías vacías puede terminar sin error y sin lotes. No
+	// se declara completado: se cierra como fallido para no publicar un
+	// catálogo vacío como éxito.
 	itemCount, err := store.Count()
 	if err != nil {
 		return "", err

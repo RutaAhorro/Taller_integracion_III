@@ -147,7 +147,7 @@ func (a *Acuenta) runCategory(ctx context.Context, categoryURL string, emit Emit
 		products := extractAcuentaProducts(response.Body, response.URL)
 		if len(products) == 0 {
 			a.logger.Warn("acuenta_category_without_products", "url", pageURL, "page", page)
-			return missingCategorySelectors(pageURL, response.Status, page)
+			return nil
 		}
 		for _, product := range products {
 			item := toAcuentaItem(product, category, urlString(response.URL))

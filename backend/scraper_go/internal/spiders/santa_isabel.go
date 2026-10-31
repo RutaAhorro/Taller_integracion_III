@@ -128,7 +128,7 @@ func (s *SantaIsabel) runCategory(ctx context.Context, categoryURL string, emit 
 		products := extractSantaIsabelProducts(response.Body, response.URL)
 		if len(products) == 0 {
 			s.logger.Warn("santa_isabel_category_without_products", "url", pageURL, "page", page)
-			return missingCategorySelectors(pageURL, response.Status, page)
+			return nil
 		}
 		for _, product := range products {
 			item := toSantaIsabelItem(product, category, urlString(response.URL))

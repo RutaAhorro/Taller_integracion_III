@@ -45,6 +45,8 @@ spec:
           value: scraper:jobs:stream
         - name: SCRAPER_GROUP
           value: scraper-workers
+        - name: GOMEMLIMIT
+          value: 105MiB
         - name: LOG_LEVEL
           value: INFO
         image: ghcr.io/danirc2024/taller_integracion_iii-scraper-go:develop

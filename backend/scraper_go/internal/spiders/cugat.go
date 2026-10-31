@@ -119,7 +119,7 @@ func (c *Cugat) runCategory(ctx context.Context, categoryURL string, emit Emitte
 		products := extractCugatProducts(response.Body, response.URL)
 		if len(products) == 0 {
 			c.logger.Warn("cugat_category_without_products", "url", pageURL, "page", page)
-			return missingCategorySelectors(pageURL, response.Status, page)
+			return nil
 		}
 		for _, product := range products {
 			item := toCugatItem(product, category, urlString(response.URL))

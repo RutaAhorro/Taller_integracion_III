@@ -142,7 +142,7 @@ func (j *Jumbo) runCategory(ctx context.Context, categoryURL string, enrichEAN b
 		products := extractJumboProducts(response.Body)
 		if len(products) == 0 {
 			j.logger.Warn("jumbo_category_without_products", "url", pageURL, "page", page)
-			return missingCategorySelectors(pageURL, response.Status, page)
+			return nil
 		}
 		for _, product := range products {
 			item, err := j.materialize(ctx, product, category, response.URL, enrichEAN)

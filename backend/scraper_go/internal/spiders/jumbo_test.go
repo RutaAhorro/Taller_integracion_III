@@ -2,7 +2,6 @@ package spiders
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -49,23 +48,37 @@ func quietLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestJumboEmptyFirstCategoryPageReturnsBlockedError(t *testing.T) {
-	categoryURL := jumboDefaultCategories[0]
+func TestJumboEmptyCategoryDoesNotAbortRemainingCategories(t *testing.T) {
+	categoryDir := t.TempDir()
+	emptyURL := "https://www.jumbo.cl/categoria-vacia"
+	listedURL := "https://www.jumbo.cl/frutas"
+	if err := os.WriteFile(
+		filepath.Join(categoryDir, "jumbo_categories.txt"),
+		[]byte(emptyURL+"\n"+listedURL+"\n"),
+		0o600,
+	); err != nil {
+		t.Fatal(err)
+	}
 	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
-		categoryURL: response(categoryURL, `<html><body><h1>Sin selectores</h1></body></html>`),
+		emptyURL: response(emptyURL, `<html><body><h1>Sin productos esta temporada</h1></body></html>`),
+		listedURL: response(listedURL, `<script type="application/ld+json">
+{"@type":"Product","name":"Tomate","url":"/p/tomate","offers":{"price":"1290"}}
+</script>`),
 	}}
-	spider := NewJumbo(fetcher, t.TempDir(), 1, quietLogger())
-
-	err := spider.Run(context.Background(), domain.Job{}, func(domain.Item) error { return nil })
-	var blocked *crawler.BlockedError
-	if !errors.As(err, &blocked) {
-		t.Fatalf("error = %T %v, want *crawler.BlockedError", err, err)
+	spider := NewJumbo(fetcher, categoryDir, 100, quietLogger())
+	var items []domain.Item
+	err := spider.Run(context.Background(), domain.Job{}, func(item domain.Item) error {
+		items = append(items, item)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("una categoría vacía no debe abortar el trabajo: %v", err)
 	}
-	if blocked.Reason != "missing_selectors" {
-		t.Errorf("motivo = %q", blocked.Reason)
+	if len(items) != 1 || items[0].Producto != "Tomate" {
+		t.Fatalf("items = %+v", items)
 	}
-	if blocked.BlockedResponses != 1 {
-		t.Errorf("respuestas bloqueadas = %d, want 1", blocked.BlockedResponses)
+	if len(fetcher.calls) < 2 || fetcher.calls[0] != emptyURL || fetcher.calls[1] != listedURL {
+		t.Errorf("calls = %v, want la categoría vacía y luego la siguiente", fetcher.calls)
 	}
 }
 

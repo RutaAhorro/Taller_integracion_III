@@ -269,25 +269,12 @@ func (c *Client) ingestionEndpoint(workID string) string {
 }
 
 // limitProducts ajusta los campos a los límites de scraper.productos_crudos.
-// Los spiders pueden entregar descripciones comerciales más largas que el
-// varchar del esquema; recortar en el límite de entrega evita que Catálogo
-// rechace el lote completo.
+// CompleteItem ya los recorta antes de guardarlos en el spool; este paso queda
+// como defensa para lotes reenviados o construidos fuera del worker.
 func limitProducts(products []domain.Product) []domain.Product {
 	limited := make([]domain.Product, len(products))
 	for index, product := range products {
-		product.Producto = normalize.Truncar(product.Producto, 255)
-		if product.SKU == nil || strings.TrimSpace(*product.SKU) == "" {
-			if product.URLProducto != nil {
-				product.SKU = normalize.SKUFromURL(*product.URLProducto)
-			}
-		}
-		product.SKU = normalize.TruncarPtr(product.SKU, 100)
-		product.EanGtin = normalize.TruncarPtr(product.EanGtin, 50)
-		product.Marca = normalize.TruncarPtr(product.Marca, 100)
-		product.Categoria = normalize.Truncar(product.Categoria, 100)
-		product.FormatoCrudo = normalize.TruncarPtr(product.FormatoCrudo, 100)
-		product.MecanicaPromocion = normalize.TruncarPtr(product.MecanicaPromocion, 255)
-		limited[index] = product
+		limited[index] = normalize.LimitarProducto(product)
 	}
 	return limited
 }
