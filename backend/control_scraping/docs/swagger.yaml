@@ -9,6 +9,8 @@ definitions:
         type: string
       registro_errores:
         type: string
+      respuestas_bloqueadas:
+        type: integer
     required:
     - estado
     type: object
@@ -121,9 +123,15 @@ definitions:
         type: string
       registro_errores:
         type: string
+      respuestas_bloqueadas:
+        type: integer
     type: object
   handlers.ejecutarScraperRequest:
     properties:
+      add_url:
+        type: string
+      enrich_ean:
+        type: boolean
       producto_id:
         type: string
       producto_url:

@@ -38,6 +38,8 @@ type ejecutarScraperRequest struct {
 	Spider      string  `json:"spider,omitempty"`
 	ProductoURL *string `json:"producto_url,omitempty"`
 	ProductoID  *string `json:"producto_id,omitempty"`
+	AddURL      *string `json:"add_url,omitempty"`
+	EnrichEAN   *bool   `json:"enrich_ean,omitempty"`
 }
 
 // EjecutarTrabajo godoc
@@ -135,6 +137,20 @@ func (h *ScraperHandler) EjecutarTrabajo(c *gin.Context) {
 	}
 	if input.ProductoID != nil {
 		job["product_id"] = *input.ProductoID
+	}
+	if input.AddURL != nil {
+		addURL := strings.TrimSpace(*input.AddURL)
+		if addURL == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "add_url no puede estar vacío"})
+			return
+		}
+		// El worker valida host y esquema por cadena antes de escribir la
+		// categoría en el volumen compartido. Aquí sólo se evita encolar un
+		// valor vacío.
+		job["add_url"] = addURL
+	}
+	if input.EnrichEAN != nil {
+		job["enrich_ean"] = *input.EnrichEAN
 	}
 	payload, err := json.Marshal(job)
 	if err != nil {

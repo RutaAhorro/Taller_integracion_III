@@ -477,6 +477,9 @@ const docTemplate = `{
                 },
                 "registro_errores": {
                     "type": "string"
+                },
+                "respuestas_bloqueadas": {
+                    "type": "integer"
                 }
             }
         },
@@ -643,12 +646,21 @@ const docTemplate = `{
                 },
                 "registro_errores": {
                     "type": "string"
+                },
+                "respuestas_bloqueadas": {
+                    "type": "integer"
                 }
             }
         },
         "handlers.ejecutarScraperRequest": {
             "type": "object",
             "properties": {
+                "add_url": {
+                    "type": "string"
+                },
+                "enrich_ean": {
+                    "type": "boolean"
+                },
                 "producto_id": {
                     "type": "string"
                 },

@@ -1,0 +1,26 @@
+# categoria frutas y verduras
+https://www.santaisabel.cl/frutas-y-verduras
+
+# Categoria Lacteos, Huevos y Congelados
+https://www.santaisabel.cl/lacteos-huevos-y-congelados
+
+# Categoria quesos y fiambres
+https://www.santaisabel.cl/quesos-y-fiambres
+
+# Categoria despensa
+https://www.santaisabel.cl/despensa
+
+# Categoria Carnes y Pescados
+https://www.santaisabel.cl/carnes-y-pescados
+
+#Categoria licores bebidas y aguas
+https://www.santaisabel.cl/botilleria
+
+#Categoria panaderia y pasteleria
+https://www.santaisabel.cl/panaderia-y-pasteleria
+
+#Categoria limpieza
+https://www.santaisabel.cl/limpieza
+
+#Categoria galletas chocolates y snacks
+https://www.santaisabel.cl/chocolates-galletas-y-snacks

@@ -14,6 +14,8 @@ on:
       - 'backend/motor_rutas/**'
       - 'backend/bot_discord/**'
       - 'backend/scraper/**'
+      - 'backend/scraper_go/**'
+      - 'docker-compose.scraper-go.yml'
       - 'frontend/web/**'
       - '.github/workflows/**'
 
@@ -25,6 +27,7 @@ env:
   IMAGE_NAME_CATALOGO: ${{ github.repository }}-catalogo
   IMAGE_NAME_FRONTEND: ${{ github.repository }}-frontend
   IMAGE_NAME_SCRAPER: ${{ github.repository }}-scraper
+  IMAGE_NAME_SCRAPER_GO: ${{ github.repository }}-scraper-go
   IMAGE_NAME_GATEWAY: ${{ github.repository }}-gateway
   IMAGE_NAME_MOTOR_RUTAS: ${{ github.repository }}-motor-rutas
 
@@ -213,6 +216,28 @@ jobs:
           push: true
           tags: ${{ steps.meta-scraper.outputs.tags }}
           labels: ${{ steps.meta-scraper.outputs.labels }}
+
+      # ==== BUILD SCRAPER GO ====
+      # Se publica en paralelo al worker Python para poder hacer el cutover y
+      # el rollback sin reconstruir la imagen en producción.
+      - name: Extract metadata for Scraper Go
+        id: meta-scraper-go
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_SCRAPER_GO }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Build and push Scraper Go image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./backend/scraper_go/Dockerfile
+          push: true
+          tags: ${{ steps.meta-scraper-go.outputs.tags }}
+          labels: ${{ steps.meta-scraper-go.outputs.labels }}
 
       # ==== BUILD DISCORD BOT ====
       - name: Extract metadata for Bot Discord

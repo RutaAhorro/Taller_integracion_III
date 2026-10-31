@@ -53,7 +53,7 @@ func (r *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uui
 }
 
 // FinalizarTrabajo actualiza el estado, fecha fin, items extraídos y posibles errores
-func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error) {
+func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&trabajo, "id = ?", id).Error; err != nil {
@@ -90,6 +90,9 @@ func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UU
 		// Un worker no puede sobrescribir el contador del ledger durable.
 		if managed == 0 && elementosExtraidos != nil {
 			updates["elementos_extraidos"] = *elementosExtraidos
+		}
+		if respuestasBloqueadas != nil {
+			updates["respuestas_bloqueadas"] = *respuestasBloqueadas
 		}
 		if registroErrores != nil {
 			updates["registro_errores"] = *registroErrores

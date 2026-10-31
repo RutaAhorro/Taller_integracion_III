@@ -53,6 +53,7 @@ type TrabajoScraper struct {
 	IniciadoEl            time.Time  `gorm:"default:now();not null" json:"iniciado_el"`
 	FinalizadoEl          *time.Time `json:"finalizado_el,omitempty"`
 	ElementosExtraidos    int        `gorm:"default:0" json:"elementos_extraidos"`
+	RespuestasBloqueadas  int        `gorm:"default:0" json:"respuestas_bloqueadas"`
 	RegistroErrores       *string    `gorm:"type:text" json:"registro_errores,omitempty"`
 }
 

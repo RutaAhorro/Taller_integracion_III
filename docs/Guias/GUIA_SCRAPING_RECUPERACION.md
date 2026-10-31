@@ -243,6 +243,82 @@ recibos y volúmenes para diagnóstico y un posible retorno a SUP-270.
 Si no se puede drenar, conservar los componentes de recuperación hasta
 resolver el backlog; cambiar sólo al worker BRPOP dejaría trabajos varados.
 
+## Corte al worker Go
+
+El worker Go consume el mismo stream, grupo, API de ingesta y esquema SQLite
+que el worker Python. La imagen se publica como
+`ghcr.io/danirc2024/taller_integracion_iii-scraper-go:<rama|sha|latest>` y el
+manifiesto de Kubernetes es `infrastructure/k8s/scraper-go/deployment.yaml`.
+El worker Python sigue siendo el activo hasta ejecutar este procedimiento.
+
+Requisitos previos:
+
+1. La imagen Go del commit a desplegar existe en GHCR y el tag está fijado
+   (no usar `latest` para el corte).
+2. El PVC `scraper-state` está montado y contiene los spools que dejó Python.
+3. Redis conserva `scraper:jobs:stream` y no hay mensajes en vuelo del worker
+   anterior.
+4. La API responde `POST /api/v1/scraper/productos` y
+   `PUT /trabajos/{id}/finalizar` con el contrato actual.
+5. En una base existente se aplicó
+   `infrastructure/db/07_respuestas_bloqueadas.sql`; el Control y el worker
+   nuevos envían y leen `respuestas_bloqueadas` en la finalización.
+
+Compose, con el worker Python aún activo:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
+  --profile scraper-go pull scraper_worker_go
+docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
+  --profile scraper-go up -d --wait scraper_worker_go
+docker compose logs -f scraper_worker_go
+```
+
+Antes del corte, el worker Go debe registrar `worker_started`, tomar mensajes
+sólo cuando la lease esté libre y entregar un lote de prueba. Para el corte:
+
+```bash
+docker compose stop scraper_worker
+docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
+  --profile scraper-go up -d --no-deps --force-recreate --wait scraper_worker_go
+docker compose ps
+```
+
+Kubernetes usa estrategia `Recreate` y un único worker por PVC RWO:
+
+```bash
+kubectl scale deployment/scraper --replicas=0
+kubectl apply -f infrastructure/k8s/scraper-go/deployment.yaml
+kubectl rollout status deployment/scraper-go
+kubectl logs -f deployment/scraper-go
+```
+
+Rollback (objetivo menor a 15 minutos): detener sólo el worker Go, confirmar
+que no quedan mensajes pendientes del grupo y arrancar de nuevo Python con el
+mismo PVC y Redis. No se revierte el esquema SQLite ni se borra el stream.
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
+  --profile scraper-go stop scraper_worker_go
+docker compose up -d --no-deps --force-recreate --wait scraper_worker
+# Kubernetes:
+kubectl scale deployment/scraper-go --replicas=0
+kubectl scale deployment/scraper --replicas=1
+```
+
+El rollback conserva los spools porque Go usa el mismo formato que Python.
+Los lotes ya confirmados tienen `Idempotency-Key`; un reintento no duplica
+productos. Un trabajo bloqueado o sin productos queda `fallido` con
+`registro_errores` que empieza con `bloqueo:` o `sin productos:`; no se debe
+reintentar como si fuera una categoría vacía.
+
+Prueba local de ciclo de vida (26/10/2026): detener Python, levantar
+`go_scraper_worker` hasta `healthy`, detenerlo y restaurar `scraper_worker`
+tomó 18 segundos. Se usó una cola/grupo aislados para no consumir trabajos
+reales. Esta medición valida el cambio de contenedor, no la recuperación de
+trabajos en vuelo; esa parte se cubre con las pruebas de lease/spool y debe
+repetirse en el entorno de despliegue con trabajos pendientes.
+
 ## Verificación
 
 ```bash

@@ -1,0 +1,26 @@
+# Categoria Frutas y verduras
+https://www.jumbo.cl/frutas-y-verduras
+
+# Categoria Lacteos, Huevos y Congelados
+https://www.jumbo.cl/lacteos-huevos-y-congelados
+
+# Categoria quesos y fiambres
+https://www.jumbo.cl/quesos-y-fiambres
+
+# Categoria despensa
+https://www.jumbo.cl/despensa
+
+# Categoria Carnes y Pescados
+https://www.jumbo.cl/carnes-y-pescados
+
+#Categoria licores bebidas y aguas
+https://www.jumbo.cl/licores-bebidas-y-aguas
+
+#Categoria panaderia y pasteleria
+https://www.jumbo.cl/panaderia-y-pasteleria
+
+#Categoria limpieza
+https://www.jumbo.cl/limpieza
+
+#Categoria hogar electro y libreria
+https://www.jumbo.cl/hogar-electro-y-libreria

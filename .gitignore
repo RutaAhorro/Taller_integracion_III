@@ -73,3 +73,8 @@ backend/control_scraping/tmp/
 backend/control_scraping/control_scraping
 backend/bot_discord/bot_discord
 backend/api/tmp/
+
+# ===============================
+# Resultados locales de scraping
+# ===============================
+resultados/

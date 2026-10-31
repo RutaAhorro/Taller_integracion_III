@@ -67,7 +67,7 @@ func TestPublisherStalledRedisAllowsJobFinalization(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
-	_, err = NewTrabajoRepository(db).FinalizarTrabajo(ctx, job.ID, "fallido", nil, nil)
+	_, err = NewTrabajoRepository(db).FinalizarTrabajo(ctx, job.ID, "fallido", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("Redis lento bloqueó el cierre SQL: %v", err)
 	}

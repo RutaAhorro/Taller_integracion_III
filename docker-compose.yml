@@ -319,6 +319,9 @@ services:
         condition: service_healthy
     volumes:
       - ./backend/scraper:/app
+      # Categorías compartidas con el worker Go. Se montan en /app/research
+      # para conservar la ruta que espera el spider de Python hasta el cutover.
+      - ./backend/scraper_go/categories:/app/research
       - scraperdata:/var/lib/scraper
     restart: unless-stopped
     networks:
