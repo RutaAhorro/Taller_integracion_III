@@ -4,7 +4,9 @@ import L from 'leaflet';
 import { MapPin, Navigation, TrendingDown, AlertTriangle, CheckCircle2, Car, Bus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useRouteOptimization } from '@/hooks/useRouteOptimization';
+import { useRouteOptimization, type TransportMode } from '@/hooks/useRouteOptimization';
+import type { LucideIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 
 // Fix Leaflet default icon issues in React
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -14,10 +16,36 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+const TRANSPORT_OPTIONS: { mode: TransportMode; label: string; icon: LucideIcon }[] = [
+  { mode: 'car', label: 'Particular', icon: Car },
+  { mode: 'bus', label: 'Transporte Público', icon: Bus },
+];
+
+// Aviso de una regla de negocio (RN) que impide o desaconseja la ruta.
+function RuleAlert({ icon: Icon, title, children }: { icon: LucideIcon; title: string; children: ReactNode }) {
+  return (
+    <div className="bg-primary p-3 rounded-xl border border-border flex items-start gap-2">
+      <Icon className="h-4 w-4 text-primary-foreground mt-0.5 shrink-0"/>
+      <div>
+        <p className="text-sm font-bold text-primary-foreground">{title}</p>
+        <p className="text-xs text-primary-foreground/90 mt-0.5">{children}</p>
+      </div>
+    </div>
+  );
+}
+
+function CostRow({ label, value, valueClassName = 'text-foreground' }: { label: string; value: string; valueClassName?: string }) {
+  return (
+    <div className="flex justify-between items-center text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span className={cn('font-medium', valueClassName)}>{value}</span>
+    </div>
+  );
+}
+
 export default function RouteViewer() {
   const opt = useRouteOptimization(3, 'car');
 
-  // Path coordinates for polyline
   const polylinePositions: [number, number][] = opt.activeStores.map(store => [store.lat, store.lng]);
 
   return (
@@ -39,20 +67,16 @@ export default function RouteViewer() {
           <section className="space-y-3">
             <h3 className="text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground mb-1">Medio de Transporte</h3>
             <div className="grid grid-cols-2 gap-3">
-              <button
-                onClick={() => opt.setTransportMode('car')}
-                className={cn("flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all", opt.transportMode === 'car' ? "border-border bg-primary text-primary-foreground shadow-[4px_4px_0px_var(--color-border)]" : "border-border bg-background text-muted-foreground hover:border-zinc-300 dark:hover:border-zinc-700")}
-              >
-                <Car className="h-6 w-6 mb-2"/>
-                <span className="text-xs font-semibold">Particular</span>
-              </button>
-              <button
-                onClick={() => opt.setTransportMode('bus')}
-                className={cn("flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all", opt.transportMode === 'bus' ? "border-border bg-primary text-primary-foreground shadow-[4px_4px_0px_var(--color-border)]" : "border-border bg-background text-muted-foreground hover:border-zinc-300 dark:hover:border-zinc-700")}
-              >
-                <Bus className="h-6 w-6 mb-2"/>
-                <span className="text-xs font-semibold">Transporte Público</span>
-              </button>
+              {TRANSPORT_OPTIONS.map(({ mode, label, icon: Icon }) => (
+                <button
+                  key={mode}
+                  onClick={() => opt.setTransportMode(mode)}
+                  className={cn("flex flex-col items-center justify-center p-3 rounded-xl border-2 transition-all", opt.transportMode === mode ? "border-border bg-primary text-primary-foreground shadow-[4px_4px_0px_var(--color-border)]" : "border-border bg-background text-muted-foreground hover:border-zinc-300 dark:hover:border-zinc-700")}
+                >
+                  <Icon className="h-6 w-6 mb-2"/>
+                  <span className="text-xs font-semibold">{label}</span>
+                </button>
+              ))}
             </div>
           </section>
 
@@ -85,26 +109,18 @@ export default function RouteViewer() {
             </div>
           ) : (
             <>
-              {/* Alert RN-20: Minimum Amount */}
+              {/* RN-20: monto mínimo */}
               {!opt.isValidAmount && (
-                <div className="bg-primary p-3 rounded-xl border border-border flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 text-primary-foreground mt-0.5 shrink-0"/>
-                  <div>
-                    <p className="text-sm font-bold text-primary-foreground">Monto Mínimo (RN-20)</p>
-                    <p className="text-xs text-primary-foreground/90 mt-0.5">Tu compra de ${opt.productCost.toLocaleString()} no supera el mínimo de ${opt.minAmount.toLocaleString()} para justificar esta ruta.</p>
-                  </div>
-                </div>
+                <RuleAlert icon={AlertTriangle} title="Monto Mínimo (RN-20)">
+                  Tu compra de ${opt.productCost.toLocaleString()} no supera el mínimo de ${opt.minAmount.toLocaleString()} para justificar esta ruta.
+                </RuleAlert>
               )}
 
-              {/* Alert RN-08: Rentability Threshold */}
+              {/* RN-08: umbral de rentabilidad */}
               {opt.isValidAmount && !opt.isProfitable && (
-                <div className="bg-primary p-3 rounded-xl border border-border flex items-start gap-2">
-                  <TrendingDown className="h-4 w-4 text-primary-foreground mt-0.5 shrink-0"/>
-                  <div>
-                    <p className="text-sm font-bold text-primary-foreground">Micro-ahorro Detectado (RN-08)</p>
-                    <p className="text-xs text-primary-foreground/90 mt-0.5">El ahorro proyectado (${opt.savings.toLocaleString()}) no supera el umbral de rentabilidad (${opt.rentabilityThreshold.toLocaleString()}) por el costo de desplazamiento. Sugerimos agrupar en menos tiendas.</p>
-                  </div>
-                </div>
+                <RuleAlert icon={TrendingDown} title="Micro-ahorro Detectado (RN-08)">
+                  El ahorro proyectado (${opt.savings.toLocaleString()}) no supera el umbral de rentabilidad (${opt.rentabilityThreshold.toLocaleString()}) por el costo de desplazamiento. Sugerimos agrupar en menos tiendas.
+                </RuleAlert>
               )}
 
               {/* RN-00: Cost Function Breakdown */}
@@ -112,14 +128,8 @@ export default function RouteViewer() {
                 <h3 className="text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground mb-2 px-1">Función de Costo Total</h3>
                 <div className="bg-background border border-border rounded-xl p-3 shadow-sm">
                   <div className="space-y-1.5 mb-2">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground">Precio Productos</span>
-                      <span className="font-medium text-foreground">${opt.productCost.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-muted-foreground">Costo Desplazamiento</span>
-                      <span className="font-medium text-primary">+ ${opt.logisticCost.toLocaleString()}</span>
-                    </div>
+                    <CostRow label="Precio Productos" value={`$${opt.productCost.toLocaleString()}`} />
+                    <CostRow label="Costo Desplazamiento" value={`+ $${opt.logisticCost.toLocaleString()}`} valueClassName="text-primary" />
                     <div className="border-t border-border mt-2 pt-2 flex justify-between items-center">
                       <span className="font-semibold text-foreground text-sm">Costo Objetivo Total</span>
                       <span className="font-bold text-foreground text-base">${opt.totalCost.toLocaleString()}</span>
