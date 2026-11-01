@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -12,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 )
 
 // plazoEnvio acota un envío cuyo contexto no trae deadline.
@@ -54,6 +55,7 @@ func NuevoSMTP(cfg config.Correo) (*SMTP, error) {
 	}, nil
 }
 
+// Enviar sigue el diálogo SMTP paso a paso; cada error nombra la etapa en que falló.
 func (s *SMTP) Enviar(ctx context.Context, m Mensaje) error {
 	para, err := validar(m)
 	if err != nil {
