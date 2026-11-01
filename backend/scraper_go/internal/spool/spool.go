@@ -120,12 +120,6 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 	return err
 }
 
-func (s *Spool) Unbatched() (int, error) {
-	var count int
-	err := s.db.QueryRow("SELECT count(*) FROM items WHERE batch_id IS NULL").Scan(&count)
-	return count, err
-}
-
 // Count devuelve todos los productos persistidos, entregados o no. El worker
 // lo usa para no declarar completado un trabajo que terminó con cero
 // elementos, incluso si el crawl no devolvió un error explícito.

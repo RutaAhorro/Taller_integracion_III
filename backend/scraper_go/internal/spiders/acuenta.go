@@ -2,7 +2,6 @@ package spiders
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -72,29 +71,22 @@ func NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.
 	})}
 }
 
-func validateAcuentaCategoryURL(rawURL string) error {
-	message := "La categoría de A Cuenta debe usar una URL HTTPS /ca/ de acuenta.cl"
-	if err := validateHTTPSHost(rawURL, acuentaAllowedHosts, message); err != nil {
-		return err
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || !strings.HasPrefix(parsed.Path, "/ca/") {
-		return errors.New(message)
-	}
-	return nil
-}
-
-func validateAcuentaProductURL(rawURL string) error {
-	message := "product_url debe ser una URL HTTPS /p/ de acuenta.cl"
-	if err := validateHTTPSHost(rawURL, acuentaAllowedHosts, message); err != nil {
-		return err
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil || !strings.HasPrefix(parsed.Path, "/p/") {
-		return errors.New(message)
-	}
-	return nil
-}
+var (
+	validateAcuentaCategoryURL = validateSiteURL(
+		acuentaAllowedHosts,
+		"/ca/",
+		"",
+		"La categoría de A Cuenta debe usar una URL HTTPS /ca/ de acuenta.cl",
+		0,
+	)
+	validateAcuentaProductURL = validateSiteURL(
+		acuentaAllowedHosts,
+		"/p/",
+		"",
+		"product_url debe ser una URL HTTPS /p/ de acuenta.cl",
+		0,
+	)
+)
 
 func acuentaCategoryFromURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)

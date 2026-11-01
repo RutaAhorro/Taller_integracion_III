@@ -30,19 +30,15 @@ type Item struct {
 
 // Job representa un trabajo recibido desde la cola.
 type Job struct {
-	WorkID     string
-	Spider     string
-	ProductID  string
-	ProductURL string
-	AddURL     string
-	EnrichEAN  bool
+	WorkID       string
+	Spider       string
+	ProductURL   string
+	AddURL       string
+	CategoryURLs []string
+	EnrichEAN    bool
 }
 
 func StringPtr(value string) *string {
-	return &value
-}
-
-func FloatPtr(value float64) *float64 {
 	return &value
 }
 

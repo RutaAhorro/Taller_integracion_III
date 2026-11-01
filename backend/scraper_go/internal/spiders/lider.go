@@ -3,7 +3,6 @@ package spiders
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -50,29 +49,22 @@ func NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Lo
 	})}
 }
 
-func validateLiderCategoryURL(rawURL string) error {
-	message := "La categoría debe ser una URL HTTPS /browse/ de super.lider.cl"
-	if err := validateHTTPSHost(rawURL, liderAllowedHosts, message); err != nil {
-		return err
-	}
-	parsed, _ := url.Parse(rawURL)
-	if !strings.HasPrefix(parsed.Path, "/browse/") {
-		return errors.New(message)
-	}
-	return nil
-}
-
-func validateLiderProductURL(rawURL string) error {
-	message := "product_url debe ser una URL HTTPS /ip/ de super.lider.cl"
-	if err := validateHTTPSHost(rawURL, liderAllowedHosts, message); err != nil {
-		return err
-	}
-	parsed, _ := url.Parse(rawURL)
-	if !strings.HasPrefix(parsed.Path, "/ip/") {
-		return errors.New(message)
-	}
-	return nil
-}
+var (
+	validateLiderCategoryURL = validateSiteURL(
+		liderAllowedHosts,
+		"/browse/",
+		"",
+		"La categoría debe ser una URL HTTPS /browse/ de super.lider.cl",
+		0,
+	)
+	validateLiderProductURL = validateSiteURL(
+		liderAllowedHosts,
+		"/ip/",
+		"",
+		"product_url debe ser una URL HTTPS /ip/ de super.lider.cl",
+		0,
+	)
+)
 
 func liderPageNumber(rawURL string) int {
 	parsed, err := url.Parse(rawURL)

@@ -15,9 +15,9 @@ import (
 func TestCanonicalProductJSONMatchesPython(t *testing.T) {
 	full := domain.Product{
 		Producto:          "Leche Entera Colún 1 L",
-		Precio:            domain.FloatPtr(1290),
-		PrecioNormal:      domain.FloatPtr(1590),
-		PrecioOferta:      domain.FloatPtr(1290),
+		Precio:            floatPtr(1290),
+		PrecioNormal:      floatPtr(1590),
+		PrecioOferta:      floatPtr(1290),
 		EanGtin:           domain.StringPtr("7800000000001"),
 		SKU:               domain.StringPtr("SKU-1"),
 		Marca:             domain.StringPtr("Colún"),
@@ -60,8 +60,8 @@ func TestCanonicalProductJSONMatchesPython(t *testing.T) {
 			name: "comillas y sin supermercado",
 			product: domain.Product{
 				Producto:     `Aceite "Girasol" 900 ml`,
-				Precio:       domain.FloatPtr(2499.5),
-				PrecioNormal: domain.FloatPtr(2499.5),
+				Precio:       floatPtr(2499.5),
+				PrecioNormal: floatPtr(2499.5),
 				Marca:        domain.StringPtr("Chef"),
 				FormatoCrudo: domain.StringPtr("900 ml"),
 				EnStock:      domain.BoolPtr(false),
@@ -79,9 +79,9 @@ func TestCanonicalProductJSONMatchesPython(t *testing.T) {
 			name: "notación científica de Python",
 			product: domain.Product{
 				Producto:     "Queso Gauda 250 g",
-				Precio:       domain.FloatPtr(0.5),
-				PrecioNormal: domain.FloatPtr(1e16),
-				PrecioOferta: domain.FloatPtr(0.00001),
+				Precio:       floatPtr(0.5),
+				PrecioNormal: floatPtr(1e16),
+				PrecioOferta: floatPtr(0.00001),
 				Categoria:    "lacteos",
 			},
 			market: domain.StringPtr("A Cuenta"),
@@ -123,7 +123,7 @@ func TestAddDeduplicatesRowsWrittenByPython(t *testing.T) {
 
 	product := domain.Product{
 		Producto:  "Leche Entera Colún 1 L",
-		Precio:    domain.FloatPtr(1290),
+		Precio:    floatPtr(1290),
 		Marca:     domain.StringPtr("Colún"),
 		Categoria: "lacteos",
 	}

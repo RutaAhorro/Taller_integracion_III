@@ -25,6 +25,10 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
 func testWorker(t *testing.T) *Worker {
 	t.Helper()
 	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -265,8 +269,8 @@ func TestWorkerProcessesJobEndToEnd(t *testing.T) {
 	registry.Register(&fakeSpider{
 		name: spiders.SantaIsabelName,
 		items: []domain.Item{
-			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: domain.FloatPtr(1290)}, Supermercado: "Santa Isabel"},
-			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: domain.FloatPtr(990)}, Supermercado: "Santa Isabel"},
+			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}, Supermercado: "Santa Isabel"},
+			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: floatPtr(990)}, Supermercado: "Santa Isabel"},
 		},
 	})
 	cfg := config.Config{

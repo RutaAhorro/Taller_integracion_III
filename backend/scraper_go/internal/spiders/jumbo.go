@@ -6,10 +6,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"log/slog"
 	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -111,29 +109,22 @@ func selectJumboProduct(products []domain.Product, requested string, responseURL
 	return nil
 }
 
-func validateProductURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+var (
+	validateProductURL = validateSiteURL(
 		jumboAllowedHosts,
+		"",
+		"",
 		"product_url debe ser una URL HTTPS pública de jumbo.cl",
+		0,
 	)
-}
-
-func validateCategoryURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+	validateCategoryURL = validateSiteURL(
 		jumboAllowedHosts,
+		"",
+		"",
 		"La categoría debe ser una URL HTTPS pública de jumbo.cl",
+		0,
 	)
-}
-
-func canonicalProductURL(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
-}
+)
 
 func extractJumboProducts(body []byte) []domain.Product {
 	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
@@ -231,93 +222,6 @@ func extractJumboProducts(body []byte) []domain.Product {
 	return products
 }
 
-func schemaOffer(entry map[string]any) map[string]any {
-	switch raw := entry["offers"].(type) {
-	case map[string]any:
-		return raw
-	case []any:
-		if len(raw) > 0 {
-			if offer, ok := raw[0].(map[string]any); ok {
-				return offer
-			}
-		}
-	}
-	return map[string]any{}
-}
-
-func extractNormalPrice(entry map[string]any) *float64 {
-	if price := firstPrice(entry, "price"); price != nil {
-		return price
-	}
-	specification := entry["priceSpecification"]
-	if list, ok := specification.([]any); ok && len(list) > 0 {
-		specification = list[0]
-	}
-	return firstPrice(specification, "price")
-}
-
-func firstValue(data any, keys ...string) any {
-	values, ok := data.(map[string]any)
-	if !ok {
-		return nil
-	}
-	for _, key := range keys {
-		value, found := values[key]
-		if !found || value == nil {
-			continue
-		}
-		switch value.(type) {
-		case map[string]any, []any:
-			continue
-		}
-		// Python convierte el escalar a texto antes de normalizarlo.
-		return valueString(value)
-	}
-	return nil
-}
-
-func firstPrice(data any, keys ...string) *float64 {
-	return normalize.PrecioCLP(firstValue(data, keys...))
-}
-
-func valueString(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case json.Number:
-		return typed.String()
-	case float64:
-		text := strconv.FormatFloat(typed, 'g', -1, 64)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
-		}
-		return text
-	case float32:
-		text := strconv.FormatFloat(float64(typed), 'g', -1, 32)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
-		}
-		return text
-	case bool:
-		if typed {
-			return "True"
-		}
-		return "False"
-	default:
-		return fmt.Sprint(value)
-	}
-}
-
-func stockValue(availability any) *bool {
-	text, ok := availability.(string)
-	if !ok {
-		return nil
-	}
-	parts := strings.Split(text, "/")
-	inStock := strings.ToLower(parts[len(parts)-1]) != "outofstock"
-	return &inStock
-}
-
 func skuFromURL(rawURL string) *string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -348,24 +252,4 @@ func skuFromURL(rawURL string) *string {
 	}
 	truncated := "JUMBO-" + string(runes) + "-" + suffix
 	return &truncated
-}
-
-func walkJSON(value any) []any {
-	var result []any
-	var walk func(any)
-	walk = func(node any) {
-		switch typed := node.(type) {
-		case map[string]any:
-			result = append(result, typed)
-			for _, child := range typed {
-				walk(child)
-			}
-		case []any:
-			for _, child := range typed {
-				walk(child)
-			}
-		}
-	}
-	walk(value)
-	return result
 }

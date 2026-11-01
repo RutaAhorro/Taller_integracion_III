@@ -50,21 +50,22 @@ func NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Lo
 	})}
 }
 
-func validateCugatCategoryURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+var (
+	validateCugatCategoryURL = validateSiteURL(
 		cugatAllowedHosts,
+		"",
+		"",
 		"La categoría debe ser una URL HTTPS pública de cugat.cl",
+		0,
 	)
-}
-
-func validateCugatProductURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+	validateCugatProductURL = validateSiteURL(
 		cugatAllowedHosts,
+		"",
+		"",
 		"product_url debe ser una URL HTTPS pública de cugat.cl",
+		0,
 	)
-}
+)
 
 func cugatPageURL(rawURL string, page int) string {
 	parsed, err := url.Parse(rawURL)
@@ -177,44 +178,4 @@ func cugatPriceFrom(card *goquery.Selection, selector string) *float64 {
 
 func extractCugatDetail(body []byte, responseURL *url.URL) *domain.Product {
 	return extractJSONLDProduct(body, responseURL)
-}
-
-func cugatImageURL(value any) *string {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
-			return nil
-		}
-		value = list[0]
-	}
-	if mapped, ok := value.(map[string]any); ok {
-		value = mapped["url"]
-	}
-	if text, ok := value.(string); ok && text != "" {
-		return &text
-	}
-	return nil
-}
-
-func isProductType(value any) bool {
-	switch typed := value.(type) {
-	case string:
-		return typed == "Product"
-	case []any:
-		for _, item := range typed {
-			if text, ok := item.(string); ok && text == "Product" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func firstMapValue(value any) any {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
-			return nil
-		}
-		return list[0]
-	}
-	return value
 }

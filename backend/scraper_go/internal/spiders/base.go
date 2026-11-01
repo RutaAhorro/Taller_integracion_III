@@ -85,7 +85,7 @@ func (b *baseSpider) Run(ctx context.Context, job domain.Job, emit Emitter) erro
 			return err
 		}
 	}
-	urls, err := b.startURLs()
+	urls, err := b.startURLs(job.CategoryURLs)
 	if err != nil {
 		return err
 	}
@@ -174,9 +174,12 @@ func (b *baseSpider) item(
 	return b.toItem(product, category, urlString(responseURL)), nil
 }
 
-func (b *baseSpider) startURLs() ([]string, error) {
-	urls := readCategoryURLs(filepath.Join(b.categoryDir, b.cfg.categoryFile))
-	urls = append(urls, envCategoryURLs(b.cfg.categoryEnv)...)
+func (b *baseSpider) startURLs(overrides []string) ([]string, error) {
+	urls := append([]string(nil), overrides...)
+	if len(urls) == 0 {
+		urls = readCategoryURLs(filepath.Join(b.categoryDir, b.cfg.categoryFile))
+		urls = append(urls, envCategoryURLs(b.cfg.categoryEnv)...)
+	}
 	urls = dedupeStrings(urls)
 	if len(urls) == 0 {
 		return append([]string(nil), b.cfg.defaultCategories...), nil

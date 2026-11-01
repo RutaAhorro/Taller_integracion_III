@@ -3,7 +3,6 @@ package spiders
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/url"
 	"regexp"
@@ -48,32 +47,25 @@ func NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *s
 	})}
 }
 
-func validateSantaIsabelURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+var (
+	validateSantaIsabelURL = validateSiteURL(
 		santaIsabelAllowedHosts,
+		"",
+		"",
 		"La categoría debe ser una URL HTTPS pública de santaisabel.cl",
+		0,
 	)
-}
-
-// validateSantaIsabelProductURL exige una ficha VTEX: termina en /p y no
-// apunta a una categoría. Evita que un product_url se use para saltar el
-// catálogo autorizado.
-func validateSantaIsabelProductURL(rawURL string) error {
-	message := "product_url debe ser una URL HTTPS de ficha /p de santaisabel.cl"
-	if err := validateHTTPSHost(rawURL, santaIsabelAllowedHosts, message); err != nil {
-		return err
-	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return errors.New(message)
-	}
-	path := strings.TrimRight(parsed.Path, "/")
-	if !strings.HasSuffix(path, "/p") || path == "/p" {
-		return errors.New(message)
-	}
-	return nil
-}
+	// validateSantaIsabelProductURL exige una ficha VTEX: termina en /p y no
+	// apunta a una categoría. Evita que un product_url se use para saltar el
+	// catálogo autorizado.
+	validateSantaIsabelProductURL = validateSiteURL(
+		santaIsabelAllowedHosts,
+		"",
+		"/p",
+		"product_url debe ser una URL HTTPS de ficha /p de santaisabel.cl",
+		2,
+	)
+)
 
 func extractSantaIsabelProducts(body []byte, baseURL *url.URL) []domain.Product {
 	// El sitio dejó de publicar window.__renderData en 2026. Se mantiene el

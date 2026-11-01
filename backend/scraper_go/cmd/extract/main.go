@@ -59,7 +59,7 @@ func run() error {
 	flag.Parse()
 
 	if !spiders.IsKnown(*spiderName) {
-		return fmt.Errorf("spider inválido %q; usa uno de: %s", *spiderName, strings.Join(spiders.NewRegistry(nil, "", 1, nil).Names(), ", "))
+		return fmt.Errorf("spider inválido %q; usa uno de: %s", *spiderName, strings.Join(spiders.Names(), ", "))
 	}
 	if *maxPages < 1 {
 		return fmt.Errorf("-max-pages debe ser mayor que cero")
@@ -112,13 +112,6 @@ func run() error {
 			}
 		}
 	}
-	if len(collected) > 0 && !*product {
-		dir, err = temporaryCategoryDir(*spiderName, collected)
-		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(dir)
-	}
 
 	registry := spiders.NewRegistry(httpClient, dir, *maxPages, logger)
 	spider, ok := registry.Get(*spiderName)
@@ -146,6 +139,8 @@ func run() error {
 	}
 	if *product {
 		job.ProductURL = collected[0]
+	} else {
+		job.CategoryURLs = collected
 	}
 	if err := spider.Run(ctx, job, emit); err != nil {
 		return err
@@ -177,24 +172,6 @@ func collectURLs(values []string, file string) ([]string, error) {
 		return nil, fmt.Errorf("leer %s: %w", file, err)
 	}
 	return result, nil
-}
-
-func temporaryCategoryDir(spiderName string, urls []string) (string, error) {
-	dir, err := os.MkdirTemp("", "scraper-extract-*")
-	if err != nil {
-		return "", err
-	}
-	file := filepath.Join(dir, categoryFileName(spiderName))
-	body := strings.Join(urls, "\n") + "\n"
-	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
-		os.RemoveAll(dir)
-		return "", err
-	}
-	return dir, nil
-}
-
-func categoryFileName(spiderName string) string {
-	return strings.TrimSuffix(spiderName, "_rsc") + "_categories.txt"
 }
 
 func directoryExists(path string) bool {
