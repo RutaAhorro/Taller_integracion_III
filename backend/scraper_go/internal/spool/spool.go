@@ -1,11 +1,12 @@
-// Package spool implementa el outbox durable en SQLite. El esquema y la
-// semántica son compatibles con scraper_core/outbox.py para permitir el
-// rollback al worker de Python sin perder el trabajo pendiente.
+// Package spool implementa el outbox durable en SQLite para almacenar los
+// productos scrapeados y garantizar entregas confiables hacia la API.
 package spool
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -96,7 +97,7 @@ func (s *Spool) Close() error {
 // Add guarda un producto antes de enviarlo. Si el mismo producto ya está en
 // el spool, la huella UNIQUE evita duplicarlo.
 func (s *Spool) Add(product domain.Product, market *string) error {
-	data, err := canonicalProductJSON(product)
+	data, err := json.Marshal(product)
 	if err != nil {
 		return err
 	}
@@ -104,10 +105,7 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 		return err
 	}
 
-	fingerprint, err := pythonFingerprint(market, data)
-	if err != nil {
-		return err
-	}
+	fingerprint := productFingerprint(market, data)
 
 	var marketArg any
 	if market != nil {
@@ -118,6 +116,16 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 		fingerprint, marketArg, string(data),
 	)
 	return err
+}
+
+func productFingerprint(market *string, data []byte) string {
+	h := sha256.New()
+	if market != nil {
+		h.Write([]byte(*market))
+	}
+	h.Write([]byte{0})
+	h.Write(data)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Count devuelve todos los productos persistidos, entregados o no. El worker

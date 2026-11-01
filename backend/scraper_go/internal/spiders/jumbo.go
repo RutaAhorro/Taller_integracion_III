@@ -138,7 +138,7 @@ func extractJumboProducts(body []byte) []domain.Product {
 		var data any
 		decoder := json.NewDecoder(strings.NewReader(selection.Text()))
 		// UseNumber conserva la diferencia entre 1290 y 1290.0, igual que
-		// json.loads en Python. Importa para no inventar EAN/SKU.
+		// evitar desbordamientos o parsing incorrecto. Importa para no inventar EAN/SKU.
 		decoder.UseNumber()
 		if err := decoder.Decode(&data); err != nil {
 			return

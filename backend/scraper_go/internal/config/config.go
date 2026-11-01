@@ -33,8 +33,7 @@ type Config struct {
 	MaxRetries      int
 }
 
-// FromEnv construye la configuración y valida los límites que también valida
-// el worker de Python.
+// FromEnv construye y valida la configuración del scraper a partir de variables de entorno.
 func FromEnv() (Config, error) {
 	cfg := Config{
 		RedisURL:        env("REDIS_URL", "redis://localhost:6379/0"),

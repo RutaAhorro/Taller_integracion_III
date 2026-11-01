@@ -28,10 +28,9 @@ func formatFromText(value string, pattern *regexp.Regexp) *string {
 	return normalize.Texto(match)
 }
 
-// pythonTitle replica str.title() de Python: cada secuencia de letras empieza
-// en mayúscula y el resto se pasa a minúscula. Los dígitos y signos cortan la
-// secuencia, por eso "1.5l" queda como "1.5L".
-func pythonTitle(value string) string {
+// titleCase pasa a mayúscula la primera letra de cada secuencia de letras
+// y el resto a minúscula. Los dígitos y signos cortan la secuencia (ej. "1.5l" -> "1.5L").
+func titleCase(value string) string {
 	var builder strings.Builder
 	previousLetter := false
 	for _, character := range value {
@@ -501,7 +500,7 @@ func firstValue(data any, keys ...string) any {
 		case map[string]any, []any:
 			continue
 		}
-		// Python convierte el escalar a texto antes de normalizarlo.
+		// Convierte el escalar a texto antes de normalizarlo.
 		return valueString(value)
 	}
 	return nil

@@ -3,8 +3,8 @@
 package domain
 
 // Product es el documento que se guarda en el spool y se envía a la API.
-// Los campos opcionales usan punteros para conservar los null que publica el
-// scraper de Python; no se debe usar omitempty en este contrato.
+// Los campos opcionales usan punteros para conservar los valores null esperados
+// por la API; no se debe usar omitempty en este contrato.
 type Product struct {
 	Producto          string   `json:"producto"`
 	Precio            *float64 `json:"precio"`

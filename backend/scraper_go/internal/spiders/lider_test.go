@@ -146,7 +146,7 @@ func TestExtractLiderPrefersHydratedItems(t *testing.T) {
 	}
 }
 
-func TestLiderFormatFromTextMatchesPython(t *testing.T) {
+func TestLiderFormatFromText(t *testing.T) {
 	if got := formatFromText("Pan 1 unidad", liderFormatPattern); got != nil {
 		t.Errorf("Lider no debía extraer formato de 'unidad': %v", got)
 	}

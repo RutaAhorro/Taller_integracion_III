@@ -493,7 +493,7 @@ func acuentaTokens(value string) map[string]struct{} {
 
 func acuentaNameFromSlug(slug string) *string {
 	readable := acuentaTrailingDigits.ReplaceAllString(slug, "")
-	return normalize.Texto(pythonTitle(strings.ReplaceAll(readable, "-", " ")))
+	return normalize.Texto(titleCase(strings.ReplaceAll(readable, "-", " ")))
 }
 
 func acuentaPricesFromText(text string) (*float64, *float64, *string) {
