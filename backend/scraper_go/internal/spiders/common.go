@@ -255,6 +255,33 @@ func isDigits(value string) bool {
 	return true
 }
 
+func nonEmptySegments(path string) []string {
+	var segments []string
+	for _, segment := range strings.Split(path, "/") {
+		if segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return segments
+}
+
+func mustParsePath(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Path
+}
+
+func hasClass(classes, wanted string) bool {
+	for _, class := range strings.Fields(classes) {
+		if class == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 func appendQueryParam(rawURL, key, value string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {

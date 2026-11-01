@@ -2,19 +2,16 @@ package spiders
 
 import (
 	"bytes"
-	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
@@ -53,136 +50,26 @@ var (
 )
 
 type Acuenta struct {
-	fetcher     Fetcher
-	categoryDir string
-	maxPages    int
-	logger      *slog.Logger
+	baseSpider
 }
 
 func NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Acuenta{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-	}
-}
-
-func (a *Acuenta) Name() string {
-	return AcuentaName
-}
-
-func (a *Acuenta) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.ProductURL != "" {
-		return a.runProduct(ctx, job, emit)
-	}
-	if job.AddURL != "" {
-		if err := a.appendCategoryURL(job.AddURL); err != nil {
-			return err
-		}
-	}
-	urls, err := a.startURLs()
-	if err != nil {
-		return err
-	}
-	for _, categoryURL := range urls {
-		if err := a.runCategory(ctx, categoryURL, emit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// runProduct atiende un scraping puntual de /p/. Si la ficha no entrega un
-// producto identificable no se emite nada ni se recorre el catálogo completo.
-func (a *Acuenta) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := validateAcuentaProductURL(job.ProductURL); err != nil {
-		return err
-	}
-	response, err := a.fetcher.Fetch(ctx, job.ProductURL)
-	if err != nil {
-		return err
-	}
-	if response.Status == 404 {
-		a.logger.Warn("acuenta_product_not_found", "url", job.ProductURL)
-		return nil
-	}
-	products := extractAcuentaProducts(response.Body, response.URL)
-	selected := selectProductByURL(products, job.ProductURL, response.URL)
-	if selected == nil {
-		a.logger.Warn("acuenta_product_without_data", "url", job.ProductURL, "candidatos", len(products))
-		return nil
-	}
-	return emit(toAcuentaItem(*selected, "producto", job.ProductURL))
-}
-
-func (a *Acuenta) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
-	category := acuentaCategoryFromURL(categoryURL)
-	startPage := acuentaPageNumber(categoryURL)
-	for page := startPage; page <= a.maxPages; page++ {
-		pageURL := acuentaPageURL(categoryURL, page)
-		response, err := a.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				a.logger.Warn("acuenta_category_robots_disallowed", "url", pageURL)
-				return nil
-			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				a.logger.Info("acuenta_pagination_end", "url", pageURL, "page", page)
-				return nil
-			}
-			return err
-		}
-		if response.Status == 404 {
-			return nil
-		}
-
-		products := extractAcuentaProducts(response.Body, response.URL)
-		if len(products) == 0 {
-			a.logger.Warn("acuenta_category_without_products", "url", pageURL, "page", page)
-			return nil
-		}
-		for _, product := range products {
-			item := toAcuentaItem(product, category, urlString(response.URL))
-			if err := emit(item); err != nil {
-				return err
-			}
-		}
-		if page == a.maxPages {
-			a.logger.Warn("acuenta_pagination_limit", "url", categoryURL, "max_pages", a.maxPages)
-		}
-	}
-	return nil
-}
-
-func (a *Acuenta) startURLs() ([]string, error) {
-	urls := readCategoryURLs(filepath.Join(a.categoryDir, "acuenta_categories.txt"))
-	urls = append(urls, envCategoryURLs("ACUENTA_CATEGORY_URLS")...)
-	urls = dedupeStrings(urls)
-	if len(urls) == 0 {
-		return append([]string(nil), acuentaDefaultCategories...), nil
-	}
-	for _, rawURL := range urls {
-		if err := validateAcuentaCategoryURL(rawURL); err != nil {
-			return nil, err
-		}
-	}
-	return urls, nil
-}
-
-func (a *Acuenta) appendCategoryURL(rawURL string) error {
-	return appendCategoryURL(
-		filepath.Join(a.categoryDir, "acuenta_categories.txt"),
-		rawURL,
-		validateAcuentaCategoryURL,
-	)
+	return &Acuenta{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, spiderConfig{
+		name:              AcuentaName,
+		supermarket:       "A Cuenta",
+		categoryFile:      "acuenta_categories.txt",
+		categoryEnv:       "ACUENTA_CATEGORY_URLS",
+		defaultCategories: acuentaDefaultCategories,
+		validateCategory:  validateAcuentaCategoryURL,
+		validateProduct:   validateAcuentaProductURL,
+		extractProducts:   extractAcuentaProducts,
+		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
+			return selectProductByURL(extractAcuentaProducts(body, responseURL), requested, responseURL)
+		},
+		pageURL:         acuentaPageURL,
+		startPage:       acuentaPageNumber,
+		categoryFromURL: acuentaCategoryFromURL,
+	})}
 }
 
 func validateAcuentaCategoryURL(rawURL string) error {
@@ -677,12 +564,4 @@ func acuentaSKUFromURL(productURL string) *string {
 		value = string(runes[:100])
 	}
 	return &value
-}
-
-func toAcuentaItem(product domain.Product, category, pageURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = &pageURL
-	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: "A Cuenta"}
 }

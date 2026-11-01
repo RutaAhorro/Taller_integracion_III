@@ -48,7 +48,7 @@ func run() error {
 	var urls stringList
 	spiderName := flag.String("spider", spiders.JumboName, "spider a ejecutar")
 	file := flag.String("file", "", "archivo con URLs, una por línea")
-	product := flag.Bool("product", false, "tratar la URL como ficha de producto (Jumbo y Cugat)")
+	product := flag.Bool("product", false, "tratar la URL como ficha de producto")
 	enrichEAN := flag.Bool("enrich-ean", false, "consultar la ficha para completar EAN cuando falte (Jumbo)")
 	maxPages := flag.Int("max-pages", spiders.DefaultMaxPages, "máximo de páginas por categoría")
 	categoryDir := flag.String("category-dir", "", "directorio de categorías; por defecto backend/scraper_go/categories")
@@ -71,9 +71,6 @@ func run() error {
 	}
 	if *product && len(collected) != 1 {
 		return fmt.Errorf("-product requiere exactamente una URL")
-	}
-	if *product && *spiderName != spiders.JumboName && *spiderName != spiders.CugatName {
-		return fmt.Errorf("%s no tiene modo producto; usa una categoría o el spider jumbo_rsc/cugat_rsc", *spiderName)
 	}
 
 	cfg, err := config.FromEnv()

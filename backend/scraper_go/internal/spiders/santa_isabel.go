@@ -2,19 +2,16 @@ package spiders
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
@@ -31,139 +28,24 @@ var (
 )
 
 type SantaIsabel struct {
-	fetcher     Fetcher
-	categoryDir string
-	maxPages    int
-	logger      *slog.Logger
+	baseSpider
 }
 
 func NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &SantaIsabel{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-	}
-}
-
-func (s *SantaIsabel) Name() string {
-	return SantaIsabelName
-}
-
-func (s *SantaIsabel) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.ProductURL != "" {
-		return s.runProduct(ctx, job, emit)
-	}
-	if job.AddURL != "" {
-		if err := s.appendCategoryURL(job.AddURL); err != nil {
-			return err
-		}
-	}
-	urls, err := s.startURLs()
-	if err != nil {
-		return err
-	}
-	for _, categoryURL := range urls {
-		if err := s.runCategory(ctx, categoryURL, emit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// runProduct atiende un scraping puntual. Nunca cae al crawl de categorías:
-// un target inválido, inexistente o ambiguo termina sin emitir productos.
-func (s *SantaIsabel) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := validateSantaIsabelProductURL(job.ProductURL); err != nil {
-		return err
-	}
-	response, err := s.fetcher.Fetch(ctx, job.ProductURL)
-	if err != nil {
-		return err
-	}
-	if response.Status == 404 {
-		s.logger.Warn("santa_isabel_product_not_found", "url", job.ProductURL)
-		return nil
-	}
-	products := extractSantaIsabelProducts(response.Body, response.URL)
-	selected := selectProductByURL(products, job.ProductURL, response.URL)
-	if selected == nil {
-		s.logger.Warn("santa_isabel_product_without_data", "url", job.ProductURL, "candidatos", len(products))
-		return nil
-	}
-	return emit(toSantaIsabelItem(*selected, "producto", job.ProductURL))
-}
-
-func (s *SantaIsabel) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
-	category := categoryFromURL(categoryURL)
-	for page := 1; page <= s.maxPages; page++ {
-		pageURL := categoryURL
-		if page > 1 {
-			pageURL = withPage(categoryURL, page)
-		}
-		response, err := s.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				s.logger.Warn("santa_isabel_category_robots_disallowed", "url", pageURL)
-				return nil
-			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				s.logger.Info("santa_isabel_pagination_end", "url", pageURL, "page", page)
-				return nil
-			}
-			return err
-		}
-		if response.Status == 404 {
-			s.logger.Info("santa_isabel_pagination_end", "url", pageURL, "page", page)
-			return nil
-		}
-
-		products := extractSantaIsabelProducts(response.Body, response.URL)
-		if len(products) == 0 {
-			s.logger.Warn("santa_isabel_category_without_products", "url", pageURL, "page", page)
-			return nil
-		}
-		for _, product := range products {
-			item := toSantaIsabelItem(product, category, urlString(response.URL))
-			if err := emit(item); err != nil {
-				return err
-			}
-		}
-		if page == s.maxPages {
-			s.logger.Warn("santa_isabel_pagination_limit", "url", categoryURL, "max_pages", s.maxPages)
-		}
-	}
-	return nil
-}
-
-func (s *SantaIsabel) startURLs() ([]string, error) {
-	urls := readCategoryURLs(filepath.Join(s.categoryDir, "santa_isabel_categories.txt"))
-	urls = append(urls, envCategoryURLs("SANTA_ISABEL_CATEGORY_URLS")...)
-	urls = dedupeStrings(urls)
-	if len(urls) == 0 {
-		return append([]string(nil), santaIsabelDefaultCategories...), nil
-	}
-	for _, rawURL := range urls {
-		if err := validateSantaIsabelURL(rawURL); err != nil {
-			return nil, err
-		}
-	}
-	return urls, nil
-}
-
-func (s *SantaIsabel) appendCategoryURL(rawURL string) error {
-	return appendCategoryURL(
-		filepath.Join(s.categoryDir, "santa_isabel_categories.txt"),
-		rawURL,
-		validateSantaIsabelURL,
-	)
+	return &SantaIsabel{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, spiderConfig{
+		name:              SantaIsabelName,
+		supermarket:       "Santa Isabel",
+		categoryFile:      "santa_isabel_categories.txt",
+		categoryEnv:       "SANTA_ISABEL_CATEGORY_URLS",
+		defaultCategories: santaIsabelDefaultCategories,
+		validateCategory:  validateSantaIsabelURL,
+		validateProduct:   validateSantaIsabelProductURL,
+		extractProducts:   extractSantaIsabelProducts,
+		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
+			return selectProductByURL(extractSantaIsabelProducts(body, responseURL), requested, responseURL)
+		},
+		pageURL: pageURLOrSelf,
+	})}
 }
 
 func validateSantaIsabelURL(rawURL string) error {
@@ -537,19 +419,4 @@ func joinValueStrings(values ...any) *string {
 		return nil
 	}
 	return &text
-}
-
-func toSantaIsabelItem(product domain.Product, category, pageURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = &pageURL
-	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: "Santa Isabel"}
-}
-
-func urlString(value *url.URL) string {
-	if value == nil {
-		return ""
-	}
-	return value.String()
 }
