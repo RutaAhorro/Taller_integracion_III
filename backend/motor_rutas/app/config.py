@@ -20,16 +20,37 @@ class Configuracion:
     db_pool_max: int = 5
 
 
-def cargar(entorno: Mapping[str, str] | None = None) -> Configuracion:
-    entorno = os.environ if entorno is None else entorno
-    db_url = entorno.get("RUTAS_DB_URL", "")
+def _dsn_valido(db_url: str) -> bool:
+    """Exige el rol app_rutas con contraseña, host y base explícitos."""
     try:
         dsn = urlsplit(db_url)
         _ = dsn.port  # urlsplit sólo valida el puerto al leerlo
-        valido = dsn.scheme in ("postgres", "postgresql") and dsn.username == "app_rutas" and bool(dsn.password) and bool(dsn.hostname) and dsn.path not in ("", "/")
     except ValueError:
-        valido = False
-    if not valido:
+        return False
+    return (
+        dsn.scheme in ("postgres", "postgresql")
+        and dsn.username == "app_rutas"
+        and bool(dsn.password)
+        and bool(dsn.hostname)
+        and dsn.path not in ("", "/")
+    )
+
+
+def _origen_exacto(origen: str) -> bool:
+    """Un origen CORS es esquema + host (+ puerto), sin rutas, comodines ni credenciales."""
+    url = urlsplit(origen)
+    return (
+        url.scheme in ("http", "https")
+        and bool(url.hostname)
+        and not (url.username or url.password or url.path or url.query or url.fragment)
+        and not any(c in origen for c in "*?#\\ \t\r\n")
+    )
+
+
+def cargar(entorno: Mapping[str, str] | None = None) -> Configuracion:
+    entorno = os.environ if entorno is None else entorno
+    db_url = entorno.get("RUTAS_DB_URL", "")
+    if not _dsn_valido(db_url):
         raise ErrorConfiguracion("RUTAS_DB_URL requiere rol app_rutas, base y contraseña explícitos")
 
     secreto = entorno.get("JWT_SECRET", "")
@@ -40,8 +61,7 @@ def cargar(entorno: Mapping[str, str] | None = None) -> Configuracion:
     for origen in (parte.strip() for parte in entorno.get("CORS_ALLOWED_ORIGINS", "").split(",")):
         if not origen:
             continue
-        url = urlsplit(origen)
-        if url.scheme not in ("http", "https") or not url.hostname or url.username or url.password or url.path or url.query or url.fragment or any(c in origen for c in "*?#\\ \t\r\n"):
+        if not _origen_exacto(origen):
             raise ErrorConfiguracion("CORS_ALLOWED_ORIGINS requiere orígenes HTTP(S) exactos")
         origenes.append(origen)
 
