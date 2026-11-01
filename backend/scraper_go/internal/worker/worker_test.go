@@ -29,6 +29,14 @@ func floatPtr(value float64) *float64 {
 	return &value
 }
 
+func skipIfRedisUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if os.Getenv("REDIS_TEST_URL") != "" {
+		t.Fatalf("Redis configurado en REDIS_TEST_URL no está disponible: %v", err)
+	}
+	t.Skipf("Redis no disponible: %v", err)
+}
+
 func testWorker(t *testing.T) *Worker {
 	t.Helper()
 	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -161,7 +169,7 @@ func TestWorkerProcessesJobEndToEnd(t *testing.T) {
 	defer pingCancel()
 	if err := redisClient.Ping(pingCtx).Err(); err != nil {
 		_ = redisClient.Close()
-		t.Skipf("Redis no disponible: %v", err)
+		skipIfRedisUnavailable(t, err)
 	}
 
 	workID := uuid.NewString()
@@ -345,7 +353,7 @@ func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRun
 	defer pingCancel()
 	if err := redisClient.Ping(pingCtx).Err(); err != nil {
 		_ = redisClient.Close()
-		t.Skipf("Redis no disponible: %v", err)
+		skipIfRedisUnavailable(t, err)
 	}
 
 	prefix := "scraper:test:worker:" + uuid.NewString()
