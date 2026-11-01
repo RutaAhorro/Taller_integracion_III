@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"io"
 	"log/slog"
 	"mime"
@@ -19,6 +18,8 @@ import (
 	"net/textproto"
 	"strings"
 	"time"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 )
 
 // Mensaje es un correo para un único destinatario. Texto es obligatorio; HTML, opcional.
@@ -26,6 +27,7 @@ type Mensaje struct {
 	Para, Asunto, Texto, HTML string
 }
 
+// Mailer es lo único que conocen los casos de uso: el transporte se elige en Nuevo.
 type Mailer interface {
 	Enviar(ctx context.Context, m Mensaje) error
 }
@@ -35,6 +37,7 @@ var (
 	ErrMensajeInvalido = errors.New("mensaje de correo inválido")
 )
 
+// Nuevo elige el transporte según cfg.Modo. Sin modo conocido, el correo queda deshabilitado.
 func Nuevo(cfg config.Correo, log *slog.Logger) (Mailer, error) {
 	if log == nil {
 		log = slog.Default()
@@ -43,6 +46,8 @@ func Nuevo(cfg config.Correo, log *slog.Logger) (Mailer, error) {
 	case config.CorreoSMTP:
 		s, err := NuevoSMTP(cfg)
 		if err != nil {
+			// No retornar s directamente: un *SMTP nil dentro de la interfaz
+			// Mailer no es igual a nil y el llamador no detectaría el error.
 			return nil, err
 		}
 		return s, nil
@@ -55,7 +60,13 @@ func Nuevo(cfg config.Correo, log *slog.Logger) (Mailer, error) {
 
 // MensajePrueba es el correo de `identidad correo-prueba`.
 func MensajePrueba(para, origen string, ahora time.Time) Mensaje {
-	return Mensaje{Para: para, Asunto: "Prueba SMTP de Identidad", Texto: "Este correo confirma que Identidad puede enviar mensajes.\n\nOrigen: " + origen + "\nFecha: " + ahora.Format(time.RFC3339) + "\n"}
+	return Mensaje{
+		Para:   para,
+		Asunto: "Prueba SMTP de Identidad",
+		Texto: "Este correo confirma que Identidad puede enviar mensajes.\n\n" +
+			"Origen: " + origen + "\n" +
+			"Fecha: " + ahora.Format(time.RFC3339) + "\n",
+	}
 }
 
 type deshabilitado struct{}
@@ -73,6 +84,8 @@ func (r registro) Enviar(ctx context.Context, m Mensaje) error {
 	return nil
 }
 
+// validar rechaza saltos de línea en destinatario y asunto: permitirían inyectar
+// cabeceras SMTP (por ejemplo, un Bcc oculto).
 func validar(m Mensaje) (*mail.Address, error) {
 	para, err := mail.ParseAddress(m.Para)
 	if err != nil || strings.ContainsAny(m.Para, "\r\n") {
