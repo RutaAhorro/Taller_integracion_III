@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useNavigate, useLocation, Link } from "react-router-dom"
-import { ArrowRight, Eye, EyeOff, Leaf, Lock, Mail, Loader2, ShoppingBasket } from "lucide-react"
+import { ArrowRight, Eye, EyeOff, Lock, Mail, Loader2, ShoppingBasket } from "lucide-react"
 import { useToast } from "@/contexts/ToastContext"
 import { useAuth } from "@/hooks/useAuth"
 
@@ -225,7 +225,7 @@ export function AuthPanel() {
               </form>
 
               <FieldSeparator className="my-6">O continuar con</FieldSeparator>
-              <SocialButtons onClick={handleLogin} />
+              <SocialButtons />
 
               <div className="mt-6 flex justify-center">
                 <Button
@@ -359,7 +359,7 @@ export function AuthPanel() {
               </form>
 
               <FieldSeparator className="my-6">O continuar con</FieldSeparator>
-              <SocialButtons onClick={handleSignup} />
+              <SocialButtons />
             </TabsContent>
           </Tabs>
         </div>

@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Sparkles, CheckCircle2, 
   Trash2, Maximize2, 

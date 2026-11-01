@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ShieldCheck, MapPin, Store, ThumbsUp, ThumbsDown, CheckCircle2, TrendingUp } from 'lucide-react';
+import { ShieldCheck, MapPin, Store, ThumbsUp, ThumbsDown, TrendingUp } from 'lucide-react';
 import { SuccessCard } from '@/components/ui/SuccessCard';
 import { useToast } from '@/contexts/ToastContext';
 import { cn } from '@/lib/utils';
