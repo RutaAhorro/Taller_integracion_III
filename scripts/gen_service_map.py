@@ -46,20 +46,20 @@ SERVICES = {
         "lang": "python",
         "name": "IA Conversacional (FastAPI)",
         "extensions": [".py"],
-        "exclude": ["__pycache__"],
+        "exclude": ["__pycache__", ".venv", "venv"],
     },
     "backend/motor_rutas": {
         "lang": "python",
         "name": "Motor de Rutas (FastAPI + OR-Tools)",
         "extensions": [".py"],
-        "exclude": ["__pycache__"],
+        "exclude": ["__pycache__", ".venv", "venv"],
     },
-    "backend/scraper": {
-        "lang": "python",
-        "name": "Scraper (Scrapy)",
-        "notes": "Estado vigente SUP-270: worker con Redis Streams, lease/heartbeat/ACK y dead-letter; spool SQLite durable en SCRAPER_STATE_DIR. No accede a PostgreSQL. Un worker con volumen persistente RWO; conservar las claves de lote de trabajos activos. Limpia spools completados tras ACK; retiene fallidos 24h, con retirada terminal bajo presión y reserva de 64MiB. Ver docs/Guias/GUIA_SCRAPING_RECUPERACION.md.",
-        "extensions": [".py"],
-        "exclude": ["__pycache__"],
+    "backend/scraper_go": {
+        "lang": "go",
+        "name": "Scraper Worker (Go)",
+        "notes": "Worker de scraping en Go con Redis Streams y spool SQLite durable.",
+        "extensions": [".go"],
+        "exclude": ["vendor"],
     },
     "frontend/web/src": {
         "lang": "typescript",

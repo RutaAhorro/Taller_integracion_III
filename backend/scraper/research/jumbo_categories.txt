@@ -1,1 +1,0 @@
-../../scraper_go/categories/jumbo_categories.txt

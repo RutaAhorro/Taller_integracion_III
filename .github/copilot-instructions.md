@@ -11,10 +11,7 @@ frontend/web/       → React 19 + Vite + TypeScript (Accesible vía Zapto)
 backend/bot_discord/→ Go Discord Bot (Se conecta a la API K8s)
 
 === Clúster Kubernetes UCT ===
-backend/gateway/    → Go 1.26, proxy público sin SQL
-backend/identidad/  → Go 1.26 + Gin + GORM, usuarios/login/SSO
-backend/catalogo/   → Go 1.26 + Gin + GORM, productos/precios/ingesta
-backend/control_scraping/ → Go 1.26 + Gin + GORM, trabajos/outboxes/coordinar worker
+backend/api/        → Go 1.26 + Gin + GORM (API Gateway, expuesto vía Ingress/Port-Forward)
 backend/scraper/    → Python + Scrapy (Standby worker)
 PostgreSQL / Redis  → Pods dedicados en el clúster
 ```
@@ -26,8 +23,7 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - `api.*`: usuarios, categorías, marcas, productos_normalizados, recetas, misiones_validacion, mapeos_productos_ia
 - `scraper.*`: cadenas_supermercado, sucursales (geolocalización), trabajos_scraper, productos_crudos, capturas_precios
 - `rutas.*`: listas_compras, articulos_lista_compras, ejecuciones_optimizacion, paradas_optimizacion, detalle_articulos_parada
-- Modelos GORM privados por dominio; no hay modelos globales ni biblioteca que reúna servicios.
-- SUP-273 retira backend/api. Consultar docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.
+- Modelos GORM: `backend/api/infrastructure/models.go` (23 modelos)
 - DDL SQL: `infrastructure/db/` (init.sql, 01_schema_api.sql, 02_schema_scraper.sql, 03_schema_rutas.sql)
 
 ## Convenciones de Git (OBLIGATORIO)
@@ -80,39 +76,65 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 ## Resumen de arquitectura (auto-generado)
 
 
-## Mapa auto-generado: API Gateway (Go + Gin)
+## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-**33 archivos .go** detectados
+Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
+**34 archivos .go** detectados
+
+
+### `cmd/catalogo/main.go` (package main)
+
+- `main()`
+- `run(log *slog.Logger) error`
 
 ### `cmd/seed_productos/main.go` (package main)
 
 - Structs: productoSemilla
 - `main()`
 
-### `domain/producto.go` (package domain)
+### `cmd/seed_productos/models.go` (package main)
+
+- Structs: productoCrudoSemilla, capturaPrecioSemilla
+
+### `internal/auth/jwt.go` (package auth)
+
+- Structs: JWTClaims
+- `ValidarToken(tokenString, secret string) (*jwt.Token, error)`
+
+### `internal/config/config.go` (package config)
+
+- Structs: Config
+- `Load() (Config, error)`
+
+### `internal/config/config_test.go` (package config)
+
+- `TestLoad(t *testing.T)`
+- `TestCORSOriginsConfiguration(t *testing.T)`
+- `TestInternalTokenConfiguration(t *testing.T)`
+
+### `internal/domain/fuente.go` (package domain)
+
+- Structs: FuenteDTO, ActualizarFuenteDTO
+
+### `internal/domain/fuente_repository.go` (package domain)
+
+
+### `internal/domain/producto.go` (package domain)
 
 - Structs: FiltroProductosDTO, ProductoDTO, ProductoAdminDTO, MetadatosPaginacionDTO, PaginaProductosDTO, PaginaProductosAdminDTO, HistorialPrecioDTO, ProductoDetalleDTO
 
-### `domain/scraper.go` (package domain)
+### `internal/domain/repository.go` (package domain)
 
-- Structs: IniciarTrabajoDTO, TrabajoScraperDTO, FinalizarTrabajoDTO, ProductoScrapeadoDTO, IngestaLoteDTO, IngestaResultadoDTO
 
-### `domain/usuario.go` (package domain)
+### `internal/handlers/fuente_handler.go` (package handlers)
 
-- Structs: ActualizarPerfilDTO, PerfilUsuarioDTO
+- Structs: FuenteHandler
+- `NewFuenteHandler(service services.FuenteService) *FuenteHandler`
+- `(FuenteHandler).ObtenerFuentes(c *gin.Context)`
+- `(FuenteHandler).ActualizarFuente(c *gin.Context)`
 
-### `handlers/auth_handler.go` (package handlers)
-
-- Structs: RegistroRequest, RegistroResponse, LoginRequest, LoginResponse, AuthHandler, GoogleLoginRequest
-- `NewAuthHandler(authService services.AuthService) *AuthHandler`
-- `(AuthHandler).RegistrarUsuario(c *gin.Context)`
-- `(AuthHandler).LoginUsuario(c *gin.Context)`
-- `(AuthHandler).PerfilUsuario(c *gin.Context)`
-- `(AuthHandler).ActualizarPerfil(c *gin.Context)`
-- `(AuthHandler).GoogleLoginUsuario(c *gin.Context)`
-
-### `handlers/producto_handler.go` (package handlers)
+### `internal/handlers/producto_handler.go` (package handlers)
 
 - Structs: ProductoHandler
 - `NewProductoHandler(service services.ProductoService) *ProductoHandler`
@@ -121,168 +143,127 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - `(ProductoHandler).BuscarProductos(c *gin.Context)`
 - `(ProductoHandler).ObtenerDetalleProducto(c *gin.Context)`
 
-### `handlers/scraper_handler.go` (package handlers)
+### `internal/ingesta/http.go` (package ingesta)
 
-- Structs: ScraperHandler, ejecutarScraperRequest
-- `NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler`
-- `(ScraperHandler).EjecutarTrabajo(c *gin.Context)`
-- `(ScraperHandler).IniciarTrabajo(c *gin.Context)`
-- `(ScraperHandler).FinalizarTrabajo(c *gin.Context)`
-- `(ScraperHandler).ObtenerTrabajo(c *gin.Context)`
-- `(ScraperHandler).IngestarProductosConTrabajo(c *gin.Context)`
-- `(ScraperHandler).IngestarProductosDirecto(c *gin.Context)`
-- `(ScraperHandler).manejarErrorIngesta(c *gin.Context, err error)`
+- Structs: Config
+- `Register(r *gin.Engine, cfg Config, logger *slog.Logger)`
+- `decode(c *gin.Context, input any) bool`
 
-### `infrastructure/models.go` (package infrastructure)
+### `internal/ingesta/http_test.go` (package ingesta)
 
-- Structs: Usuario, PreferencialDieteticaUsuario, DireccionUsuario, PerfilTransporteUsuario, TarjetaFidelidadUsuario, MisionValidacion, Categoria, Marca, ProductoNormalizado, EquivalenciaProducto, Receta, IngredienteReceta, MapeoProductoIA, CadenaSupermercado, SucursalSupermercado, TrabajoScraper, ProductoCrudo, CapturaPrecio, ListaCompra, ArticuloListaCompra, EjecucionOptimizacion, ParadaOptimizacion, DetalleArticuloParada
+- Structs: testStore
+- `TestInternalSQLDataErrorsArePermanentAndPrivate(t *testing.T)`
+- `(testStore).ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error)`
+- `(testStore).ObtenerSucursal(context.Context, int, *int, *string) (*SucursalSupermercado, error)`
+- `(testStore).IngestarLote(_ context.Context, input Request) (*IngestaResultadoDTO, error)`
+- `TestInternalIngestSecurityAndValidation(t *testing.T)`
+- `TestInternalBatchConflictIsControlled(t *testing.T)`
+- `TestInternalIngestClosedAndGenericError(t *testing.T)`
 
-### `main.go` (package main)
+### `internal/ingesta/lote.go` (package ingesta)
 
-- `initDB()`
-- `initRedis()`
-- `setupRouter() *gin.Engine`
-- `RootHandler(c *gin.Context)`
-- `HealthHandler(c *gin.Context)`
-- `main()`
+- `(Repository).IngestarLote(ctx context.Context, input Request) (*IngestaResultadoDTO, error)`
 
-### `middleware/error_handler.go` (package middleware)
+### `internal/ingesta/repository.go` (package ingesta)
 
-- Structs: RespuestaError
-- `ErrorHandler() gin.HandlerFunc`
+- Structs: Repository
+- `NewRepository(db *gorm.DB) *Repository`
+- `(Repository).obtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*CadenaSupermercado, error)`
+- `(Repository).obtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*SucursalSupermercado, error)`
+- `(Repository).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*CadenaSupermercado, error)`
+- `(Repository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*SucursalSupermercado, error)`
+
+### `internal/ingesta/storage.go` (package ingesta)
+
+- `VerifyStorage(ctx context.Context, db *gorm.DB, writer bool) error`
+
+### `internal/ingesta/types.go` (package ingesta)
+
+- Structs: CadenaSupermercado, SucursalSupermercado, ProductoScrapeadoDTO, IngestaResultadoDTO, Request
+
+### `internal/middleware/error_handler.go` (package middleware)
+
+- Structs: RespuestaError, ErrorValidacion
+- `(ErrorValidacion).Error() string`
+- `ErrorHandler(logger *slog.Logger) gin.HandlerFunc`
 - `NotFoundHandler() gin.HandlerFunc`
 - `MethodNotAllowedHandler() gin.HandlerFunc`
 - `ResponderError(c *gin.Context, estado int, mensaje string, err error)`
+- `LogInternalError(c *gin.Context, err error)`
 
-### `middleware/jwt_auth.go` (package middleware)
+### `internal/middleware/jwt_auth.go` (package middleware)
 
-- `RequireAuth() gin.HandlerFunc`
+- `RequireAuth(secret string) gin.HandlerFunc`
 
-### `middleware/rate_limit.go` (package middleware)
-
-- `RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc`
-- `RateLimitLogin(rdb *redis.Client) gin.HandlerFunc`
-
-### `middleware/rbac.go` (package middleware)
+### `internal/middleware/rbac.go` (package middleware)
 
 - `RequireRole(rolesPermitidos ...string) gin.HandlerFunc`
 
-### `repositories/producto_repository.go` (package repositories)
+### `internal/repositories/fuente_repository.go` (package repositories)
+
+- Structs: gormFuenteRepository, fuenteRow
+- `NewFuenteRepository(db *gorm.DB) domain.FuenteRepository`
+- `(fuenteRow).aDTO() domain.FuenteDTO`
+- `(gormFuenteRepository).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(gormFuenteRepository).ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error)`
+- `(gormFuenteRepository).ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error)`
+
+### `internal/repositories/producto_repository.go` (package repositories)
 
 - Structs: gormProductoRepository
-- `NewProductoRepository(db *gorm.DB) ProductoRepository`
+- `NewProductoRepository(db *gorm.DB) domain.ProductoRepository`
 - `(gormProductoRepository).Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error)`
 - `(gormProductoRepository).ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error)`
 - `(gormProductoRepository).ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)`
 
-### `repositories/scraper_repository.go` (package repositories)
+### `internal/server/server.go` (package server)
 
-- Structs: gormScraperRepository
-- `NewScraperRepository(db *gorm.DB) ScraperRepository`
-- `(gormScraperRepository).CrearTrabajo(ctx context.Context, trabajo *infrastructure.TrabajoScraper) error`
-- `(gormScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*infrastructure.TrabajoScraper, error)`
-- `(gormScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*infrastructure.TrabajoScraper, error)`
-- `(gormScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*infrastructure.CadenaSupermercado, error)`
-- `(gormScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*infrastructure.SucursalSupermercado, error)`
-- `(gormScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+- `NewRouter(service services.ProductoService, fuentes services.FuenteService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine`
+- `cors(allowedOrigins []string) gin.HandlerFunc`
+- `observe(logger *slog.Logger) gin.HandlerFunc`
 
-### `repositories/usuario_repository.go` (package repositories)
+### `internal/services/fuente_service.go` (package services)
 
-- Structs: gormUsuarioRepository
-- `NewUsuarioRepository(db *gorm.DB) UsuarioRepository`
-- `(gormUsuarioRepository).FindByEmail(ctx context.Context, email string) (*infrastructure.Usuario, error)`
-- `(gormUsuarioRepository).FindByID(ctx context.Context, id string) (*infrastructure.Usuario, error)`
-- `(gormUsuarioRepository).Create(ctx context.Context, usuario *infrastructure.Usuario) error`
-- `(gormUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- Structs: fuenteService
+- `NewFuenteService(repo domain.FuenteRepository) FuenteService`
+- `(fuenteService).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(fuenteService).ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error)`
 
-### `routes/admin_routes.go` (package routes)
-
-- `RegistrarRutasAdmin(rg *gin.RouterGroup, db *gorm.DB)`
-
-### `routes/auth_routes.go` (package routes)
-
-- `RegistrarRutasAuth(rg *gin.RouterGroup, db *gorm.DB, rdb *redis.Client)`
-
-### `routes/producto_routes.go` (package routes)
-
-- `RegistrarRutasProductos(rg *gin.RouterGroup, db *gorm.DB)`
-
-### `routes/scraper_routes.go` (package routes)
-
-- `RegistrarRutasScraper(rg *gin.RouterGroup, db *gorm.DB, rdb *redis.Client)`
-
-### `services/auth_service.go` (package services)
-
-- Structs: RegistroDTO, UsuarioCreadoDTO, authService
-- `NewAuthService(usuarioRepo repositories.UsuarioRepository) AuthService`
-- `validarComplejidadPassword(password string) error`
-- `validarEmail(email string) bool`
-- `(authService).Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error)`
-- `(authService).Login(correo, password string) (*infrastructure.Usuario, error)`
-- `(authService).LoginWithContext(ctx context.Context, correo, password string) (*infrastructure.Usuario, error)`
-- `(authService).GoogleLogin(ctx context.Context, tokenGoogle string) (*infrastructure.Usuario, error)`
-- `(authService).ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)`
-
-### `services/producto_service.go` (package services)
+### `internal/services/producto_service.go` (package services)
 
 - Structs: productoService
-- `NewProductoService(repo repositories.ProductoRepository) ProductoService`
+- `NewProductoService(repo domain.ProductoRepository) ProductoService`
 - `(productoService).ObtenerCatalogo(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error)`
 - `(productoService).ObtenerCatalogoAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error)`
 - `(productoService).ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error)`
 
-### `services/scraper_service.go` (package services)
+### `internal/tests/architecture_test.go` (package tests)
 
-- Structs: scraperService
-- `NewScraperService(repo repositories.ScraperRepository) ScraperService`
-- `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
-- `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
-- `(scraperService).mapearTrabajoDTO(t *infrastructure.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
+- `TestCatalogDependencies(t *testing.T)`
 
-### `tests/auth_handler_test.go` (package tests)
+### `internal/tests/fuente_handler_test.go` (package tests)
 
-- `TestAuthHandler_RegistrarUsuario_AutoLogin(t *testing.T)`
-- `TestAuthHandler_ActualizarPerfil(t *testing.T)`
+- `fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine`
+- `solicitarFuente(t *testing.T, router http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder`
+- `TestFuenteHandler_HTTP(t *testing.T)`
 
-### `tests/auth_service_test.go` (package tests)
+### `internal/tests/fuente_service_test.go` (package tests)
 
-- Structs: mockUsuarioRepository
-- `newMockUsuarioRepository() *mockUsuarioRepository`
-- `(mockUsuarioRepository).FindByEmail(ctx context.Context, email string) (*infrastructure.Usuario, error)`
-- `(mockUsuarioRepository).FindByID(ctx context.Context, id string) (*infrastructure.Usuario, error)`
-- `(mockUsuarioRepository).Create(ctx context.Context, usuario *infrastructure.Usuario) error`
-- `(mockUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
-- `TestAuthService_PasswordComplexity(t *testing.T)`
-- `TestAuthService_RegistroExitoso(t *testing.T)`
-- `TestAuthService_Login(t *testing.T)`
-- `TestAuthService_ActualizarPerfil(t *testing.T)`
+- Structs: mockFuenteRepository
+- `(mockFuenteRepository).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(mockFuenteRepository).ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error)`
+- `(mockFuenteRepository).ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error)`
+- `TestFuenteService_Listar(t *testing.T)`
+- `TestFuenteService_ActualizarFuente(t *testing.T)`
 
-### `tests/jwt_test.go` (package tests)
-
-- `TestJWT_GenerarYValidarToken(t *testing.T)`
-- `TestJWT_TokenInvalido(t *testing.T)`
-- `TestMiddleware_RequireAuth(t *testing.T)`
-- `init()`
-
-### `tests/middleware_test.go` (package tests)
-
-- `init()`
-- `setupTestRouter() *gin.Engine`
-- `TestNotFoundHandler(t *testing.T)`
-- `TestMethodNotAllowedHandler(t *testing.T)`
-- `TestPanicRecoveryHandler(t *testing.T)`
-- `TestResponderError(t *testing.T)`
-
-### `tests/producto_handler_test.go` (package tests)
+### `internal/tests/producto_handler_test.go` (package tests)
 
 - `TestProductoHandler_ObtenerProductos(t *testing.T)`
 - `TestProductoHandler_BuscarProductos(t *testing.T)`
 - `TestProductoHandler_ObtenerDetalleProducto(t *testing.T)`
 - `TestProductoHandler_ObtenerProductosAdmin(t *testing.T)`
 
-### `tests/producto_service_test.go` (package tests)
+### `internal/tests/producto_service_test.go` (package tests)
 
 - Structs: mockProductoRepository
 - `(mockProductoRepository).Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error)`
@@ -294,44 +275,719 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - `TestProductoService_ObtenerPorID(t *testing.T)`
 - `TestProductoService_ObtenerCatalogoAdmin(t *testing.T)`
 
-### `tests/rbac_test.go` (package tests)
+### `internal/tests/security_test.go` (package tests)
 
-- `TestRequireRole(t *testing.T)`
+- `TestCatalogCORS(t *testing.T)`
+- `TestCatalogInternalErrorsArePrivate(t *testing.T)`
+- `TestOnlyControlledValidationDetailsArePublic(t *testing.T)`
 
-### `tests/scraper_test.go` (package tests)
+### `internal/tests/server_test.go` (package tests)
+
+- `catalogRouter(repo *mockProductoRepository, ping func(context.Context) error) *gin.Engine`
+- `signedToken(t *testing.T, role string, method jwt.SigningMethod, key string, expires *time.Time) string`
+- `TestCatalogAdministrationAuthorization(t *testing.T)`
+- `TestCatalogHealthAndDomainIsolation(t *testing.T)`
+- `TestCatalogRequestCorrelation(t *testing.T)`
+
+### `internal/utils/security.go` (package utils)
+
+- `SanitizarInputBusqueda(input string) string`
+
+
+## Mapa auto-generado: Control de scraping independiente (Go + Gin)
+
+SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, pool 5. /_scraping/live independiente y /_scraping/ready SQL con Redis diagnóstico. Conserva recuperación SUP-270/271, ingesta HTTP idempotente a Catálogo y contrato worker. Sin JWT_SECRET, modelos de usuarios ni persistencia de catálogo. Gateway usa SCRAPING_URL; no existe servicio backend/api. Ver docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.
+
+**36 archivos .go** detectados
+
+
+### `cmd/control_scraping/hardening_test.go` (package main)
+
+- `TestScrapingCORSRejectsBeforeBusinessHandler(t *testing.T)`
+- `TestRedisConfigurationNeverFallsBack(t *testing.T)`
+
+### `cmd/control_scraping/health_test.go` (package main)
+
+- Structs: healthConnector, healthDriver, healthConn
+- `TestHealthRedisTimeoutDoesNotRemoveReadiness(t *testing.T)`
+- `(healthConnector).Connect(context.Context) (driver.Conn, error)`
+- `(healthConnector).Driver() driver.Driver`
+- `(healthConn).Ping(ctx context.Context) error`
+- `probeDatabase(t *testing.T, connector *healthConnector) *gorm.DB`
+- `TestHealthRequiresScrapingDatabase(t *testing.T)`
+
+### `cmd/control_scraping/main.go` (package main)
+
+- `initDB(ctx context.Context) error`
+- `initRedis() error`
+- `setupRouter() (*gin.Engine, error)`
+- `setupApplication() (*gin.Engine, *control.Module, error)`
+- `RootHandler(c *gin.Context)`
+- `HealthHandler(c *gin.Context)`
+- `ReadinessHandler(c *gin.Context)`
+- `writeHealth(c *gin.Context, service string)`
+- `LivenessHandler(c *gin.Context)`
+- `main()`
+- `run() error`
+
+### `cmd/control_scraping/main_test.go` (package main)
+
+- `TestModuleCompositionHTTP(t *testing.T)`
+
+### `cmd/control_scraping/service_auth_test.go` (package main)
+
+- `TestScraperRequiresServiceToken(t *testing.T)`
+- `TestServiceTokenConfigurationFailsClosed(t *testing.T)`
+
+### `cmd/control_scraping/swagger_test.go` (package main)
+
+- `TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T)`
+- `TestSwaggerDisabledByDefault(t *testing.T)`
+
+### `internal/control/lifecycle_test.go` (package control)
+
+- `TestCanceledRecoveryLoopsClosePublisherBeforeReturn(t *testing.T)`
+- `TestRecoveryShutdownHasDeadline(t *testing.T)`
+
+### `internal/control/module.go` (package control)
+
+- Structs: Module
+- `New(db *gorm.DB, rdb *redis.Client) (*Module, error)`
+- `(Module).VerifyStorage(ctx context.Context) error`
+- `(Module).Start(ctx context.Context)`
+- `(Module).Wait(ctx context.Context) error`
+- `(Module).RegisterRoutes(group *gin.RouterGroup)`
+
+### `internal/database/connections.go` (package database)
+
+- Structs: Config
+- `Load() (Config, error)`
+- `Open(ctx context.Context, dsn string) (*gorm.DB, error)`
+- `Close(db *gorm.DB)`
+
+### `internal/database/connections_test.go` (package database)
+
+- `TestRuntimeCredentials(t *testing.T)`
+
+### `internal/domain/entrega.go` (package domain)
+
+- Structs: Entrega, loteIDKey, Ejecucion
+- `ConLoteID(ctx context.Context, id string) context.Context`
+- `LoteID(ctx context.Context) string`
+
+### `internal/domain/models.go` (package domain)
+
+- Structs: CadenaSupermercado, SucursalSupermercado, TrabajoScraper
+
+### `internal/domain/repository.go` (package domain)
+
+
+### `internal/domain/scraper.go` (package domain)
+
+- Structs: IniciarTrabajoDTO, TrabajoScraperDTO, FinalizarTrabajoDTO, ProductoScrapeadoDTO, IngestaLoteDTO, IngestaResultadoDTO
+
+### `internal/handlers/scraper_handler.go` (package handlers)
+
+- Structs: ScraperHandler, ejecutarScraperRequest
+- `(ScraperHandler).SetQueue(queue *services.QueueService)`
+- `NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler`
+- `(ScraperHandler).EjecutarTrabajo(c *gin.Context)`
+- `(ScraperHandler).IniciarTrabajo(c *gin.Context)`
+- `(ScraperHandler).FinalizarTrabajo(c *gin.Context)`
+- `(ScraperHandler).ObtenerTrabajo(c *gin.Context)`
+- `(ScraperHandler).IngestarProductosConTrabajo(c *gin.Context)`
+- `(ScraperHandler).IngestarProductosDirecto(c *gin.Context)`
+- `(ScraperHandler).manejarErrorIngesta(c *gin.Context, err error)`
+- `prepararLote(c *gin.Context, input *domain.IngestaLoteDTO) bool`
+- `(ScraperHandler).responderErrorCatalogo(c *gin.Context, err error) bool`
+
+### `internal/middleware/error_handler.go` (package middleware)
+
+- Structs: RespuestaError
+- `ErrorHandler() gin.HandlerFunc`
+- `NotFoundHandler() gin.HandlerFunc`
+- `MethodNotAllowedHandler() gin.HandlerFunc`
+- `ResponderError(c *gin.Context, estado int, mensaje string, err error)`
+
+### `internal/middleware/error_handler_test.go` (package middleware)
+
+- `TestInternalDiagnosticsAreNotReturned(t *testing.T)`
+
+### `internal/middleware/runtime.go` (package middleware)
+
+- `BoundedRequest() gin.HandlerFunc`
+- `CORS(origins []string) gin.HandlerFunc`
+- `Observe(log *slog.Logger) gin.HandlerFunc`
+
+### `internal/middleware/service_auth.go` (package middleware)
+
+- `ValidarTokenServicio(token, catalogoToken string) error`
+- `RequireServiceToken(token string) gin.HandlerFunc`
+
+### `internal/repositories/catalogo_client.go` (package repositories)
+
+- Structs: catalogoClient, requestIDKey
+- `NewCatalogoClient(origin, token string, timeout time.Duration) (domain.IngestaRepository, error)`
+- `(catalogoClient).call(ctx context.Context, path string, payload, result any) (bool, error)`
+- `WithRequestID(ctx context.Context, id string) context.Context`
+- `(catalogoClient).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)`
+- `(catalogoClient).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error)`
+- `(catalogoClient).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+
+### `internal/repositories/catalogo_client_test.go` (package repositories)
+
+- `TestCatalogoClientContract(t *testing.T)`
+- `TestCatalogoClientObtenerCadenaPropagaEstado(t *testing.T)`
+- `TestCatalogoClientFailuresAndNoRetry(t *testing.T)`
+- `TestCatalogoClientTimeoutAndCancellation(t *testing.T)`
+- `TestCatalogoClientInvalidConfiguration(t *testing.T)`
+
+### `internal/repositories/ejecucion_repository.go` (package repositories)
+
+- Structs: ejecucionRepository
+- `NewEjecucionRepository(db *gorm.DB) domain.EjecucionRepository`
+- `(ejecucionRepository).RegistrarEjecucion(ctx context.Context, e domain.Ejecucion) error`
+- `(ejecucionRepository).Pendientes(ctx context.Context) ([]domain.Ejecucion, error)`
+- `(ejecucionRepository).PosponerPublicacion(ctx context.Context, id uuid.UUID) error`
+
+### `internal/repositories/entrega_repository.go` (package repositories)
+
+- Structs: entregaRepository
+- `NewEntregaRepository(db *gorm.DB) domain.EntregaRepository`
+- `(entregaRepository).Obtener(ctx context.Context, id uuid.UUID) (*domain.Entrega, error)`
+- `(entregaRepository).Registrar(ctx context.Context, e *domain.Entrega) (*domain.Entrega, error)`
+- `(entregaRepository).Adquirir(ctx context.Context, id *uuid.UUID) (*domain.Entrega, error)`
+- `(entregaRepository).FijarSucursal(ctx context.Context, id uuid.UUID, branch int) (int, error)`
+- `(entregaRepository).Confirmar(ctx context.Context, e *domain.Entrega, result domain.IngestaResultadoDTO) error`
+- `(entregaRepository).Reprogramar(ctx context.Context, e *domain.Entrega, code string, permanent bool) error`
+
+### `internal/repositories/idempotencia_test.go` (package repositories)
+
+- `TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T)`
+- `TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T)`
+
+### `internal/repositories/job_publisher.go` (package repositories)
+
+- Structs: jobPublisher
+- `NewJobPublisher(rdb *redis.Client, db *gorm.DB) *jobPublisher`
+- `(jobPublisher).Close() error`
+- `(jobPublisher).Publicar(ctx context.Context, e domain.Ejecucion) error`
+
+### `internal/repositories/job_publisher_test.go` (package repositories)
+
+- `TestPublisherStalledRedisAllowsJobFinalization(t *testing.T)`
+
+### `internal/repositories/trabajo_repository.go` (package repositories)
+
+- Structs: gormTrabajoRepository
+- `NewTrabajoRepository(db *gorm.DB) domain.TrabajoRepository`
+- `(gormTrabajoRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
+- `(gormTrabajoRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
+- `(gormTrabajoRepository).IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error`
+- `(gormTrabajoRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+
+### `internal/routes/scraper_routes.go` (package routes)
+
+- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler, auth ...gin.HandlerFunc)`
+
+### `internal/services/ejecuciones.go` (package services)
+
+- Structs: QueueService
+- `NewQueueService(jobs domain.EjecucionRepository, publisher domain.JobPublisher) *QueueService`
+- `(QueueService).Encolar(ctx context.Context, id string, payload []byte) error`
+- `(QueueService).Recuperar(ctx context.Context)`
+
+### `internal/services/entregas.go` (package services)
+
+- `(scraperService).ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).entregar(ctx context.Context, e *domain.Entrega) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).Recuperar(ctx context.Context)`
+
+### `internal/services/scraper_service.go` (package services)
+
+- Structs: scraperService
+- `NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository, entregas ...domain.EntregaRepository) ScraperService`
+- `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)`
+- `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
+- `(scraperService).mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
+- `(scraperService).nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string`
+- `(scraperService).nombreCadena(ctx context.Context, cadenaID int) string`
+
+### `internal/tests/ingesta_failures_test.go` (package tests)
+
+- Structs: failingCounter
+- `(failingCounter).IncrementarElementos(ctx context.Context, id uuid.UUID, n int) error`
+- `TestCatalogFailureDoesNotIncrementJob(t *testing.T)`
+- `TestCommittedCatalogBatchAndFailedCounterIsExplicit(t *testing.T)`
+
+### `internal/tests/queue_test.go` (package tests)
+
+- Structs: sqlQueue
+- `(sqlQueue).RegistrarEjecucion(_ context.Context, e domain.Ejecucion) error`
+- `(sqlQueue).Pendientes(context.Context) ([]domain.Ejecucion, error)`
+- `(sqlQueue).PosponerPublicacion(context.Context, uuid.UUID) error`
+- `TestExecutionWithoutRedisClientStillPersistsSQL(t *testing.T)`
+- `TestExecutionForwardsAddURLAndEnrichEAN(t *testing.T)`
+- `TestExecutionRejectsEmptyAddURL(t *testing.T)`
+
+### `internal/tests/scraper_test.go` (package tests)
 
 - Structs: mockScraperRepository
 - `newMockScraperRepository() *mockScraperRepository`
-- `(mockScraperRepository).CrearTrabajo(ctx context.Context, trabajo *infrastructure.TrabajoScraper) error`
-- `(mockScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*infrastructure.TrabajoScraper, error)`
-- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*infrastructure.TrabajoScraper, error)`
-- `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*infrastructure.CadenaSupermercado, error)`
-- `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*infrastructure.SucursalSupermercado, error)`
+- `(mockScraperRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
+- `(mockScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
+- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+- `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
+- `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
 - `(mockScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
+- `(mockScraperRepository).IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error`
 - `TestScraperService_IniciarTrabajo_Exitoso(t *testing.T)`
 - `TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T)`
 - `TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T)`
+- `TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(t *testing.T)`
+- `TestScraperService_IngestaDirectaFuenteDeshabilitada(t *testing.T)`
 - `TestScraperHandler_EndpointsHTTP(t *testing.T)`
 - `stringPtr(s string) *string`
+- `TestScraperService_IniciarTrabajo_FuenteDeshabilitada(t *testing.T)`
+- `TestScraperService_ObtenerCadena(t *testing.T)`
+- `TestScraperService_ObtenerCadena_NoEncontrada(t *testing.T)`
+- `TestScraperHandler_IngestaDirectaFuenteDeshabilitada(t *testing.T)`
+- `TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(t *testing.T)`
+- `TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(t *testing.T)`
+- `TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(t *testing.T)`
 
-### `utils/jwt.go` (package utils)
+### `tests/architecture_test.go` (package tests)
+
+- `TestModuleDependencies(t *testing.T)`
+
+### `tests/middleware_test.go` (package tests)
+
+- `init()`
+- `setupTestRouter() *gin.Engine`
+- `TestNotFoundHandler(t *testing.T)`
+- `TestMethodNotAllowedHandler(t *testing.T)`
+- `TestPanicRecoveryHandler(t *testing.T)`
+- `TestResponderError(t *testing.T)`
+
+
+## Mapa auto-generado: Identidad (Go + Gin)
+
+SUP-272: proceso independiente dueño de api.usuarios, sólo IDENTITY_DB_URL/app_identity (pool 5), Redis para límite login y JWT_SECRET compartido por contrato con Catálogo. Cinco rutas /api/v1/auth/* conservadas. CORS allowlist, cookies Secure configurables, HS256 estricto y sin fallback de clave. Proxy Gateway explícito obligatorio para IP real. Storage una vez al arrancar; ready SQL/Redis y live independiente. No importa API/Catálogo/scraping. Ver docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md.
+
+**51 archivos .go** detectados
+
+
+### `cmd/identidad/main.go` (package main)
+
+- `main()`
+- `correoPrueba(args []string, log *slog.Logger) error`
+- `run(log *slog.Logger) error`
+- `recuperacionDesde(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logger) (identity.Recuperacion, error)`
+
+### `internal/config/config.go` (package config)
+
+- Structs: Config
+- `Load() (Config, error)`
+
+### `internal/config/config_test.go` (package config)
+
+- `valid(t *testing.T)`
+- `TestURLRestablecer(t *testing.T)`
+- `TestValidDefaults(t *testing.T)`
+- `TestInvalidConfigFailsWithoutSecrets(t *testing.T)`
+- `TestExplicitLocalAndProxyConfig(t *testing.T)`
+
+### `internal/config/correo.go` (package config)
+
+- Structs: Correo
+- `LoadCorreo() (Correo, error)`
+
+### `internal/config/correo_test.go` (package config)
+
+- `sinCorreo(t *testing.T)`
+- `conSMTP(t *testing.T)`
+- `TestCorreoSinCredencialesQuedaDeshabilitado(t *testing.T)`
+- `TestCorreoSMTPConDefaults(t *testing.T)`
+- `TestCorreoLogNoExigeCredenciales(t *testing.T)`
+- `TestCorreoInvalidoNoExponeClave(t *testing.T)`
+- `TestLoadIncluyeCorreoYFallaSiEsInvalido(t *testing.T)`
+
+### `internal/database/database.go` (package database)
+
+- `Open(ctx context.Context, dsn string) (*gorm.DB, error)`
+
+### `internal/domain/admin_usuario.go` (package domain)
+
+- Structs: FiltroUsuariosAdminDTO, ActualizarUsuarioAdminDTO, UsuarioAdminDTO, MetadatosPaginacionDTO, PaginaUsuariosAdminDTO, MetricasUsuariosDTO
+- `NormalizarRol(rol string) (string, bool)`
+- `NormalizarPlan(plan string) (string, bool)`
+
+### `internal/domain/auditoria.go` (package domain)
+
+- Structs: AuditoriaAdminUsuario
+
+### `internal/domain/models.go` (package domain)
+
+- Structs: Usuario
+
+### `internal/domain/recuperacion.go` (package domain)
+
+
+### `internal/domain/repository.go` (package domain)
+
+
+### `internal/domain/usuario.go` (package domain)
+
+- Structs: ActualizarPerfilDTO, PerfilUsuarioDTO
+
+### `internal/handlers/admin_usuario_handler.go` (package handlers)
+
+- Structs: ActualizarUsuarioAdminRequest, AdminUsuarioHandler
+- `NewAdminUsuarioHandler(adminService services.AdminUsuarioService) *AdminUsuarioHandler`
+- `(AdminUsuarioHandler).ListarUsuarios(c *gin.Context)`
+- `(AdminUsuarioHandler).Metricas(c *gin.Context)`
+- `(AdminUsuarioHandler).ActualizarUsuario(c *gin.Context)`
+- `bindJSONStrict(c *gin.Context, destino any) error`
+
+### `internal/handlers/auth_handler.go` (package handlers)
+
+- Structs: RegistroRequest, RegistroResponse, LoginRequest, LoginResponse, AuthHandler, GoogleLoginRequest
+- `rolCanonico(rol string) string`
+- `NewAuthHandler(authService services.AuthService, secureCookie ...bool) *AuthHandler`
+- `(AuthHandler).RegistrarUsuario(c *gin.Context)`
+- `(AuthHandler).LoginUsuario(c *gin.Context)`
+- `(AuthHandler).PerfilUsuario(c *gin.Context)`
+- `(AuthHandler).ActualizarPerfil(c *gin.Context)`
+- `(AuthHandler).GoogleLoginUsuario(c *gin.Context)`
+
+### `internal/handlers/google_errors_test.go` (package handlers)
+
+- Structs: googleErrorService
+- `(googleErrorService).GoogleLogin(context.Context, string) (*domain.Usuario, error)`
+- `TestGoogleErrorClassificationDoesNotExposeStorage(t *testing.T)`
+
+### `internal/httperrors/error_handler.go` (package httperrors)
+
+- Structs: RespuestaError
+- `ErrorHandler() gin.HandlerFunc`
+- `NotFoundHandler() gin.HandlerFunc`
+- `MethodNotAllowedHandler() gin.HandlerFunc`
+- `ResponderError(c *gin.Context, estado int, mensaje string, err error)`
+
+### `internal/identity/module.go` (package identity)
+
+- Structs: Module, Recuperacion
+- `New(db *gorm.DB, rdb *redis.Client, secureCookie ...bool) *Module`
+- `NewConRecuperacion(db *gorm.DB, rdb *redis.Client, recuperacion Recuperacion, secureCookie ...bool) *Module`
+- `(Module).Cerrar(ctx context.Context) error`
+- `(Module).RegisterRoutes(group *gin.RouterGroup)`
+- `(Module).RequireAuth() gin.HandlerFunc`
+- `(Module).RequireRole(roles ...string) gin.HandlerFunc`
+- `VerifyStorage(ctx context.Context, db *gorm.DB) error`
+- `VerificarRecuperacion(ctx context.Context, db *gorm.DB) error`
+
+### `internal/mailer/mailer.go` (package mailer)
+
+- Structs: Mensaje, deshabilitado, registro
+- `Nuevo(cfg config.Correo, log *slog.Logger) (Mailer, error)`
+- `MensajePrueba(para, origen string, ahora time.Time) Mensaje`
+- `(registro).Enviar(ctx context.Context, m Mensaje) error`
+- `validar(m Mensaje) (*mail.Address, error)`
+- `construir(remitente, para *mail.Address, m Mensaje, ahora time.Time) ([]byte, error)`
+- `escribirQP(w io.Writer, texto string) error`
+- `messageID(remitente string) string`
+
+### `internal/mailer/mailer_test.go` (package mailer)
+
+- Structs: servidorFalso
+- `certificadoLocal(t *testing.T) (*tls.Config, *x509.CertPool)`
+- `(servidorFalso).iniciar(t *testing.T) int`
+- `(servidorFalso).atender(conn net.Conn)`
+- `nuevoSMTPDePrueba(t *testing.T, puerto int, modoTLS string, clave string, pool *x509.CertPool) *SMTP`
+- `etapa(err error) string`
+- `TestSMTPEntregaPorSTARTTLSConTildes(t *testing.T)`
+- `TestSMTPEntregaConTLSImplicito(t *testing.T)`
+- `TestSMTPNoEnviaCredencialesSinSTARTTLS(t *testing.T)`
+- `TestSMTPRechazaCertificadoNoConfiable(t *testing.T)`
+- `TestSMTPCredencialesRechazadasNoExponenClave(t *testing.T)`
+- `TestSMTPServidorColgadoRespetaDeadline(t *testing.T)`
+- `TestSMTPConexionRechazadaIndicaEtapa(t *testing.T)`
+- `TestMensajesInvalidosNoAbrenConexion(t *testing.T)`
+- `TestConstruirAlternativaTextoYHTML(t *testing.T)`
+- `TestNuevoSegunModo(t *testing.T)`
+
+### `internal/mailer/smtp.go` (package mailer)
+
+- Structs: SMTP, ErrorSMTP
+- `(ErrorSMTP).Error() string`
+- `(ErrorSMTP).Unwrap() error`
+- `NuevoSMTP(cfg config.Correo) (*SMTP, error)`
+- `(SMTP).Enviar(ctx context.Context, m Mensaje) error`
+- `nombreLocal() string`
+
+### `internal/middleware/jwt_auth.go` (package middleware)
+
+- `RequireAuth(repo domain.UsuarioRepository) gin.HandlerFunc`
+
+### `internal/middleware/rate_limit.go` (package middleware)
+
+- `RateLimiterIP(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration) gin.HandlerFunc`
+- `rateLimiter(rdb *redis.Client, prefijo string, maxIntentos int64, ventana time.Duration, soloFallidos bool) gin.HandlerFunc`
+- `RateLimitLogin(rdb *redis.Client) gin.HandlerFunc`
+- `RateLimitRegistro(rdb *redis.Client) gin.HandlerFunc`
+- `RateLimitGoogle(rdb *redis.Client) gin.HandlerFunc`
+
+### `internal/middleware/rbac.go` (package middleware)
+
+- `RequireRole(rolesPermitidos ...string) gin.HandlerFunc`
+
+### `internal/repositories/recuperacion_repository.go` (package repositories)
+
+- Structs: gormRecuperacionRepository
+- `NewRecuperacionRepository(db *gorm.DB) domain.RecuperacionRepository`
+- `(gormRecuperacionRepository).SolicitudesRecientes(ctx context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error)`
+- `(gormRecuperacionRepository).EmitirToken(ctx context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error`
+
+### `internal/repositories/usuario_repository.go` (package repositories)
+
+- Structs: gormUsuarioRepository, repositorioCerrado
+- `NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository`
+- `NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository`
+- `(gormUsuarioRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
+- `(gormUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
+- `(gormUsuarioRepository).Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error)`
+- `(gormUsuarioRepository).Contar(ctx context.Context) (int64, int64, error)`
+- `(gormUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
+- `(gormUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- `(gormUsuarioRepository).ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error`
+- `escaparPatronLike(texto string) string`
+- `classifyWriteError(err error) error`
+
+### `internal/repositories/usuario_repository_test.go` (package repositories)
+
+- `TestEscaparPatronLike(t *testing.T)`
+
+### `internal/routes/admin_usuario_routes.go` (package routes)
+
+- `RegistrarRutasAdminUsuarios(rg *gin.RouterGroup, handler *handlers.AdminUsuarioHandler, repo domain.UsuarioRepository)`
+
+### `internal/routes/auth_routes.go` (package routes)
+
+- `RegistrarRutasAuth(rg *gin.RouterGroup, authHandler *handlers.AuthHandler, rdb *redis.Client, repo domain.UsuarioRepository)`
+
+### `internal/security/jwt.go` (package security)
 
 - Structs: JWTClaims
 - `getJWTSecret() []byte`
 - `GenerarToken(usuarioID, rol, provider string) (string, error)`
 - `ValidarToken(tokenString string) (*jwt.Token, error)`
 
-### `utils/security.go` (package utils)
+### `internal/security/password.go` (package security)
 
-- `SanitizarInputBusqueda(input string) string`
 - `HashPassword(password string) (string, error)`
 - `CheckPasswordHash(password, hash string) bool`
+
+### `internal/security/recuperacion.go` (package security)
+
+- `GenerarTokenRecuperacion() (token string, hash []byte, err error)`
+- `HashTokenRecuperacion(token string) []byte`
+
+### `internal/server/server.go` (package server)
+
+- `NewRouter(cfg config.Config, db *gorm.DB, redisClient *redis.Client, ping func(context.Context) error, log *slog.Logger) *gin.Engine`
+- `NewRouterConModulo(cfg config.Config, modulo *identity.Module, redisClient *redis.Client, ping func(context.Context) error, log *slog.Logger) *gin.Engine`
+- `cors(origins []string) gin.HandlerFunc`
+- `observe(log *slog.Logger) gin.HandlerFunc`
+- `boundedRequest() gin.HandlerFunc`
+
+### `internal/server/server_test.go` (package server)
+
+- `TestHTTPBoundariesCorsAndJWT(t *testing.T)`
+- `TestRecoveryDoesNotExposePanic(t *testing.T)`
+- `TestReadinessDeadlineAndLiveness(t *testing.T)`
+- `TestUnclassifiedContextErrorDoesNotExposeSQL(t *testing.T)`
+
+### `internal/services/admin_usuario_service.go` (package services)
+
+- Structs: adminUsuarioService
+- `NewAdminUsuarioService(usuarioRepo domain.AdminUsuarioRepository) AdminUsuarioService`
+- `(adminUsuarioService).Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)`
+- `(adminUsuarioService).Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error)`
+- `(adminUsuarioService).Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)`
+- `normalizarRol(rol string) (string, error)`
+- `normalizarPlan(plan string) (string, error)`
+- `mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO`
+
+### `internal/services/auth_service.go` (package services)
+
+- Structs: RegistroDTO, UsuarioCreadoDTO, authService
+- `NewAuthService(usuarioRepo domain.UsuarioRepository) AuthService`
+- `validarComplejidadPassword(password string) error`
+- `validarEmail(email string) bool`
+- `(authService).registrarUltimoAcceso(ctx context.Context, usuario *domain.Usuario)`
+- `(authService).Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error)`
+- `(authService).Login(correo, password string) (*domain.Usuario, error)`
+- `(authService).LoginWithContext(ctx context.Context, correo, password string) (*domain.Usuario, error)`
+- `(authService).GoogleLogin(ctx context.Context, tokenGoogle string) (*domain.Usuario, error)`
+- `(authService).ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)`
+- `NewAuthServiceWithGoogleValidator(repo domain.UsuarioRepository, validate func(context.Context, string, string) (*idtoken.Payload, error)) AuthService`
+- `(authService).validateGoogleAccount(ctx context.Context, user *domain.Usuario, subject string) (*domain.Usuario, error)`
+
+### `internal/services/recuperacion_service.go` (package services)
+
+- Structs: recuperacionService, recuperacionApagada
+- `NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.RecuperacionRepository, correo mailer.Mailer, urlRestablecer string, log *slog.Logger) RecuperacionService`
+- `normalizarCorreoRecuperacion(correo string) (string, error)`
+- `(recuperacionService).Solicitar(correo string) error`
+- `(recuperacionService).Cerrar(ctx context.Context) error`
+- `(recuperacionService).trabajar()`
+- `(recuperacionService).procesar(correo string)`
+- `mensajeRecuperacion(usuario *domain.Usuario, urlRestablecer, token string) (mailer.Mensaje, error)`
+
+### `internal/tests/admin_usuario_test.go` (package tests)
+
+- `newAdminUsuariosTestRouter(t *testing.T) (*gin.Engine, *mockUsuarioRepository)`
+- `asegurarActorAdmin(t *testing.T, repo *mockUsuarioRepository, rol string) string`
+- `adminRequest(t *testing.T, router *gin.Engine, repo *mockUsuarioRepository, method, path, rol, body string) *httptest.ResponseRecorder`
+- `adminRequestComo(t *testing.T, router *gin.Engine, actorID, rol, method, path, body string) *httptest.ResponseRecorder`
+- `TestAdminUsuariosRechazaNoAdminCon403(t *testing.T)`
+- `TestAdminUsuariosSinSesionRetorna401(t *testing.T)`
+- `TestAdminUsuariosListaConRolAdmin(t *testing.T)`
+- `TestAdminUsuariosActivaDesactivaYAsignaColaborador(t *testing.T)`
+- `TestAdminUsuariosValidaRolYDestino(t *testing.T)`
+- `TestAdminUsuariosRechazaFiltrosInvalidos(t *testing.T)`
+- `TestAdminUsuariosPaginaPorDefecto(t *testing.T)`
+- `TestAdminUsuariosRechazaLimiteExcesivo(t *testing.T)`
+- `TestAdminUsuariosMetricas(t *testing.T)`
+- `TestAdminUsuariosProtegeUltimoAdminActivo(t *testing.T)`
+- `TestAdminUsuariosRechazaAutoDegradacionPeroPermitePlan(t *testing.T)`
+- `TestAdminUsuariosNormalizaAliasYAuditaElCambio(t *testing.T)`
+- `TestAdminUsuariosNoAuditaMutacionIdempotente(t *testing.T)`
+- `TestAdminUsuariosFiltraPorTextoRolYEstado(t *testing.T)`
+- `TestAdminUsuariosPaginaYFueraDeRango(t *testing.T)`
+- `TestAdminUsuariosActualizaPlan(t *testing.T)`
+- `TestAdminUsuariosRechazaCamposDesconocidos(t *testing.T)`
+
+### `internal/tests/architecture_test.go` (package tests)
+
+- `TestIdentityDoesNotDependOnOtherServices(t *testing.T)`
+
+### `internal/tests/auth_handler_test.go` (package tests)
+
+- `TestAuthHandler_RegistrarUsuario_AutoLogin(t *testing.T)`
+- `TestAuthHandler_LoginNormalizaRolLegacy(t *testing.T)`
+- `TestAuthHandler_ActualizarPerfil(t *testing.T)`
+
+### `internal/tests/auth_service_test.go` (package tests)
+
+- Structs: mockUsuarioRepository
+- `newMockUsuarioRepository() *mockUsuarioRepository`
+- `(mockUsuarioRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
+- `(mockUsuarioRepository).FindByID(ctx context.Context, id string) (*domain.Usuario, error)`
+- `(mockUsuarioRepository).Create(ctx context.Context, usuario *domain.Usuario) error`
+- `(mockUsuarioRepository).Contar(ctx context.Context) (int64, int64, error)`
+- `(mockUsuarioRepository).buscarPorID(id string) *domain.Usuario`
+- `(mockUsuarioRepository).aplicarDatos(target *domain.Usuario, datos map[string]interface{})`
+- `(mockUsuarioRepository).Actualizar(ctx context.Context, id string, datos map[string]interface{}) error`
+- `(mockUsuarioRepository).ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error`
+- `(mockUsuarioRepository).Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error)`
+- `(mockUsuarioRepository).ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error)`
+- `TestAuthService_PasswordComplexity(t *testing.T)`
+- `TestAuthService_RegistroExitoso(t *testing.T)`
+- `TestAuthService_Login(t *testing.T)`
+- `TestAuthService_ActualizarPerfil(t *testing.T)`
+
+### `internal/tests/google_crypto_test.go` (package tests)
+
+- Structs: jwksFixture
+- `(jwksFixture).RoundTrip(r *http.Request) (*http.Response, error)`
+- `TestGoogleCryptographicValidation(t *testing.T)`
+
+### `internal/tests/hardening_test.go` (package tests)
+
+- Structs: googleRaceRepository
+- `TestJWTRejectsUnsafeTokens(t *testing.T)`
+- `TestGoogleClaimsAndInactiveAccounts(t *testing.T)`
+- `TestPasswordBeyondBcryptLimitIsValidationError(t *testing.T)`
+- `(googleRaceRepository).FindByEmail(ctx context.Context, email string) (*domain.Usuario, error)`
+- `(googleRaceRepository).Create(ctx context.Context, user *domain.Usuario) error`
+- `TestGoogleConcurrentCreationRechecksAccount(t *testing.T)`
+
+### `internal/tests/jwt_fuzz_test.go` (package tests)
+
+- `FuzzJWTParser(f *testing.F)`
+
+### `internal/tests/jwt_test.go` (package tests)
+
+- `TestJWT_GenerarYValidarToken(t *testing.T)`
+- `TestJWT_TokenInvalido(t *testing.T)`
+- `TestMiddleware_RequireAuth(t *testing.T)`
+- `TestMiddleware_RequireAuthExigeRepositorio(t *testing.T)`
+- `TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(t *testing.T)`
+- `init()`
+
+### `internal/tests/main_test.go` (package tests)
+
+- `TestMain(m *testing.M)`
+
+### `internal/tests/rbac_test.go` (package tests)
+
+- `TestRequireRole(t *testing.T)`
+
+### `internal/tests/recuperacion_repository_test.go` (package tests)
+
+- `TestRecuperacionRepositoryPostgres(t *testing.T)`
+
+### `internal/tests/recuperacion_service_test.go` (package tests)
+
+- Structs: tokenEmitido, tokensFalsos, correoFalso, usuariosQueFallan
+- `(tokensFalsos).SolicitudesRecientes(context.Context, uuid.UUID, time.Duration, time.Duration) (int, bool, error)`
+- `(tokensFalsos).EmitirToken(_ context.Context, usuario uuid.UUID, hash []byte, vigencia time.Duration) error`
+- `(correoFalso).Enviar(ctx context.Context, m mailer.Mensaje) error`
+- `usuarioDePrueba(repo *mockUsuarioRepository, correo string, activo bool, conClave bool) *domain.Usuario`
+- `procesarPendientes(t *testing.T, s services.RecuperacionService)`
+- `TestRecuperacionEmiteTokenHasheadoYEnviaCorreo(t *testing.T)`
+- `TestRecuperacionNoRevelaCuentasNiProveedor(t *testing.T)`
+- `TestRecuperacionValidaFormatoSinEncolar(t *testing.T)`
+- `TestRecuperacionLimitaSolicitudesPorCuenta(t *testing.T)`
+- `TestRecuperacionFallasQuedanEnLogSinCorreoDelUsuario(t *testing.T)`
+- `TestRecuperacionApagadaSinTransporteOURL(t *testing.T)`
+- `TestRecuperacionColaLlenaNoBloqueaYCerrarRespetaPlazo(t *testing.T)`
+- `TestTokenRecuperacionAleatorioYHashEstable(t *testing.T)`
+
+### `internal/tests/review_followups_test.go` (package tests)
+
+- `TestActualizarPerfilExigeContrasenaActual(t *testing.T)`
+- `googlePayload(subject, email string) *idtoken.Payload`
+- `TestGoogleVinculaCuentaLocalEInvalidaContrasena(t *testing.T)`
+- `TestGoogleRechazaOtraIdentidadVinculada(t *testing.T)`
+- `TestRateLimitLoginSoloCuentaFallidos(t *testing.T)`
+
+### `internal/tests/review_regressions_test.go` (package tests)
+
+- `TestProfileNameValidationPreservesStoredName(t *testing.T)`
+- `TestNameSanitizationPreservesUnicodeBoundaries(t *testing.T)`
+- `TestGoogleAvatarFitsPostgresWithoutBreakingLogin(t *testing.T)`
+
+### `internal/utils/security.go` (package utils)
+
+- `SanitizarInputBusqueda(input string) string`
 
 
 ## Mapa auto-generado: IA Conversacional (FastAPI)
 
-**17 archivos .py** detectados
+**22 archivos .py** detectados
 
+
+### `app/auth.py`
+
+- Imports internos: app
+- **class UsuarioAutenticado(BaseModel)**
+- `_extraer_bearer(authorization: ?) → ?`
+- `async obtener_usuario_actual(jwt_cookie: ?, authorization: ?) → UsuarioAutenticado`
 
 ### `app/config.py`
 
@@ -361,10 +1017,17 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 
 ### `app/productos.py`
 
+- Imports internos: app
 - **class ProductoRepositorio**
-  - `__init__(ruta_json: Path)`
-  - `_cargar() → list`
-  - `obtener_todos() → list`
+  - `__init__(ruta_fallback: ?, base_url: ?, timeout: float, client: ?, cache_ttl: float) → ?`
+  - `fuente() → str`
+  - `_normalizar_producto(item: ?) → ?`
+  - `_cargar_fallback() → ?`
+  - `_realizar_peticion_http(client: httpx.Client, page: int, limit: int) → ?`
+  - `_expirado() → bool`
+  - `_cargar_sin_lock() → ?`
+  - `cargar_productos() → ?`
+  - `obtener_todos(forzar: bool) → ?`
   - `__len__() → int`
 
 ### `app/proveedores/base.py`
@@ -404,8 +1067,8 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 
 ### `app/routers/chat.py`
 
-- Imports internos: app.explicacion, app.filtros, app.productos, app.proveedores.base, app.schemas
-- `crear_router_chat(repositorio: ProductoRepositorio, proveedor_groq: ProveedorIA, proveedor_gemini: ProveedorIA) → APIRouter`
+- Imports internos: app.auth, app.explicacion, app.filtros, app.productos, app.proveedores.base, app.schemas
+- `crear_router_chat(repositorio: ProductoRepositorio, proveedor_fallback: ProveedorIA, proveedor_groq: ?, proveedor_gemini: ?) → APIRouter`
 
 ### `app/routers/productos.py`
 
@@ -421,10 +1084,62 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - **class RespuestaUTF8(JSONResponse)**
 - `fix_encoding_consola() → ?`
 
+### `tests/conftest.py`
+
+
+### `tests/test_chat_auth.py`
+
+- Imports internos: app, app.main, app.proveedores.base
+- `configurar_jwt_secret(monkeypatch)`
+- `catalogo_fijo(monkeypatch)`
+- `client()`
+- `generar_token(user_id: str, rol: str, exp_delta: timedelta, secret: str, algorithm: str, extra_claims: dict) → str`
+- `test_chat_sin_token_retorna_401(client)`
+- `test_chat_header_malformado_retorna_401(client)`
+- `test_chat_token_invalido_retorna_401(client)`
+- `test_chat_token_firma_invalida_retorna_401(client)`
+- `test_chat_token_expirado_retorna_401(client)`
+- `test_chat_token_sin_user_id_retorna_401(client)`
+- `test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(client)`
+- `test_chat_secret_no_configurado_retorna_500(client, monkeypatch)`
+- `test_chat_texto_libre_sin_filtros(client)`
+- `test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(client)`
+- `test_chat_error_en_proveedor(client)`
+- `test_chat_con_cookie_jwt_retorna_200(client)`
+- `test_chat_token_sin_claim_exp_retorna_401(client)`
+- `test_chat_mensaje_largo_excede_maximo_retorna_422(client)`
+- `test_endpoints_antiguos_groq_gemini_eliminados(client)`
+- `test_cors_configuracion_origenes(client)`
+
+### `tests/test_productos.py`
+
+- Imports internos: app.auth, app.filtros, app.main, app.productos, app.proveedores.base, app.routers.chat
+- **class MockProveedor(ProveedorIA)**
+  - `__init__()`
+  - `async extraer_filtros(mensaje: str)`
+  - `async generar_explicacion(mensaje: str, productos: list)`
+- `temp_fallback_file(tmp_path: Path) → Path`
+- `test_carga_exitosa_desde_catalogo_http(temp_fallback_file: Path)`
+- `test_paginacion_multiples_paginas(temp_fallback_file: Path)`
+- `test_degradacion_timeout_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_conexion_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_http_500_aplica_fallback(temp_fallback_file: Path)`
+- `test_preserva_cache_en_memoria_tras_falla_posterior(temp_fallback_file: Path)`
+- `test_compatibilidad_con_filtros_deterministas(temp_fallback_file: Path)`
+- `test_fastapi_health_check_sin_crashear_modo_degradado()`
+- `test_fastapi_endpoint_productos_devuelve_catalogo()`
+- `test_len_es_o1_y_no_llama_a_red(temp_fallback_file: Path)`
+- `test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga(temp_fallback_file: Path)`
+- `test_httpx_client_propio_cierra_socket_ante_error(temp_fallback_file: Path)`
+- `test_telemetria_truncamiento_mas_de_10_paginas(temp_fallback_file: Path, caplog: pytest.LogCaptureFixture)`
+- `test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path)`
+- `test_concurrencia_double_checked_locking_evita_llamadas_duplicadas(temp_fallback_file: Path)`
+- `test_catalogo_caido_modo_sin_datos_respeta_ttl(temp_fallback_file: Path)`
+
 
 ## Mapa auto-generado: Motor de Rutas (FastAPI + OR-Tools)
 
-**5 archivos .py** detectados
+**20 archivos .py** detectados
 
 
 ### `app/algorithms/otp_ortools_strategy.py`
@@ -444,351 +1159,689 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - `mostrar_resultados(orden: ?, nombres: ?, matriz_distancias: np.ndarray) → ?`
 - `main() → ?`
 
+### `app/api/router.py`
+
+- Imports internos: app.listas.router
+
+### `app/auth.py`
+
+- Imports internos: app.errores
+- **class Sesion**
+- `validar_token(token: str, secreto: str) → Sesion`
+- `sesion_actual(request: Request) → Sesion`
+
+### `app/config.py`
+
+- **class ErrorConfiguracion(ValueError)**
+- **class Configuracion**
+- `cargar(entorno: ?) → Configuracion`
+
 ### `app/core/strategy.py`
 
 - **class RoutingStrategy(ABC)**
   - `calculate_route(origin: ?, destination: ?) → ?`
   - `optimize_route(origin: ?, waypoints: ?) → ?`
 
+### `app/db.py`
+
+- **class ErrorAlmacenamiento(RuntimeError)**
+- `async abrir_pool(dsn: str, maximo: int) → AsyncConnectionPool`
+- `async verificar_permisos(pool: AsyncConnectionPool) → ?`
+- `async ping(pool: AsyncConnectionPool, plazo: float) → bool`
+
+### `app/errores.py`
+
+- **class ErrorAPI(Exception)**
+  - `__init__(estado: int, mensaje: str, detalle: ?) → ?`
+- `respuesta_error(estado: int, mensaje: str, detalle: ?, cabeceras: ?) → JSONResponse`
+- `registrar_manejadores(app: FastAPI) → ?`
+
+### `app/listas/modelos.py`
+
+- **class ListaCrear(BaseModel)**
+  - `_nombre(cls, valor: str) → str`
+- **class ListaActualizar(BaseModel)**
+  - `_nombre(cls, valor: ?) → ?`
+  - `_algun_cambio() → ListaActualizar`
+- **class Articulo(BaseModel)**
+- **class Lista(BaseModel)**
+- **class ListaDetalle(Lista)**
+- **class RespuestaListas(BaseModel)**
+- `normalizar_nombre(valor: str) → str`
+
+### `app/listas/repositorio.py`
+
+- Imports internos: app.listas.modelos
+- **class RepositorioListas(Protocol)**
+  - `async contar(usuario_id: str) → int`
+  - `async listar(usuario_id: str, limite: int) → ?`
+  - `async crear(usuario_id: str, nombre: str) → Lista`
+  - `async obtener(usuario_id: str, lista_id: str) → ?`
+  - `async actualizar(usuario_id: str, lista_id: str, nombre: ?, estado: ?) → ?`
+  - `async eliminar(usuario_id: str, lista_id: str) → bool`
+- **class RepositorioListasPostgres**
+  - `__init__(pool: AsyncConnectionPool) → ?`
+  - `async _una(consulta: str, parametros: tuple) → ?`
+  - `async contar(usuario_id: str) → int`
+  - `async listar(usuario_id: str, limite: int) → ?`
+  - `async crear(usuario_id: str, nombre: str) → Lista`
+  - `async obtener(usuario_id: str, lista_id: str) → ?`
+  - `async actualizar(usuario_id: str, lista_id: str, nombre: ?, estado: ?) → ?`
+  - `async eliminar(usuario_id: str, lista_id: str) → bool`
+- `_utc(valor: datetime) → datetime`
+- `_lista(fila: dict) → Lista`
+
+### `app/listas/router.py`
+
+- Imports internos: app.auth, app.errores, app.listas.modelos, app.listas.repositorio
+- `repositorio(request: Request) → RepositorioListas`
+- `_id_o_404(lista_id: str) → str`
+- `async listar(sesion: Sesion, repo: RepositorioListas) → RespuestaListas`
+- `async crear(datos: ListaCrear, sesion: Sesion, repo: RepositorioListas) → Lista`
+- `async obtener(lista_id: str, sesion: Sesion, repo: RepositorioListas) → ListaDetalle`
+- `async actualizar(lista_id: str, datos: ListaActualizar, sesion: Sesion, repo: RepositorioListas) → Lista`
+- `async eliminar(lista_id: str, sesion: Sesion, repo: RepositorioListas) → Response`
+
 ### `app/main.py`
 
-- `root()`
-- `health_check()`
+- Imports internos: app, app.api.router, app.config, app.errores, app.listas.repositorio
+- `async _almacenamiento(app: FastAPI, config: Configuracion) → ?`
+- `create_app(config: ?, repositorio: ?) → FastAPI`
+- `_configurar_logs() → ?`
+
+### `tests/apoyo.py`
+
+- Imports internos: app.config, app.listas.modelos
+- **class RepositorioMemoria**
+  - `__init__() → ?`
+  - `_lista(fila: dict) → Lista`
+  - `_propia(usuario_id: str, lista_id: str) → ?`
+  - `async contar(usuario_id: str) → int`
+  - `async listar(usuario_id: str, limite: int) → ?`
+  - `async crear(usuario_id: str, nombre: str) → Lista`
+  - `async obtener(usuario_id: str, lista_id: str) → ?`
+  - `async actualizar(usuario_id: str, lista_id: str, nombre: ?, estado: ?) → ?`
+  - `async eliminar(usuario_id: str, lista_id: str) → bool`
+- `token(usuario_id: ?, secreto: str, algoritmo: str) → str`
+
+### `tests/test_config.py`
+
+- Imports internos: app.config
+- **class ConfiguracionTest(unittest.TestCase)**
+  - `test_valida()`
+  - `test_rechaza_sin_exponer_secretos()`
+
+### `tests/test_listas.py`
+
+- Imports internos: app.main
+- **class ListasTest(unittest.TestCase)**
+  - `setUp() → ?`
+  - `como(usuario_id: str) → ?`
+  - `crear(nombre: str) → dict`
+  - `test_crud_completo_del_dueno()`
+  - `test_listas_ajenas_responden_404_sin_modificarse()`
+  - `test_id_mal_formado_es_404()`
+  - `test_validacion_con_envoltorio_y_sin_eco_del_valor()`
+  - `test_json_mal_formado_usa_envoltorio()`
+  - `test_nombre_sin_caracteres_de_control()`
+  - `test_tope_de_listas_por_usuario()`
+  - `test_rutas_y_metodos_desconocidos_usan_envoltorio()`
+- **class AutenticacionTest(unittest.TestCase)**
+  - `setUp() → ?`
+  - `estado_con(valor: ?) → int`
+  - `test_token_valido()`
+  - `test_rechaza_tokens_inseguros()`
+  - `test_ignora_identidad_en_headers()`
+- **class InfraestructuraHTTPTest(unittest.TestCase)**
+  - `setUp() → ?`
+  - `test_cors_lista_blanca()`
+  - `test_request_id_se_propaga_o_genera()`
+  - `test_probes()`
 
 ### `tests/test_prototipo_ruta_ficticia.py`
 
 - `ejecutar_demo()`
 
+### `tests/test_repositorio_postgres.py`
 
-## Mapa auto-generado: Scraper (Scrapy)
+- Imports internos: app, app.listas.repositorio, app.main
+- **class RepositorioPostgresTest(unittest.IsolatedAsyncioTestCase)**
+  - `async asyncSetUp() → ?`
+  - `async test_permisos_y_crud_aislado_por_usuario()`
+  - `async test_detalle_con_articulos_y_borrado_en_cascada()`
+  - `async test_app_rutas_no_sale_de_su_matriz()`
 
-**24 archivos .py** detectados
+
+## Mapa auto-generado: Scraper Worker (Go)
+
+Worker de scraping en Go con Redis Streams y spool SQLite durable.
+
+**38 archivos .go** detectados
 
 
-### `research/test_acuenta.py`
+### `cmd/extract/main.go` (package main)
 
-- **class AcuentaExtractionTest(unittest.TestCase)**
-  - `_response(body, url)`
-  - `test_extracts_product_card()`
-  - `test_merges_visible_offer_into_rsc_product()`
-  - `test_page_url_removes_internal_rsc_token()`
-  - `test_max_pages_argument_sets_per_category_limit()`
-  - `test_extracts_multiunit_promotion()`
-  - `test_does_not_cross_rsc_script_boundaries()`
-  - `test_uses_product_fields_after_sku_not_previous_category_fields()`
-  - `test_resolves_rsc_ean_reference()`
-  - `test_resolves_rsc_special_price_reference_chain()`
-  - `test_does_not_use_multiunit_rsc_price_as_unit_offer()`
-  - `test_resolves_rsc_image_reference()`
-  - `test_uses_exact_image_variant_published_for_sku()`
-  - `test_encodes_image_proxy_brackets()`
-  - `test_rejects_untrusted_urls()`
-
-### `research/test_api_pipeline.py`
-
-- **class FakeResponse**
-  - `__init__(payload)`
-  - `__enter__()`
-  - `__exit__(exc_type, exc_value, traceback)`
-  - `read()`
-- **class APIPipelineTest(unittest.TestCase)**
-  - `test_client_posts_ingestion_contract()`
-  - `test_pipeline_flushes_batches()`
-- **class FakeClient**
-  - `ingest_batch(products, supermarket, work_id)`
-
-### `research/test_cugat.py`
-
-- **class CugatExtractionTest(unittest.TestCase)**
-  - `_response(body, url)`
-  - `test_extracts_woocommerce_card_fields()`
-  - `test_page_url_and_category_preserve_cugat_path()`
-  - `test_extracts_product_json_ld()`
-  - `test_rejects_untrusted_urls()`
-
-### `research/test_jumbo.py`
-
-- **class JumboExtractionTest(unittest.TestCase)**
-  - `test_extract_names_from_json_ld()`
-  - `test_category_is_taken_from_url()`
-  - `test_extracts_comparison_fields()`
-  - `test_category_requests_detail_for_missing_ean_when_enabled()`
-  - `test_detail_parse_fills_ean_and_preserves_catalog_price()`
-  - `test_page_url_preserves_category()`
-  - `test_catalog_pagination_stops_at_page_100()`
-  - `test_product_url_starts_one_request_without_category_pagination()`
-  - `test_product_url_rejects_untrusted_domains()`
-  - `test_parse_product_returns_one_item_without_pagination()`
-  - `test_parse_product_selects_requested_product_from_json_ld_graph()`
-  - `test_catalog_refresh_is_needed_when_never_updated()`
-  - `test_catalog_refresh_handles_naive_datetime_without_type_error()`
-  - `test_catalog_refresh_is_not_needed_while_fresh()`
-  - `test_product_refresh_is_needed_after_ttl()`
-  - `test_product_refresh_is_not_needed_while_fresh()`
-  - `test_refresh_decision_marks_stale_product()`
-  - `test_duplicate_refresh_request_is_skipped()`
-  - `test_scheduler_marks_catalog_as_stale_after_interval()`
-  - `test_queue_skips_duplicate_in_flight_refresh()`
-  - `test_queue_schedules_stale_product_refresh()`
-  - `test_queue_exposes_enqueued_product_for_processing()`
-  - `test_worker_processes_next_product_and_releases_in_flight_lock()`
-  - `test_worker_reports_failure_and_releases_in_flight_lock()`
-  - `test_worker_propagates_structured_failure_from_executor()`
-  - `test_worker_processes_all_pending_products()`
-  - `test_result_publisher_sends_item_to_injected_sender()`
-  - `test_result_publisher_reports_api_failure()`
-  - `test_refresh_flow_consumes_queue_and_publishes_result()`
-  - `test_scrapy_executor_returns_structured_catalog_items()`
-  - `test_runtime_cli_emits_extracted_items_as_jsonlines()`
-  - `test_scrapy_executor_targets_product_url_for_queued_job()`
-  - `test_scrapy_executor_rejects_product_id_without_url()`
-  - `test_scheduler_decides_catalog_and_product_update_flow()`
-  - `test_scheduler_accepts_future_api_configuration()`
-  - `test_scheduler_can_force_catalog_refresh_from_manual_trigger()`
-  - `test_scrapy_settings_use_ethic_rate_limit()`
-  - `test_scrapy_retry_policy_handles_transient_errors()`
-  - `test_404_page_stops_pagination_cleanly()`
-
-### `research/test_lider.py`
-
-- **class LiderExtractionTest(unittest.TestCase)**
-  - `_response(body, url)`
-  - `test_extracts_regular_and_offer_prices_from_product_cards()`
-  - `test_prefers_all_hydrated_items_over_partial_product_cards()`
-  - `test_accepts_super_lider_category_and_product_routes()`
-  - `test_page_url_preserves_category_and_other_query_parameters()`
-  - `test_page_limit_argument_is_configurable()`
-  - `test_only_accepts_allowed_catalog_and_product_routes()`
-
-### `research/test_normalization.py`
-
-- **class ScraperNormalizationTest(unittest.TestCase)**
-  - `test_normalizes_clp_price_formats()`
-  - `test_rejects_invalid_prices()`
-  - `test_normalizes_ean_without_losing_leading_zeroes()`
-  - `test_normalizes_whitespace_in_text()`
-
-### `research/test_santa_isabel.py`
-
-- **class SantaIsabelExtractionTest(unittest.TestCase)**
-  - `_response(payload, page)`
-  - `test_extracts_santa_isabel_render_data()`
-  - `test_category_pagination_preserves_category()`
-  - `test_spider_obeys_robots_txt()`
-  - `test_only_uses_santa_isabel_seller()`
-
-### `scraper_core/api_client.py`
-
-- **class ScraperAPIError(RuntimeError)**
-- **class ScraperAPIClient**
-  - `__init__(endpoint: str, timeout: float, opener)`
-  - `ingest_batch(products: ?, supermarket: ?, branch_id: ?, branch_code: ?, work_id: ?) → dict`
-  - `finalize_work(work_id: str, status: str, extracted_items: int, error_message: ?) → dict`
-  - `_ingestion_endpoint(work_id: ?) → str`
-
-### `scraper_core/freshness.py`
-
-- **class RefreshQueue**
-  - `__init__(product_ttl_seconds: int)`
-  - `in_flight_refreshes()`
-  - `mark_started(product_id)`
-  - `mark_finished(product_id)`
-  - `pop_next()`
-  - `enqueue(product_id, last_updated_at, product_url)`
-- **class RefreshWorker**
-  - `__init__(queue, executor)`
-  - `process_next()`
-  - `process_all()`
-- **class RefreshScheduler**
-  - `__init__(catalog_interval_seconds: int, product_ttl_seconds: int, enabled: bool)`
-  - `from_config(cls, config)`
-  - `catalog_needs_refresh(last_updated_at)`
-  - `product_needs_refresh(product_id, last_updated_at)`
-  - `build_catalog_and_product_plan(last_catalog_updated_at, product_id, last_product_updated_at, force_catalog_refresh)`
-- `_normalize_datetime(value)`
-- `should_refresh_catalog(last_updated_at, interval_seconds: int) → bool`
-- `should_refresh_product(last_updated_at, ttl_seconds: int) → bool`
-- `build_refresh_decision(product_id, last_updated_at, ttl_seconds: int)`
-- `should_skip_refresh(product_id, in_flight_refreshes)`
-
-### `scraper_core/items.py`
-
-- **class ScraperCoreItem**
-
-### `scraper_core/middlewares.py`
-
-- **class ScraperCoreSpiderMiddleware**
-  - `from_crawler(cls, crawler)`
-  - `process_spider_input(response, spider)`
-  - `process_spider_output(response, result, spider)`
-  - `process_spider_exception(response, exception, spider)`
-  - `async process_start(start)`
-  - `spider_opened(spider)`
-- **class ScraperCoreDownloaderMiddleware**
-  - `from_crawler(cls, crawler)`
-  - `process_request(request, spider)`
-  - `process_response(request, response, spider)`
-  - `process_exception(request, exception, spider)`
-  - `spider_opened(spider)`
-
-### `scraper_core/normalization.py`
-
-- `normalizar_precio_clp(value)`
-- `_uses_thousands_groups(parts)`
-- `normalizar_ean_gtin(value)`
-- `normalizar_texto(value)`
-
-### `scraper_core/output.py`
-
-- **class ScraperResultPublisher**
-  - `__init__(sender)`
-  - `publish(item)`
-
-### `scraper_core/pipelines.py`
-
-- **class ScraperCorePipeline**
-  - `__init__(api_client, batch_size)`
-  - `from_crawler(cls, crawler)`
-  - `process_item(item, spider)`
-  - `close_spider(spider)`
-  - `_flush()`
-
-### `scraper_core/runtime.py`
-
-- **class ScrapyCommandExecutor**
-  - `__init__(command_runner, spider_name)`
-  - `__call__(job)`
+- `(stringList).String() string`
+- `(stringList).Set(value string) error`
 - `main()`
+- `run() error`
+- `collectURLs(values []string, file string) ([]string, error)`
+- `directoryExists(path string) bool`
 
-### `scraper_core/settings.py`
+### `cmd/extract/main_test.go` (package main)
 
+- `TestCollectURLs(t *testing.T)`
 
-### `scraper_core/spiders/acuenta.py`
+### `cmd/worker/main.go` (package main)
 
-- **class AcuentaRscSpider(scrapy.Spider)**
-  - `__init__()`
-  - `from_crawler(cls, crawler)`
-  - `start_requests()`
-  - `parse(response)`
-  - `handle_error(failure)`
-  - `_extract_products(response)`
-  - `_merge_visible_prices(response, products)`
-  - `_extract_rsc_promotion_prices(text)`
-  - `_extract_rsc_products(response)`
-  - `_resolve_image_reference(text, window)`
-  - `_image_from_rsc(text, sku)`
-  - `_image_from_sku(sku)`
-  - `_canonical_image_url(image_url)`
-  - `_name_matches_slug(name, slug)`
-  - `_name_from_slug(slug)`
-  - `_prices_from_text(text)`
-  - `_brand_from_text(text)`
-  - `_format_from_text(text)`
-  - `_sku_from_url(product_url)`
-  - `_to_scraped_item(product, category, response_url)`
-  - `_category_from_url(category_url)`
-  - `_page_number(url)`
-  - `_page_url(category_url, page)`
-  - `_read_category_urls(cls)`
-  - `_append_category_url(url)`
-  - `_validate_category_url(url)`
+- `main()`
+- `run() error`
 
-### `scraper_core/spiders/cugat.py`
+### `internal/config/config.go` (package config)
 
-- **class CugatRscSpider(scrapy.Spider)**
-  - `__init__()`
-  - `from_crawler(cls, crawler)`
-  - `start_requests()`
-  - `parse(response)`
-  - `parse_product(response)`
-  - `parse_product_detail(response, catalog_product, category, category_page_url)`
-  - `handle_detail_error(failure)`
-  - `handle_error(failure)`
-  - `_extract_products(response)`
-  - `_price_from(card, selector)`
-  - `_extract_detail_product(response)`
-  - `_walk_json(value)`
-  - `_stock_value(availability)`
-  - `_to_scraped_item(product, category, response_url)`
-  - `_category_from_url(category_url)`
-  - `_page_url(category_url, page)`
-  - `_read_category_urls(cls)`
-  - `_append_category_url(url)`
-  - `_validate_category_url(url)`
-  - `_validate_product_url(url)`
+- Structs: Config
+- `FromEnv() (Config, error)`
+- `env(key, fallback string) string`
+- `envInt(key string, fallback int) int`
+- `parseLevel(raw string) slog.Level`
 
-### `scraper_core/spiders/jumbo.py`
+### `internal/config/config_test.go` (package config)
 
-- **class JumboRscSpider(scrapy.Spider)**
-  - `parse(response)`
-  - `parse_ean_detail(response, catalog_product, category, category_page_url)`
-  - `handle_ean_detail_error(failure)`
-  - `start_requests()`
-  - `parse_product(response)`
-  - `_to_scraped_item(product, category, response_url)`
-  - `_validate_product_url(url)`
-  - `_canonical_product_url(url)`
-  - `_page_url(category_url, page)`
-  - `handle_error(failure)`
-  - `__init__()`
-  - `from_crawler(cls, crawler)`
-  - `_read_category_urls(cls)`
-  - `_append_category_url(url)`
-  - `_extract_products(response)`
-  - `_first_value(data)`
-  - `_first_price(data)`
-  - `_sku_from_url(product_url)`
-  - `_normal_price(entry)`
-  - `_stock_value(availability)`
-  - `_walk_json(value)`
+- `TestFromEnvDefaults(t *testing.T)`
+- `TestFromEnvRejectsInvalidLimits(t *testing.T)`
 
-### `scraper_core/spiders/lider.py`
+### `internal/controlscraping/client.go` (package controlscraping)
 
-- **class LiderRscSpider(scrapy.Spider)**
-  - `__init__()`
-  - `from_crawler(cls, crawler)`
-  - `start_requests()`
-  - `parse(response)`
-  - `handle_error(failure)`
-  - `_extract_products(response)`
-  - `_extract_next_data_products(response)`
-  - `_extract_card_products(response)`
-  - `_price_from(selector, price_selector)`
-  - `_format_from_text(name)`
-  - `_to_scraped_item(product, category, response_url)`
-  - `_category_from_url(category_url)`
-  - `_page_number(url)`
-  - `_page_url(category_url, page)`
-  - `_read_category_urls(cls)`
-  - `_append_category_url(url)`
-  - `_validate_category_url(url)`
-  - `_validate_product_url(url)`
+- Structs: Error, Client, ingestPayload
+- `(Error).Error() string`
+- `(Error).Unwrap() error`
+- `(Error).Permanent() bool`
+- `New(endpoint, token string, timeout time.Duration) *Client`
+- `(Client).IngestBatch(ctx context.Context,
+	products []domain.Product,
+	supermarket *string,
+	workID string,
+	batchID string,) (map[string]any, error)`
+- `(Client).FinalizeWork(ctx context.Context,
+	workID string,
+	status string,
+	extractedItems *int,
+	blockedResponses *int,
+	errorMessage string,) (map[string]any, error)`
+- `(Client).GetWork(ctx context.Context, workID string) (map[string]any, error)`
+- `(Client).do(request *http.Request) ([]byte, error)`
+- `(Client).base() string`
+- `(Client).ingestionEndpoint(workID string) string`
+- `limitProducts(products []domain.Product) []domain.Product`
+- `asInt(value any) (int, bool)`
 
-### `scraper_core/spiders/santa_isabel.py`
+### `internal/controlscraping/client_test.go` (package controlscraping)
 
-- **class SantaIsabelRscSpider(scrapy.Spider)**
-  - `__init__()`
-  - `from_crawler(cls, crawler)`
-  - `start_requests()`
-  - `parse(response)`
-  - `_extract_products(response)`
-  - `_number(value)`
-  - `_to_scraped_item(product, category, response_url)`
-  - `_page_url(category_url, page)`
-  - `_read_category_urls(cls)`
-  - `_append_category_url(url)`
-  - `handle_error(failure)`
-  - `_validate_category_url(url)`
+- `floatPtr(value float64) *float64`
+- `TestIngestBatchAndFinalizeWork(t *testing.T)`
+- `TestIngestBatchLimitsDatabaseColumns(t *testing.T)`
+- `value(pointer *string) string`
+- `TestIngestBatchRejectsInconsistentReceipt(t *testing.T)`
+- `TestPermanentAPIError(t *testing.T)`
 
-### `scraper_core/worker.py`
+### `internal/crawler/client.go` (package crawler)
 
-- `process_job(job: dict, api_client: ScraperAPIClient) → dict`
-- `run_worker()`
+- Structs: Response, BlockedError, HTTPStatusError, Options, Client, throttle, robotsEntry, robotsCache
+- `(BlockedError).Error() string`
+- `(HTTPStatusError).Error() string`
+- `New(opts Options) *Client`
+- `newHTTPClient(timeout time.Duration) *http.Client`
+- `(Client).Fetch(ctx context.Context, rawURL string) (*Response, error)`
+- `(Client).doRequest(ctx context.Context, rawURL string) (*Response, error)`
+- `(Client).backoff(ctx context.Context, attempt int, retryAfter time.Duration) error`
+- `retryAfter(header http.Header) time.Duration`
+- `detectBlock(status int, body []byte) string`
+- `newThrottle() *throttle`
+- `(throttle).Wait(ctx context.Context, host string, delay time.Duration) error`
+- `newRobotsCache(client *http.Client, userAgent string, logger *slog.Logger) *robotsCache`
+- `(robotsCache).Allowed(ctx context.Context, target *url.URL) (bool, time.Duration, error)`
+- `(robotsCache).fetch(ctx context.Context, base string) (*robotsEntry, error)`
+- `parseCrawlDelay(body []byte, userAgent string) time.Duration`
+- `matchesAgent(agents []string, userAgent string) bool`
+
+### `internal/crawler/client_test.go` (package crawler)
+
+- `testLogger() *slog.Logger`
+- `testClient() *Client`
+- `(roundTripFunc).RoundTrip(request *http.Request) (*http.Response, error)`
+- `TestRobotsCacheCachesFailure(t *testing.T)`
+- `TestFetchReturns404ForSpiderPagination(t *testing.T)`
+- `TestFetchAcceptsPageWithCDNScripts(t *testing.T)`
+- `TestFetchRetriesTransientStatus(t *testing.T)`
+- `TestFetchReportsPersistentBlock(t *testing.T)`
+- `TestFetchClassifiesBlockStatuses(t *testing.T)`
+- `TestDetectBlockClassifiesStatusesAndBodies(t *testing.T)`
+- `TestRetryAfter(t *testing.T)`
+- `TestBackoffHonorsRetryAfter(t *testing.T)`
+- `TestRetryAfterHTTPDate(t *testing.T)`
+- `TestFetchRetriesTimeout(t *testing.T)`
+- `TestDetectBlockIgnoresRecaptchaOnNormalPage(t *testing.T)`
+- `TestDetectBlockRecognizesPerimeterX(t *testing.T)`
+- `TestFetchHonorsRobots(t *testing.T)`
+
+### `internal/domain/product.go` (package domain)
+
+- Structs: Product, Item, Job
+- `StringPtr(value string) *string`
+- `BoolPtr(value bool) *bool`
+
+### `internal/normalize/normalize.go` (package normalize)
+
+- `PrecioCLP(value any) *float64`
+- `priceText(value any) (string, bool)`
+- `parseAmount(text string) (*big.Rat, bool)`
+- `usesThousandsGroups(parts []string) bool`
+- `EAN(value any) *string`
+- `Truncar(value string, max int) string`
+- `TruncarPtr(value *string, max int) *string`
+- `LimitarProducto(product domain.Product) domain.Product`
+- `SKUFromURL(rawURL string) *string`
+- `isDigits(value string) bool`
+- `Texto(value any) *string`
+- `formatString(value any) string`
+
+### `internal/normalize/normalize_test.go` (package normalize)
+
+- `TestPrecioCLP(t *testing.T)`
+- `TestEAN(t *testing.T)`
+- `TestTexto(t *testing.T)`
+- `TestTruncar(t *testing.T)`
+- `TestSKUFromURL(t *testing.T)`
+
+### `internal/queue/queue.go` (package queue)
+
+- Structs: Options, Queue
+- `New(client *redis.Client, opts Options) (*Queue, error)`
+- `(Queue).Consumer() string`
+- `(Queue).Stream() string`
+- `(Queue).Group() string`
+- `(Queue).EnsureGroup(ctx context.Context) error`
+- `(Queue).Receive(ctx context.Context) (*redis.XMessage, error)`
+- `(Queue).Renew(ctx context.Context, messageID string) (bool, error)`
+- `(Queue).Ack(ctx context.Context, messageID, rawJob, workID, reason string) (bool, error)`
+- `(Queue).HasMessage(ctx context.Context, workID string) (bool, error)`
+- `(Queue).Heartbeat(parent context.Context, messageID string) (
+	context.Context,
+	context.CancelFunc,
+	<-chan struct`
+- `IsLost(lost <-chan struct{}) bool`
+
+### `internal/queue/queue_test.go` (package queue)
+
+- Structs: queueFixture
+- `newQueueFixture(t *testing.T, consumer string) *queueFixture`
+- `(queueFixture).addJob(t *testing.T, payload string) string`
+- `TestQueueAckOwnershipAndDeadLetter(t *testing.T)`
+- `TestQueueAckSuccessDoesNotCreateDeadLetter(t *testing.T)`
+- `TestQueueRejectsShortLease(t *testing.T)`
+
+### `internal/spiders/acuenta.go` (package spiders)
+
+- Structs: Acuenta
+- `NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta`
+- `acuentaCategoryFromURL(rawURL string) string`
+- `acuentaPageNumber(rawURL string) int`
+- `acuentaPageURL(rawURL string, page int) string`
+- `extractAcuentaProducts(body []byte, responseURL *url.URL) []domain.Product`
+- `extractAcuentaCards(body []byte, responseURL *url.URL) []domain.Product`
+- `mergeAcuentaVisiblePrices(body []byte, responseURL *url.URL, products []domain.Product) []domain.Product`
+- `extractAcuentaRSCProducts(body []byte, responseURL *url.URL) []domain.Product`
+- `acuentaPromotionPrices(text string) map[string]*float64`
+- `acuentaImageFromRSC(text, sku string) string`
+- `acuentaResolveImageReference(text, window string) string`
+- `acuentaImageFromSKU(sku string) string`
+- `acuentaCanonicalImageURL(value string) *string`
+- `acuentaNameMatchesSlug(name, slug string) bool`
+- `acuentaTokens(value string) map[string]struct`
+- `acuentaNameFromSlug(slug string) *string`
+- `acuentaPricesFromText(text string) (*float64, *float64, *string)`
+- `acuentaBrandFromText(text string) *string`
+- `acuentaSKUFromURL(productURL string) *string`
+
+### `internal/spiders/acuenta_test.go` (package spiders)
+
+- `TestExtractAcuentaProductCard(t *testing.T)`
+- `TestAcuentaMergesVisibleOfferIntoRSCProduct(t *testing.T)`
+- `TestAcuentaNameFromSlugUsesTitleCase(t *testing.T)`
+- `TestAcuentaPageURLRemovesInternalToken(t *testing.T)`
+- `TestAcuentaMultiunitPromotion(t *testing.T)`
+- `TestAcuentaDoesNotCrossRSCScriptBoundaries(t *testing.T)`
+- `TestAcuentaUsesFieldsAfterSKU(t *testing.T)`
+- `TestAcuentaResolvesEANReference(t *testing.T)`
+- `TestAcuentaResolvesSpecialPriceChain(t *testing.T)`
+- `TestAcuentaDoesNotUseMultiunitRSCPriceAsOffer(t *testing.T)`
+- `TestAcuentaResolvesImageReference(t *testing.T)`
+- `TestAcuentaUsesExactImageVariantForSKU(t *testing.T)`
+- `TestAcuentaEncodesImageProxyBrackets(t *testing.T)`
+- `TestValidateAcuentaCategoryURL(t *testing.T)`
+- `TestAcuentaRunPagination(t *testing.T)`
+- `TestAcuentaProductMode(t *testing.T)`
+- `TestAcuentaRejectsNonProductURL(t *testing.T)`
+
+### `internal/spiders/base.go` (package spiders)
+
+- Structs: spiderConfig, baseSpider
+- `newBaseSpider(fetcher Fetcher,
+	categoryDir string,
+	maxPages int,
+	logger *slog.Logger,
+	cfg spiderConfig,) baseSpider`
+- `(baseSpider).Name() string`
+- `(baseSpider).Run(ctx context.Context, job domain.Job, emit Emitter) error`
+- `(baseSpider).runProduct(ctx context.Context, job domain.Job, emit Emitter) error`
+- `(baseSpider).runCategory(ctx context.Context, categoryURL string, enrichEAN bool, emit Emitter) error`
+- `(baseSpider).item(ctx context.Context,
+	product domain.Product,
+	category string,
+	responseURL *url.URL,
+	enrichEAN bool,) (domain.Item, error)`
+- `(baseSpider).startURLs(overrides []string) ([]string, error)`
+- `(baseSpider).appendCategoryURL(rawURL string) error`
+- `(baseSpider).toItem(product domain.Product, category, responseURL string) domain.Item`
+- `pageURLOrSelf(rawURL string, page int) string`
+- `urlString(value *url.URL) string`
+
+### `internal/spiders/common.go` (package spiders)
+
+- `formatFromText(value string, pattern *regexp.Regexp) *string`
+- `titleCase(value string) string`
+- `readCategoryURLs(file string) []string`
+- `appendCategoryURL(file, rawURL string, validate func(string) error) error`
+- `envCategoryURLs(name string) []string`
+- `dedupeStrings(values []string) []string`
+- `categoryFromURL(rawURL string) string`
+- `withPage(rawURL string, page int) string`
+- `resolveURL(base *url.URL, reference string) string`
+- `validateHTTPSHost(rawURL string, hosts map[string]struct{}, message string) error`
+- `validateSiteURL(hosts map[string]struct{},
+	prefix string,
+	suffix string,
+	message string,
+	minSegments int,) func(string) error`
+- `firstText(selection *goquery.Selection, selector string) string`
+- `allText(selection *goquery.Selection) string`
+- `collectText(node *html.Node, parts *[]string)`
+- `firstAttr(selection *goquery.Selection, selector, attribute string) string`
+- `noscriptImage(selection *goquery.Selection) string`
+- `firstNonNilString(values ...*string) *string`
+- `nonEmptyStringPtr(value string) *string`
+- `lastPathSegment(rawURL string) string`
+- `isDigits(value string) bool`
+- `nonEmptySegments(path string) []string`
+- `mustParsePath(rawURL string) string`
+- `hasClass(classes, wanted string) bool`
+- `appendQueryParam(rawURL, key, value string) string`
+- `removeQueryParam(rawURL, key string) string`
+- `queryPairs(rawQuery string) []string`
+- `selectProductByURL(products []domain.Product, requested string, responseURL *url.URL) *domain.Product`
+- `extractJSONLDProduct(body []byte, responseURL *url.URL) *domain.Product`
+- `extractJSONLDProducts(body []byte, responseURL *url.URL) []domain.Product`
+- `canonicalProductURL(rawURL string) string`
+- `schemaOffer(entry map[string]any) map[string]any`
+- `extractNormalPrice(entry map[string]any) *float64`
+- `firstValue(data any, keys ...string) any`
+- `firstPrice(data any, keys ...string) *float64`
+- `valueString(value any) string`
+- `stockValue(availability any) *bool`
+- `walkJSON(value any) []any`
+- `cugatImageURL(value any) *string`
+- `isProductType(value any) bool`
+- `firstMapValue(value any) any`
+
+### `internal/spiders/complete.go` (package spiders)
+
+- `CompleteItem(item domain.Item) domain.Item`
+
+### `internal/spiders/complete_test.go` (package spiders)
+
+- `TestCompleteItemDerivesSKUFromProductURL(t *testing.T)`
+- `TestCompleteItemKeepsExistingSKU(t *testing.T)`
+- `TestCompleteItemTruncatesSKU(t *testing.T)`
+- `TestCompleteItemTruncatesAllCatalogFields(t *testing.T)`
+- `TestCompleteItemDerivesSKUBeforeTruncating(t *testing.T)`
+
+### `internal/spiders/cugat.go` (package spiders)
+
+- Structs: Cugat
+- `NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat`
+- `cugatPageURL(rawURL string, page int) string`
+- `cugatCategoryFromURL(rawURL string) string`
+- `extractCugatProducts(body []byte, responseURL *url.URL) []domain.Product`
+- `cugatPriceFrom(card *goquery.Selection, selector string) *float64`
+- `extractCugatDetail(body []byte, responseURL *url.URL) *domain.Product`
+
+### `internal/spiders/cugat_test.go` (package spiders)
+
+- `TestRegistryContainsAllKnownSpiders(t *testing.T)`
+- `TestExtractCugatProducts(t *testing.T)`
+- `TestCugatImageFallsBackToNoscript(t *testing.T)`
+- `TestCugatPageURLAndCategory(t *testing.T)`
+- `TestExtractCugatDetail(t *testing.T)`
+- `TestExtractCugatDetailDerivesSKUFromURL(t *testing.T)`
+- `TestValidateCugatURLs(t *testing.T)`
+- `TestCugatProductMode(t *testing.T)`
+- `TestCugatRunPagination(t *testing.T)`
+
+### `internal/spiders/empty_category_test.go` (package spiders)
+
+- `TestEmptyCategoryDoesNotAbortChain(t *testing.T)`
+
+### `internal/spiders/jumbo.go` (package spiders)
+
+- Structs: Jumbo
+- `NewJumbo(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Jumbo`
+- `(Jumbo).enrich(ctx context.Context,
+	product domain.Product,
+	category string,
+	responseURL *url.URL,
+	enrichEAN bool,) (domain.Item, error)`
+- `selectJumboProduct(products []domain.Product, requested string, responseURL *url.URL) *domain.Product`
+- `extractJumboProducts(body []byte) []domain.Product`
+- `skuFromURL(rawURL string) *string`
+
+### `internal/spiders/jumbo_test.go` (package spiders)
+
+- Structs: fakeFetcher
+- `(fakeFetcher).Fetch(_ context.Context, rawURL string) (*crawler.Response, error)`
+- `response(rawURL, body string) *crawler.Response`
+- `mustURL(rawURL string) *url.URL`
+- `quietLogger() *slog.Logger`
+- `TestJumboEmptyCategoryDoesNotAbortRemainingCategories(t *testing.T)`
+- `TestExtractJumboProducts(t *testing.T)`
+- `TestExtractJumboComparisonFields(t *testing.T)`
+- `TestExtractJumboNumericIdentifiers(t *testing.T)`
+- `TestJumboProductMode(t *testing.T)`
+- `TestJumboProductModeSelectsRequestedProduct(t *testing.T)`
+- `TestJumboRejectsUntrustedProductURL(t *testing.T)`
+- `TestJumboCategoryPagination(t *testing.T)`
+- `TestJumboEnrichesEANFromDetail(t *testing.T)`
+- `TestJumboRobotsDisallowedSkipsCategory(t *testing.T)`
+- `TestWithPage(t *testing.T)`
+- `TestCategoryFromURL(t *testing.T)`
+- `TestValidateProductURL(t *testing.T)`
+- `TestSkuFromURL(t *testing.T)`
+- `TestJumboCategoryFileReadsComments(t *testing.T)`
+
+### `internal/spiders/lider.go` (package spiders)
+
+- Structs: Lider
+- `NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider`
+- `liderPageNumber(rawURL string) int`
+- `liderPageURL(rawURL string, page int) string`
+- `liderCategoryFromURL(rawURL string) string`
+- `extractLiderProducts(body []byte, responseURL *url.URL) []domain.Product`
+- `extractLiderNextData(document *goquery.Document, responseURL *url.URL) ([]domain.Product, bool)`
+- `liderNextDataPayload(document *goquery.Document) (map[string]any, bool)`
+- `extractLiderProduct(body []byte, responseURL *url.URL, requested string) *domain.Product`
+- `liderProductFromItem(item map[string]any, responseURL *url.URL) (domain.Product, bool)`
+- `extractLiderCards(document *goquery.Document, responseURL *url.URL) []domain.Product`
+
+### `internal/spiders/lider_test.go` (package spiders)
+
+- `TestExtractLiderProductsFromCards(t *testing.T)`
+- `TestExtractLiderPrefersHydratedItems(t *testing.T)`
+- `TestLiderFormatFromText(t *testing.T)`
+- `TestValidateLiderURLs(t *testing.T)`
+- `TestLiderPageURLAndCategory(t *testing.T)`
+- `TestLiderRunPagination(t *testing.T)`
+- `TestLiderProductMode(t *testing.T)`
+- `TestLiderProductModeReadsNextDataProduct(t *testing.T)`
+- `TestLiderRejectsNonProductURL(t *testing.T)`
+
+### `internal/spiders/santa_isabel.go` (package spiders)
+
+- Structs: SantaIsabel
+- `NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel`
+- `extractSantaIsabelProducts(body []byte, baseURL *url.URL) []domain.Product`
+- `extractSantaIsabelRenderData(body []byte, baseURL *url.URL) []domain.Product`
+- `extractSantaIsabelJSONLD(body []byte, baseURL *url.URL) []domain.Product`
+- `santaIsabelSeller(value any) map[string]any`
+- `firstMap(value any) map[string]any`
+- `firstNonZeroPrice(data map[string]any, keys ...string) *float64`
+- `firstTruthyString(values ...any) *string`
+- `isTruthy(value any) bool`
+- `numberValue(value any) *float64`
+- `joinValueStrings(values ...any) *string`
+
+### `internal/spiders/santa_isabel_test.go` (package spiders)
+
+- `santaIsabelBody(t *testing.T, payload any) []byte`
+- `santaIsabelPayload() map[string]any`
+- `TestExtractSantaIsabelProducts(t *testing.T)`
+- `TestExtractSantaIsabelJSONLD(t *testing.T)`
+- `TestSantaIsabelOnlyUsesOwnSeller(t *testing.T)`
+- `TestExtractSantaIsabelWithoutRenderData(t *testing.T)`
+- `TestSantaIsabelCategoryPagination(t *testing.T)`
+- `TestSantaIsabelAddURLCreatesCategoryFile(t *testing.T)`
+- `TestSantaIsabelRejectsUntrustedCategory(t *testing.T)`
+- `TestSantaIsabelRobotsDisallowed(t *testing.T)`
+- `TestSantaIsabelProductMode(t *testing.T)`
+- `TestSantaIsabelProductModeSelectsRequestedProduct(t *testing.T)`
+- `TestSantaIsabelRejectsNonProductURL(t *testing.T)`
+
+### `internal/spiders/spider.go` (package spiders)
+
+- Structs: Registry
+- `IsKnown(name string) bool`
+- `Names() []string`
+- `NewRegistry(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Registry`
+- `(Registry).Register(spider Spider)`
+- `(Registry).Get(name string) (Spider, bool)`
+
+### `internal/spool/spool.go` (package spool)
+
+- Structs: Spool, itemRow, batchPayload
+- `Open(workID, stateDir string, minFree int64) (*Spool, error)`
+- `(Spool).initialize() error`
+- `(Spool).WorkID() string`
+- `(Spool).Directory() string`
+- `(Spool).Close() error`
+- `(Spool).Add(product domain.Product, market *string) error`
+- `productFingerprint(market *string, data []byte) string`
+- `(Spool).Count() (int, error)`
+- `(Spool).Seal(batchSize int) error`
+- `(Spool).firstUnbatchedMarket() (sql.NullString, bool, error)`
+- `(Spool).unbatchedRows(market sql.NullString, batchSize int) ([]itemRow, error)`
+- `(Spool).persistBatch(market sql.NullString, rows []itemRow) error`
+- `(Spool).Replay(ctx context.Context, client *controlscraping.Client) error`
+- `(Spool).Progress(key string) (int, error)`
+- `(Spool).SetProgress(key string, value int) error`
+
+### `internal/spool/spool_test.go` (package spool)
+
+- `floatPtr(value float64) *float64`
+- `TestSealAndReplay(t *testing.T)`
+- `TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T)`
+- `TestReplayDoesNotSendWithCancelledContext(t *testing.T)`
+- `TestOpenRejectsInvalidWorkID(t *testing.T)`
+
+### `internal/storage/storage.go` (package storage)
+
+- Structs: Collector
+- `EnsureCapacity(directory string, minFree, extra int64) error`
+- `FreeBytes(directory string) (int64, error)`
+- `CleanupSpool(stateDir, workID string) (bool, error)`
+- `NewCollector(stateDir string, minFree int64, retention time.Duration, logger *slog.Logger) *Collector`
+- `(Collector).Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error)`
+- `(Collector).isPressure() (bool, error)`
+- `parseTimestamp(value string) (time.Time, error)`
+
+### `internal/storage/storage_test.go` (package storage)
+
+- `TestEnsureCapacityRejectsHugeExtra(t *testing.T)`
+- `TestCleanupSpoolRespectsExecutionLock(t *testing.T)`
+
+### `internal/worker/memory_test.go` (package worker)
+
+- Structs: memoryGateResult, anonSampler, memorySpider
+- `TestMemoryGate(t *testing.T)`
+- `writeMemoryGateResult(t *testing.T, result memoryGateResult)`
+- `startAnonSampler(interval time.Duration) *anonSampler`
+- `(anonSampler).Stop() float64`
+- `statusFieldKB(name string) (float64, bool)`
+- `cgroupPeakMB() float64`
+- `(memorySpider).Name() string`
+- `(memorySpider).Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error`
+- `peakRSSMB(t *testing.T) float64`
+- `envIntTest(name string, fallback int) int`
+- `envFloatTest(name string, fallback float64) float64`
+- `writeJSON(w http.ResponseWriter, payload any)`
+
+### `internal/worker/recovery_test.go` (package worker)
+
+- Structs: recoveryProcessAPI
+- `newRecoveryProcessAPI(t *testing.T, workID string) (*httptest.Server, *recoveryProcessAPI)`
+- `recoveryProcessWorker(t *testing.T, serverURL string, spider spiders.Spider) (*Worker, config.Config)`
+- `TestProcessJobDoesNotCrawlTerminalJob(t *testing.T)`
+- `TestProcessJobWithCrawlDoneFinalizesWithoutCrawling(t *testing.T)`
+- `TestProcessJobStopsAfterThreeCrawlAttempts(t *testing.T)`
+
+### `internal/worker/worker.go` (package worker)
+
+- Structs: Worker, jobPayload, executionLock
+- `New(cfg config.Config,
+	api *controlscraping.Client,
+	queueClient *queue.Queue,
+	registry *spiders.Registry,
+	logger *slog.Logger,) *Worker`
+- `(Worker).Run(ctx context.Context) error`
+- `(Worker).HandleMessage(ctx context.Context, message *redis.XMessage)`
+- `(Worker).processJob(ctx context.Context, lost <-chan struct{}, job domain.Job) (string, error)`
+- `(Worker).parseJob(raw string) (domain.Job, error)`
+- `parseEnrich(value any) bool`
+- `isTerminal(status map[string]any) bool`
+- `stateOf(status map[string]any) string`
+- `lockExecution(directory string) (*executionLock, error)`
+- `(executionLock).Close() error`
+- `sleep(ctx context.Context, duration time.Duration) bool`
+
+### `internal/worker/worker_test.go` (package worker)
+
+- Structs: fakeSpider, apiState, workerRunState
+- `floatPtr(value float64) *float64`
+- `testWorker(t *testing.T) *Worker`
+- `TestParseJob(t *testing.T)`
+- `TestParseJobAcceptsKnownSpider(t *testing.T)`
+- `TestParseJobRejectsInvalidPayloads(t *testing.T)`
+- `TestParseEnrich(t *testing.T)`
+- `TestIsTerminal(t *testing.T)`
+- `(fakeSpider).Name() string`
+- `(fakeSpider).Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error`
+- `TestWorkerProcessesJobEndToEnd(t *testing.T)`
+- `runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRunState`
+- `TestWorkerFinalizesBlockedJob(t *testing.T)`
+- `TestWorkerRejectsEmptyCrawl(t *testing.T)`
+- `TestLockExecution(t *testing.T)`
 
 
 ## Mapa auto-generado: Frontend (React + TypeScript)
 
-**77 archivos activos** (excluidos kebab-case obsoletos)
+**86 archivos activos** (excluidos kebab-case obsoletos)
 
 
 ### `core/routes.ts`
@@ -800,6 +1853,28 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - Exports: HOME, discountPct, formatPrice, mockUser, products, supermarketById, supermarkets
 - Imports locales: ../types
 
+### `features/admin/admin-api.ts`
+
+- Exports: ADMIN_ENDPOINTS, ADMIN_HAS_BACKEND, adminPlanFromBackend, adminPlanToBackend, adminRoleFromBackend, adminRoleToBackend, adminSourceFromBackend, adminUserFromBackend, fetchCatalogoMetrics, fetchControlMetrics, fetchIdentidadMetrics, isAdminApiError, isAdminAuthError, isPersistableId
+- Tipos: AdminUsersPage, AdminUsersQuery, CatalogoMetrics, ControlMetrics, ErrorBackend, FuenteBackend, IdentidadMetrics, PaginaUsuariosBackend, PaginacionBackend, UsuarioBackend
+- Imports locales: ./admin-mock-data
+
+### `features/admin/admin-mock-data.ts`
+
+- Exports: ADMIN_PLANS, ADMIN_ROLES, adminMetricsMock, adminSources, adminUsers
+- Tipos: AdminPlan, AdminRole, AdminSection, AdminSource, AdminUser, AdminUserRole
+
+### `features/admin/useAdminData.ts`
+
+- Exports: useAdminMetrics, useAdminSources, useAdminUsers
+- Tipos: AdminMetricsState, AdminPlan, AdminRole, AdminSource, AdminUser, AdminUsersPagination, AdminUsersParams, CatalogoMetrics, ControlMetrics, IdentidadMetrics, ServiceState
+- Imports locales: ./admin-api, ./admin-mock-data, @/core/routes, @/hooks/useAuth
+
+### `features/listas/listas-api.ts`
+
+- Exports: listasApi
+- Tipos: EstadoLista, Lista, ListaDetalle
+
 ### `hooks/useAuth.ts`
 
 - Exports: useAuth
@@ -808,7 +1883,7 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 ### `hooks/useCatalog.ts`
 
 - Exports: useCatalog
-- Imports locales: @/lib/constants, @/lib/products-api, @/types
+- Imports locales: @/layouts/MainLayout, @/lib/formatters, @/lib/products-api, @/types
 
 ### `hooks/useChatbot.ts`
 
@@ -820,6 +1895,11 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 
 - Exports: useGoogleAuth
 - Imports locales: ./useAuth
+
+### `hooks/useRole.ts`
+
+- Exports: useRole
+- Imports locales: ./useAuth, @/lib/roles
 
 ### `hooks/useRouteOptimization.ts`
 
@@ -852,9 +1932,13 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 
 ### `lib/products-api.ts`
 
-- Exports: toUiProduct
+- Exports: FALLBACK_MARKET_NAME, marketMeta, slugifyMarket, toUiProduct
 - Tipos: ApiPriceHistory, ApiProduct, ApiProductDetail, ProductPage
 - Imports locales: ./constants, @/types
+
+### `lib/roles.ts`
+
+- Exports: ROLE_ADMIN, ROLE_COLABORADOR, ROLE_REGISTRADO, hasAllowedRole, normalizeRole
 
 ### `lib/utils.ts`
 
@@ -868,13 +1952,13 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 ### `app/router.tsx`
 
 - Exports: AppRouter
-- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/layouts/MainLayout, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/Terms, @/pages/mocks/MockShell
+- Imports locales: @/components/ErrorBoundary, @/components/auth/ProtectedRoute, @/contexts/AuthContext, @/contexts/CartContext, @/contexts/ToastContext, @/core/routes, @/features/admin/AdminDashboard, @/layouts/MainLayout, @/lib/roles, @/pages/Chatbot, @/pages/Crowdsourcing, @/pages/Dashboard, @/pages/History, @/pages/Home, @/pages/Login, @/pages/NotFound, @/pages/Onboarding, @/pages/Planes, @/pages/ProductDetail, @/pages/Profile, @/pages/RouteViewer, @/pages/ShoppingLists, @/pages/Terms, @/pages/mocks/MockShell
 
 ### `components/BottomNav.tsx`
 
 - Exports: BottomNav
 - Tipos: BottomNavProps
-- Imports locales: @/lib/utils
+- Imports locales: @/hooks/useRole, @/lib/utils
 
 ### `components/CartSidebar.tsx`
 
@@ -910,12 +1994,12 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 
 - Exports: SideBar
 - Tipos: SideBarProps
-- Imports locales: @/components/ui/button, @/types
+- Imports locales: @/components/ui/button, @/hooks/useRole, @/types
 
 ### `components/TopNav.tsx`
 
 - Exports: TopNav
-- Tipos: TopNavProps
+- Tipos: FormEvent, TopNavProps
 - Imports locales: @/components/ui/button, @/core/routes, @/hooks/useAuth
 
 ### `components/auth/AuthPanel.tsx`
@@ -935,7 +2019,7 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 ### `components/auth/ProtectedRoute.tsx`
 
 - Exports: ProtectedRoute
-- Imports locales: @/hooks/useAuth
+- Imports locales: @/contexts/ToastContext, @/core/routes, @/hooks/useAuth, @/lib/roles
 
 ### `components/auth/SocialButtons.tsx`
 
@@ -1081,6 +2165,18 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - Tipos: ReactNode, Toast, ToastContextType, ToastType
 - Imports locales: @/lib/utils
 
+### `features/admin/AdminDashboard.tsx`
+
+- Exports: AdminDashboard
+- Tipos: AdminMetricsState, AdminSection
+- Imports locales: ./AdminLayout, ./admin-api, ./admin-mock-data, ./useAdminData, @/components/ui/input, @/core/routes, @/hooks/useAuth
+
+### `features/admin/AdminLayout.tsx`
+
+- Exports: AdminLayout
+- Tipos: AdminLayoutProps, ReactNode
+- Imports locales: ./admin-mock-data, @/core/routes, @/hooks/useAuth
+
 ### `layouts/AppShell.tsx`
 
 - Exports: AppShell
@@ -1153,6 +2249,12 @@ Servicios de infraestructura: Kubernetes (UCT), PostgreSQL 15+PostGIS, Redis (br
 - Exports: RouteViewer
 - Tipos: as
 - Imports locales: @/components/ui/skeleton, @/hooks/useRouteOptimization, @/lib/utils
+
+### `pages/ShoppingLists.tsx`
+
+- Exports: ShoppingLists
+- Tipos: EstadoLista, FormEvent, Lista, ListaDetalle
+- Imports locales: @/components/ui/button, @/components/ui/input, @/contexts/ToastContext, @/core/routes, @/features/listas/listas-api, @/hooks/useAuth
 
 ### `pages/Terms.tsx`
 

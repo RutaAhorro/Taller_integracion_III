@@ -70,8 +70,15 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 ## Mapa auto-generado: IA Conversacional (FastAPI)
 
-**17 archivos .py** detectados
+**22 archivos .py** detectados
 
+
+### `app/auth.py`
+
+- Imports internos: app
+- **class UsuarioAutenticado(BaseModel)**
+- `_extraer_bearer(authorization: ?) → ?`
+- `async obtener_usuario_actual(jwt_cookie: ?, authorization: ?) → UsuarioAutenticado`
 
 ### `app/config.py`
 
@@ -101,10 +108,17 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 ### `app/productos.py`
 
+- Imports internos: app
 - **class ProductoRepositorio**
-  - `__init__(ruta_json: Path)`
-  - `_cargar() → list`
-  - `obtener_todos() → list`
+  - `__init__(ruta_fallback: ?, base_url: ?, timeout: float, client: ?, cache_ttl: float) → ?`
+  - `fuente() → str`
+  - `_normalizar_producto(item: ?) → ?`
+  - `_cargar_fallback() → ?`
+  - `_realizar_peticion_http(client: httpx.Client, page: int, limit: int) → ?`
+  - `_expirado() → bool`
+  - `_cargar_sin_lock() → ?`
+  - `cargar_productos() → ?`
+  - `obtener_todos(forzar: bool) → ?`
   - `__len__() → int`
 
 ### `app/proveedores/base.py`
@@ -144,8 +158,8 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 ### `app/routers/chat.py`
 
-- Imports internos: app.explicacion, app.filtros, app.productos, app.proveedores.base, app.schemas
-- `crear_router_chat(repositorio: ProductoRepositorio, proveedor_groq: ProveedorIA, proveedor_gemini: ProveedorIA) → APIRouter`
+- Imports internos: app.auth, app.explicacion, app.filtros, app.productos, app.proveedores.base, app.schemas
+- `crear_router_chat(repositorio: ProductoRepositorio, proveedor_fallback: ProveedorIA, proveedor_groq: ?, proveedor_gemini: ?) → APIRouter`
 
 ### `app/routers/productos.py`
 
@@ -160,3 +174,55 @@ app/proveedores/fallback_proveedor.py ──→ proveedores/base
 
 - **class RespuestaUTF8(JSONResponse)**
 - `fix_encoding_consola() → ?`
+
+### `tests/conftest.py`
+
+
+### `tests/test_chat_auth.py`
+
+- Imports internos: app, app.main, app.proveedores.base
+- `configurar_jwt_secret(monkeypatch)`
+- `catalogo_fijo(monkeypatch)`
+- `client()`
+- `generar_token(user_id: str, rol: str, exp_delta: timedelta, secret: str, algorithm: str, extra_claims: dict) → str`
+- `test_chat_sin_token_retorna_401(client)`
+- `test_chat_header_malformado_retorna_401(client)`
+- `test_chat_token_invalido_retorna_401(client)`
+- `test_chat_token_firma_invalida_retorna_401(client)`
+- `test_chat_token_expirado_retorna_401(client)`
+- `test_chat_token_sin_user_id_retorna_401(client)`
+- `test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(client)`
+- `test_chat_secret_no_configurado_retorna_500(client, monkeypatch)`
+- `test_chat_texto_libre_sin_filtros(client)`
+- `test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(client)`
+- `test_chat_error_en_proveedor(client)`
+- `test_chat_con_cookie_jwt_retorna_200(client)`
+- `test_chat_token_sin_claim_exp_retorna_401(client)`
+- `test_chat_mensaje_largo_excede_maximo_retorna_422(client)`
+- `test_endpoints_antiguos_groq_gemini_eliminados(client)`
+- `test_cors_configuracion_origenes(client)`
+
+### `tests/test_productos.py`
+
+- Imports internos: app.auth, app.filtros, app.main, app.productos, app.proveedores.base, app.routers.chat
+- **class MockProveedor(ProveedorIA)**
+  - `__init__()`
+  - `async extraer_filtros(mensaje: str)`
+  - `async generar_explicacion(mensaje: str, productos: list)`
+- `temp_fallback_file(tmp_path: Path) → Path`
+- `test_carga_exitosa_desde_catalogo_http(temp_fallback_file: Path)`
+- `test_paginacion_multiples_paginas(temp_fallback_file: Path)`
+- `test_degradacion_timeout_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_conexion_aplica_fallback(temp_fallback_file: Path)`
+- `test_degradacion_error_http_500_aplica_fallback(temp_fallback_file: Path)`
+- `test_preserva_cache_en_memoria_tras_falla_posterior(temp_fallback_file: Path)`
+- `test_compatibilidad_con_filtros_deterministas(temp_fallback_file: Path)`
+- `test_fastapi_health_check_sin_crashear_modo_degradado()`
+- `test_fastapi_endpoint_productos_devuelve_catalogo()`
+- `test_len_es_o1_y_no_llama_a_red(temp_fallback_file: Path)`
+- `test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga(temp_fallback_file: Path)`
+- `test_httpx_client_propio_cierra_socket_ante_error(temp_fallback_file: Path)`
+- `test_telemetria_truncamiento_mas_de_10_paginas(temp_fallback_file: Path, caplog: pytest.LogCaptureFixture)`
+- `test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path)`
+- `test_concurrencia_double_checked_locking_evita_llamadas_duplicadas(temp_fallback_file: Path)`
+- `test_catalogo_caido_modo_sin_datos_respeta_ttl(temp_fallback_file: Path)`
