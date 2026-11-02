@@ -14,6 +14,10 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
 func TestSealAndReplay(t *testing.T) {
 	directory := t.TempDir()
 	workID := uuid.NewString()
@@ -24,7 +28,7 @@ func TestSealAndReplay(t *testing.T) {
 	defer store.Close()
 
 	market := "Jumbo"
-	leche := domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: domain.FloatPtr(1290)}
+	leche := domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}
 	pan := domain.Product{Producto: "Pan", Categoria: "panaderia"}
 	if err := store.Add(leche, &market); err != nil {
 		t.Fatalf("Add(leche) error = %v", err)
@@ -36,15 +40,21 @@ func TestSealAndReplay(t *testing.T) {
 		t.Fatalf("Add(pan) error = %v", err)
 	}
 
-	count, err := store.Unbatched()
-	if err != nil || count != 2 {
-		t.Fatalf("Unbatched() = %d, %v; want 2", count, err)
+	var unbatched int
+	if err := store.db.QueryRow("SELECT count(*) FROM items WHERE batch_id IS NULL").Scan(&unbatched); err != nil {
+		t.Fatalf("contar sin lote: %v", err)
+	}
+	if unbatched != 2 {
+		t.Fatalf("items sin lote = %d, want 2", unbatched)
 	}
 	if err := store.Seal(1); err != nil {
 		t.Fatalf("Seal() error = %v", err)
 	}
-	if count, _ := store.Unbatched(); count != 0 {
-		t.Fatalf("Unbatched() después de Seal = %d", count)
+	if err := store.db.QueryRow("SELECT count(*) FROM items WHERE batch_id IS NULL").Scan(&unbatched); err != nil {
+		t.Fatalf("contar sin lote después de Seal: %v", err)
+	}
+	if unbatched != 0 {
+		t.Fatalf("items sin lote después de Seal = %d", unbatched)
 	}
 	var batches int
 	if err := store.db.QueryRow("SELECT count(*) FROM batches").Scan(&batches); err != nil {
@@ -116,7 +126,7 @@ func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
 	}
 	defer store.Close()
 	market := "Jumbo"
-	if err := store.Add(domain.Product{Producto: "Leche", Precio: domain.FloatPtr(1290)}, &market); err != nil {
+	if err := store.Add(domain.Product{Producto: "Leche", Precio: floatPtr(1290)}, &market); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}
 	if err := store.Seal(100); err != nil {

@@ -20,6 +20,14 @@ type queueFixture struct {
 	workID       string
 }
 
+func skipIfRedisUnavailable(t *testing.T, rawURL string, err error) {
+	t.Helper()
+	if os.Getenv("REDIS_TEST_URL") != "" {
+		t.Fatalf("Redis configurado en REDIS_TEST_URL=%s no está disponible: %v", rawURL, err)
+	}
+	t.Skipf("Redis no disponible en %s: %v", rawURL, err)
+}
+
 func newQueueFixture(t *testing.T, consumer string) *queueFixture {
 	t.Helper()
 	rawURL := os.Getenv("REDIS_TEST_URL")
@@ -39,7 +47,7 @@ func newQueueFixture(t *testing.T, consumer string) *queueFixture {
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		t.Skipf("Redis no disponible en %s: %v", rawURL, err)
+		skipIfRedisUnavailable(t, rawURL, err)
 	}
 
 	prefix := "scraper:test:" + uuid.NewString()

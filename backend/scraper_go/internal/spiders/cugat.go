@@ -2,17 +2,13 @@ package spiders
 
 import (
 	"bytes"
-	"context"
-	"errors"
 	"log/slog"
 	"net/url"
-	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
@@ -28,148 +24,48 @@ var (
 )
 
 type Cugat struct {
-	fetcher     Fetcher
-	categoryDir string
-	maxPages    int
-	logger      *slog.Logger
+	baseSpider
 }
 
 func NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Cugat{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-	}
-}
-
-func (c *Cugat) Name() string {
-	return CugatName
-}
-
-func (c *Cugat) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.AddURL != "" {
-		if err := c.appendCategoryURL(job.AddURL); err != nil {
-			return err
-		}
-	}
-	if job.ProductURL != "" {
-		if err := validateCugatProductURL(job.ProductURL); err != nil {
-			return err
-		}
-		response, err := c.fetcher.Fetch(ctx, job.ProductURL)
-		if err != nil {
-			return err
-		}
-		if response.Status == 404 {
-			c.logger.Info("cugat_product_not_found", "url", job.ProductURL)
-			return nil
-		}
-		product := extractCugatDetail(response.Body, response.URL)
-		if product == nil {
-			c.logger.Warn("cugat_product_without_jsonld", "url", job.ProductURL)
-			return nil
-		}
-		return emit(toCugatItem(*product, "producto", urlString(response.URL)))
-	}
-
-	urls, err := c.startURLs()
-	if err != nil {
-		return err
-	}
-	for _, categoryURL := range urls {
-		if err := c.runCategory(ctx, categoryURL, emit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (c *Cugat) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
-	category := cugatCategoryFromURL(categoryURL)
-	for page := 1; page <= c.maxPages; page++ {
-		pageURL := categoryURL
-		if page > 1 {
-			pageURL = cugatPageURL(categoryURL, page)
-		}
-		response, err := c.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				c.logger.Warn("cugat_category_robots_disallowed", "url", pageURL)
-				return nil
+	return &Cugat{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, spiderConfig{
+		name:              CugatName,
+		supermarket:       "Cugat",
+		categoryFile:      "cugat_categories.txt",
+		categoryEnv:       "CUGAT_CATEGORY_URLS",
+		defaultCategories: cugatDefaultCategories,
+		validateCategory:  validateCugatCategoryURL,
+		validateProduct:   validateCugatProductURL,
+		extractProducts:   extractCugatProducts,
+		extractProduct: func(body []byte, responseURL *url.URL, _ string) *domain.Product {
+			return extractCugatDetail(body, responseURL)
+		},
+		pageURL: func(rawURL string, page int) string {
+			if page <= 1 {
+				return rawURL
 			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				c.logger.Info("cugat_pagination_end", "url", pageURL, "page", page)
-				return nil
-			}
-			return err
-		}
-		if response.Status == 404 {
-			c.logger.Info("cugat_pagination_end", "url", pageURL, "page", page)
-			return nil
-		}
-
-		products := extractCugatProducts(response.Body, response.URL)
-		if len(products) == 0 {
-			c.logger.Warn("cugat_category_without_products", "url", pageURL, "page", page)
-			return nil
-		}
-		for _, product := range products {
-			item := toCugatItem(product, category, urlString(response.URL))
-			if err := emit(item); err != nil {
-				return err
-			}
-		}
-	}
-	c.logger.Warn("cugat_pagination_limit", "max_pages", c.maxPages)
-	return nil
+			return cugatPageURL(rawURL, page)
+		},
+		categoryFromURL: cugatCategoryFromURL,
+	})}
 }
 
-func (c *Cugat) startURLs() ([]string, error) {
-	urls := readCategoryURLs(filepath.Join(c.categoryDir, "cugat_categories.txt"))
-	urls = append(urls, envCategoryURLs("CUGAT_CATEGORY_URLS")...)
-	urls = dedupeStrings(urls)
-	if len(urls) == 0 {
-		return append([]string(nil), cugatDefaultCategories...), nil
-	}
-	for _, rawURL := range urls {
-		if err := validateCugatCategoryURL(rawURL); err != nil {
-			return nil, err
-		}
-	}
-	return urls, nil
-}
-
-func (c *Cugat) appendCategoryURL(rawURL string) error {
-	return appendCategoryURL(
-		filepath.Join(c.categoryDir, "cugat_categories.txt"),
-		rawURL,
-		validateCugatCategoryURL,
-	)
-}
-
-func validateCugatCategoryURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+var (
+	validateCugatCategoryURL = validateSiteURL(
 		cugatAllowedHosts,
+		"",
+		"",
 		"La categoría debe ser una URL HTTPS pública de cugat.cl",
+		0,
 	)
-}
-
-func validateCugatProductURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+	validateCugatProductURL = validateSiteURL(
 		cugatAllowedHosts,
+		"",
+		"",
 		"product_url debe ser una URL HTTPS pública de cugat.cl",
+		0,
 	)
-}
+)
 
 func cugatPageURL(rawURL string, page int) string {
 	parsed, err := url.Parse(rawURL)
@@ -282,79 +178,4 @@ func cugatPriceFrom(card *goquery.Selection, selector string) *float64 {
 
 func extractCugatDetail(body []byte, responseURL *url.URL) *domain.Product {
 	return extractJSONLDProduct(body, responseURL)
-}
-
-func cugatImageURL(value any) *string {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
-			return nil
-		}
-		value = list[0]
-	}
-	if mapped, ok := value.(map[string]any); ok {
-		value = mapped["url"]
-	}
-	if text, ok := value.(string); ok && text != "" {
-		return &text
-	}
-	return nil
-}
-
-func isProductType(value any) bool {
-	switch typed := value.(type) {
-	case string:
-		return typed == "Product"
-	case []any:
-		for _, item := range typed {
-			if text, ok := item.(string); ok && text == "Product" {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func firstMapValue(value any) any {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
-			return nil
-		}
-		return list[0]
-	}
-	return value
-}
-
-func toCugatItem(product domain.Product, category, pageURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = &pageURL
-	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: "Cugat"}
-}
-
-func nonEmptySegments(path string) []string {
-	var segments []string
-	for _, segment := range strings.Split(path, "/") {
-		if segment != "" {
-			segments = append(segments, segment)
-		}
-	}
-	return segments
-}
-
-func mustParsePath(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return parsed.Path
-}
-
-func hasClass(classes, wanted string) bool {
-	for _, class := range strings.Fields(classes) {
-		if class == wanted {
-			return true
-		}
-	}
-	return false
 }

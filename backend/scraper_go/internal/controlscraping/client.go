@@ -1,6 +1,5 @@
 // Package controlscraping implementa el cliente HTTP del worker contra
-// Control de Scraping, manteniendo el contrato de idempotencia del worker de
-// Python.
+// Control de Scraping con contrato de idempotencia para la entrega de lotes.
 package controlscraping
 
 import (

@@ -162,8 +162,11 @@ if [[ "${SUP271_OWNERSHIP:-0}" == 1 ]]; then
     --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url"
 fi
 if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
-  PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
-    --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state"
+  (
+    cd "$repo_root/backend/scraper_go"
+    REDIS_TEST_URL="redis://127.0.0.1:${SUP270_REDIS_PORT:-18079}/15" \
+      go test -count=1 ./internal/worker ./internal/queue
+  )
 fi
 
 api_before=$(compose ps -q control_scraping)
@@ -172,10 +175,6 @@ compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
 test "$(compose ps -q catalogo | wc -l)" -eq 3
 test "$(compose ps -q control_scraping)" = "$api_before"
 test "$(compose ps -q gateway)" = "$gateway_before"
-if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
-  PYTHONPATH="$repo_root/backend/scraper" python3 "$repo_root/backend/scraper/research/smoke_recovery.py" \
-    --project "$test_project" --env-file "$test_env" --gateway-url "$gateway_url" --state-dir "$test_dir/worker-state" --replicas-only
-fi
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --mode load
 compose logs --no-color catalogo > "$test_dir/catalogo.log"
 python3 - "$test_dir/catalogo.log" <<'PY'

@@ -31,7 +31,7 @@ cmd/worker
   └── internal/worker          orquesta lease, spool, crawl, entrega y cierre
         ├── internal/queue     Redis Streams: receive, renew, ack, dead-letter
         ├── internal/spool     outbox SQLite por trabajo (items, batches, progress)
-        ├── internal/spiders   registro de spiders y extracción por supermercado
+        ├── internal/spiders   registro, baseSpider (ciclo común) y extracción por cadena
         │     └── internal/crawler   HTTP, robots.txt, throttle, reintentos
         ├── internal/controlscraping contrato HTTP e idempotencia
         ├── internal/normalize paridad de precios, EAN y texto con Python

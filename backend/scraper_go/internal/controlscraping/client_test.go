@@ -13,6 +13,10 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
 func TestIngestBatchAndFinalizeWork(t *testing.T) {
 	var received ingestPayload
 	var idempotency string
@@ -49,7 +53,7 @@ func TestIngestBatchAndFinalizeWork(t *testing.T) {
 	client := New(server.URL+"/api/v1/scraper/productos", "token", 2*time.Second)
 	supermarket := "Jumbo"
 	products := []domain.Product{
-		{Producto: "Leche", Categoria: "lacteos", Precio: domain.FloatPtr(1290)},
+		{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)},
 		{Producto: "Pan", Categoria: "panaderia"},
 	}
 	result, err := client.IngestBatch(context.Background(), products, &supermarket, "work-1", "batch-1")

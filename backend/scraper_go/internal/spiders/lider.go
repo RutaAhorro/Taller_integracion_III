@@ -2,19 +2,15 @@ package spiders
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
@@ -31,167 +27,44 @@ var (
 )
 
 type Lider struct {
-	fetcher     Fetcher
-	categoryDir string
-	maxPages    int
-	logger      *slog.Logger
+	baseSpider
 }
 
 func NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Lider{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-	}
+	return &Lider{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, spiderConfig{
+		name:              LiderName,
+		supermarket:       "Lider",
+		categoryFile:      "lider_categories.txt",
+		categoryEnv:       "LIDER_CATEGORY_URLS",
+		defaultCategories: liderDefaultCategories,
+		validateCategory:  validateLiderCategoryURL,
+		validateProduct:   validateLiderProductURL,
+		extractProducts:   extractLiderProducts,
+		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
+			return extractLiderProduct(body, responseURL, requested)
+		},
+		pageURL:         liderPageURL,
+		startPage:       liderPageNumber,
+		categoryFromURL: liderCategoryFromURL,
+	})}
 }
 
-func (l *Lider) Name() string {
-	return LiderName
-}
-
-func (l *Lider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.ProductURL != "" {
-		return l.runProduct(ctx, job, emit)
-	}
-	if job.AddURL != "" {
-		if err := l.appendCategoryURL(job.AddURL); err != nil {
-			return err
-		}
-	}
-	urls, err := l.startURLs()
-	if err != nil {
-		return err
-	}
-	for _, categoryURL := range urls {
-		if err := l.runCategory(ctx, categoryURL, emit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// runProduct atiende un scraping puntual de /ip/. Si la ficha no entrega un
-// producto identificable no se emite nada ni se recorre el catálogo completo.
-func (l *Lider) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := validateLiderProductURL(job.ProductURL); err != nil {
-		return err
-	}
-	response, err := l.fetcher.Fetch(ctx, job.ProductURL)
-	if err != nil {
-		return err
-	}
-	if response.Status == 404 {
-		l.logger.Warn("lider_product_not_found", "url", job.ProductURL)
-		return nil
-	}
-	product := extractLiderProduct(response.Body, response.URL, job.ProductURL)
-	if product == nil {
-		l.logger.Warn("lider_product_without_data", "url", job.ProductURL)
-		return nil
-	}
-	return emit(toLiderItem(*product, "producto", job.ProductURL))
-}
-
-func (l *Lider) runCategory(ctx context.Context, categoryURL string, emit Emitter) error {
-	category := liderCategoryFromURL(categoryURL)
-	startPage := liderPageNumber(categoryURL)
-	for page := startPage; page <= l.maxPages; page++ {
-		pageURL := liderPageURL(categoryURL, page)
-		response, err := l.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				l.logger.Warn("lider_category_robots_disallowed", "url", pageURL)
-				return nil
-			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				l.logger.Info("lider_pagination_end", "url", pageURL, "page", page)
-				return nil
-			}
-			return err
-		}
-		if response.Status == 404 {
-			l.logger.Info("lider_pagination_end", "url", pageURL, "page", page)
-			return nil
-		}
-
-		products := extractLiderProducts(response.Body, response.URL)
-		if len(products) == 0 {
-			l.logger.Warn("lider_category_without_products", "url", pageURL, "page", page)
-			return nil
-		}
-		for _, product := range products {
-			item := toLiderItem(product, category, urlString(response.URL))
-			if err := emit(item); err != nil {
-				return err
-			}
-		}
-		if page == l.maxPages {
-			l.logger.Warn("lider_pagination_limit", "url", categoryURL, "max_pages", l.maxPages)
-		}
-	}
-	return nil
-}
-
-func (l *Lider) startURLs() ([]string, error) {
-	urls := readCategoryURLs(filepath.Join(l.categoryDir, "lider_categories.txt"))
-	urls = append(urls, envCategoryURLs("LIDER_CATEGORY_URLS")...)
-	urls = dedupeStrings(urls)
-	if len(urls) == 0 {
-		return append([]string(nil), liderDefaultCategories...), nil
-	}
-	for _, rawURL := range urls {
-		if err := validateLiderCategoryURL(rawURL); err != nil {
-			return nil, err
-		}
-	}
-	return urls, nil
-}
-
-func (l *Lider) appendCategoryURL(rawURL string) error {
-	return appendCategoryURL(
-		filepath.Join(l.categoryDir, "lider_categories.txt"),
-		rawURL,
-		validateLiderCategoryURL,
-	)
-}
-
-func validateLiderCategoryURL(rawURL string) error {
-	if err := validateHTTPSHost(
-		rawURL,
+var (
+	validateLiderCategoryURL = validateSiteURL(
 		liderAllowedHosts,
+		"/browse/",
+		"",
 		"La categoría debe ser una URL HTTPS /browse/ de super.lider.cl",
-	); err != nil {
-		return err
-	}
-	parsed, _ := url.Parse(rawURL)
-	if !strings.HasPrefix(parsed.Path, "/browse/") {
-		return errors.New("La categoría debe ser una URL HTTPS /browse/ de super.lider.cl")
-	}
-	return nil
-}
-
-func validateLiderProductURL(rawURL string) error {
-	if err := validateHTTPSHost(
-		rawURL,
+		0,
+	)
+	validateLiderProductURL = validateSiteURL(
 		liderAllowedHosts,
+		"/ip/",
+		"",
 		"product_url debe ser una URL HTTPS /ip/ de super.lider.cl",
-	); err != nil {
-		return err
-	}
-	parsed, _ := url.Parse(rawURL)
-	if !strings.HasPrefix(parsed.Path, "/ip/") {
-		return errors.New("product_url debe ser una URL HTTPS /ip/ de super.lider.cl")
-	}
-	return nil
-}
+		0,
+	)
+)
 
 func liderPageNumber(rawURL string) int {
 	parsed, err := url.Parse(rawURL)
@@ -475,12 +348,4 @@ func extractLiderCards(document *goquery.Document, responseURL *url.URL) []domai
 		})
 	})
 	return products
-}
-
-func toLiderItem(product domain.Product, category, pageURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = &pageURL
-	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: "Lider"}
 }

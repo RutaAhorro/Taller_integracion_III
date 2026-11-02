@@ -2,9 +2,9 @@
 
 ## Mapa auto-generado: Catálogo y precios (Go + Gin)
 
-Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede directamente a usuarios, trabajos ni outboxes de coordinación: `/api/v1/admin/productos` autoriza con la firma y claims del JWT local, sin consultar Identidad por petición. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
+Estado vigente SUP-271: Catálogo usa su credencial app_catalogo (DB_URL) y sólo cadenas, sucursales, productos, capturas y recibos propios. Valida permisos una vez al arrancar (timeout 5s); readiness sólo hace Ping y liveness no consulta SQL. Ingesta privada con CATALOGO_INTERNAL_TOKEN e idempotencia SUP-270. No accede a usuarios, trabajos ni outboxes de coordinación. Ver docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md.
 
-**27 archivos .go** detectados
+**34 archivos .go** detectados
 
 
 ### `cmd/catalogo/main.go` (package main)
@@ -37,12 +37,26 @@ Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL
 - `TestCORSOriginsConfiguration(t *testing.T)`
 - `TestInternalTokenConfiguration(t *testing.T)`
 
+### `internal/domain/fuente.go` (package domain)
+
+- Structs: FuenteDTO, ActualizarFuenteDTO
+
+### `internal/domain/fuente_repository.go` (package domain)
+
+
 ### `internal/domain/producto.go` (package domain)
 
 - Structs: FiltroProductosDTO, ProductoDTO, ProductoAdminDTO, MetadatosPaginacionDTO, PaginaProductosDTO, PaginaProductosAdminDTO, HistorialPrecioDTO, ProductoDetalleDTO
 
 ### `internal/domain/repository.go` (package domain)
 
+
+### `internal/handlers/fuente_handler.go` (package handlers)
+
+- Structs: FuenteHandler
+- `NewFuenteHandler(service services.FuenteService) *FuenteHandler`
+- `(FuenteHandler).ObtenerFuentes(c *gin.Context)`
+- `(FuenteHandler).ActualizarFuente(c *gin.Context)`
 
 ### `internal/handlers/producto_handler.go` (package handlers)
 
@@ -109,6 +123,15 @@ Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL
 
 - `RequireRole(rolesPermitidos ...string) gin.HandlerFunc`
 
+### `internal/repositories/fuente_repository.go` (package repositories)
+
+- Structs: gormFuenteRepository, fuenteRow
+- `NewFuenteRepository(db *gorm.DB) domain.FuenteRepository`
+- `(fuenteRow).aDTO() domain.FuenteDTO`
+- `(gormFuenteRepository).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(gormFuenteRepository).ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error)`
+- `(gormFuenteRepository).ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error)`
+
 ### `internal/repositories/producto_repository.go` (package repositories)
 
 - Structs: gormProductoRepository
@@ -119,9 +142,16 @@ Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL
 
 ### `internal/server/server.go` (package server)
 
-- `NewRouter(service services.ProductoService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, sessionValidator auth.SessionValidator, internal ...ingesta.Config) *gin.Engine`
+- `NewRouter(service services.ProductoService, fuentes services.FuenteService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine`
 - `cors(allowedOrigins []string) gin.HandlerFunc`
 - `observe(logger *slog.Logger) gin.HandlerFunc`
+
+### `internal/services/fuente_service.go` (package services)
+
+- Structs: fuenteService
+- `NewFuenteService(repo domain.FuenteRepository) FuenteService`
+- `(fuenteService).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(fuenteService).ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error)`
 
 ### `internal/services/producto_service.go` (package services)
 
@@ -134,6 +164,21 @@ Estado vigente SUP-271/SUP-242: Catálogo usa su credencial app_catalogo (DB_URL
 ### `internal/tests/architecture_test.go` (package tests)
 
 - `TestCatalogDependencies(t *testing.T)`
+
+### `internal/tests/fuente_handler_test.go` (package tests)
+
+- `fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine`
+- `solicitarFuente(t *testing.T, router http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder`
+- `TestFuenteHandler_HTTP(t *testing.T)`
+
+### `internal/tests/fuente_service_test.go` (package tests)
+
+- Structs: mockFuenteRepository
+- `(mockFuenteRepository).ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error)`
+- `(mockFuenteRepository).ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error)`
+- `(mockFuenteRepository).ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error)`
+- `TestFuenteService_Listar(t *testing.T)`
+- `TestFuenteService_ActualizarFuente(t *testing.T)`
 
 ### `internal/tests/producto_handler_test.go` (package tests)
 

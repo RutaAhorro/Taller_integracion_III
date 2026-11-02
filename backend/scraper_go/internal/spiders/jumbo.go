@@ -6,17 +6,12 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/url"
-	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
@@ -31,182 +26,59 @@ var jumboAllowedHosts = map[string]struct{}{
 }
 
 type Jumbo struct {
-	fetcher     Fetcher
-	categoryDir string
-	maxPages    int
-	logger      *slog.Logger
+	baseSpider
 }
 
 func NewJumbo(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Jumbo {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
-	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Jumbo{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-	}
+	spider := &Jumbo{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, spiderConfig{
+		name:              JumboName,
+		supermarket:       "Jumbo",
+		categoryFile:      "jumbo_categories.txt",
+		categoryEnv:       "JUMBO_CATEGORY_URLS",
+		defaultCategories: jumboDefaultCategories,
+		validateCategory:  validateCategoryURL,
+		validateProduct:   validateProductURL,
+		extractProducts: func(body []byte, _ *url.URL) []domain.Product {
+			return extractJumboProducts(body)
+		},
+		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
+			return selectJumboProduct(extractJumboProducts(body), requested, responseURL)
+		},
+		pageURL: pageURLOrSelf,
+	})}
+	spider.baseSpider.materialize = spider.enrich
+	return spider
 }
 
-func (j *Jumbo) Name() string {
-	return JumboName
-}
-
-func (j *Jumbo) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.ProductURL != "" {
-		return j.runProduct(ctx, job, emit)
-	}
-	if job.AddURL != "" {
-		if err := j.appendCategoryURL(job.AddURL); err != nil {
-			return err
-		}
-	}
-	for _, categoryURL := range j.startURLs() {
-		if err := j.runCategory(ctx, categoryURL, job.EnrichEAN, emit); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (j *Jumbo) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := validateProductURL(job.ProductURL); err != nil {
-		return err
-	}
-	response, err := j.fetcher.Fetch(ctx, job.ProductURL)
-	if err != nil {
-		return err
-	}
-	if response.Status == 404 {
-		j.logger.Warn("jumbo_product_not_found", "url", job.ProductURL)
-		return nil
-	}
-	products := extractJumboProducts(response.Body)
-	if len(products) == 0 {
-		j.logger.Warn("jumbo_product_without_data", "url", job.ProductURL)
-		return nil
-	}
-
-	requested := canonicalProductURL(job.ProductURL)
-	var selected *domain.Product
-	for i := range products {
-		if products[i].URLProducto == nil {
-			continue
-		}
-		candidate := resolveURL(response.URL, *products[i].URLProducto)
-		if canonicalProductURL(candidate) == requested {
-			selected = &products[i]
-			break
-		}
-	}
-	if selected == nil {
-		if len(products) == 1 {
-			selected = &products[0]
-		} else {
-			j.logger.Error("jumbo_product_ambiguous", "url", job.ProductURL)
-			return nil
-		}
-	}
-	return emit(toJumboItem(*selected, "producto", job.ProductURL))
-}
-
-func (j *Jumbo) runCategory(ctx context.Context, categoryURL string, enrichEAN bool, emit Emitter) error {
-	category := categoryFromURL(categoryURL)
-	for page := 1; page <= j.maxPages; page++ {
-		pageURL := categoryURL
-		if page > 1 {
-			pageURL = withPage(categoryURL, page)
-		}
-		response, err := j.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				j.logger.Warn("jumbo_category_robots_disallowed", "url", pageURL)
-				return nil
-			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				j.logger.Info("jumbo_pagination_end", "url", pageURL, "page", page)
-				return nil
-			}
-			return err
-		}
-		if response.Status == 404 {
-			j.logger.Info("jumbo_pagination_end", "url", pageURL, "page", page)
-			return nil
-		}
-
-		products := extractJumboProducts(response.Body)
-		if len(products) == 0 {
-			j.logger.Warn("jumbo_category_without_products", "url", pageURL, "page", page)
-			return nil
-		}
-		for _, product := range products {
-			item, err := j.materialize(ctx, product, category, response.URL, enrichEAN)
-			if err != nil {
-				return err
-			}
-			if err := emit(item); err != nil {
-				return err
-			}
-		}
-		if page == j.maxPages {
-			j.logger.Warn("jumbo_pagination_limit", "url", categoryURL, "max_pages", j.maxPages)
-		}
-	}
-	return nil
-}
-
-func (j *Jumbo) materialize(
+// enrich consulta la ficha del producto cuando el listado no publica EAN/GTIN.
+func (j *Jumbo) enrich(
 	ctx context.Context,
 	product domain.Product,
 	category string,
 	responseURL *url.URL,
 	enrichEAN bool,
 ) (domain.Item, error) {
-	pageURL := ""
-	if responseURL != nil {
-		pageURL = responseURL.String()
-	}
+	pageURL := urlString(responseURL)
 	if !enrichEAN || product.EanGtin != nil || product.URLProducto == nil || *product.URLProducto == "" {
-		return toJumboItem(product, category, pageURL), nil
+		return j.toItem(product, category, pageURL), nil
 	}
 
 	detailURL := resolveURL(responseURL, *product.URLProducto)
 	if err := validateProductURL(detailURL); err != nil {
 		j.logger.Warn("jumbo_ean_url_invalid", "url", detailURL, "error", err)
-		return toJumboItem(product, category, pageURL), nil
+		return j.toItem(product, category, pageURL), nil
 	}
 	response, err := j.fetcher.Fetch(ctx, detailURL)
 	if err != nil {
 		j.logger.Warn("jumbo_ean_fetch_failed", "url", detailURL, "error", err)
-		return toJumboItem(product, category, pageURL), nil
+		return j.toItem(product, category, pageURL), nil
 	}
 	if response.Status == 404 {
-		return toJumboItem(product, category, pageURL), nil
+		return j.toItem(product, category, pageURL), nil
 	}
 
-	detailProducts := extractJumboProducts(response.Body)
-	requested := canonicalProductURL(detailURL)
-	var detail *domain.Product
-	for i := range detailProducts {
-		if detailProducts[i].URLProducto == nil {
-			continue
-		}
-		candidate := resolveURL(response.URL, *detailProducts[i].URLProducto)
-		if canonicalProductURL(candidate) == requested {
-			detail = &detailProducts[i]
-			break
-		}
-	}
-	if detail == nil && len(detailProducts) == 1 {
-		detail = &detailProducts[0]
-	}
 	enriched := product
-	if detail != nil {
+	if detail := selectJumboProduct(extractJumboProducts(response.Body), detailURL, response.URL); detail != nil {
 		if detail.EanGtin != nil && *detail.EanGtin != "" {
 			enriched.EanGtin = detail.EanGtin
 		}
@@ -217,54 +89,42 @@ func (j *Jumbo) materialize(
 	if enriched.EanGtin == nil {
 		j.logger.Info("jumbo_ean_missing", "url", detailURL)
 	}
-	return toJumboItem(enriched, category, pageURL), nil
+	return j.toItem(enriched, category, pageURL), nil
 }
 
-func toJumboItem(product domain.Product, category, responseURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = domain.StringPtr(responseURL)
+func selectJumboProduct(products []domain.Product, requested string, responseURL *url.URL) *domain.Product {
+	wanted := canonicalProductURL(requested)
+	for i := range products {
+		if products[i].URLProducto == nil {
+			continue
+		}
+		candidate := resolveURL(responseURL, *products[i].URLProducto)
+		if canonicalProductURL(candidate) == wanted {
+			return &products[i]
+		}
 	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: "Jumbo"}
-}
-
-func (j *Jumbo) startURLs() []string {
-	urls := readCategoryURLs(filepath.Join(j.categoryDir, "jumbo_categories.txt"))
-	urls = append(urls, envCategoryURLs("JUMBO_CATEGORY_URLS")...)
-	urls = dedupeStrings(urls)
-	if len(urls) == 0 {
-		return append([]string(nil), jumboDefaultCategories...)
+	if len(products) == 1 {
+		return &products[0]
 	}
-	return urls
+	return nil
 }
 
-func (j *Jumbo) appendCategoryURL(rawURL string) error {
-	return appendCategoryURL(
-		filepath.Join(j.categoryDir, "jumbo_categories.txt"),
-		rawURL,
-		validateCategoryURL,
-	)
-}
-
-func validateProductURL(rawURL string) error {
-	return validateHTTPSHost(
-		rawURL,
+var (
+	validateProductURL = validateSiteURL(
 		jumboAllowedHosts,
+		"",
+		"",
 		"product_url debe ser una URL HTTPS pública de jumbo.cl",
+		0,
 	)
-}
-
-func validateCategoryURL(rawURL string) error {
-	return validateProductURL(rawURL)
-}
-
-func canonicalProductURL(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return ""
-	}
-	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
-}
+	validateCategoryURL = validateSiteURL(
+		jumboAllowedHosts,
+		"",
+		"",
+		"La categoría debe ser una URL HTTPS pública de jumbo.cl",
+		0,
+	)
+)
 
 func extractJumboProducts(body []byte) []domain.Product {
 	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
@@ -278,7 +138,7 @@ func extractJumboProducts(body []byte) []domain.Product {
 		var data any
 		decoder := json.NewDecoder(strings.NewReader(selection.Text()))
 		// UseNumber conserva la diferencia entre 1290 y 1290.0, igual que
-		// json.loads en Python. Importa para no inventar EAN/SKU.
+		// evitar desbordamientos o parsing incorrecto. Importa para no inventar EAN/SKU.
 		decoder.UseNumber()
 		if err := decoder.Decode(&data); err != nil {
 			return
@@ -362,93 +222,6 @@ func extractJumboProducts(body []byte) []domain.Product {
 	return products
 }
 
-func schemaOffer(entry map[string]any) map[string]any {
-	switch raw := entry["offers"].(type) {
-	case map[string]any:
-		return raw
-	case []any:
-		if len(raw) > 0 {
-			if offer, ok := raw[0].(map[string]any); ok {
-				return offer
-			}
-		}
-	}
-	return map[string]any{}
-}
-
-func extractNormalPrice(entry map[string]any) *float64 {
-	if price := firstPrice(entry, "price"); price != nil {
-		return price
-	}
-	specification := entry["priceSpecification"]
-	if list, ok := specification.([]any); ok && len(list) > 0 {
-		specification = list[0]
-	}
-	return firstPrice(specification, "price")
-}
-
-func firstValue(data any, keys ...string) any {
-	values, ok := data.(map[string]any)
-	if !ok {
-		return nil
-	}
-	for _, key := range keys {
-		value, found := values[key]
-		if !found || value == nil {
-			continue
-		}
-		switch value.(type) {
-		case map[string]any, []any:
-			continue
-		}
-		// Python convierte el escalar a texto antes de normalizarlo.
-		return valueString(value)
-	}
-	return nil
-}
-
-func firstPrice(data any, keys ...string) *float64 {
-	return normalize.PrecioCLP(firstValue(data, keys...))
-}
-
-func valueString(value any) string {
-	switch typed := value.(type) {
-	case string:
-		return typed
-	case json.Number:
-		return typed.String()
-	case float64:
-		text := strconv.FormatFloat(typed, 'g', -1, 64)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
-		}
-		return text
-	case float32:
-		text := strconv.FormatFloat(float64(typed), 'g', -1, 32)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
-		}
-		return text
-	case bool:
-		if typed {
-			return "True"
-		}
-		return "False"
-	default:
-		return fmt.Sprint(value)
-	}
-}
-
-func stockValue(availability any) *bool {
-	text, ok := availability.(string)
-	if !ok {
-		return nil
-	}
-	parts := strings.Split(text, "/")
-	inStock := strings.ToLower(parts[len(parts)-1]) != "outofstock"
-	return &inStock
-}
-
 func skuFromURL(rawURL string) *string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -479,24 +252,4 @@ func skuFromURL(rawURL string) *string {
 	}
 	truncated := "JUMBO-" + string(runes) + "-" + suffix
 	return &truncated
-}
-
-func walkJSON(value any) []any {
-	var result []any
-	var walk func(any)
-	walk = func(node any) {
-		switch typed := node.(type) {
-		case map[string]any:
-			result = append(result, typed)
-			for _, child := range typed {
-				walk(child)
-			}
-		case []any:
-			for _, child := range typed {
-				walk(child)
-			}
-		}
-	}
-	walk(value)
-	return result
 }

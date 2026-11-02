@@ -13,7 +13,6 @@ on:
       - 'backend/gateway/**'
       - 'backend/motor_rutas/**'
       - 'backend/bot_discord/**'
-      - 'backend/scraper/**'
       - 'backend/scraper_go/**'
       - 'docker-compose.scraper-go.yml'
       - 'frontend/web/**'
@@ -198,28 +197,7 @@ jobs:
           tags: ${{ steps.meta-frontend.outputs.tags }}
           labels: ${{ steps.meta-frontend.outputs.labels }}
 
-      # ==== BUILD SCRAPER ====
-      - name: Extract metadata for Scraper
-        id: meta-scraper
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_SCRAPER }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=sha
-
-      - name: Build and push Scraper image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./backend/scraper
-          push: true
-          tags: ${{ steps.meta-scraper.outputs.tags }}
-          labels: ${{ steps.meta-scraper.outputs.labels }}
-
       # ==== BUILD SCRAPER GO ====
-      # Se publica en paralelo al worker Python para poder hacer el cutover y
-      # el rollback sin reconstruir la imagen en producción.
       - name: Extract metadata for Scraper Go
         id: meta-scraper-go
         uses: docker/metadata-action@v5

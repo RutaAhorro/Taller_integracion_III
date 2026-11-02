@@ -25,6 +25,18 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
+func skipIfRedisUnavailable(t *testing.T, err error) {
+	t.Helper()
+	if os.Getenv("REDIS_TEST_URL") != "" {
+		t.Fatalf("Redis configurado en REDIS_TEST_URL no está disponible: %v", err)
+	}
+	t.Skipf("Redis no disponible: %v", err)
+}
+
 func testWorker(t *testing.T) *Worker {
 	t.Helper()
 	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -157,7 +169,7 @@ func TestWorkerProcessesJobEndToEnd(t *testing.T) {
 	defer pingCancel()
 	if err := redisClient.Ping(pingCtx).Err(); err != nil {
 		_ = redisClient.Close()
-		t.Skipf("Redis no disponible: %v", err)
+		skipIfRedisUnavailable(t, err)
 	}
 
 	workID := uuid.NewString()
@@ -265,8 +277,8 @@ func TestWorkerProcessesJobEndToEnd(t *testing.T) {
 	registry.Register(&fakeSpider{
 		name: spiders.SantaIsabelName,
 		items: []domain.Item{
-			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: domain.FloatPtr(1290)}, Supermercado: "Santa Isabel"},
-			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: domain.FloatPtr(990)}, Supermercado: "Santa Isabel"},
+			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}, Supermercado: "Santa Isabel"},
+			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: floatPtr(990)}, Supermercado: "Santa Isabel"},
 		},
 	})
 	cfg := config.Config{
@@ -341,7 +353,7 @@ func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRun
 	defer pingCancel()
 	if err := redisClient.Ping(pingCtx).Err(); err != nil {
 		_ = redisClient.Close()
-		t.Skipf("Redis no disponible: %v", err)
+		skipIfRedisUnavailable(t, err)
 	}
 
 	prefix := "scraper:test:worker:" + uuid.NewString()

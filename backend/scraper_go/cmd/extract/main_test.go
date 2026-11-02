@@ -27,25 +27,3 @@ func TestCollectURLs(t *testing.T) {
 		t.Errorf("collectURLs() = %#v, want %#v", got, want)
 	}
 }
-
-func TestTemporaryCategoryDir(t *testing.T) {
-	dir, err := temporaryCategoryDir("santa_isabel_rsc", []string{"https://www.santaisabel.cl/despensa"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(dir)
-
-	if filepath.Base(dir) == "" {
-		t.Fatal("directorio temporal vacío")
-	}
-	if got := categoryFileName("santa_isabel_rsc"); got != "santa_isabel_categories.txt" {
-		t.Errorf("categoryFileName() = %q", got)
-	}
-	body, err := os.ReadFile(filepath.Join(dir, "santa_isabel_categories.txt"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(body) != "https://www.santaisabel.cl/despensa\n" {
-		t.Errorf("contenido = %q", body)
-	}
-}

@@ -73,7 +73,7 @@ func TestAcuentaMergesVisibleOfferIntoRSCProduct(t *testing.T) {
 	}
 }
 
-func TestAcuentaNameFromSlugUsesPythonTitle(t *testing.T) {
+func TestAcuentaNameFromSlugUsesTitleCase(t *testing.T) {
 	if got := acuentaNameFromSlug("coca-cola-1.5l-1075736"); got == nil || *got != "Coca Cola 1.5L" {
 		t.Errorf("nombre = %v", got)
 	}
@@ -306,8 +306,7 @@ func TestAcuentaProductMode(t *testing.T) {
 		t.Fatalf("items = %d, want 1", len(items))
 	}
 	item := items[0]
-	// Igual que Python, el nombre del payload sólo se conserva si coincide con
-	// el slug; aquí se reconstruye desde el slug.
+	// El nombre del payload sólo se conserva si coincide con el slug; aquí se reconstruye desde el slug.
 	if item.Producto != "Helado Chocolate 1 L Savory" || item.Categoria != "producto" || item.Supermercado != "A Cuenta" {
 		t.Errorf("item = %+v", item)
 	}

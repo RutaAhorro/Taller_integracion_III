@@ -13,7 +13,7 @@ Gateway usa SCRAPING_URL; probes privados por loopback. Ver
 
 SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, pool 5. /_scraping/live independiente y /_scraping/ready SQL con Redis diagnóstico. Conserva recuperación SUP-270/271, ingesta HTTP idempotente a Catálogo y contrato worker. Sin JWT_SECRET, modelos de usuarios ni persistencia de catálogo. Gateway usa SCRAPING_URL; no existe servicio backend/api. Ver docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md.
 
-**34 archivos .go** detectados
+**36 archivos .go** detectados
 
 
 ### `cmd/control_scraping/hardening_test.go` (package main)
@@ -49,9 +49,15 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 
 - `TestModuleCompositionHTTP(t *testing.T)`
 
+### `cmd/control_scraping/service_auth_test.go` (package main)
+
+- `TestScraperRequiresServiceToken(t *testing.T)`
+- `TestServiceTokenConfigurationFailsClosed(t *testing.T)`
+
 ### `cmd/control_scraping/swagger_test.go` (package main)
 
 - `TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T)`
+- `TestSwaggerDisabledByDefault(t *testing.T)`
 
 ### `internal/control/lifecycle_test.go` (package control)
 
@@ -128,6 +134,11 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `CORS(origins []string) gin.HandlerFunc`
 - `Observe(log *slog.Logger) gin.HandlerFunc`
 
+### `internal/middleware/service_auth.go` (package middleware)
+
+- `ValidarTokenServicio(token, catalogoToken string) error`
+- `RequireServiceToken(token string) gin.HandlerFunc`
+
 ### `internal/repositories/catalogo_client.go` (package repositories)
 
 - Structs: catalogoClient, requestIDKey
@@ -141,6 +152,7 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 ### `internal/repositories/catalogo_client_test.go` (package repositories)
 
 - `TestCatalogoClientContract(t *testing.T)`
+- `TestCatalogoClientObtenerCadenaPropagaEstado(t *testing.T)`
 - `TestCatalogoClientFailuresAndNoRetry(t *testing.T)`
 - `TestCatalogoClientTimeoutAndCancellation(t *testing.T)`
 - `TestCatalogoClientInvalidConfiguration(t *testing.T)`
@@ -187,11 +199,11 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `(gormTrabajoRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
 - `(gormTrabajoRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
 - `(gormTrabajoRepository).IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error`
-- `(gormTrabajoRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+- `(gormTrabajoRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error)`
 
 ### `internal/routes/scraper_routes.go` (package routes)
 
-- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler)`
+- `RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler, auth ...gin.HandlerFunc)`
 
 ### `internal/services/ejecuciones.go` (package services)
 
@@ -213,6 +225,7 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `(scraperService).IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error)`
 - `(scraperService).ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error)`
+- `(scraperService).ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error)`
 - `(scraperService).IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)`
 - `(scraperService).mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO`
 - `(scraperService).nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string`
@@ -232,6 +245,8 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `(sqlQueue).Pendientes(context.Context) ([]domain.Ejecucion, error)`
 - `(sqlQueue).PosponerPublicacion(context.Context, uuid.UUID) error`
 - `TestExecutionWithoutRedisClientStillPersistsSQL(t *testing.T)`
+- `TestExecutionForwardsAddURLAndEnrichEAN(t *testing.T)`
+- `TestExecutionRejectsEmptyAddURL(t *testing.T)`
 
 ### `internal/tests/scraper_test.go` (package tests)
 
@@ -239,7 +254,7 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `newMockScraperRepository() *mockScraperRepository`
 - `(mockScraperRepository).CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error`
 - `(mockScraperRepository).ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error)`
-- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, registroErrores *string) (*domain.TrabajoScraper, error)`
+- `(mockScraperRepository).FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error)`
 - `(mockScraperRepository).ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error)`
 - `(mockScraperRepository).ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error)`
 - `(mockScraperRepository).IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error)`
@@ -247,8 +262,17 @@ SUP-273: dueño exclusivo de trabajos y outboxes; SCRAPING_DB_URL/app_scraping, 
 - `TestScraperService_IniciarTrabajo_Exitoso(t *testing.T)`
 - `TestScraperService_FinalizarTrabajo_Validaciones(t *testing.T)`
 - `TestScraperService_IngestarProductos_LimitesYValidaciones(t *testing.T)`
+- `TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(t *testing.T)`
+- `TestScraperService_IngestaDirectaFuenteDeshabilitada(t *testing.T)`
 - `TestScraperHandler_EndpointsHTTP(t *testing.T)`
 - `stringPtr(s string) *string`
+- `TestScraperService_IniciarTrabajo_FuenteDeshabilitada(t *testing.T)`
+- `TestScraperService_ObtenerCadena(t *testing.T)`
+- `TestScraperService_ObtenerCadena_NoEncontrada(t *testing.T)`
+- `TestScraperHandler_IngestaDirectaFuenteDeshabilitada(t *testing.T)`
+- `TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(t *testing.T)`
+- `TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(t *testing.T)`
+- `TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(t *testing.T)`
 
 ### `tests/architecture_test.go` (package tests)
 
