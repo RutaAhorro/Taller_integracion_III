@@ -21,12 +21,16 @@ def repositorio(request: Request) -> RepositorioListas:
     return request.app.state.repositorio
 
 
+def _no_existe() -> ErrorAPI:
+    # Un id mal formado, inexistente o de otro usuario responde igual: no revela qué listas existen.
+    return ErrorAPI(404, "La lista no existe.")
+
+
 def _id_o_404(lista_id: str) -> str:
-    # Un id mal formado o de otro usuario responde igual: no revela qué listas existen.
     try:
         return str(uuid.UUID(lista_id))
     except ValueError:
-        raise ErrorAPI(404, "La lista no existe.") from None
+        raise _no_existe() from None
 
 
 @router.get("", response_model=RespuestaListas)
@@ -47,7 +51,7 @@ async def crear(datos: ListaCrear, sesion: Sesion = Depends(sesion_actual), repo
 async def obtener(lista_id: str, sesion: Sesion = Depends(sesion_actual), repo: RepositorioListas = Depends(repositorio)) -> ListaDetalle:
     lista = await repo.obtener(sesion.usuario_id, _id_o_404(lista_id))
     if lista is None:
-        raise ErrorAPI(404, "La lista no existe.")
+        raise _no_existe()
     return lista
 
 
@@ -55,12 +59,12 @@ async def obtener(lista_id: str, sesion: Sesion = Depends(sesion_actual), repo: 
 async def actualizar(lista_id: str, datos: ListaActualizar, sesion: Sesion = Depends(sesion_actual), repo: RepositorioListas = Depends(repositorio)) -> Lista:
     lista = await repo.actualizar(sesion.usuario_id, _id_o_404(lista_id), datos.nombre, datos.estado)
     if lista is None:
-        raise ErrorAPI(404, "La lista no existe.")
+        raise _no_existe()
     return lista
 
 
 @router.delete("/{lista_id}", status_code=204)
 async def eliminar(lista_id: str, sesion: Sesion = Depends(sesion_actual), repo: RepositorioListas = Depends(repositorio)) -> Response:
     if not await repo.eliminar(sesion.usuario_id, _id_o_404(lista_id)):
-        raise ErrorAPI(404, "La lista no existe.")
+        raise _no_existe()
     return Response(status_code=204)
