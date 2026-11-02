@@ -1,9 +1,13 @@
 # Motor de rutas
 
-Servicio FastAPI dueño de `rutas.*` (decisión de SUP-240, alineada con
-`GUIA_BACKEND_GO.md` §4 y `PLAN_IMPLEMENTACION_CAPAS.md`). Hoy expone el CRUD de
-listas de compra; la optimización de rutas (OR-Tools + OTP) se agregará sobre
-el mismo servicio y el mismo rol de base de datos.
+Servicio FastAPI que implementa el CRUD de listas de compra sobre tablas de
+`rutas.*` (SUP-240). La optimización sigue pendiente: el prototipo TSP con datos
+ficticios no constituye una API de rutas real. No hay un motor OTP/OSRM operativo
+incluido en Compose. Las ejecuciones y paradas aún no tienen permisos runtime.
+
+El servicio es opcional en Compose y no forma parte del inventario de nueve pods
+informado por el equipo para el cierre del Sprint 2. Tener código y manifiestos
+no acredita un despliegue activo.
 
 ## API (tras el Gateway)
 
