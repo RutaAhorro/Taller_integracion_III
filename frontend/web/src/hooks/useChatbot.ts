@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 
+// TODO SUP-253: el backend ya no expone /chat/gemini; migrar a /api/v1/chat.
 const IA_API_URL = (import.meta.env.VITE_IA_URL || 'http://localhost:8002').replace(/\/$/, '');
 
 export type MessageType = 'welcome' | 'text' | 'processing' | 'rich-recipe' | 'out-of-stock';
@@ -14,22 +15,25 @@ export type Message = {
   query?: string;
 };
 
+const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.';
+const ERROR_CONEXION = 'Lo siento, hay problemas de conexión con mis servicios en este momento.';
+
+let nextId = 0;
+const newId = () => `${Date.now()}-${nextId++}`;
+
+const welcomeMessage = (): Message => ({ id: newId(), role: 'assistant', type: 'welcome' });
+
 export function useChatbot() {
   const { isGuest, user } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [messages, setMessages] = useState<Message[]>(() => [welcomeMessage()]);
   const scrollRef = useRef<HTMLDivElement>(null);
-  
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', role: 'assistant', type: 'welcome' }
-  ]);
 
-  // Auto-scroll to bottom
+  // Mantiene visible el último mensaje.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
   const handleSend = async (text: string) => {
@@ -37,49 +41,50 @@ export function useChatbot() {
       setShowAuthModal(true);
       return;
     }
-    
     if (!text.trim() || isProcessing) return;
 
-    const newMsg: Message = { id: Date.now().toString(), role: 'user', type: 'text', content: text };
-    setMessages(prev => [...prev, newMsg]);
+    const processingId = newId();
+    const setStep = (step: number) =>
+      setMessages((prev) => prev.map((m) => (m.id === processingId ? { ...m, step } : m)));
+    // Reemplaza el indicador de "procesando" por la respuesta final.
+    const reply = (content: string) =>
+      setMessages((prev) => [
+        ...prev.filter((m) => m.id !== processingId),
+        { id: newId(), role: 'assistant', type: 'text', content },
+      ]);
+
+    setMessages((prev) => [
+      ...prev,
+      { id: newId(), role: 'user', type: 'text', content: text },
+      { id: processingId, role: 'assistant', type: 'processing', step: 2 },
+    ]);
     setInputValue('');
     setIsProcessing(true);
 
-    const processingId = (Date.now() + 1).toString();
-    setMessages(prev => [...prev, { id: processingId, role: 'assistant', type: 'processing', step: 1 }]);
-
     try {
-      setMessages(prev => prev.map(m => m.id === processingId ? { ...m, step: 2 } : m));
-
       const response = await fetch(`${IA_API_URL}/chat/gemini`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensaje: text })
+        body: JSON.stringify({ mensaje: text }),
       });
-
-      setMessages(prev => prev.map(m => m.id === processingId ? { ...m, step: 3 } : m));
-
+      setStep(3);
       const data = await response.json();
-      setMessages(prev => prev.filter(m => m.id !== processingId));
 
       if (data.error) {
-        console.error("Error devuelto por la IA:", data.error);
-        setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.' }]);
+        console.error('Error devuelto por la IA:', data.error);
+        reply(ERROR_IA);
       } else {
-        setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: data.explicacion || 'Procesado.' }]);
+        reply(data.explicacion || 'Procesado.');
       }
     } catch (error) {
-      console.error("Excepción al contactar la API:", error);
-      setMessages(prev => prev.filter(m => m.id !== processingId));
-      setMessages(prev => [...prev, { id: (Date.now() + 2).toString(), role: 'assistant', type: 'text', content: 'Lo siento, hay problemas de conexión con mis servicios en este momento.' }]);
+      console.error('Excepción al contactar la API:', error);
+      reply(ERROR_CONEXION);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleClear = () => {
-    setMessages([{ id: Date.now().toString(), role: 'assistant', type: 'welcome' }]);
-  };
+  const handleClear = () => setMessages([welcomeMessage()]);
 
   return {
     user,
@@ -91,6 +96,6 @@ export function useChatbot() {
     setShowAuthModal,
     scrollRef,
     handleSend,
-    handleClear
+    handleClear,
   };
 }

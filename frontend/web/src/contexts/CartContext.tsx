@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo } from 'react'
+import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 import type { UiProduct as Product } from '@/types'
 import { useToast } from '@/contexts/ToastContext'
 
@@ -21,7 +21,7 @@ type CartContextType = {
 
 const CartContext = createContext<CartContextType | undefined>(undefined)
 
-export function CartProvider({ children }: { children: React.ReactNode }) {
+export function CartProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([])
   const [isCartOpen, setIsCartOpen] = useState(false)
 

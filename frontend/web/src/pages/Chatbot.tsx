@@ -1,7 +1,6 @@
-import React from 'react';
 import { 
   Sparkles, CheckCircle2, 
-  Trash2, Maximize2, 
+  Trash2, 
   User, Bot, X, ShieldAlert, Loader2, Info, Send
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,6 +11,38 @@ import { TypingIndicator } from '@/components/chatbot/TypingIndicator';
 import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import { useChatbot } from '@/hooks/useChatbot';
+
+const SUGGESTIONS = [
+  'Almuerzo saludable para 4 por menos de $15.000',
+  'Asado familiar económico para este fin de semana',
+  'Busco Harina de Almendras 1kg',
+];
+
+const PROCESSING_STEPS = [
+  'Extrayendo ingredientes y cantidades...',
+  'Cruzando stock en supermercados de Temuco...',
+  'Generando plan de ahorro...',
+];
+
+// Cada paso está hecho, en curso o pendiente según el paso actual.
+function ProcessingStep({ label, step, current }: { label: string; step: number; current: number }) {
+  const done = current > step;
+  const active = current === step;
+  return (
+    <div className="flex items-center gap-3 text-sm">
+      {done ? (
+        <CheckCircle2 className="h-4 w-4 text-foreground" />
+      ) : active ? (
+        <Loader2 className={cn('h-4 w-4 animate-spin', step === 1 ? 'text-muted-foreground' : 'text-foreground')} />
+      ) : (
+        <div className="h-4 w-4 rounded-full border-2 border-border" />
+      )}
+      <span className={done ? 'text-foreground' : active && step > 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}>
+        {label}
+      </span>
+    </div>
+  );
+}
 
 export default function Chatbot() {
   const navigate = useNavigate();
@@ -67,9 +98,6 @@ export default function Chatbot() {
             <button onClick={handleClear} className="p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors" title="Vaciar chat">
               <Trash2 className="h-4 w-4"/>
             </button>
-            <button className="p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors hidden sm:block" title="Pantalla completa">
-              <Maximize2 className="h-4 w-4"/>
-            </button>
           </div>
         </div>
       </header>
@@ -106,13 +134,9 @@ export default function Chatbot() {
                       ¡Hola! Soy tu asistente inteligente de compras. Puedo ayudarte a planificar tus comidas optimizando tu presupuesto con los precios reales de Temuco. ¿Qué tienes en mente hoy?
                     </p>
                     <div className="flex flex-col gap-2 mt-4">
-                      {[
-                        "Almuerzo saludable para 4 por menos de $15.000",
-                        "Asado familiar económico para este fin de semana",
-                        "Busco Harina de Almendras 1kg"
-                      ].map((chip, idx) => (
+                      {SUGGESTIONS.map((chip) => (
                         <button
-                          key={idx}
+                          key={chip}
                           onClick={() => handleSend(chip)}
                           className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium"
                         >
@@ -125,18 +149,9 @@ export default function Chatbot() {
 
                 {msg.type === 'processing' && (
                   <div className="space-y-3 py-1">
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 1 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : <Loader2 className="h-4 w-4 animate-spin text-muted-foreground"/>}
-                      <span className={msg.step! > 1 ? "text-foreground" : "text-muted-foreground"}>Extrayendo ingredientes y cantidades...</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 2 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : msg.step! === 2 ? <Loader2 className="h-4 w-4 animate-spin text-foreground"/> : <div className="h-4 w-4 rounded-full border-2 border-border"/>}
-                      <span className={msg.step! > 2 ? "text-foreground" : msg.step! === 2 ? "text-foreground font-medium" : "text-muted-foreground"}>Cruzando stock en supermercados de Temuco...</span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm">
-                      {msg.step! > 3 ? <CheckCircle2 className="h-4 w-4 text-foreground"/> : msg.step! === 3 ? <Loader2 className="h-4 w-4 animate-spin text-foreground"/> : <div className="h-4 w-4 rounded-full border-2 border-border"/>}
-                      <span className={msg.step! > 3 ? "text-foreground" : msg.step! === 3 ? "text-foreground font-medium" : "text-muted-foreground"}>Generando plan de ahorro...</span>
-                    </div>
+                    {PROCESSING_STEPS.map((label, i) => (
+                      <ProcessingStep key={label} label={label} step={i + 1} current={msg.step ?? 1} />
+                    ))}
                     <TypingIndicator className="mt-2" />
                   </div>
                 )}
@@ -199,7 +214,7 @@ export default function Chatbot() {
       {/* Auth Gating Modal Overlay */}
       {showAuthModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-card border border-border rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="relative bg-card border border-border rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
             <div className="p-6 text-center space-y-4">
               <div className="mx-auto w-12 h-12 bg-primary rounded-full flex items-center justify-center mb-2">
                 <ShieldAlert className="h-6 w-6 text-primary-foreground"/>

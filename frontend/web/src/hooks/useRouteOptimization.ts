@@ -10,16 +10,19 @@ export interface OptimizedStore {
   cost: number;
 }
 
+export type TransportMode = 'car' | 'bus';
+
 const CENTER_LAT = -38.7359;
 const CENTER_LNG = -72.5904;
 
 const MIN_AMOUNT = 5000;
 const RENTABILITY_THRESHOLD = 500;
 
-// Transformar base
+// Tiendas de ejemplo (mock) con el gasto estimado de sus productos.
 const ALL_STORES: OptimizedStore[] = supermarkets.map(s => {
-  const storeProducts = products.filter(p => p.supermarketId === s.id);
-  const cost = storeProducts.reduce((acc, p) => acc + p.price, 0);
+  const cost = products
+    .filter(p => p.supermarketId === s.id)
+    .reduce((acc, p) => acc + p.price, 0);
   return {
     id: s.id,
     name: s.name,
@@ -30,44 +33,31 @@ const ALL_STORES: OptimizedStore[] = supermarkets.map(s => {
   };
 });
 
-export function useRouteOptimization(initialStops = 3, initialMode: 'car' | 'bus' = 'car') {
+const logisticCostFor = (stops: number, mode: TransportMode) =>
+  mode === 'car' ? stops * 250 : 800 + stops * 50;
+
+export function useRouteOptimization(initialStops = 3, initialMode: TransportMode = 'car') {
   const [maxStops, setMaxStops] = useState(initialStops);
-  const [transportMode, setTransportMode] = useState<'car' | 'bus'>(initialMode);
-  
+  const [transportMode, setTransportMode] = useState<TransportMode>(initialMode);
   const [activeStores, setActiveStores] = useState<OptimizedStore[]>([]);
   const [isCalculating, setIsCalculating] = useState(true);
-  
-  const [productCost, setProductCost] = useState(0);
-  const [logisticCost, setLogisticCost] = useState(0);
-  const [totalCost, setTotalCost] = useState(0);
-  const [savings, setSavings] = useState(0);
 
+  // Simula la latencia del motor de rutas mientras no exista el endpoint real.
   useEffect(() => {
     setIsCalculating(true);
-    const controller = new AbortController();
-
     const timer = setTimeout(() => {
-      const currentStores = ALL_STORES.slice(0, maxStops);
-      setActiveStores(currentStores);
-
-      const pCost = currentStores.reduce((acc, store) => acc + store.cost, 0);
-      setProductCost(pCost);
-
-      const lCost = transportMode === 'car' ? currentStores.length * 250 : 800 + (currentStores.length * 50);
-      setLogisticCost(lCost);
-      setTotalCost(pCost + lCost);
-
-      const maxSingleStoreCost = pCost * 1.25;
-      setSavings(maxSingleStoreCost - (pCost + lCost));
-      
+      setActiveStores(ALL_STORES.slice(0, maxStops));
       setIsCalculating(false);
     }, 800);
-
-    return () => {
-      clearTimeout(timer);
-      controller.abort();
-    };
+    return () => clearTimeout(timer);
   }, [maxStops, transportMode]);
+
+  // Costos derivados de las tiendas activas: no necesitan estado propio.
+  const productCost = activeStores.reduce((acc, store) => acc + store.cost, 0);
+  const logisticCost = activeStores.length ? logisticCostFor(activeStores.length, transportMode) : 0;
+  const totalCost = productCost + logisticCost;
+  // Ahorro frente a comprar todo en una sola tienda (estimado +25%).
+  const savings = productCost * 1.25 - totalCost;
 
   return {
     maxStops,

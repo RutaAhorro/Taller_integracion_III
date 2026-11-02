@@ -72,7 +72,7 @@ export default function Page() {
             ) : catalog.filtered.length > 0 ? (
               <div className="flex flex-col gap-6 pb-6">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 md:gap-4">
-                  {catalog.displayedProducts.map((p) => (
+                  {catalog.filtered.map((p) => (
                     <ProductCard key={p.id} product={p} onAdd={handleAdd} />
                   ))}
                 </div>

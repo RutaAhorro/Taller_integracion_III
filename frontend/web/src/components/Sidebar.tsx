@@ -1,7 +1,5 @@
-'use client'
-
 import { useEffect, useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate, useLocation } from 'react-router-dom'
 
 import {
   ChevronDown,
@@ -16,10 +14,10 @@ import {
   Users,
   Home,
   Zap,
-  ChefHat
+  ChefHat,
+  type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Link } from 'react-router-dom'
 import { useRole } from '@/hooks/useRole'
 import type { UiSupermarket } from '@/types'
 
@@ -99,6 +97,41 @@ const departments: { id: string; label: string; items: string[] }[] = [
   },
 ]
 
+const toolLinks = [
+  { to: '/chat', label: 'Chat Inteligente', icon: Bot },
+  { to: '/history', label: 'Listas y Rutas', icon: Map },
+  { to: '/recetas', label: 'Recetas IA', icon: ChefHat },
+  { to: '/colaborador', label: 'Misiones', icon: Users },
+]
+
+const navLinkClass = (active: boolean, weight: string) =>
+  `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${weight} transition-colors ${
+    active
+      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
+      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+  }`
+
+function SectionTitle({ children }: { children: string }) {
+  return <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
+}
+
+type FilterButtonProps = { icon: LucideIcon; label: string; active: boolean; onClick: () => void }
+
+function FilterButton({ icon: Icon, label, active, onClick }: FilterButtonProps) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+        active ? 'bg-accent text-accent-foreground font-bold' : 'text-foreground hover:bg-accent hover:text-accent-foreground'
+      }`}
+    >
+      <Icon className={`h-4.5 w-4.5 ${active ? 'text-foreground' : 'text-muted-foreground'}`} aria-hidden="true" />
+      {label}
+    </button>
+  )
+}
+
 export function SideBar({
   open,
   onClose,
@@ -172,7 +205,6 @@ export function SideBar({
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-5">
-          {/* NAVEGACIÓN PRINCIPAL */}
           <nav aria-label="Navegación">
             <ul className="flex flex-col gap-1">
               <li>
@@ -182,11 +214,7 @@ export function SideBar({
                     onSelectCategory("")
                     onClose()
                   }}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-bold transition-colors ${
-                    pathname === '/dashboard' && !activeCategory
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
+                  className={navLinkClass(pathname === '/dashboard' && !activeCategory, 'font-bold')}
                 >
                   <Home className="h-4.5 w-4.5" aria-hidden="true" />
                   Inicio (Ver todo)
@@ -195,41 +223,24 @@ export function SideBar({
             </ul>
           </nav>
 
-          {/* DESTACADOS */}
           <nav aria-label="Destacados">
-            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Destacados
-            </p>
+            <SectionTitle>Destacados</SectionTitle>
             <ul className="flex flex-col gap-1">
               {featured.map((c) => (
                 <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => handleCategoryClick(activeCategory === c.id ? "" : c.id)}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      activeCategory === c.id
-                        ? 'bg-accent text-accent-foreground font-bold'
-                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                    }`}
-                  >
-                    <c.icon
-                      className={`h-4.5 w-4.5 ${
-                        activeCategory === c.id ? 'text-foreground' : 'text-muted-foreground'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    {c.label}
-                  </button>
+                  <FilterButton
+                    icon={c.icon}
+                    label={c.label}
+                    active={activeCategory === c.id}
+                    onClick={() => handleCategoryClick(activeCategory === c.id ? '' : c.id)}
+                  />
                 </li>
               ))}
             </ul>
           </nav>
 
-          {/* DEPARTAMENTOS Y CATEGORÍAS */}
           <nav aria-label="Departamentos y categorías">
-            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Departamentos y categorías
-            </p>
+            <SectionTitle>Departamentos y categorías</SectionTitle>
             <ul className="flex flex-col gap-0.5">
               {departments.map((dept) => {
                 const expanded = openDept === dept.id
@@ -237,10 +248,8 @@ export function SideBar({
                   <li key={dept.id}>
                     <button
                       type="button"
-                      onClick={() => {
-                        setOpenDept((prev) => (prev === dept.id ? null : dept.id))
-                        // Note: we don't handleCategoryClick here anymore because expansion shouldn't filter
-                      }}
+                      // Expandir no filtra: solo muestra las subcategorías.
+                      onClick={() => setOpenDept((prev) => (prev === dept.id ? null : dept.id))}
                       aria-expanded={expanded}
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
@@ -298,126 +307,50 @@ export function SideBar({
             </ul>
           </nav>
 
-          {/* SUPERMERCADOS */}
           <nav aria-label="Supermercados">
-            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Supermercados
-            </p>
+            <SectionTitle>Supermercados</SectionTitle>
             <ul className="flex flex-col gap-1">
               <li>
-                <button
-                  type="button"
+                <FilterButton
+                  icon={Store}
+                  label="Todos"
+                  active={activeMarket === null}
                   onClick={() => {
                     onSelectMarket(null)
                     navigate('/dashboard')
                   }}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    activeMarket === null
-                      ? 'bg-accent text-accent-foreground font-bold'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Store
-                    className={`h-4.5 w-4.5 ${
-                      activeMarket === null ? 'text-foreground' : 'text-muted-foreground'
-                    }`}
-                    aria-hidden="true"
-                  />
-                  Todos
-                </button>
+                />
               </li>
               {availableMarkets.map((market) => (
                 <li key={market.id}>
-                  <button
-                    type="button"
+                  <FilterButton
+                    icon={Store}
+                    label={market.name}
+                    active={activeMarket === market.id}
                     onClick={() => {
                       onSelectMarket(activeMarket === market.id ? null : market.id)
                       navigate('/dashboard')
                     }}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      activeMarket === market.id
-                        ? 'bg-accent text-accent-foreground font-bold'
-                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                    }`}
-                  >
-                    <Store
-                      className={`h-4.5 w-4.5 ${
-                        activeMarket === market.id ? 'text-foreground' : 'text-muted-foreground'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    {market.name}
-                  </button>
+                  />
                 </li>
               ))}
             </ul>
           </nav>
 
-          {/* HERRAMIENTAS IA */}
           <nav aria-label="Asistente IA">
-            <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Herramientas IA
-            </p>
+            <SectionTitle>Herramientas IA</SectionTitle>
             <ul className="flex flex-col gap-1">
-              <li>
-                <Link
-                  to="/chat"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/chat')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Bot className="h-4.5 w-4.5" aria-hidden="true" />
-                  Chat Inteligente
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/history"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/history')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <Map className="h-4.5 w-4.5" aria-hidden="true" />
-                  Listas y Rutas
-                </Link>
-              </li>
-              <li>
-                <Link
-                  to="/recetas"
-                  onClick={onClose}
-                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                    pathname.startsWith('/recetas')
-                      ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                      : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                  }`}
-                >
-                  <ChefHat className="h-4.5 w-4.5" aria-hidden="true" />
-                  Recetas IA
-                </Link>
-              </li>
-              {/* SUP-256: Misiones solo colaborador o admin. */}
-              {canAccessColaborador && (
-                <li>
-                  <Link
-                    to="/colaborador"
-                    onClick={onClose}
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                      pathname.startsWith('/colaborador')
-                        ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
-                        : 'text-foreground hover:bg-accent hover:text-accent-foreground'
-                    }`}
-                  >
-                    <Users className="h-4.5 w-4.5" aria-hidden="true" />
-                    Misiones
-                  </Link>
-                </li>
-              )}
+              {toolLinks
+                // SUP-256: Misiones solo colaborador o admin.
+                .filter((link) => link.to !== '/colaborador' || canAccessColaborador)
+                .map((link) => (
+                  <li key={link.to}>
+                    <Link to={link.to} onClick={onClose} className={navLinkClass(pathname.startsWith(link.to), 'font-medium')}>
+                      <link.icon className="h-4.5 w-4.5" aria-hidden="true" />
+                      {link.label}
+                    </Link>
+                  </li>
+                ))}
             </ul>
           </nav>
         </div>
