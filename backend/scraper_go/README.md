@@ -1,5 +1,13 @@
 # Scraper Go
 
+> **Estado actual:** el Compose principal ya construye `scraper_worker` desde
+> `backend/scraper_go`; el equipo también confirmó Go en el clúster. La carpeta
+> Python fue retirada. Las secciones inferiores de marcha paralela/cutover y los
+> comandos `scraper_worker_go` describen la transición histórica y no se deben
+> ejecutar literalmente sobre el checkout actual. Para el arranque, consultar
+> el [README principal](../../README.md). Verificar también `SCRAPER_CATEGORY_DIR`:
+> Compose apunta a `/app/categories`, pero la imagen incluye `/app/research`.
+
 Microservicio que reemplaza de forma gradual al worker de scraping de
 `backend/scraper` (Python/Scrapy). Mantiene el contrato HTTP con Control de
 Scraping, el stream y el grupo de Redis, el esquema del spool SQLite y los
