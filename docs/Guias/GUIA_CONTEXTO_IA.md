@@ -1,87 +1,58 @@
-# Guía: Contexto IA para el Equipo
+# Contexto breve para asistentes IA
 
-## ¿Qué es esto?
+Los contextos orientan a las IA hacia el código relevante, no reemplazan los
+README ni acreditan funcionalidades desplegadas.
 
-El proyecto incluye archivos de contexto (`GEMINI.md`, `CLAUDE.md`, `copilot-instructions.md`) que les dicen a las IAs (Antigravity, Claude, Copilot) cómo está estructurado el proyecto **sin tener que leer todos los archivos**. Esto reduce el consumo de tokens y mejora la precisión de las respuestas.
+## Archivos y fuente de verdad
 
-## ¿Qué tengo que hacer?
+- `CLAUDE.md` de la raíz: arquitectura y reglas comunes.
+- `CLAUDE.md` en cada servicio y en `frontend/web`: responsabilidades, límites,
+  puntos de entrada y pruebas. Leer solo el del área afectada.
+- `GEMINI.md`: copia sincronizada del `CLAUDE.md` correspondiente.
+- `.github/copilot-instructions.md`: copia del contexto raíz para GitHub Copilot.
 
-### Paso único (una sola vez después de hacer pull)
+Para cambiar instrucciones manuales, **editar `CLAUDE.md`**, por encima del
+marcador `ARCHITECTURE:AUTO-GENERATED`. Luego, desde la raíz:
 
-**Linux / Mac / Git Bash (Windows):**
+```bash
+python3 scripts/gen_service_map.py
+```
+
+Para regenerar solo un servicio y su copia Gemini:
+
+```bash
+python3 scripts/gen_service_map.py backend/control_scraping
+```
+
+El generador conserva el texto manual y reemplaza la sección automática por un
+conteo de archivos agrupados por directorio. No enumera funciones, tipos ni tests;
+el contexto raíz solo enlaza los servicios. Los símbolos se buscan en el código
+cuando se necesitan. No existe un contexto operativo del antiguo `backend/api`.
+
+## Hook opcional
+
+Requiere Python 3. Desde la raíz:
+
 ```bash
 bash scripts/setup-hooks.sh
 ```
-# popin
-**Windows (PowerShell o CMD):**
-```powershell
-git config core.hooksPath scripts/git-hooks
-```
 
-Eso es todo. **No hay paso 2.** A partir de ahora, cada vez que hagas `git commit`, los archivos de contexto se actualizan automáticamente e incluyen en tu commit. No tienes que hacer nada extra ni recordar nada.
+En Windows con Git Bash también puede configurarse mediante
+`git config core.hooksPath scripts/git-hooks`.
 
-> **Nota Windows:** El hook se ejecuta con el bash que trae Git para Windows, así que funciona sin importar si usas PowerShell, CMD o Git Bash para tu trabajo diario. Solo necesitas tener Python instalado y accesible desde la terminal (`python` o `python3`).
+El hook regenera los contextos al detectar cambios fuente en los servicios
+actuales o en el generador y los añade al commit. **Revisar el diff de estos
+archivos antes de confirmar el commit**; activar el hook no autoriza a una IA a
+hacer commits ni a desplegar. Si falta Python, el hook avisa y omite la generación.
+Cambiar solo texto manual requiere ejecutar el generador explícitamente.
 
-### ¿Cómo verifico que funciona?
+## Qué mantener fuera del contexto
 
-Haz un commit normal como siempre. Si ves este mensaje en la terminal:
+- Inventarios de todos los símbolos, resultados extensos de pruebas o logs.
+- Contraseñas, cookies, tokens y contenido de `.env`.
+- Fechas/estados del backlog que pueden cambiar sin modificar el código.
+- Afirmaciones de despliegue derivadas únicamente de manifiestos.
 
-```
-🧠 Actualizando mapas de contexto IA...
-✅ Mapas de contexto IA actualizados e incluidos en el commit.
-```
-
-Está funcionando. Si NO ves el mensaje, es porque tu commit no tocó archivos fuente (.py, .go, .ts, .tsx), así que no había nada que actualizar.
-
-## Preguntas frecuentes
-
-### ¿Tengo que editar los GEMINI.md o CLAUDE.md manualmente?
-
-**No.** Los archivos por microservicio (`backend/api/GEMINI.md`, `frontend/web/GEMINI.md`, etc.) se regeneran solos. Solo el **GEMINI.md de la raíz** tiene una sección estática (convenciones, reglas de Git, etc.) que se edita manualmente si cambia alguna convención del proyecto.
-
-### ¿Qué pasa si no ejecuto el setup?
-
-Nada se rompe. Simplemente tus commits no actualizarán los archivos de contexto. Cuando otro compañero que sí tenga el hook configurado haga un commit, los archivos se actualizarán con sus cambios y los tuyos.
-
-### ¿Qué pasa si hago pull y el hook no me funciona?
-
-Vuelve a ejecutar `bash scripts/setup-hooks.sh`. Es idempotente (se puede ejecutar cuantas veces quieras sin problema).
-
-### ¿Para qué sirve cada archivo?
-
-| Archivo | Lo lee... | Ubicación |
-|---|---|---|
-| `GEMINI.md` | **Antigravity** (Chat + IDE) | Raíz + cada microservicio |
-| `CLAUDE.md` | **Claude Code** | Raíz + cada microservicio |
-| `.github/copilot-instructions.md` | **GitHub Copilot** (VSCode) | Solo en raíz |
-
-### ¿El hook hace mi commit más lento?
-
-No perceptiblemente. El script tarda menos de 1 segundo en analizar todo el proyecto.
-
-### ¿Qué archivos se analizan?
-
-| Servicio | Lenguaje | Archivos |
-|---|---|---|
-| `backend/api/` | Go | `.go` |
-| `backend/catalogo/` | Go | `.go` |
-| `backend/ia_conversacional/` | Python | `.py` |
-| `backend/motor_rutas/` | Python | `.py` |
-| `backend/scraper/` | Python | `.py` |
-| `frontend/web/src/` | TypeScript/React | `.ts`, `.tsx` |
-
-### ¿Y si agregamos un nuevo microservicio?
-
-Editar `scripts/gen_service_map.py`, buscar el diccionario `SERVICES` al inicio del archivo y agregar la entrada nueva. Ejemplo:
-
-```python
-SERVICES = {
-    # ... servicios existentes ...
-    "backend/nuevo_servicio": {
-        "lang": "python",
-        "name": "Nuevo Servicio (FastAPI)",
-        "extensions": [".py"],
-        "exclude": ["__pycache__"],
-    },
-}
-```
+La documentación histórica se consulta desde [el índice](../README.md). Si cambia
+una responsabilidad o contrato, actualizar también el README del servicio y su
+contexto manual, no solo el conteo generado.

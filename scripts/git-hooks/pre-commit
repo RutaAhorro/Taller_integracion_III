@@ -14,7 +14,7 @@ if [ -z "$STAGED" ]; then
 fi
 
 NEEDS_UPDATE=false
-for pattern in "backend/api/.*\.go$" "backend/ia_conversacional/.*\.py$" "backend/motor_rutas/.*\.py$" "backend/scraper_go/.*\.go$" "frontend/web/src/.*\.tsx?$"; do
+for pattern in "^backend/(gateway|identidad|catalogo|control_scraping|scraper_go|bot_discord)/.*\.go$" "^backend/(ia_conversacional|motor_rutas)/.*\.py$" "^frontend/web/src/.*\.tsx?$" "^scripts/gen_service_map\.py$"; do
     if echo "$STAGED" | grep -qE "$pattern"; then
         NEEDS_UPDATE=true
         break
@@ -52,7 +52,7 @@ if [ $? -eq 0 ]; then
             "$REPO_ROOT/.github/copilot-instructions.md" \
             2>/dev/null
 
-    for svc in backend/api backend/ia_conversacional backend/motor_rutas backend/scraper_go frontend/web; do
+    for svc in backend/gateway backend/identidad backend/catalogo backend/control_scraping backend/scraper_go backend/bot_discord backend/ia_conversacional backend/motor_rutas frontend/web; do
         for f in GEMINI.md CLAUDE.md; do
             [ -f "$REPO_ROOT/$svc/$f" ] && git add "$REPO_ROOT/$svc/$f" 2>/dev/null
         done
