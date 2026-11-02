@@ -15,6 +15,7 @@ func RegistrarRutasAuth(rg *gin.RouterGroup, authHandler *handlers.AuthHandler, 
 		auth.POST("/register", middleware.RateLimitRegistro(rdb), authHandler.RegistrarUsuario)
 		auth.POST("/login", middleware.RateLimitLogin(rdb), authHandler.LoginUsuario)
 		auth.POST("/google", middleware.RateLimitGoogle(rdb), authHandler.GoogleLoginUsuario)
+		auth.POST("/logout", authHandler.CerrarSesion)
 		// Rutas protegidas: además del JWT se revalida la cuenta en api.usuarios.
 		auth.GET("/me", middleware.RequireAuth(repo), authHandler.PerfilUsuario)
 		auth.PUT("/me", middleware.RequireAuth(repo), authHandler.ActualizarPerfil)

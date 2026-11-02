@@ -195,3 +195,35 @@ func TestAuthHandler_ActualizarPerfil(t *testing.T) {
 		}
 	})
 }
+
+func TestAuthHandler_CerrarSesion_ExpiraCookie(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	handler := handlers.NewAuthHandler(services.NewAuthService(newMockUsuarioRepository()), true)
+	router := gin.New()
+	router.POST("/api/v1/auth/logout", handler.CerrarSesion)
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "jwt", Value: "token-anterior"})
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Esperaba HTTP 204, obtuve %d", w.Code)
+	}
+	var jwtCookie *http.Cookie
+	for _, c := range w.Result().Cookies() {
+		if c.Name == "jwt" {
+			jwtCookie = c
+		}
+	}
+	if jwtCookie == nil {
+		t.Fatal("Esperaba una cookie 'jwt' de expiración en la respuesta")
+	}
+	if jwtCookie.Value != "" || jwtCookie.MaxAge >= 0 {
+		t.Errorf("La cookie debe quedar vacía y expirada; obtuve valor=%q MaxAge=%d", jwtCookie.Value, jwtCookie.MaxAge)
+	}
+	if !jwtCookie.HttpOnly || !jwtCookie.Secure || jwtCookie.Path != "/" {
+		t.Errorf("La cookie de expiración debe conservar HttpOnly, Secure y Path=/ para reemplazar a la original")
+	}
+}

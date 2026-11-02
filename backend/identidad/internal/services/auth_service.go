@@ -60,7 +60,6 @@ type UsuarioCreadoDTO struct {
 // AuthService define los casos de uso para la autenticación e identidad de usuarios
 type AuthService interface {
 	Registrar(ctx context.Context, input RegistroDTO) (*UsuarioCreadoDTO, error)
-	Login(correo, password string) (*domain.Usuario, error)
 	LoginWithContext(ctx context.Context, correo, password string) (*domain.Usuario, error)
 	GoogleLogin(ctx context.Context, tokenGoogle string) (*domain.Usuario, error)
 	ActualizarPerfil(ctx context.Context, userID string, input domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)
@@ -73,10 +72,7 @@ type authService struct {
 
 // NewAuthService inicializa el servicio inyectando el repositorio de usuarios
 func NewAuthService(usuarioRepo domain.UsuarioRepository) AuthService {
-	return &authService{
-		usuarioRepo:    usuarioRepo,
-		validateGoogle: idtoken.Validate,
-	}
+	return NewAuthServiceWithGoogleValidator(usuarioRepo, idtoken.Validate)
 }
 
 // validarComplejidadPassword exige al menos 8 caracteres, una mayúscula, un número y un símbolo
@@ -113,6 +109,25 @@ func validarComplejidadPassword(password string) error {
 	return nil
 }
 
+// normalizarCorreo deja el correo en la forma en que se guarda y se compara.
+func normalizarCorreo(correo string) string {
+	return strings.ToLower(strings.TrimSpace(correo))
+}
+
+// nuevoUsuarioRegistrado aplica los valores iniciales comunes a toda cuenta nueva.
+func nuevoUsuarioRegistrado(correo, nombre string) *domain.Usuario {
+	ahora := time.Now()
+	return &domain.Usuario{
+		Correo:         correo,
+		NombreCompleto: nombre,
+		Rol:            "registrado",
+		Plan:           domain.PlanBasico,
+		CuotaTokensIA:  1000,
+		EstaActivo:     true, // Activado temporalmente según requerimiento de auto-login
+		UltimoAcceso:   &ahora,
+	}
+}
+
 // validarEmail verifica que el correo tenga un formato sintácticamente válido
 func validarEmail(email string) bool {
 	parsed, err := mail.ParseAddress(email)
@@ -141,7 +156,7 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 	}
 
 	// 2. Normalizar y sanitizar entradas
-	correoNormalizado := strings.ToLower(strings.TrimSpace(input.Correo))
+	correoNormalizado := normalizarCorreo(input.Correo)
 	nombreSanitizado := utils.SanitizarInputBusqueda(input.NombreCompleto)
 	if nombreSanitizado == "" {
 		return nil, ErrNombreInvalido
@@ -162,29 +177,18 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 		return nil, fmt.Errorf("error al generar hash seguro de contraseña: %w", err)
 	}
 
-	// 5. Generar token de verificación UUID
+	// 5. Instanciar modelo de dominio con su token de verificación
 	tokenVerificacion := uuid.New()
-	ahora := time.Now()
+	nuevoUsuario := nuevoUsuarioRegistrado(correoNormalizado, nombreSanitizado)
+	nuevoUsuario.PasswordHash = &hash
+	nuevoUsuario.TokenVerificacion = &tokenVerificacion
 
-	// 6. Instanciar modelo de dominio
-	nuevoUsuario := &domain.Usuario{
-		Correo:            correoNormalizado,
-		PasswordHash:      &hash,
-		NombreCompleto:    nombreSanitizado,
-		Rol:               "registrado",
-		Plan:              domain.PlanBasico,
-		CuotaTokensIA:     1000,
-		EstaActivo:        true, // Activado temporalmente según requerimiento de auto-login
-		UltimoAcceso:      &ahora,
-		TokenVerificacion: &tokenVerificacion,
-	}
-
-	// 7. Persistir en repositorio
+	// 6. Persistir en repositorio
 	if err := s.usuarioRepo.Create(ctx, nuevoUsuario); err != nil {
 		return nil, fmt.Errorf("error al persistir el nuevo usuario: %w", err)
 	}
 
-	// 8. Construir DTO de respuesta
+	// 7. Construir DTO de respuesta
 	return &UsuarioCreadoDTO{
 		ID:                nuevoUsuario.ID,
 		Correo:            nuevoUsuario.Correo,
@@ -196,15 +200,10 @@ func (s *authService) Registrar(ctx context.Context, input RegistroDTO) (*Usuari
 	}, nil
 }
 
-// Login ejecuta la autenticación de un usuario con contexto por defecto
-func (s *authService) Login(correo, password string) (*domain.Usuario, error) {
-	return s.LoginWithContext(context.Background(), correo, password)
-}
-
 // LoginWithContext ejecuta la autenticación verificando credenciales y estado de forma segura
 func (s *authService) LoginWithContext(ctx context.Context, correo, password string) (*domain.Usuario, error) {
 	// 1. Buscar al usuario por correo usando el repositorio
-	correoNormalizado := strings.ToLower(strings.TrimSpace(correo))
+	correoNormalizado := normalizarCorreo(correo)
 	usuario, err := s.usuarioRepo.FindByEmail(ctx, correoNormalizado)
 	if err != nil {
 		return nil, fmt.Errorf("error al buscar usuario: %w", err)
@@ -252,7 +251,7 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 	email, emailOK := payload.Claims["email"].(string)
 	verified, verifiedOK := payload.Claims["email_verified"].(bool)
 	googleID := payload.Subject
-	email = strings.ToLower(strings.TrimSpace(email))
+	email = normalizarCorreo(email)
 	if !emailOK || !verifiedOK || !verified || !validarEmail(email) || googleID == "" {
 		return nil, ErrCredencialesInvalidas
 	}
@@ -274,41 +273,27 @@ func (s *authService) GoogleLogin(ctx context.Context, tokenGoogle string) (*dom
 	}
 
 	if usuario == nil {
-		ahora := time.Now()
-		nuevoUsuario := &domain.Usuario{
-			ID:             uuid.New(),
-			Correo:         email,
-			NombreCompleto: name,
-			URLAvatar:      picture,
-			GoogleID:       &googleID,
-			Rol:            "registrado",
-			Plan:           domain.PlanBasico,
-			EstaActivo:     true,
-			UltimoAcceso:   &ahora,
-			CuotaTokensIA:  1000,
-		}
+		nuevoUsuario := nuevoUsuarioRegistrado(email, name)
+		nuevoUsuario.ID = uuid.New()
+		nuevoUsuario.URLAvatar = picture
+		nuevoUsuario.GoogleID = &googleID
 
 		err = s.usuarioRepo.Create(ctx, nuevoUsuario)
-		if errors.Is(err, ErrCorreoDuplicado) {
-			// Otro request pudo crear la misma cuenta entre find y create.
-			usuario, err = s.usuarioRepo.FindByEmail(ctx, email)
-			if err != nil {
-				return nil, fmt.Errorf("error al consultar registro concurrente de Google: %w", err)
-			}
-			if usuario == nil {
-				return nil, ErrCredencialesInvalidas
-			}
-			usuario, err = s.validateGoogleAccount(ctx, usuario, googleID)
-			if err != nil {
-				return nil, err
-			}
-			s.registrarUltimoAcceso(ctx, usuario)
-			return usuario, nil
+		if err == nil {
+			return nuevoUsuario, nil
 		}
-		if err != nil {
+		if !errors.Is(err, ErrCorreoDuplicado) {
 			return nil, fmt.Errorf("error al registrar usuario con Google: %w", err)
 		}
-		return nuevoUsuario, nil
+		// Otro request pudo crear la misma cuenta entre find y create:
+		// se continúa como login sobre la cuenta existente.
+		usuario, err = s.usuarioRepo.FindByEmail(ctx, email)
+		if err != nil {
+			return nil, fmt.Errorf("error al consultar registro concurrente de Google: %w", err)
+		}
+		if usuario == nil {
+			return nil, ErrCredencialesInvalidas
+		}
 	}
 
 	usuario, err = s.validateGoogleAccount(ctx, usuario, googleID)
@@ -340,7 +325,7 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 	// Cambiar correo o contraseña exige reautenticación con la contraseña actual.
 	// Las cuentas sin contraseña local (Google) no pueden hacerlo aquí hasta que
 	// exista la confirmación por correo.
-	cambiaCorreo := input.Correo != nil && strings.ToLower(strings.TrimSpace(*input.Correo)) != usuarioActual.Correo
+	cambiaCorreo := input.Correo != nil && normalizarCorreo(*input.Correo) != usuarioActual.Correo
 	if cambiaCorreo || input.Password != nil {
 		if usuarioActual.PasswordHash == nil || *usuarioActual.PasswordHash == "" ||
 			input.PasswordActual == nil || !security.CheckPasswordHash(*input.PasswordActual, *usuarioActual.PasswordHash) {
@@ -359,7 +344,7 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 
 	// 3. Procesar Correo si viene presente
 	if input.Correo != nil {
-		correoNormalizado := strings.ToLower(strings.TrimSpace(*input.Correo))
+		correoNormalizado := normalizarCorreo(*input.Correo)
 		if !validarEmail(correoNormalizado) {
 			return nil, ErrCorreoInvalido
 		}
@@ -398,12 +383,10 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 		datos["password_hash"] = hash
 	}
 
-	// 7. Seguridad: Prohibir explícitamente alterar esta_activo, rol o cuota desde este caso de uso
-	delete(datos, "esta_activo")
-	delete(datos, "rol")
-	delete(datos, "cuota_tokens_ia")
+	// Seguridad: datos solo recibe las claves de arriba; este caso de uso nunca
+	// escribe esta_activo, rol ni cuota_tokens_ia.
 
-	// 8. Si hay cambios dinámicos, persistir
+	// 7. Si hay cambios dinámicos, persistir
 	if len(datos) > 0 {
 		datos["actualizado_el"] = time.Now()
 		if err := s.usuarioRepo.Actualizar(ctx, userID, datos); err != nil {
@@ -411,7 +394,7 @@ func (s *authService) ActualizarPerfil(ctx context.Context, userID string, input
 		}
 	}
 
-	// 9. Consultar datos actualizados para retornar DTO consistente
+	// 8. Consultar datos actualizados para retornar DTO consistente
 	actualizado, err := s.usuarioRepo.FindByID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("error al consultar usuario actualizado: %w", err)

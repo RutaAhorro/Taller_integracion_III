@@ -1,5 +1,5 @@
-// Package normalize replica la normalización del scraper de Python para que
-// los productos de Go sean comparables con los ya ingestados.
+// Package normalize provee funciones de normalización de precios, EAN y texto
+// para asegurar consistencia en los productos ingestados.
 package normalize
 
 import (
@@ -25,8 +25,7 @@ var (
 	oneHalf          = big.NewRat(1, 2)
 )
 
-// PrecioCLP convierte un importe en texto o número a un float con dos
-// decimales, replicando normalizar_precio_clp de Python.
+// PrecioCLP convierte un importe en texto o número a un float con dos decimales.
 func PrecioCLP(value any) *float64 {
 	text, ok := priceText(value)
 	if !ok {
@@ -244,9 +243,7 @@ func TruncarPtr(value *string, max int) *string {
 
 // LimitarProducto recorta los campos que Catálogo persiste en columnas
 // VARCHAR de scraper.productos_crudos y deriva el SKU si falta. Se aplica antes
-// de guardar en el spool, no sólo antes del POST: si se activa el rollback a
-// Python, outbox.replay reenvía el documento almacenado sin volver a truncar y
-// Catálogo rechazaría el lote completo.
+// de guardar en el spool para asegurar que los lotes sean siempre válidos.
 func LimitarProducto(product domain.Product) domain.Product {
 	if product.SKU == nil || strings.TrimSpace(*product.SKU) == "" {
 		if product.URLProducto != nil {
@@ -320,14 +317,14 @@ func Texto(value any) *string {
 	if value == nil {
 		return nil
 	}
-	text := strings.Join(strings.Fields(pyString(value)), " ")
+	text := strings.Join(strings.Fields(formatString(value)), " ")
 	if text == "" {
 		return nil
 	}
 	return &text
 }
 
-func pyString(value any) string {
+func formatString(value any) string {
 	switch v := value.(type) {
 	case bool:
 		if v {

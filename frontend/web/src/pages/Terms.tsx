@@ -1,4 +1,4 @@
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Link } from "react-router-dom"
 import { ArrowLeft, CheckCircle2 } from "lucide-react"
 
@@ -188,11 +188,13 @@ export default function Terms() {
         </div>
 
         <div className="flex justify-center pb-8 pt-4">
-          <Button asChild size="lg" className="w-full sm:w-auto font-bold shadow-[4px_4px_0px_currentColor] text-base h-12 px-8">
-            <Link to="/login" state={{ tab: 'signup' }}>
-              He leído y entendido, volver al registro
-            </Link>
-          </Button>
+          <Link
+            to="/login"
+            state={{ tab: 'signup' }}
+            className={buttonVariants({ size: 'lg', className: 'w-full sm:w-auto font-bold shadow-[4px_4px_0px_currentColor] text-base h-12 px-8' })}
+          >
+            He leído y entendido, volver al registro
+          </Link>
         </div>
       </div>
     </div>

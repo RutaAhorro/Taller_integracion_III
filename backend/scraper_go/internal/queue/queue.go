@@ -1,5 +1,5 @@
 // Package queue consume el stream de Redis con lease, heartbeat y ACK
-// condicionado al consumidor, igual que ReliableQueue de Python.
+// condicionado al consumidor para garantizar procesamiento confiable.
 package queue
 
 import (

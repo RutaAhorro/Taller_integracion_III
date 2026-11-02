@@ -48,17 +48,20 @@ class RepositorioListasPostgres:
             await cursor.execute(consulta, parametros)
             return await cursor.fetchone()
 
+    async def _todas(self, consulta: str, parametros: tuple) -> list[dict]:
+        async with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
+            await cursor.execute(consulta, parametros)
+            return await cursor.fetchall()
+
     async def contar(self, usuario_id: str) -> int:
         fila = await self._una("SELECT count(*) AS total FROM rutas.listas_compras WHERE usuario_id = %s", (usuario_id,))
         return int(fila["total"])
 
     async def listar(self, usuario_id: str, limite: int) -> list[Lista]:
-        async with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
-                f"SELECT {_COLUMNAS} FROM rutas.listas_compras l WHERE l.usuario_id = %s ORDER BY l.actualizada_el DESC, l.id LIMIT %s",
-                (usuario_id, limite),
-            )
-            filas = await cursor.fetchall()
+        filas = await self._todas(
+            f"SELECT {_COLUMNAS} FROM rutas.listas_compras l WHERE l.usuario_id = %s ORDER BY l.actualizada_el DESC, l.id LIMIT %s",
+            (usuario_id, limite),
+        )
         return [_lista(fila) for fila in filas]
 
     async def crear(self, usuario_id: str, nombre: str) -> Lista:
@@ -70,6 +73,7 @@ class RepositorioListasPostgres:
         return _lista(fila)
 
     async def obtener(self, usuario_id: str, lista_id: str) -> ListaDetalle | None:
+        # Ambas consultas en la misma conexión: los artículos sólo se leen si la lista es del usuario.
         async with self._pool.connection() as conn, conn.cursor(row_factory=dict_row) as cursor:
             await cursor.execute(f"SELECT {_COLUMNAS} FROM rutas.listas_compras l WHERE l.id = %s AND l.usuario_id = %s", (lista_id, usuario_id))
             fila = await cursor.fetchone()

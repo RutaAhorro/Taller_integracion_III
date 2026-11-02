@@ -290,9 +290,9 @@ func (m memorySpider) Name() string {
 
 func (m memorySpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error {
 	base := domain.Product{
-		Precio:       domain.FloatPtr(1990),
-		PrecioNormal: domain.FloatPtr(2490),
-		PrecioOferta: domain.FloatPtr(1990),
+		Precio:       floatPtr(1990),
+		PrecioNormal: floatPtr(2490),
+		PrecioOferta: floatPtr(1990),
 		Marca:        domain.StringPtr("Marca de prueba"),
 		FormatoCrudo: domain.StringPtr("1 unidad"),
 		EnStock:      domain.BoolPtr(true),

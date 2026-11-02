@@ -65,9 +65,6 @@ func CleanupSpool(stateDir, workID string) (bool, error) {
 
 	lockPath := filepath.Join(directory, "execution.lock")
 	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
-	}
 	if err != nil {
 		return false, err
 	}

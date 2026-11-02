@@ -1,8 +1,8 @@
 import { useGoogleAuth } from "@/hooks/useGoogleAuth"
 import { GoogleLogin } from '@react-oauth/google';
 
-export function SocialButtons({ onClick }: { onClick?: () => void }) {
-  const { handleGoogleSuccess, handleGoogleError, isLoading, error } = useGoogleAuth();
+export function SocialButtons() {
+  const { handleGoogleSuccess, handleGoogleError, error } = useGoogleAuth();
 
   return (
     <div className="grid grid-cols-1 gap-3">
@@ -20,7 +20,8 @@ export function SocialButtons({ onClick }: { onClick?: () => void }) {
           shape="pill"
           text="signin_with"
           size="large"
-          width="100%"
+          // GSI solo acepta un ancho en píxeles (200-400); "100%" lo invalida.
+          width={320}
         />
       </div>
     </div>

@@ -1,228 +1,27 @@
-# Microservicio: IA Conversacional (FastAPI + Groq/Gemini)
+# IA conversacional — contexto IA
 
-Puerto: 8002 | Dockerfile: Dockerfile | Entry: uvicorn app.main:app
-
-## Dependencias entre módulos
-
-```
-app/main.py ──→ config, ia_definiciones, productos, utils
-               ├──→ proveedores/gemini_proveedor, groq_proveedor, fallback_proveedor
-               └──→ routers/chat, routers/productos
-
-app/routers/chat.py ──→ explicacion, filtros, productos, proveedores/base, schemas
-app/routers/productos.py ──→ productos
-
-app/proveedores/gemini_proveedor.py ──→ explicacion, filtros, proveedores/base
-app/proveedores/groq_proveedor.py ──→ explicacion, filtros, proveedores/base
-app/proveedores/fallback_proveedor.py ──→ proveedores/base
-```
-
-## Clases y firmas
-
-- `ProveedorIA(ABC)` [app/proveedores/base.py]: interfaz base
-  - `async extraer_filtros(mensaje: str) → ResultadoExtraccion`
-  - `async generar_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-- `ResultadoExtraccion` [app/proveedores/base.py]: dataclass
-  - campos: filtros, texto_libre, error, error_estado, nota, extra, tiempo_extraccion_ms
-- `GeminiProveedor(ProveedorIA)` [app/proveedores/gemini_proveedor.py]
-  - `__init__(api_key, endpoint, modelo, definicion_funcion)`
-  - Usa functionCallingConfig mode=ANY, thinkingLevel=low
-- `GroqProveedor(ProveedorIA)` [app/proveedores/groq_proveedor.py]
-  - `__init__(api_key, endpoint, modelo_extraccion, modelo_explicacion, definicion_funcion)`
-  - Extracción: llama-3.1-8b-instant, Explicación: llama-3.3-70b-versatile
-- `FallbackProveedor(ProveedorIA)` [app/proveedores/fallback_proveedor.py]
-  - `__init__(proveedores: list, max_retries, backoff_base, timeout)`
-  - Reintentos exponenciales con jitter, detección de errores recuperables (429, 5xx)
-- `ProductoRepositorio` [app/productos.py]
-  - `__init__(ruta_json: Path)`, `obtener_todos() → list`, `__len__() → int`
-- `ChatRequest(BaseModel)` [app/schemas.py]: campo `mensaje: str`
-- `RespuestaUTF8(JSONResponse)` [app/utils.py]: media_type utf-8
-
-## Funciones clave
-
-- `filtrar_productos(catalogo, filtros) → list` [app/filtros.py]: filtrado determinista por precio, categoría, distancia
-- `sanitizar_filtros_crudos(crudo: dict) → dict` [app/filtros.py]: sanea tipos de filtros del LLM
-- `rescatar_filtros_de_error_groq(response) → dict|None` [app/filtros.py]: recupera JSON de errores 400
-- `construir_prompt_explicacion(mensaje, productos) → str` [app/explicacion.py]: inyecta top 8 productos
-- `generar_explicacion_con_tiempo(generador, mensaje, productos) → (str|None, int)` [app/explicacion.py]
-
-## Rutas FastAPI
-
-- `POST /chat/groq` → pipeline 3 etapas via Groq
-- `POST /chat/gemini` → pipeline 3 etapas via Gemini
-- `GET /productos` → catálogo completo desde productos.json
-- `GET /` → health check
-
-## Configuración [app/config.py]
-
-- GROQ_MODEL_EXTRACCION = llama-3.1-8b-instant
-- GROQ_MODEL_EXPLICACION = llama-3.3-70b-versatile
-- GEMINI_MODEL = gemini-3.1-flash-lite
-- API keys desde variables de entorno (.env)
-
-## Pipeline anti-alucinación (RESPETAR SIEMPRE)
-
-1. LLM extrae filtros via function calling → `extraer_filtros()`
-2. Python filtra catálogo → `filtrar_productos()` (NUNCA el LLM)
-3. LLM explica resultados → `generar_explicacion()` (SOLO datos de paso 2)
+- FastAPI, puerto 8002, entrada `app/main.py`. Existe en Compose; no afirmar
+  despliegue en K8s ni integración completa del frontend.
+- `app/routers/chat.py`: `POST /api/v1/chat` con JWT de Identidad en `app/auth.py`.
+  Gateway no lo enruta; el frontend todavía llama `/chat/gemini`. No confundir
+  esos contratos ni restaurar endpoints antiguos solo para ocultar el desacople.
+- `app/productos.py` consume Catálogo por `CATALOGO_INTERNAL_URL`, HTTP interno
+  y caché en memoria. Nunca introducir credenciales/drivers PostgreSQL.
+- Pipeline obligatorio: LLM extrae filtros → `app/filtros.py` valida/filtra
+  deterministamente → LLM explica únicamente los productos seleccionados.
+- Proveedores en `app/proveedores`; fallback Gemini → Groq. Revisar configuración
+  real antes de asumir modelos, cuotas, reintentos o tiempos disponibles.
+- Ante datos ausentes/error, informar degradación; no inventar stock/precios.
+- Claves Gemini/Groq solo en backend, nunca variables VITE ni logs.
+- Pruebas en `tests/`; ejecutar `python -m pytest` con dependencias de
+  `requirements.txt` y `requirements-dev.txt`. Usar dobles de HTTP/proveedores.
 
 <!-- ARCHITECTURE:AUTO-GENERATED — NO EDITAR DEBAJO DE ESTA LÍNEA -->
 
-## Mapa auto-generado: IA Conversacional (FastAPI)
+## Índice breve generado
 
-**22 archivos .py** detectados
+22 archivos fuente, incluidos los de pruebas. Distribución:
+- `app`: 18 archivos.
+- `tests`: 4 archivos.
 
-
-### `app/auth.py`
-
-- Imports internos: app
-- **class UsuarioAutenticado(BaseModel)**
-- `_extraer_bearer(authorization: ?) → ?`
-- `async obtener_usuario_actual(jwt_cookie: ?, authorization: ?) → UsuarioAutenticado`
-
-### `app/config.py`
-
-
-### `app/explicacion.py`
-
-- `construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-- `async generar_explicacion_con_tiempo(generador, mensaje_usuario: str, productos_filtrados: list)`
-
-### `app/filtros.py`
-
-- `sanitizar_filtros_crudos(crudo: dict) → dict`
-- `rescatar_filtros_de_error_groq(response: httpx.Response) → ?`
-- `_extraer_json_de_texto(texto: str) → ?`
-- `_tokenizar_categoria(texto: str) → list`
-- `_texto_contiene(a: str, b: str) → bool`
-- `_coincide_por_texto(frase: str, producto: dict) → bool`
-- `filtrar_productos(catalogo: list, filtros: dict) → list`
-
-### `app/ia_definiciones.py`
-
-
-### `app/main.py`
-
-- Imports internos: app, app.ia_definiciones, app.productos, app.proveedores.fallback_proveedor, app.proveedores.gemini_proveedor, app.proveedores.groq_proveedor, app.routers.chat, app.routers.productos, app.utils
-- `health_check()`
-
-### `app/productos.py`
-
-- Imports internos: app
-- **class ProductoRepositorio**
-  - `__init__(ruta_fallback: ?, base_url: ?, timeout: float, client: ?, cache_ttl: float) → ?`
-  - `fuente() → str`
-  - `_normalizar_producto(item: ?) → ?`
-  - `_cargar_fallback() → ?`
-  - `_realizar_peticion_http(client: httpx.Client, page: int, limit: int) → ?`
-  - `_expirado() → bool`
-  - `_cargar_sin_lock() → ?`
-  - `cargar_productos() → ?`
-  - `obtener_todos(forzar: bool) → ?`
-  - `__len__() → int`
-
-### `app/proveedores/base.py`
-
-- **class ResultadoExtraccion**
-- **class ProveedorIA(ABC)**
-  - `async extraer_filtros(mensaje: str) → ResultadoExtraccion`
-  - `async generar_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-
-### `app/proveedores/fallback_proveedor.py`
-
-- Imports internos: app.proveedores.base
-- **class FallbackProveedor(ProveedorIA)**
-  - `__init__(proveedores: ?, max_retries_primario: int, max_retries_secundario: int, backoff_base: float, timeout: float)`
-  - `_es_error_recuperable(error: Exception) → bool`
-  - `async _ejecutar_con_reintentos(proveedor: ProveedorIA, metodo: str) → any`
-  - `async extraer_filtros(mensaje: str) → ResultadoExtraccion`
-  - `async generar_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-
-### `app/proveedores/gemini_proveedor.py`
-
-- Imports internos: app.explicacion, app.filtros, app.proveedores.base
-- **class GeminiProveedor(ProveedorIA)**
-  - `__init__(api_key: ?, endpoint: str, modelo: str, definicion_funcion: dict)`
-  - `_headers() → dict`
-  - `async extraer_filtros(mensaje: str) → ResultadoExtraccion`
-  - `async generar_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-
-### `app/proveedores/groq_proveedor.py`
-
-- Imports internos: app.explicacion, app.filtros, app.proveedores.base
-- **class GroqProveedor(ProveedorIA)**
-  - `__init__(api_key: ?, endpoint: str, modelo_extraccion: str, modelo_explicacion: str, definicion_funcion: dict)`
-  - `_headers() → dict`
-  - `async extraer_filtros(mensaje: str) → ResultadoExtraccion`
-  - `async generar_explicacion(mensaje_usuario: str, productos_filtrados: list) → str`
-
-### `app/routers/chat.py`
-
-- Imports internos: app.auth, app.explicacion, app.filtros, app.productos, app.proveedores.base, app.schemas
-- `crear_router_chat(repositorio: ProductoRepositorio, proveedor_fallback: ProveedorIA, proveedor_groq: ?, proveedor_gemini: ?) → APIRouter`
-
-### `app/routers/productos.py`
-
-- Imports internos: app.productos
-- `crear_router_productos(repositorio: ProductoRepositorio) → APIRouter`
-
-### `app/schemas.py`
-
-- **class ChatRequest(BaseModel)**
-
-### `app/utils.py`
-
-- **class RespuestaUTF8(JSONResponse)**
-- `fix_encoding_consola() → ?`
-
-### `tests/conftest.py`
-
-
-### `tests/test_chat_auth.py`
-
-- Imports internos: app, app.main, app.proveedores.base
-- `configurar_jwt_secret(monkeypatch)`
-- `catalogo_fijo(monkeypatch)`
-- `client()`
-- `generar_token(user_id: str, rol: str, exp_delta: timedelta, secret: str, algorithm: str, extra_claims: dict) → str`
-- `test_chat_sin_token_retorna_401(client)`
-- `test_chat_header_malformado_retorna_401(client)`
-- `test_chat_token_invalido_retorna_401(client)`
-- `test_chat_token_firma_invalida_retorna_401(client)`
-- `test_chat_token_expirado_retorna_401(client)`
-- `test_chat_token_sin_user_id_retorna_401(client)`
-- `test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(client)`
-- `test_chat_secret_no_configurado_retorna_500(client, monkeypatch)`
-- `test_chat_texto_libre_sin_filtros(client)`
-- `test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(client)`
-- `test_chat_error_en_proveedor(client)`
-- `test_chat_con_cookie_jwt_retorna_200(client)`
-- `test_chat_token_sin_claim_exp_retorna_401(client)`
-- `test_chat_mensaje_largo_excede_maximo_retorna_422(client)`
-- `test_endpoints_antiguos_groq_gemini_eliminados(client)`
-- `test_cors_configuracion_origenes(client)`
-
-### `tests/test_productos.py`
-
-- Imports internos: app.auth, app.filtros, app.main, app.productos, app.proveedores.base, app.routers.chat
-- **class MockProveedor(ProveedorIA)**
-  - `__init__()`
-  - `async extraer_filtros(mensaje: str)`
-  - `async generar_explicacion(mensaje: str, productos: list)`
-- `temp_fallback_file(tmp_path: Path) → Path`
-- `test_carga_exitosa_desde_catalogo_http(temp_fallback_file: Path)`
-- `test_paginacion_multiples_paginas(temp_fallback_file: Path)`
-- `test_degradacion_timeout_aplica_fallback(temp_fallback_file: Path)`
-- `test_degradacion_error_conexion_aplica_fallback(temp_fallback_file: Path)`
-- `test_degradacion_error_http_500_aplica_fallback(temp_fallback_file: Path)`
-- `test_preserva_cache_en_memoria_tras_falla_posterior(temp_fallback_file: Path)`
-- `test_compatibilidad_con_filtros_deterministas(temp_fallback_file: Path)`
-- `test_fastapi_health_check_sin_crashear_modo_degradado()`
-- `test_fastapi_endpoint_productos_devuelve_catalogo()`
-- `test_len_es_o1_y_no_llama_a_red(temp_fallback_file: Path)`
-- `test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga(temp_fallback_file: Path)`
-- `test_httpx_client_propio_cierra_socket_ante_error(temp_fallback_file: Path)`
-- `test_telemetria_truncamiento_mas_de_10_paginas(temp_fallback_file: Path, caplog: pytest.LogCaptureFixture)`
-- `test_chat_router_ejecuta_obtener_todos_sin_bloquear(temp_fallback_file: Path)`
-- `test_concurrencia_double_checked_locking_evita_llamadas_duplicadas(temp_fallback_file: Path)`
-- `test_catalogo_caido_modo_sin_datos_respeta_ttl(temp_fallback_file: Path)`
+Buscar símbolos en el código; este índice no acredita funciones desplegadas.

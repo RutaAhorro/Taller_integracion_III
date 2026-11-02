@@ -32,7 +32,13 @@ type Correo struct {
 // Sin IDENTIDAD_CORREO_MODO, hay SMTP cuando existen credenciales: así el Deployment
 // arranca con correo deshabilitado mientras el Secret identidad-smtp no exista.
 func LoadCorreo() (Correo, error) {
-	c := Correo{Modo: strings.TrimSpace(os.Getenv("IDENTIDAD_CORREO_MODO")), Host: strings.TrimSpace(os.Getenv("SMTP_HOST")), Usuario: os.Getenv("SMTP_USER"), Clave: os.Getenv("SMTP_PASS"), Remitente: strings.TrimSpace(os.Getenv("SMTP_FROM"))}
+	c := Correo{
+		Modo:      strings.TrimSpace(os.Getenv("IDENTIDAD_CORREO_MODO")),
+		Host:      strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		Usuario:   os.Getenv("SMTP_USER"),
+		Clave:     os.Getenv("SMTP_PASS"),
+		Remitente: strings.TrimSpace(os.Getenv("SMTP_FROM")),
+	}
 	if c.Modo == "" {
 		c.Modo = CorreoDeshabilitado
 		if c.Usuario != "" || c.Clave != "" {
@@ -43,6 +49,7 @@ func LoadCorreo() (Correo, error) {
 	case CorreoDeshabilitado, CorreoLog:
 		return Correo{Modo: c.Modo}, nil
 	case CorreoSMTP:
+		// Continúa con las validaciones de SMTP más abajo.
 	default:
 		return Correo{}, errors.New("IDENTIDAD_CORREO_MODO debe ser smtp, log o deshabilitado")
 	}

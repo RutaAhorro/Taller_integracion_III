@@ -153,7 +153,7 @@ func TestProcessJobWithCrawlDoneFinalizesWithoutCrawling(t *testing.T) {
 	market := "Jumbo"
 	if err := store.Add(domain.Product{
 		Producto: "Producto recuperado",
-		Precio:   domain.FloatPtr(1000),
+		Precio:   floatPtr(1000),
 	}, &market); err != nil {
 		t.Fatalf("Add() error = %v", err)
 	}

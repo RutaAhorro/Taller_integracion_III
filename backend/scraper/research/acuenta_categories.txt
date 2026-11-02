@@ -1,1 +1,0 @@
-../../scraper_go/categories/acuenta_categories.txt

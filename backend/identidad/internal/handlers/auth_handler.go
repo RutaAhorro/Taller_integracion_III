@@ -52,6 +52,12 @@ func rolCanonico(rol string) string {
 	return rol
 }
 
+const (
+	cookieSesion = "jwt"
+	// Duración de la sesión: 24h, igual que la expiración del JWT.
+	duracionSesionSegundos = 86400
+)
+
 // AuthHandler gestiona las peticiones HTTP del módulo de autenticación
 type AuthHandler struct {
 	authService  services.AuthService
@@ -65,6 +71,19 @@ func NewAuthHandler(authService services.AuthService, secureCookie ...bool) *Aut
 		authService:  authService,
 		secureCookie: secure,
 	}
+}
+
+// emitirSesion firma el JWT y lo entrega en una cookie HttpOnly (no accesible
+// desde JavaScript, protege contra XSS). Responde el error y retorna false si falla.
+func (h *AuthHandler) emitirSesion(c *gin.Context, userID, rol, provider string) bool {
+	tokenString, err := security.GenerarToken(userID, rolCanonico(rol), provider)
+	if err != nil {
+		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización.", err)
+		return false
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(cookieSesion, tokenString, duracionSesionSegundos, "/", "", h.secureCookie, true)
+	return true
 }
 
 // RegistrarUsuario godoc
@@ -105,15 +124,10 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 		return
 	}
 
-	// Auto-login: emisión del JWT centralizado e inyección de cookie HttpOnly
-	tokenString, err := security.GenerarToken(creado.ID.String(), rolCanonico(creado.Rol), "local")
-	if err != nil {
-		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización tras registro.", err)
+	// Auto-login tras el registro.
+	if !h.emitirSesion(c, creado.ID.String(), creado.Rol, "local") {
 		return
 	}
-
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", tokenString, 86400, "/", "", h.secureCookie, true)
 
 	c.JSON(http.StatusCreated, RegistroResponse{
 		ID:             creado.ID.String(),
@@ -159,16 +173,9 @@ func (h *AuthHandler) LoginUsuario(c *gin.Context) {
 		return
 	}
 
-	// Emisión del JWT centralizado (provider siempre es 'local' en login nativo)
-	tokenString, err := security.GenerarToken(usuario.ID.String(), rolCanonico(usuario.Rol), "local")
-	if err != nil {
-		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización.", err)
+	if !h.emitirSesion(c, usuario.ID.String(), usuario.Rol, "local") {
 		return
 	}
-
-	// Inyectar cookie segura HttpOnly contra ataques XSS (duración: 24h = 86400s)
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", tokenString, 86400, "/", "", h.secureCookie, true)
 
 	c.JSON(http.StatusOK, LoginResponse{
 		ID:             usuario.ID.String(),
@@ -179,6 +186,20 @@ func (h *AuthHandler) LoginUsuario(c *gin.Context) {
 		URLAvatar:      usuario.URLAvatar,
 		Mensaje:        "Inicio de sesión exitoso.",
 	})
+}
+
+// CerrarSesion godoc
+// @Summary      Cerrar sesión
+// @Description  Elimina la cookie HttpOnly de sesión. Es idempotente: responde 204 aunque no exista sesión.
+// @Tags         auth
+// @Success      204
+// @Router       /api/v1/auth/logout [post]
+func (h *AuthHandler) CerrarSesion(c *gin.Context) {
+	// La cookie es HttpOnly: solo el servidor puede borrarla. MaxAge negativo la
+	// expira con los mismos atributos con que se emitió.
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(cookieSesion, "", -1, "/", "", h.secureCookie, true)
+	c.Status(http.StatusNoContent)
 }
 
 // PerfilUsuario godoc
@@ -293,15 +314,9 @@ func (h *AuthHandler) GoogleLoginUsuario(c *gin.Context) {
 		return
 	}
 
-	// Emisión del JWT centralizado
-	tokenString, err := security.GenerarToken(usuario.ID.String(), rolCanonico(usuario.Rol), "google")
-	if err != nil {
-		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización local.", err)
+	if !h.emitirSesion(c, usuario.ID.String(), usuario.Rol, "google") {
 		return
 	}
-
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("jwt", tokenString, 86400, "/", "", h.secureCookie, true)
 
 	c.JSON(http.StatusOK, LoginResponse{
 		ID:             usuario.ID.String(),

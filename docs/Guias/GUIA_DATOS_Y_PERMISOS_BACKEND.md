@@ -71,8 +71,8 @@ normalizado, equivalencias, recetas y mapeos IA) queda fuera del runtime
 implementado. Se conserva con el operador hasta definir sus servicios y
 contratos. No se modifica IA conversacional ni se conceden permisos preventivos.
 
-SUP-240 asigna `rutas.*` al motor de rutas (`backend/motor_rutas`), como fija
-`GUIA_BACKEND_GO.md` §4. `app_rutas` sigue las mismas reglas que los otros tres
+SUP-240 asigna las listas de `rutas.*` al motor de rutas (`backend/motor_rutas`),
+como documenta su [README](../../backend/motor_rutas/README.md). `app_rutas` sigue las mismas reglas que los otros tres
 roles: NOLOGIN hasta provisionar contraseña (`RUTAS_DB_PASSWORD` o `\password`),
 sin herencia ni objetos propios. Sólo DELETE en `listas_compras`: borrar una
 lista elimina sus artículos por la FK interna, que PostgreSQL ejecuta como dueño

@@ -25,8 +25,12 @@ const (
 	esperaEntreSolicitudes = time.Minute
 	ventanaSolicitudes     = time.Hour
 	maximoPorVentana       = 5
-	capacidadCola          = 64
-	plazoPorSolicitud      = 45 * time.Second
+)
+
+// Límites de la cola en segundo plano.
+const (
+	capacidadCola     = 64               // solicitudes en espera; las demás se descartan
+	plazoPorSolicitud = 45 * time.Second // búsqueda + token + envío SMTP
 )
 
 // RecuperacionService emite el token de restablecimiento y despacha su correo.
@@ -39,16 +43,20 @@ type RecuperacionService interface {
 	Cerrar(ctx context.Context) error
 }
 
+// recuperacionService atiende las solicitudes con un único worker (trabajar) que lee
+// de una cola acotada. Así el tiempo de respuesta HTTP no depende de la cuenta y el
+// trabajo pendiente se vacía ordenadamente al apagar.
 type recuperacionService struct {
 	usuarios       domain.UsuarioRepository
 	tokens         domain.RecuperacionRepository
 	correo         mailer.Mailer
 	urlRestablecer string
 	log            *slog.Logger
-	cola           chan string
-	detener        chan struct{}
-	termino        chan struct{}
-	cerrar         sync.Once
+
+	cola    chan string   // correos pendientes de procesar
+	detener chan struct{} // se cierra al apagar: no se aceptan más solicitudes
+	termino chan struct{} // el worker lo cierra al terminar de vaciar la cola
+	cerrar  sync.Once     // evita cerrar detener dos veces
 }
 
 // NewRecuperacionService inicia el despacho en segundo plano. Sin transporte de correo o
@@ -60,14 +68,22 @@ func NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.Rec
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &recuperacionService{usuarios: usuarios, tokens: tokens, correo: correo, urlRestablecer: urlRestablecer, log: log,
-		cola: make(chan string, capacidadCola), detener: make(chan struct{}), termino: make(chan struct{})}
+	s := &recuperacionService{
+		usuarios:       usuarios,
+		tokens:         tokens,
+		correo:         correo,
+		urlRestablecer: urlRestablecer,
+		log:            log,
+		cola:           make(chan string, capacidadCola),
+		detener:        make(chan struct{}),
+		termino:        make(chan struct{}),
+	}
 	go s.trabajar()
 	return s
 }
 
 func normalizarCorreoRecuperacion(correo string) (string, error) {
-	correo = strings.ToLower(strings.TrimSpace(correo))
+	correo = normalizarCorreo(correo)
 	if !validarEmail(correo) {
 		return "", ErrCorreoInvalido
 	}
@@ -79,6 +95,8 @@ func (s *recuperacionService) Solicitar(correo string) error {
 	if err != nil {
 		return err
 	}
+	// Nunca bloquea la petición HTTP: si el servicio se está apagando o la cola
+	// está llena, la solicitud se descarta y la respuesta es la misma.
 	select {
 	case <-s.detener:
 	case s.cola <- correo:
@@ -98,6 +116,8 @@ func (s *recuperacionService) Cerrar(ctx context.Context) error {
 	}
 }
 
+// trabajar procesa la cola hasta que se pide detener; entonces vacía lo que
+// quedaba encolado y avisa por termino.
 func (s *recuperacionService) trabajar() {
 	defer close(s.termino)
 	for {
@@ -105,7 +125,7 @@ func (s *recuperacionService) trabajar() {
 		case correo := <-s.cola:
 			s.procesar(correo)
 		case <-s.detener:
-			for {
+			for { // vaciado final sin esperar nuevas solicitudes
 				select {
 				case correo := <-s.cola:
 					s.procesar(correo)
@@ -117,7 +137,8 @@ func (s *recuperacionService) trabajar() {
 	}
 }
 
-// procesar nunca registra el correo: los logs sólo identifican la cuenta por su UUID.
+// procesar emite el token y envía el correo. Las cuentas inexistentes o inactivas se
+// ignoran en silencio. Nunca registra el correo: los logs usan el UUID de la cuenta.
 func (s *recuperacionService) procesar(correo string) {
 	ctx, cancel := context.WithTimeout(context.Background(), plazoPorSolicitud)
 	defer cancel()
@@ -144,7 +165,7 @@ func (s *recuperacionService) procesar(correo string) {
 		return
 	}
 	if err := s.tokens.EmitirToken(ctx, usuario.ID, hash, VigenciaTokenRecuperacion); err != nil {
-		s.log.Error("recuperacion_fallida", "etapa", "token", "usuario_id", usuario.ID, "error", err)
+		s.log.Error("recuperacion_fallida", "etapa", "guardar_token", "usuario_id", usuario.ID, "error", err)
 		return
 	}
 	mensaje, err := mensajeRecuperacion(usuario, s.urlRestablecer, token)
@@ -158,6 +179,8 @@ func (s *recuperacionService) procesar(correo string) {
 	s.log.Info("recuperacion_enviada", "usuario_id", usuario.ID)
 }
 
+// recuperacionApagada se usa cuando no hay transporte de correo o URL: valida el
+// formato para responder igual que el servicio real, pero no envía nada.
 type recuperacionApagada struct{}
 
 func (recuperacionApagada) Solicitar(correo string) error {

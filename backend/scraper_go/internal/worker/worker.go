@@ -394,7 +394,6 @@ func (w *Worker) parseJob(raw string) (domain.Job, error) {
 	return domain.Job{
 		WorkID:     payload.WorkID,
 		Spider:     spider,
-		ProductID:  payload.ProductID,
 		ProductURL: payload.ProductURL,
 		AddURL:     payload.AddURL,
 		EnrichEAN:  parseEnrich(payload.EnrichEAN),

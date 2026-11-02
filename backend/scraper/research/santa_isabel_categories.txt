@@ -1,1 +1,0 @@
-../../scraper_go/categories/santa_isabel_categories.txt

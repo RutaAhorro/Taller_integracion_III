@@ -20,16 +20,48 @@ const (
 	LiderName       = "lider_rsc"
 )
 
-// IsKnown conserva la lista de spiders aceptados por el worker de Python.
-// Un spider conocido pero todavía no implementado se deja pendiente en la
-// cola; sólo un nombre realmente inválido se descarta como payload inválido.
-func IsKnown(name string) bool {
-	switch name {
-	case JumboName, SantaIsabelName, CugatName, AcuentaName, LiderName:
-		return true
-	default:
-		return false
+// spiderFactory construye un spider con las mismas dependencias que recibe el
+// registry.
+type spiderFactory func(Fetcher, string, int, *slog.Logger) Spider
+
+// asFactory adapta un constructor concreto a spiderFactory. Evita repetir el
+// mismo envoltorio por cada spider.
+func asFactory[T Spider](newSpider func(Fetcher, string, int, *slog.Logger) T) spiderFactory {
+	return func(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) Spider {
+		return newSpider(fetcher, categoryDir, maxPages, logger)
 	}
+}
+
+// spiderCatalog es la única fuente de nombres y constructores. De aquí salen
+// IsKnown, Names y NewRegistry, de modo que no haya listas paralelas.
+var spiderCatalog = []struct {
+	name  string
+	build spiderFactory
+}{
+	{JumboName, asFactory(NewJumbo)},
+	{SantaIsabelName, asFactory(NewSantaIsabel)},
+	{CugatName, asFactory(NewCugat)},
+	{AcuentaName, asFactory(NewAcuenta)},
+	{LiderName, asFactory(NewLider)},
+}
+
+// IsKnown indica si el nombre pertenece al catálogo de spiders.
+func IsKnown(name string) bool {
+	for _, entry := range spiderCatalog {
+		if entry.name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Names devuelve los nombres del catálogo en orden estable.
+func Names() []string {
+	names := make([]string, 0, len(spiderCatalog))
+	for _, entry := range spiderCatalog {
+		names = append(names, entry.name)
+	}
+	return names
 }
 
 // Emitter recibe cada producto ya normalizado. El worker lo conecta con el
@@ -52,18 +84,10 @@ type Registry struct {
 }
 
 func NewRegistry(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Registry {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
+	registry := &Registry{spiders: make(map[string]Spider, len(spiderCatalog))}
+	for _, entry := range spiderCatalog {
+		registry.Register(entry.build(fetcher, categoryDir, maxPages, logger))
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	registry := &Registry{spiders: make(map[string]Spider)}
-	registry.Register(NewJumbo(fetcher, categoryDir, maxPages, logger))
-	registry.Register(NewSantaIsabel(fetcher, categoryDir, maxPages, logger))
-	registry.Register(NewCugat(fetcher, categoryDir, maxPages, logger))
-	registry.Register(NewAcuenta(fetcher, categoryDir, maxPages, logger))
-	registry.Register(NewLider(fetcher, categoryDir, maxPages, logger))
 	return registry
 }
 
@@ -74,12 +98,4 @@ func (r *Registry) Register(spider Spider) {
 func (r *Registry) Get(name string) (Spider, bool) {
 	spider, ok := r.spiders[name]
 	return spider, ok
-}
-
-func (r *Registry) Names() []string {
-	names := make([]string, 0, len(r.spiders))
-	for name := range r.spiders {
-		names = append(names, name)
-	}
-	return names
 }

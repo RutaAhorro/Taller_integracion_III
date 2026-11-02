@@ -19,11 +19,33 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 const API_URL = import.meta.env.VITE_API_URL || '';
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Usuario | null>(() => {
+// Un valor corrupto en localStorage no debe impedir que cargue la app.
+function readStoredUser(): Usuario | null {
+  try {
     const stored = localStorage.getItem(AUTH_USER_KEY);
     return stored ? JSON.parse(stored) : null;
+  } catch {
+    return null;
+  }
+}
+
+// POST a Identidad. El JWT viaja en una cookie HttpOnly (credentials: include).
+// Lanza un Error con el mensaje del backend, o con `fallback` si no lo hay.
+async function postAuth(path: string, body: unknown, fallback: string) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    credentials: 'include',
   });
+  // Un 502/504 del Gateway puede no traer JSON.
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(result.error || result.mensaje || fallback);
+  return result;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<Usuario | null>(readStoredUser);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -36,78 +58,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user]);
 
-  const login = async (payload: LoginPayload): Promise<boolean> => {
+  // Envuelve una llamada de autenticación con el manejo común de carga y error.
+  const run = async (action: () => Promise<void>, networkError = 'Error de red.') => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.mensaje || 'Error al iniciar sesión');
-      }
-      const userData: Usuario = result.usuario ?? result;
-      setUser(userData);
+      await action();
       return true;
-    } catch (err: any) {
-      setError(err.message || 'Error de red.');
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : networkError);
       return false;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const register = async (payload: RegisterPayload): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_URL}/auth/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        credentials: 'include',
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.mensaje || 'Error al crear la cuenta');
-      }
-      return true;
-    } catch (err: any) {
-      setError(err.message || 'Error de red.');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const login = (payload: LoginPayload) =>
+    run(async () => {
+      const result = await postAuth('/auth/login', payload, 'Error al iniciar sesión');
+      setUser(result.usuario ?? result);
+    });
 
-  const googleLogin = async (idToken: string): Promise<boolean> => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const response = await fetch(`${API_URL}/auth/google`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: idToken }),
-        credentials: 'include',
-      });
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || result.mensaje || 'Error en Google Login');
-      }
-      const userData: Usuario = result.usuario ?? result;
-      setUser(userData);
-      return true;
-    } catch (err: any) {
-      setError(err.message || 'Error de red en Google Login.');
-      return false;
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const register = (payload: RegisterPayload) =>
+    run(async () => {
+      await postAuth('/auth/register', payload, 'Error al crear la cuenta');
+    });
+
+  const googleLogin = (idToken: string) =>
+    run(async () => {
+      const result = await postAuth('/auth/google', { id_token: idToken }, 'Error en Google Login');
+      setUser(result.usuario ?? result);
+    }, 'Error de red en Google Login.');
 
   const logout = () => {
     setUser(null);

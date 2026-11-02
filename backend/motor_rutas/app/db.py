@@ -48,8 +48,9 @@ async def verificar_permisos(pool: AsyncConnectionPool) -> None:
         async with pool.connection() as conn:
             cursor = await conn.execute(_PERMISOS)
             fila = await cursor.fetchone()
-    except Exception:
-        raise ErrorAlmacenamiento("aplicar 06_propiedad_permisos.sql antes de iniciar el motor de rutas") from None
+    except Exception as error:
+        # Conexión o timeout: no es un problema de grants. Sólo el tipo, nunca el DSN.
+        raise ErrorAlmacenamiento(f"no se pudo verificar los permisos de rutas.* ({type(error).__name__})") from None
     if not fila or not fila[0]:
         raise ErrorAlmacenamiento("aplicar 06_propiedad_permisos.sql antes de iniciar el motor de rutas")
 

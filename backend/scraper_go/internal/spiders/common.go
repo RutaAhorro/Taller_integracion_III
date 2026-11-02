@@ -3,6 +3,7 @@ package spiders
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -27,10 +28,9 @@ func formatFromText(value string, pattern *regexp.Regexp) *string {
 	return normalize.Texto(match)
 }
 
-// pythonTitle replica str.title() de Python: cada secuencia de letras empieza
-// en mayúscula y el resto se pasa a minúscula. Los dígitos y signos cortan la
-// secuencia, por eso "1.5l" queda como "1.5L".
-func pythonTitle(value string) string {
+// titleCase pasa a mayúscula la primera letra de cada secuencia de letras
+// y el resto a minúscula. Los dígitos y signos cortan la secuencia (ej. "1.5l" -> "1.5L").
+func titleCase(value string) string {
 	var builder strings.Builder
 	previousLetter := false
 	for _, character := range value {
@@ -159,6 +159,37 @@ func validateHTTPSHost(rawURL string, hosts map[string]struct{}, message string)
 	return nil
 }
 
+// validateSiteURL construye un validador de URLs para un sitio. prefix y
+// suffix limitan el path cuando la cadena lo exige; minSegments descarta rutas
+// demasiado cortas, como /p en la ficha de Santa Isabel.
+func validateSiteURL(
+	hosts map[string]struct{},
+	prefix string,
+	suffix string,
+	message string,
+	minSegments int,
+) func(string) error {
+	return func(rawURL string) error {
+		if err := validateHTTPSHost(rawURL, hosts, message); err != nil {
+			return err
+		}
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			return errors.New(message)
+		}
+		if prefix != "" && !strings.HasPrefix(parsed.Path, prefix) {
+			return errors.New(message)
+		}
+		if suffix != "" && !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), suffix) {
+			return errors.New(message)
+		}
+		if minSegments > 0 && len(nonEmptySegments(parsed.Path)) < minSegments {
+			return errors.New(message)
+		}
+		return nil
+	}
+}
+
 func firstText(selection *goquery.Selection, selector string) string {
 	return selection.Find(selector).First().Text()
 }
@@ -253,6 +284,33 @@ func isDigits(value string) bool {
 		}
 	}
 	return true
+}
+
+func nonEmptySegments(path string) []string {
+	var segments []string
+	for _, segment := range strings.Split(path, "/") {
+		if segment != "" {
+			segments = append(segments, segment)
+		}
+	}
+	return segments
+}
+
+func mustParsePath(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return parsed.Path
+}
+
+func hasClass(classes, wanted string) bool {
+	for _, class := range strings.Fields(classes) {
+		if class == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func appendQueryParam(rawURL, key, value string) string {
@@ -393,4 +451,159 @@ func extractJSONLDProducts(body []byte, responseURL *url.URL) []domain.Product {
 		}
 	}
 	return products
+}
+
+func canonicalProductURL(rawURL string) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
+}
+
+func schemaOffer(entry map[string]any) map[string]any {
+	switch raw := entry["offers"].(type) {
+	case map[string]any:
+		return raw
+	case []any:
+		if len(raw) > 0 {
+			if offer, ok := raw[0].(map[string]any); ok {
+				return offer
+			}
+		}
+	}
+	return map[string]any{}
+}
+
+func extractNormalPrice(entry map[string]any) *float64 {
+	if price := firstPrice(entry, "price"); price != nil {
+		return price
+	}
+	specification := entry["priceSpecification"]
+	if list, ok := specification.([]any); ok && len(list) > 0 {
+		specification = list[0]
+	}
+	return firstPrice(specification, "price")
+}
+
+func firstValue(data any, keys ...string) any {
+	values, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, key := range keys {
+		value, found := values[key]
+		if !found || value == nil {
+			continue
+		}
+		switch value.(type) {
+		case map[string]any, []any:
+			continue
+		}
+		// Convierte el escalar a texto antes de normalizarlo.
+		return valueString(value)
+	}
+	return nil
+}
+
+func firstPrice(data any, keys ...string) *float64 {
+	return normalize.PrecioCLP(firstValue(data, keys...))
+}
+
+func valueString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case json.Number:
+		return typed.String()
+	case float64:
+		text := strconv.FormatFloat(typed, 'g', -1, 64)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return text
+	case float32:
+		text := strconv.FormatFloat(float64(typed), 'g', -1, 32)
+		if !strings.ContainsAny(text, ".eE") {
+			text += ".0"
+		}
+		return text
+	case bool:
+		if typed {
+			return "True"
+		}
+		return "False"
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+func stockValue(availability any) *bool {
+	text, ok := availability.(string)
+	if !ok {
+		return nil
+	}
+	parts := strings.Split(text, "/")
+	inStock := strings.ToLower(parts[len(parts)-1]) != "outofstock"
+	return &inStock
+}
+
+func walkJSON(value any) []any {
+	var result []any
+	var walk func(any)
+	walk = func(node any) {
+		switch typed := node.(type) {
+		case map[string]any:
+			result = append(result, typed)
+			for _, child := range typed {
+				walk(child)
+			}
+		case []any:
+			for _, child := range typed {
+				walk(child)
+			}
+		}
+	}
+	walk(value)
+	return result
+}
+
+func cugatImageURL(value any) *string {
+	if list, ok := value.([]any); ok {
+		if len(list) == 0 {
+			return nil
+		}
+		value = list[0]
+	}
+	if mapped, ok := value.(map[string]any); ok {
+		value = mapped["url"]
+	}
+	if text, ok := value.(string); ok && text != "" {
+		return &text
+	}
+	return nil
+}
+
+func isProductType(value any) bool {
+	switch typed := value.(type) {
+	case string:
+		return typed == "Product"
+	case []any:
+		for _, item := range typed {
+			if text, ok := item.(string); ok && text == "Product" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func firstMapValue(value any) any {
+	if list, ok := value.([]any); ok {
+		if len(list) == 0 {
+			return nil
+		}
+		return list[0]
+	}
+	return value
 }

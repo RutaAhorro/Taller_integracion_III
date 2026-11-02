@@ -23,6 +23,11 @@ from app.listas.repositorio import RepositorioListas, RepositorioListasPostgres
 
 log = logging.getLogger("motor_rutas")
 _REQUEST_ID = re.compile(r"^[a-zA-Z0-9._-]{1,128}$")
+_CABECERAS_CORS = {
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Content-Type, X-Request-ID",
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+}
 
 
 @asynccontextmanager
@@ -56,26 +61,17 @@ def create_app(config: Configuracion | None = None, repositorio: RepositorioList
 
     @app.middleware("http")
     async def cors(request: Request, call_next):
+        # Sólo los orígenes de CORS_ALLOWED_ORIGINS reciben cabeceras CORS (con cookies).
         origen = request.headers.get("origin")
+        if origen is not None and origen not in request.app.state.config.origenes_cors:
+            respuesta = respuesta_error(403, "Origen no permitido.")
+            respuesta.headers["Vary"] = "Origin"
+            return respuesta
+
+        # OPTIONS es el preflight del navegador: se responde sin llegar a las rutas.
+        respuesta = Response(status_code=204) if request.method == "OPTIONS" else await call_next(request)
         if origen is not None:
-            if origen not in request.app.state.config.origenes_cors:
-                respuesta = respuesta_error(403, "Origen no permitido.")
-                respuesta.headers["Vary"] = "Origin"
-                return respuesta
-            if request.method == "OPTIONS":
-                respuesta = Response(status_code=204)
-            else:
-                respuesta = await call_next(request)
-            respuesta.headers.update({
-                "Access-Control-Allow-Origin": origen,
-                "Access-Control-Allow-Credentials": "true",
-                "Access-Control-Allow-Headers": "Content-Type, X-Request-ID",
-                "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-            })
-        elif request.method == "OPTIONS":
-            respuesta = Response(status_code=204)
-        else:
-            respuesta = await call_next(request)
+            respuesta.headers.update(_CABECERAS_CORS | {"Access-Control-Allow-Origin": origen})
         respuesta.headers.append("Vary", "Origin")
         return respuesta
 
@@ -89,8 +85,14 @@ def create_app(config: Configuracion | None = None, repositorio: RepositorioList
         respuesta = await call_next(request)
         respuesta.headers["X-Request-ID"] = request_id
         ruta = getattr(request.scope.get("route"), "path", "unmatched")
-        log.info(json.dumps({"msg": "http_request", "request_id": request_id, "method": request.method, "path": ruta,
-                             "status": respuesta.status_code, "duration_ms": int((time.monotonic() - inicio) * 1000)}))
+        log.info(json.dumps({
+            "msg": "http_request",
+            "request_id": request_id,
+            "method": request.method,
+            "path": ruta,
+            "status": respuesta.status_code,
+            "duration_ms": int((time.monotonic() - inicio) * 1000),
+        }))
         return respuesta
 
     @app.get("/_rutas/live", include_in_schema=False)
@@ -102,7 +104,8 @@ def create_app(config: Configuracion | None = None, repositorio: RepositorioList
     async def ready(request: Request) -> JSONResponse:
         ping = request.app.state.ping
         sano = ping is None or await ping()
-        cuerpo = {"status": "ok" if sano else "error", "service": "motor_rutas", "checks": {"database": "ok" if sano else "error"}}
+        estado = "ok" if sano else "error"
+        cuerpo = {"status": estado, "service": "motor_rutas", "checks": {"database": estado}}
         return JSONResponse(cuerpo, status_code=200 if sano else 503)
 
     app.include_router(api_router)

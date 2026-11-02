@@ -9,7 +9,6 @@ on:
       - 'backend/catalogo/**'
       - 'backend/control_scraping/**'
       - 'backend/identidad/**'
-      - 'backend/scraper/**'
       - 'infrastructure/db/**'
       - 'frontend/web/**'
       - 'docker-compose*.yml'
@@ -30,7 +29,6 @@ on:
       - 'backend/catalogo/**'
       - 'backend/control_scraping/**'
       - 'backend/identidad/**'
-      - 'backend/scraper/**'
       - 'infrastructure/db/**'
       - 'frontend/web/**'
       - 'docker-compose*.yml'
@@ -136,12 +134,7 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: false
-      - name: Install scraper dependencies and test durable spool
-        run: |
-          pip install -r backend/scraper/requirements.txt
-          cd backend/scraper
-          python -m unittest research.test_api_pipeline research.test_recovery -v
-      - name: Compose data ownership, recovery, worker leases and rollback
+      - name: Compose data ownership, recovery and worker leases
         run: bash scripts/smoke_control_scraping_compose.sh
 
   manifests:
