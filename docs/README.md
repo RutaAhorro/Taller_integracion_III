@@ -14,6 +14,10 @@
 - [Migraciones](../infrastructure/db/README.md): no confundir inicialización de
   volumen vacío con migración de datos existentes.
 - [Docker](Guias/GUIA_DOCKER.md) y [flujo de PR](Guias/GUIA_GITFLOW_Y_PR.md).
+- [Barrido de código](Guias/GUIA_BARRIDO_CODIGO.md): dónde van los tests, qué
+  cuenta como mock o hardcodeo y cómo se entrega cada barrido (Sprint 3).
+- [Plan de realización del Sprint 3](Guias/PLAN_REALIZACION_SPRINT3.md): orden
+  de las tareas, ruta crítica y quién espera a quién.
 - [Contextos IA breves](Guias/GUIA_CONTEXTO_IA.md): mantenimiento y regeneración.
 
 ## Historial del refactor — no ejecutar como recetas actuales
