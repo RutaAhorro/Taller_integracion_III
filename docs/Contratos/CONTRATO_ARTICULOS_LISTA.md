@@ -12,7 +12,9 @@ Si cada uno lo identifica distinto, todo funciona por separado y falla al
 juntarlo. Este contrato fija **cómo se identifica un producto, cómo se guarda
 en una lista y qué responde cada operación**.
 
-Una vez cerrado, cambiarlo EXIGE avisar a todos los servicios que lo usan.
+Una vez cerrado, cambiarlo EXIGE avisar antes en el canal del equipo y abrir un
+PR que apruebe quien consume la parte afectada (Rutas, IA, Catálogo o frontend).
+No basta con avisar: el cambio se acuerda.
 
 ## 1. Cómo se identifica un producto
 
