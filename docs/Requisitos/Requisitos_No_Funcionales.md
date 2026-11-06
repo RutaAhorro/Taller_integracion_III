@@ -46,7 +46,9 @@ se cumple hoy.
 
 - **Todo corre en el clúster de Kubernetes del curso**, con cuotas estrictas de
   memoria y CPU por namespace ([escalado y recursos](../Metricas/02_Escalado_y_recursos.md)).
-  Una fuga de memoria o una consulta sin paginar puede matar un pod.
+  Una fuga de memoria o una consulta sin paginar puede matar un pod: toda
+  consulta de listas se pagina y las imágenes parten de bases `-alpine`, `-slim`
+  o `distroless`.
 - **El desarrollo local usa Docker Compose** con límites de memoria parecidos,
   para que lo que funciona en local funcione en el clúster.
 - **La IA se usa como servicio externo** (Gemini o Groq); no hay modelos locales.

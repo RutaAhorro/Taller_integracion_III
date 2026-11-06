@@ -1,8 +1,7 @@
-# SUP-270: recuperación de trabajos y entregas de ingesta
+# Recuperación de trabajos y entregas de ingesta
 
-Rama `backend/refactor/sup-270-recuperacion-trabajos-ingesta-vmatus`, basada en
-SUP-269 ([PR #96](https://github.com/danirc2024/Taller_integracion_III/pull/96)).
-Implementación y correcciones de resiliencia del [PR #97](https://github.com/danirc2024/Taller_integracion_III/pull/97).
+Protocolo vigente del scraping, introducido en SUP-270 (PR #97) y ejecutado hoy
+por el Scraper Go.
 
 El objetivo es recuperar una entrega tras perder su respuesta, reiniciar un
 proceso o perder los datos de Redis, conservando sus capturas y contadores.
@@ -119,7 +118,7 @@ La lease del worker es 60 s (`SCRAPER_LEASE_MS`, mínimo 10 s). El heartbeat
 renueva cada tercio de la lease usando `JUSTID`, sin aumentar el número de
 entregas. Renovar y confirmar verifican el propietario atómicamente en Lua:
 un consumidor antiguo no puede confirmar el mensaje reclamado por otro.
-Si pierde la lease durante el crawl, el worker termina el subproceso Scrapy.
+Si pierde la lease durante el crawl, el worker detiene el crawl.
 Tras un reinicio espera la expiración de las leases pendientes antes de tomar
 trabajos nuevos. Esta prioridad corresponde al despliegue de un único worker
 y no es un algoritmo para escalar consumidores independientes.
@@ -128,7 +127,7 @@ Antes del HTTP, cada item queda en SQLite con WAL y `synchronous=FULL`.
 El worker conserva el documento exacto y UUID de cada lote hasta recibir un
 resultado de ingesta consistente. Un 202, un contador pendiente, JSON inválido
 o una respuesta vacía no se consideran confirmación.
-Tras reiniciar, primero entrega el spool pendiente. Si Scrapy confirmó que
+Tras reiniciar, primero entrega el spool pendiente. Si el crawl
 terminó correctamente, sólo repite el cierre; consulta la API para no ejecutar
 otra vez un trabajo que ya terminó.
 
@@ -144,59 +143,20 @@ el fallo en la API antes de hacer ACK y guardar el mensaje en
 `scraper:jobs:dead`. Los payloads inválidos de Redis también quedan allí.
 El registro SQL de entregas fallidas y el spool conservan el diagnóstico.
 
-## Migración y despliegue
+## Almacenamiento y despliegue
 
-1. Pausar productores y detener el worker anterior de forma controlada.
-   Auditar los trabajos `en_progreso`: el BRPOP anterior no dejó un registro de
-   mensajes retirados, por lo que un trabajo perdido antes de esta migración
-   puede requerir reconstrucción manual desde el bot/logs.
-2. Aplicar `infrastructure/db/05_recuperacion_scraping.sql` al PostgreSQL
-   existente. Es aditiva y se ejecuta en transacción; no requiere restaurar DB.
-   El init de Compose sólo aplica scripts a volúmenes nuevos: para un volumen
-   existente, ejecutar esta migración expresamente con el operador de DB.
-3. Conceder a Catálogo SELECT e INSERT en `scraper.lotes_catalogo`; conceder
-   a coordinación SELECT/INSERT/UPDATE en `scraper.entregas_ingesta` y
-   `scraper.entregas_trabajos`, y DELETE **sólo** en `scraper.entregas_trabajos`
-   para retirar ejecuciones terminales. Conservar los permisos de SUP-269.
-   Ninguno necesita permisos en el ledger del otro. Los roles definitivos de
-   producción y sus conexiones separadas se definen en SUP-271; consultar
-   [datos y permisos](GUIA_DATOS_Y_PERMISOS_BACKEND.md) al aplicar ambas tareas.
-4. Desplegar Catálogo, luego API. Readiness de Catálogo comprueba su ledger
-   en modo escritor; API verifica sus tablas antes de iniciar. No usan AutoMigrate.
-   Si falta la migración, API impide arrancar con un diagnóstico controlado;
-   en SUP-271 corregida Catálogo también impide abrir HTTP si la validación inicial
-   de tablas/permisos falla. Durante una caída de DB posterior al arranque,
-   liveness sigue 200 y readiness pasa a 503. No desplegar imágenes antes
-   de aplicar SQL y permisos. En una instalación ya migrada, este fix no añade
-   tablas: añadir el permiso DELETE al rol de coordinación antes del rollout.
-5. Migrar la lista anterior desde el entorno del scraper, con REDIS_URL y
-   SCRAPER_API_URL apuntando a los servicios correspondientes:
+- El worker necesita el volumen `scraperdata` en Compose o el PVC `scraper-state`
+  en Kubernetes, y Redis el volumen `redisdata` o el PVC `redis-data` (1 Gi cada
+  uno), con AOF `everysec`. SQL sigue siendo la fuente de recuperación.
+- Este diseño soporta **un worker** con volumen RWO, estrategia Recreate y
+  bloqueo de ejecución por trabajo. Escalar a varios workers exige diseñar
+  almacenamiento compartido o asignación de spools.
+- El spool debe conservarse entre reinicios: perder ese volumen pierde los
+  items que aún no llegaron a SQL. AOF no reemplaza los respaldos de PostgreSQL.
+- En una base existente, `05_recuperacion_scraping.sql` y sus permisos se
+  aplican a mano antes de desplegar (ver [migraciones](../../infrastructure/db/README.md)).
 
-   ```bash
-   python -m scraper_core.migrate_queue --dry-run
-   python -m scraper_core.migrate_queue --apply
-   ```
-
-   El script lee el elemento más antiguo sin retirarlo, pide a la API nueva
-   registrar su ejecución y sólo entonces lo elimina de la lista. Si se pierde
-   la respuesta, repetir es seguro. Un conflicto de parámetros detiene la
-   migración y conserva el elemento. Comprobar `LLEN scraper:jobs = 0`.
-   Un 202 sin la cabecera de cola durable también detiene la migración.
-6. Provisionar PVC `redis-data` y `scraper-state`, ambos de 1 Gi, usando la
-   StorageClass del clúster; verificar que estén Bound antes de arrancar.
-   Compose añade volúmenes `redisdata` y `scraperdata`. Redis activa AOF
-   `everysec`; SQL sigue siendo la fuente de recuperación de ejecuciones.
-7. Desplegar el worker nuevo y reactivar productores. Kubernetes usa imagen
-   `develop-refactor` y estrategia Recreate. Esta etapa soporta **un worker**
-   con volumen RWO y bloqueo de ejecución por trabajo. Escalar workers a varios
-   nodos necesita diseñar almacenamiento compartido o asignación de spools.
-
-No se han aplicado migraciones ni PVC al clúster de la universidad.
-El spool debe conservarse al reiniciar/recrear el contenedor. La pérdida de
-ese volumen pierde items que aún no llegaron a SQL; AOF tampoco sustituye
-backups ni elimina la necesidad de conservar el volumen de PostgreSQL.
-
-## Operación y rollback
+## Operación
 
 Revisar SQL por `estado`, `intentos`, `ultimo_error`, antigüedad y lease de
 `scraper.entregas_ingesta`, y XPENDING del stream / longitud del dead-letter.
@@ -234,139 +194,5 @@ La purga del outbox de ejecución no afecta los ledgers de ingesta/idempotencia.
 La retención de esos ledgers y del dead-letter debe definirse por separado;
 vigilar capacidad y antigüedad además del espacio libre del PVC.
 
-Para volver a SUP-269: pausar productores, terminar o revisar las entregas
-pendientes con los componentes nuevos y drenar el stream. Verificar cero
-pendientes SQL, cero XPENDING y cero mensajes activos. Después detener worker
-y API nuevos y volver coordinadamente a imágenes API/Catálogo/worker de
-SUP-269; el worker anterior usa la lista `scraper:jobs`. Mantener tablas,
-recibos y volúmenes para diagnóstico y un posible retorno a SUP-270.
-Si no se puede drenar, conservar los componentes de recuperación hasta
-resolver el backlog; cambiar sólo al worker BRPOP dejaría trabajos varados.
-
-## Corte al worker Go
-
-El worker Go consume el mismo stream, grupo, API de ingesta y esquema SQLite
-que el worker Python. La imagen se publica como
-`ghcr.io/danirc2024/taller_integracion_iii-scraper-go:<rama|sha|latest>` y el
-manifiesto de Kubernetes es `infrastructure/k8s/scraper-go/deployment.yaml`.
-El worker Python sigue siendo el activo hasta ejecutar este procedimiento.
-
-Requisitos previos:
-
-1. La imagen Go del commit a desplegar existe en GHCR y el tag está fijado
-   (no usar `latest` para el corte).
-2. El PVC `scraper-state` está montado y contiene los spools que dejó Python.
-3. Redis conserva `scraper:jobs:stream` y no hay mensajes en vuelo del worker
-   anterior.
-4. La API responde `POST /api/v1/scraper/productos` y
-   `PUT /trabajos/{id}/finalizar` con el contrato actual.
-5. En una base existente se aplicó
-   `infrastructure/db/07_respuestas_bloqueadas.sql`; el Control y el worker
-   nuevos envían y leen `respuestas_bloqueadas` en la finalización.
-
-Compose, con el worker Python aún activo:
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
-  --profile scraper-go pull scraper_worker_go
-docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
-  --profile scraper-go up -d --wait scraper_worker_go
-docker compose logs -f scraper_worker_go
-```
-
-Antes del corte, el worker Go debe registrar `worker_started`, tomar mensajes
-sólo cuando la lease esté libre y entregar un lote de prueba. Para el corte:
-
-```bash
-docker compose stop scraper_worker
-docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
-  --profile scraper-go up -d --no-deps --force-recreate --wait scraper_worker_go
-docker compose ps
-```
-
-Kubernetes usa estrategia `Recreate` y un único worker por PVC RWO:
-
-```bash
-kubectl scale deployment/scraper --replicas=0
-kubectl apply -f infrastructure/k8s/scraper-go/deployment.yaml
-kubectl rollout status deployment/scraper-go
-kubectl logs -f deployment/scraper-go
-```
-
-Rollback (objetivo menor a 15 minutos): detener sólo el worker Go, confirmar
-que no quedan mensajes pendientes del grupo y arrancar de nuevo Python con el
-mismo PVC y Redis. No se revierte el esquema SQLite ni se borra el stream.
-
-```bash
-docker compose -f docker-compose.yml -f docker-compose.scraper-go.yml \
-  --profile scraper-go stop scraper_worker_go
-docker compose up -d --no-deps --force-recreate --wait scraper_worker
-# Kubernetes:
-kubectl scale deployment/scraper-go --replicas=0
-kubectl scale deployment/scraper --replicas=1
-```
-
-El rollback conserva los spools porque Go usa el mismo formato que Python.
-Los lotes ya confirmados tienen `Idempotency-Key`; un reintento no duplica
-productos. Un trabajo bloqueado o sin productos queda `fallido` con
-`registro_errores` que empieza con `bloqueo:` o `sin productos:`; no se debe
-reintentar como si fuera una categoría vacía.
-
-Prueba local de ciclo de vida (26/10/2026): detener Python, levantar
-`go_scraper_worker` hasta `healthy`, detenerlo y restaurar `scraper_worker`
-tomó 18 segundos. Se usó una cola/grupo aislados para no consumir trabajos
-reales. Esta medición valida el cambio de contenedor, no la recuperación de
-trabajos en vuelo; esa parte se cubre con las pruebas de lease/spool y debe
-repetirse en el entorno de despliegue con trabajos pendientes.
-
-## Verificación
-
-```bash
-cd backend/scraper
-python -m unittest research.test_api_pipeline research.test_recovery -v
-cd ../..
-bash scripts/smoke_scraping_recovery_compose.sh
-```
-
-El harness crea su PostgreSQL/Redis y secretos temporales, conserva contratos
-y rollback de SUP-268/269 y prueba claves repetidas/conflictivas/concurrentes,
-fallo de contador, reinicio de API, caída de Catálogo, reconstrucción de Redis,
-leases/ACK, muerte del worker después del commit y dead-letter. Un spider de
-fixture usa `data:` y las señales/pipeline Scrapy reales, sin visitar sitios
-de supermercados. Adelanta el contador/backoff de una fila de prueba para
-verificar el límite de 10 intentos sin esperar su demora completa.
-
-CI ejecuta la construcción completa desde fuente. La validación local puede
-reutilizar las imágenes runtime verificadas, con binarios nuevos compilados
-desde fuente y `SUP268_SKIP_BUILD=1`; ese modo no valida los builders completos.
-
-Validación local de SUP-270 antes de integrar SUP-271 (la validación vigente
-de permisos/probes está en `GUIA_DATOS_Y_PERMISOS_BACKEND.md`):
-
-- 193 resultados Go unitarios (85 API, 108 Catálogo), sin fallos, con race
-  detector, vet y compilación `CGO_ENABLED=0` correctos. El escenario de
-  publisher con Redis detenido se omite sin DB en la suite unitaria y se
-  ejecuta expresamente en el harness con PostgreSQL real: 194 resultados Go
-  aprobados en total.
-- 25 pruebas Python del cliente, spool, pipeline, recuperación y migración,
-  incluyendo SQLITE_FULL real, reserva de espacio, limpieza tras ACK y
-  conservación de spools activos/bloqueados.
-- 338 comprobaciones HTTP: 255 heredadas y 83 de recuperación (71 en los 18
-  escenarios y 12 enviando la misma clave a tres réplicas de Catálogo).
-  Se incluyen cierre con lotes fallidos/pendientes, rechazo SQL inmediato,
-  reintentos transitorios, prioridad al reiniciar, marca de cierre ante
-  republicación tardía, GC y detección de tablas ausentes. SUP-271 valida storage
-  de Catálogo al arranque y reserva el readiness periódico a conectividad.
-  El recibo, captura y contador permanecieron únicos en los casos de reintento.
-- Pipeline y señales Scrapy reales sobre el fixture local, sin red externa;
-  recuperación después de terminar abruptamente un proceso tras el commit HTTP.
-- 16 recursos Kubernetes válidos con esquema estricto 1.32, workflows y scripts
-  validados. Se eliminaron sólo los recursos temporales del harness.
-
-Se usaron binarios nuevos sobre las imágenes runtime verificadas previamente
-y el entorno Python instalado; no se reconstruyeron los builders completos
-de producción ni la imagen Python del worker localmente. Los rollbacks
-heredados de enrutamiento y escritura pasaron; el corte coordinado de los
-componentes SUP-270 a imágenes SUP-269 queda por validar en un entorno de
-despliegue siguiendo el procedimiento anterior. No se aplicó ningún cambio
-al clúster ni se publicaron imágenes.
+El corte desde el worker en Python (#126) y sus registros de prueba quedan en el
+historial de git.

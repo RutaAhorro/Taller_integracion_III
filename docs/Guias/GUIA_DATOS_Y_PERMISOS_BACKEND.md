@@ -1,12 +1,8 @@
-# SUP-271: propiedad de datos y permisos del backend
+# Propiedad de datos y permisos del backend
 
-SUP-271 parte del merge aprobado de SUP-270 (`42b6ca4`, PR #97) en
-`backend/refactor/sup-271-separar-permisos-datos-vmatus`. Define los roles de
-runtime y quita las referencias SQL que cruzaban desde trabajos a otros dominios.
-No crea bases nuevas: la separación corresponde al propietario de cada tabla.
-
-SUP-272 separa Identidad; SUP-273 conserva estos mismos grants y extrae Control.
-Ver `GUIA_CONTROL_SCRAPING_DESACOPLADO.md` para la arquitectura final y rollback.
+Define qué rol de PostgreSQL usa cada servicio y sobre qué tablas puede operar.
+Se introdujo en SUP-271 (PR #97 y siguientes). La regla de fondo está en
+[D02](../Decisiones/02_PostgreSQL_unico_con_roles.md).
 
 ## Arquitectura vigente
 
@@ -166,86 +162,14 @@ Las URL deben apuntar al Service DB/base reales y mantener la política TLS del
 entorno. No imprimir Secrets ni usar `docker compose config` sin `--quiet` al
 diagnosticar credenciales.
 
-## Migración y corte
+## Migraciones
 
-Este procedimiento corresponde a la migración inicial SUP-271. Para el corte
-de procesos/credenciales de SUP-272, seguir `GUIA_IDENTIDAD_DESACOPLADA.md`;
-la API extraída ya no recibe IDENTITY_DB_URL.
-
-1. Integrar y verificar SUP-270 antes de desplegar SUP-271. Conservar imágenes
-   de rollback, respaldo PostgreSQL y un inventario de permisos/constraints.
-   Pausar productores y worker durante el corte de credenciales/migración.
-2. Aplicar `05_recuperacion_scraping.sql` si falta. Ejecutar
-   `06_propiedad_permisos.sql` con el operador y `psql -X -v ON_ERROR_STOP=1`.
-   Tiene transacción, lock timeout de 5 s y statement timeout de 60 s; una
-   contención exige reprogramar el corte, no dejar el esquema a medias.
-   El `06` vigente ya concede `UPDATE` de `app_catalogo` sobre la columna
-   `esta_activa` de `scraper.cadenas_supermercado` (SUP-243). En bases que
-   aplicaron una versión anterior de `06`, ejecutar
-   `08_grants_catalogo_fuentes.sql` de forma idempotente; retira el grant de
-   tabla completa de versiones previas, y volver a ejecutar el `06` actual
-   también conserva el permiso acotado.
-   Para SUP-242, aplicar después `08_normalizar_rol_admin_y_auditoria.sql`:
-   normaliza el alias `administrador` a `admin` y crea la auditoría de cambios
-   administrativos. Luego aplicar `09_plan_y_ultimo_acceso.sql`, que agrega el
-   plan comercial y la marca de último acceso. El `09` ejecuta el DDL en una
-   transacción breve y valida el `CHECK` en otra posterior, para que el escaneo
-   no retenga el `AccessExclusiveLock`. Si se re-ejecuta `06`, éste
-   restaura los grants de auditoría cuando la tabla ya existe; `09` no concede
-   permisos nuevos.
-3. La migración crea el snapshot, elimina las dos dependencias externas de
-   trabajos y concede únicamente la matriz. Rechaza roles privilegiados,
-   membresías, propiedad de objetos y permisos públicos/defaults que crucen
-   dominios. Si falla, auditar con el operador; no revoca permisos de otros
-   usuarios ni convierte un administrador existente en un rol runtime.
-4. Provisionar tres contraseñas distintas. En psql interactivo:
-
-   ```text
-   \password app_identity
-   \password app_scraping
-   \password app_catalogo
-   ALTER ROLE app_identity LOGIN;
-   ALTER ROLE app_scraping LOGIN;
-   ALTER ROLE app_catalogo LOGIN;
-   ```
-
-   Para Compose nuevo, `07_runtime_credentials.sh` lo
-   realiza usando variables del contenedor DB y SCRAM-SHA-256. En un volumen
-   existente, ejecutarlo expresamente después de la migración, con las variables
-   nuevas y el operador autorizado. No regenerar roles/contraseñas al arrancar API.
-5. Crear/actualizar los Secrets privados antes de actualizar workloads. Incorporar
-   los scripts nuevos al ConfigMap `db-init-scripts` para futuros volúmenes.
-   Los scripts de init sólo se ejecutan al crear un volumen: actualizar el
-   ConfigMap o `.env` no migra ni rota una base existente.
-6. Actualizar Catálogo y API con credenciales dedicadas. Verificar readiness,
-   registro/login/perfil, consultas públicas y administrativas, inicio/ingesta/
-   cierre de trabajo, reintento del mismo lote y ausencia de permisos cruzados.
-7. Reactivar worker/productores y observar pendientes SQL/Streams, errores y
-   conexiones. Confirmar que los pods nuevos no contienen credenciales del
-   administrador. El administrador queda reservado a DB y a operación manual.
-
-Cambiar `.env` o un Secret no rota por sí solo PostgreSQL: coordinar ALTER ROLE
-y recreación/rollout de los clientes. No revocar ni borrar los usuarios anteriores
-durante este PR; inventariar consumidores restantes y retirar accesos con el
-operador después de validar el corte. No reutilizar esos usuarios en runtime nuevo.
-
-## Rollback
-
-SUP-270 conserva la misma ingesta, outboxes, worker y Streams. Para volver a sus
-imágenes, pausar productores, detener loops de API y restaurar la configuración
-de conexión única que esa imagen espera, con un rol temporal aprobado que reúna
-los permisos de Identidad y coordinación, incluido DELETE exclusivamente en
-`scraper.entregas_trabajos`. Usar la imagen aprobada `42b6ca4` con los fixes de
-cierre, publisher y recuperación. El Catálogo de SUP-270 puede conservar
-`app_catalogo`; no necesita usuarios ni trabajos. No conceder ese acceso combinado
-a los pods SUP-271 ni ampliar los roles dedicados de esta etapa.
-
-Mantener la columna nueva y las tablas/recibos/volúmenes: los binarios anteriores
-ignoran el snapshot extra y no requieren FK para operar. Restaurar las FK sólo
-si el equipo decide recuperar las cascadas y tras verificar que no hay referencias
-externas huérfanas; esta tarea no las recrea automáticamente ni borra la auditoría.
-Volver a SUP-269 o anterior también requiere drenar la recuperación de SUP-270,
-como indica `GUIA_SCRAPING_RECUPERACION.md`.
+`06_propiedad_permisos.sql` es la fuente única de roles y grants, y es
+idempotente: en una base existente se vuelve a ejecutar como operador. El orden
+de los scripts y cuáles aplicar a mano están en el
+[README de `infrastructure/db`](../../infrastructure/db/README.md). La matriz de
+`backend/control_scraping/tests/smoke_data_ownership.py` debe actualizarse junto
+con la de `06`.
 
 ## Validación
 
@@ -258,42 +182,9 @@ sin grants alternativos escritos sólo para tests. Comprueba acceso TCP positivo
 y denegaciones reales sobre tablas de los tres esquemas, DELETE/TRUNCATE/DDL,
 SET ROLE, secuencias y tablas futuras. Repite la migración, preserva contraseñas,
 rechaza membresías/permisos públicos (también grants por columna) y verifica trabajos históricos después de
-eliminar cadena/usuario, incluso con Catálogo detenido. También ejecuta los
-contratos, recuperación y rollbacks heredados. Restaura la imagen de API de
-SUP-270 con un rol temporal que sólo reúne usuarios y coordinación, prueba
-registro/login/cola/ingesta idempotente/cierre y vuelve a SUP-271 sin ampliar
-los tres roles dedicados.
+eliminar cadena/usuario, incluso con Catálogo detenido. 
 
 La validación usa bases, redes y volúmenes temporales. No modifica PostgreSQL
 local del usuario ni el clúster universitario. La aplicación de la migración,
 Secret/ConfigMap y el rollback de credenciales en el clúster requieren validación
 del operador durante despliegue; este trabajo no los ejecuta.
-
-Comprobaciones locales completadas:
-
-- 212 resultados Go: 103 unitarios de API, 108 de Catálogo y una integración
-  de publisher con PostgreSQL real (omitida en la corrida unitaria y ejecutada
-  explícitamente en el harness). Race detector, vet y compilación `CGO_ENABLED=0`
-  correctos; 25 pruebas Python aprobadas.
-- 413 comprobaciones HTTP: 365 de contratos, recuperación, ownership/probes y
-  rollback SUP-271 → SUP-270 → SUP-271; 48 adicionales del modo lector histórico,
-  incluyendo funcionamiento sin API/Redis y fallo de PostgreSQL.
-- Probes reales: API 503 y Catálogo 503 con DB caída; liveness 200 en ambos,
-  recuperación sin cambiar contenedor, fecha de inicio ni contador de reinicios.
-  PostgreSQL registró 15 consultas de permisos al arrancar Catálogo y ninguna
-  adicional durante los probes. Un grant faltante impidió abrir HTTP.
-- Redis simulado acepta TCP pero no responde: el cliente real respeta el
-  deadline y conserva readiness cuando ambos pools PostgreSQL están sanos.
-- 118 comprobaciones de acceso SQL por rol, además de las aserciones de
-  migración, conservación de referencias, snapshots e idempotencia.
-- Inicialización de un PostgreSQL nuevo con el script 07 no ejecutable (0644),
-  como en ConfigMap: roles habilitados y opciones del entrypoint conservadas.
-- 20 recursos Kubernetes válidos con esquema estricto 1.32; workflows,
-  scripts, archivos Python y diff validados. Recursos temporales eliminados.
-
-La integración local usó binarios nuevos compilados desde fuente sobre imágenes
-runtime verificadas y Python instalado. No reconstruyó los builders completos
-de producción ni la imagen del worker. CI configura las construcciones de API,
-Catálogo, Gateway y frontend; el worker se valida mediante sus pruebas Python.
-Las cifras anteriores corresponden a la validación local. Los checks de GitHub
-validan el PR por separado. No se publicaron imágenes ni se desplegó en el clúster.

@@ -22,7 +22,7 @@ corrige el documento.
 | [Contratos](Contratos/CONTRATO_ARTICULOS_LISTA.md) | Contratos entre servicios. Hoy: artículos de lista (SUP-321) |
 | [Métricas](Metricas/README.md) | Lo medido, lo configurado y lo que no se mide; incluye el [benchmark HPA](Metricas/Benchmark_HPA_Catalogo.md) |
 | [Requisitos](Requisitos/README.md) | Requisitos, reglas de negocio y términos. Describen objetivos, no funciones ya terminadas |
-| [Diagramas](Diagramas/README.md) | MER, casos de uso, flujos y secuencias. Algunos describen etapas anteriores |
+| [Diagramas](Diagramas/README.md) | Arquitectura, MER, casos de uso y flujos, con el estado de cada uno |
 | [Glosario](Glosario.md) | Siglas y términos técnicos |
 
 ## Guías de trabajo
@@ -30,7 +30,8 @@ corrige el documento.
 - [Flujo de ramas y pull requests](Guias/GUIA_GITFLOW_Y_PR.md).
 - [Barrido de código](Guias/GUIA_BARRIDO_CODIGO.md): tests, mocks, hardcodeo y
   documentación de cada servicio (Sprint 3).
-- [Docker](Guias/GUIA_DOCKER.md) y [hardware recomendado](Guias/HARDWARE_Y_OPTIMIZACION.md).
+- [Docker para desarrollo](Guias/GUIA_DOCKER.md). Los límites de recursos están en
+  [escalado y recursos](Metricas/02_Escalado_y_recursos.md).
 - [Contextos para asistentes de IA](Guias/GUIA_CONTEXTO_IA.md). Se unificarán en
   `AGENTS.md` (SUP-360).
 
