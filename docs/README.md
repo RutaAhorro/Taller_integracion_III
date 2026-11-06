@@ -53,9 +53,7 @@ Su contenido permanece consultable en el historial Git.
   legales oficiales ni listado de funciones terminadas.
 - [Orientación académica](Guias/GUIA_APRENDIZAJE.md): comprobar calendario y alcance
   con la planificación del equipo.
-- Bibliografía SWEBOK: [Backend](Referencias/Backend/README.md),
-  [DevOps](Referencias/DevOps/README.md), [Frontend](Referencias/Frontend/README.md)
-  y [Negocio](Referencias/Vision_Negocio/README.md).
+- Bibliografía SWEBOK: en el Drive del equipo (fuera del repositorio).
 - [Investigaciones](Investigaciones/README.md): aviso de traslado a Drive.
 - [Benchmark HPA](Guias/README_HPA_BENCHMARK.md): resultados históricos de un
   escenario específico, no capacidad garantizada del despliegue actual.
