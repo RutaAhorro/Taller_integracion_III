@@ -1,7 +1,7 @@
 # Contrato de artículos de lista
 
 > **Estado:** vigente desde su fusión en `develop` · SUP-321 · Responsable: Esban
-> **Revisan:** Marcelo (Catálogo, SUP-312 y SUP-244), Renato (IA, SUP-325), Vicho (Rutas, SUP-316) y Daniela (frontend, SUP-252 y SUP-329)
+> **Aprueban cambios:** Marcelo (Catálogo, SUP-312 y SUP-244), Renato (IA, SUP-325), Vicho (Rutas, SUP-316) y Daniela (frontend, SUP-252 y SUP-329)
 
 ## Para qué existe
 
