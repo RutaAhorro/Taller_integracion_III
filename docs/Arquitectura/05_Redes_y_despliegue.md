@@ -22,16 +22,8 @@
 
 ### Límites de memoria
 
-| Servicio | Límite |
-|---|---|
-| db | 300M |
-| control, identidad, catálogo, motor de rutas | 256M cada uno |
-| gateway | 128M |
-| frontend | 250M |
-| redis | 100M |
-| bot | 200M |
-| scraper_worker | 200M (era 400M con el scraper Python) |
-| ia | 300M |
+Los límites de Compose y los requests y limits de Kubernetes están en
+[escalado y recursos](../Metricas/02_Escalado_y_recursos.md).
 
 ### Perfiles opcionales
 

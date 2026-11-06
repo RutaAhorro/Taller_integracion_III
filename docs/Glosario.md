@@ -18,7 +18,7 @@
 
 | Término | Significado | En el proyecto |
 |---|---|---|
-| **JWT** | *JSON Web Token*. Token firmado que transporta datos (claims) verificables sin consultar la base de datos. | Identidad lo emite al iniciar sesión; Catálogo y Motor de rutas lo validan. |
+| **JWT** | *JSON Web Token*. Token firmado que transporta datos (claims) verificables sin consultar la base de datos. | Identidad lo emite al iniciar sesión; Identidad, Catálogo, Motor de rutas e IA lo validan. |
 | **HS256** | *HMAC con SHA-256*. Algoritmo de firma simétrica: la misma clave firma y verifica. | Único algoritmo aceptado para el JWT (`JWT_SECRET` compartido). |
 | **HMAC** | *Hash-based Message Authentication Code*. Código que prueba integridad y autenticidad usando una clave secreta. | Base de HS256. |
 | **SHA-256** | *Secure Hash Algorithm, 256 bits*. Función hash criptográfica. | Hash de tokens de recuperación y comparación del token de servicio. |

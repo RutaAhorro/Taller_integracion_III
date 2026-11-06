@@ -2,14 +2,14 @@
 
 [← Índice de métricas](README.md)
 
-## Log por petición (`http_request`)
+## Log por petición
 
 | Servicio | Campos | Archivo |
 |---|---|---|
-| Gateway | `request_id`, `upstream`, `status`, `duration_ms`, `response_bytes` | `backend/gateway/internal/proxy/gateway.go` |
-| Identidad | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/identidad/internal/server/server.go` |
-| Catálogo | `request_id`, `path`, `status`, `duration_ms` | `backend/catalogo/internal/server/server.go` |
-| Control de scraping | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/control_scraping/internal/middleware/runtime.go` |
+| Gateway (evento `request`) | `request_id`, `method`, `path`, `status`, `duration_ms`, `response_bytes` | `backend/gateway/internal/proxy/gateway.go` |
+| Identidad (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/identidad/internal/server/server.go` |
+| Catálogo (evento `http_request`) | `request_id`, `path`, `status`, `duration_ms` | `backend/catalogo/internal/server/server.go` |
+| Control de scraping (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/control_scraping/internal/middleware/runtime.go` |
 | Motor de rutas | `duration_ms` y datos de la petición | `backend/motor_rutas/app/main.py` |
 
 Los servicios Go usan `slog`, que escribe logs estructurados de clave y valor.

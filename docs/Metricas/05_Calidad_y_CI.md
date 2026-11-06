@@ -8,7 +8,7 @@ Se cuentan archivos `*_test.go`, `test_*.py` y `*.test.mjs`, no tests individual
 
 | Servicio | Archivos | En CI |
 |---|---|---|
-| Identidad | 20 | ❌ |
+| Identidad | 20 | ✅ (en `gateway-checks`) |
 | Scraper Go | 18 | ✅ |
 | Control de scraping | 16 | ✅ (en `gateway-checks`) |
 | Catálogo | 9 | ✅ |
@@ -18,18 +18,12 @@ Se cuentan archivos `*_test.go`, `test_*.py` y `*.test.mjs`, no tests individual
 | Bot Discord | 1 | ❌ |
 | Frontend | 1 (`tests/listas-api.test.mjs`) | ❌ |
 
-Resultados locales de la limpieza KISS (#123–#125):
-
-- Identidad: `go test` y `go vet` en verde.
-- Motor de rutas: 19 tests OK y 3 saltados, porque requieren PostgreSQL.
-- Frontend: `tsc` bajó de 8 errores a 0, y `oxlint` quedó limpio.
-
 ## Workflows (`.github/workflows/`)
 
 | Workflow | Qué valida |
 |---|---|
 | `catalogo-checks.yml` | `go test -race`, `go vet`, build y un smoke test con Compose (`scripts/smoke_catalogo_compose.sh`) |
-| `gateway-checks.yml` | `go test -race` y `go vet` del Gateway y de Control, más el build de la imagen de Control |
+| `gateway-checks.yml` | `go test -race`, `go vet` y build de Gateway, Control e Identidad, más los smokes con Compose de Gateway, Identidad, Control, ingesta, enrutamiento de Catálogo, propiedad de datos y recuperación del scraping |
 | `scraper-go-checks.yml` | `go test -race`, `go vet` y el **control de memoria** |
 | `docker-publish.yml` | Publicación de imágenes |
 
@@ -51,4 +45,4 @@ Esta prueba corre en CI y **falla si se supera** el límite. Es el único umbral
 ## Lo que falta
 
 - ❌ Medición de cobertura.
-- ❌ CI para Identidad, Motor de rutas, IA, Bot y Frontend.
+- ❌ CI para Motor de rutas, IA, Bot y Frontend (SUP-346).

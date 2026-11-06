@@ -23,14 +23,9 @@ Hay datos de cinco cadenas: Jumbo, Líder, Santa Isabel, Acuenta y Cugat.
 
 ## Límites funcionales ⚙️
 
-| Regla | Valor | Servicio |
-|---|---|---|
-| Logins fallidos | 5 por IP cada 15 min | Identidad |
-| Registros | 30 por IP cada 15 min | Identidad |
-| Logins con Google | 30 por IP cada 15 min | Identidad |
-| Duración de la sesión | 24 h (86.400 s) | Identidad |
-| Largo máximo de contraseña | 72 bytes (límite de bcrypt) | Identidad |
-| Listas por usuario | 100 | Motor de rutas |
+Los límites de tasa, la duración de la sesión y el largo de contraseña están en
+[seguridad transversal](../Arquitectura/06_Seguridad_transversal.md). El máximo de
+100 listas por usuario está en [servicios](../Arquitectura/02_Servicios.md).
 
 ## Lo que falta
 

@@ -10,7 +10,7 @@
 | Control de scraping | `backend/control_scraping` | Go, Gin, GORM | 8080 | `app_scraping` |
 | Scraper Go | `backend/scraper_go` | Go | — (worker) | ninguno |
 | Bot Discord | `backend/bot_discord` | Go, discordgo | 8081 | ninguno |
-| Motor de rutas 🟡 | `backend/motor_rutas` | Python, FastAPI | 8001 | `app_rutas` |
+| Motor de rutas 🟡 | `backend/motor_rutas` | Python, FastAPI (migración a Go en curso, [D11](../Decisiones/11_Motor_de_rutas_en_Go.md)) | 8001 | `app_rutas` |
 | IA conversacional 🟡 | `backend/ia_conversacional` | Python, FastAPI | 8002 | ninguno |
 | Frontend | `frontend/web` | React 19, TS, Vite, Tailwind 4; Nginx | 3000 | — |
 

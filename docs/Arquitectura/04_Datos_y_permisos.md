@@ -14,9 +14,11 @@ Se usa **una sola instancia**: el contenedor `bd_supermercados`, con PostgreSQL 
 
 El aislamiento entre dominios se logra con **un rol por dominio** y permisos por tabla: `app_identity`, `app_catalogo`, `app_scraping` y `app_rutas`. Están prohibidos el AutoMigrate y el SQL entre dominios.
 
-## Migraciones
+## Migraciones y permisos
 
-Los scripts están en `infrastructure/db/` y solo se aplican automáticamente al crear el volumen. En un volumen que ya existe, los scripts 05 a 09 (propiedad, permisos y recuperación) se aplican a mano y de forma idempotente.
+El orden de los scripts y cuáles aplicar a mano en una base existente están en el
+[README de `infrastructure/db`](../../infrastructure/db/README.md). La matriz de
+permisos por rol está en [datos y permisos del backend](../Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md).
 
 ## Redis 7
 

@@ -28,7 +28,7 @@ El Gateway, el frontend, el bot, el scraper, la base de datos y Redis **no tiene
 | PostgreSQL | 50m / 64Mi | 250m / 300Mi |
 | Redis | 25m / 64Mi | 100m / 100Mi |
 
-**Cuota del namespace:** 2 GiB de memoria (1.907 MiB útiles), 2.000m de CPU y 20 pods.
+**Cuota del namespace:** 2 GiB de memoria (1.907 MiB útiles), 2.000m de CPU y 20 pods. La asigna el clúster del curso (no hay un `ResourceQuota` versionado); el dato viene del [benchmark](Benchmark_HPA_Catalogo.md).
 
 ## Límites de memoria en Docker Compose (local)
 
@@ -47,6 +47,6 @@ El Gateway, el frontend, el bot, el scraper, la base de datos y Redis **no tiene
 
 | Parámetro | Valor | Dónde |
 |---|---|---|
-| Pool de conexiones a PostgreSQL | `MaxOpenConns: 10` | Catálogo (GORM) |
+| Pool de conexiones a PostgreSQL | 10 por defecto (`DB_MAX_OPEN_CONNS`) | Catálogo (GORM) |
 | Timeout de conexión y de cabeceras | `DialTimeout`, `ResponseHeaderTimeout` | Gateway, configurable |
 | Transportes | Separados para lectura y escritura | Gateway |

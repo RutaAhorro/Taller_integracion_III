@@ -6,7 +6,7 @@
 
 **Decisión:**
 - Identidad aplica contadores por IP en Redis, con scripts Lua atómicos.
-- Los límites, por IP cada 15 minutos, son: 5 logins fallidos, 30 registros y 30 logins con Google.
+- Límites por IP para login fallido, registro y login con Google; los valores vigentes están en [seguridad transversal](../Arquitectura/06_Seguridad_transversal.md).
 - Si Redis no responde, la petición se **rechaza** (falla cerrado).
 - La IP real se lee solo cuando viene del proxy de confianza, que es el Gateway en la red `identidad_edge`.
 
