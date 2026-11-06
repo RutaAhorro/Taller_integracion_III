@@ -4,6 +4,52 @@ Este directorio contiene las definiciones DDL del esquema PostgreSQL (PostGIS) e
 
 ---
 
+## Orden de ejecución en una base nueva
+
+Compose (`docker-compose.yml`) monta esta carpeta en
+`/docker-entrypoint-initdb.d`. Kubernetes monta ahí el ConfigMap
+`db-init-scripts`, que no está versionado y debe contener estos mismos archivos. Al crear un **volumen
+vacío**, PostgreSQL ejecuta los `.sql` y `.sh` **en orden alfabético**, una sola
+vez. Sobre una base existente no se ejecuta nada: ver la sección de migraciones
+más abajo.
+
+El orden real es este:
+
+| # | Archivo | Qué hace |
+| --- | --- | --- |
+| 1 | `01_schema_api.sql` | Esquema `api` |
+| 2 | `02_schema_scraper.sql` | Esquema `scraper` |
+| 3 | `03_indices_optimizacion.sql` | Índices sobre `scraper.productos_crudos` |
+| 4 | `03_schema_rutas.sql` | Esquema `rutas` |
+| 5 | `04_migracion_nuevas_cadenas.sql` | Cadenas A Cuenta y Cugat |
+| 6 | `05_recuperacion_scraping.sql` | Recibos y outboxes de scraping (SUP-270) |
+| 7 | `05_tokens_recuperacion.sql` | Tokens de recuperación de contraseña (SUP-184) |
+| 8 | `06_propiedad_permisos.sql` | Roles runtime y permisos por tabla |
+| 9 | `07_respuestas_bloqueadas.sql` | Columna de respuestas bloqueadas del scraper |
+| 10 | `07_runtime_credentials.sh` | Contraseñas de los roles runtime |
+| 11 | `08_grants_catalogo_fuentes.sql` | Permiso de Catálogo sobre `esta_activa` (SUP-243) |
+| 12 | `08_normalizar_rol_admin_y_auditoria.sql` | Rol `admin` y auditoría (SUP-242) |
+| 13 | `09_plan_y_ultimo_acceso.sql` | Plan y último acceso de usuarios (SUP-242) |
+| 14 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
+
+**Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
+scripts en paralelo con el mismo número. No causan errores porque el orden
+alfabético es siempre el mismo y respeta las dependencias. No se renombran
+porque el código de Identidad, Control y Motor, los tests y las bases ya
+desplegadas los identifican por su nombre actual.
+
+**Regla para scripts nuevos:** usar el siguiente número libre (hoy `10_`) y
+nunca repetir uno existente. Si el script depende de otro, debe ordenarse
+después de él.
+
+**Finales de línea:** `.gitattributes` fuerza LF en `.sh` y `.sql`. Con CRLF,
+`07_runtime_credentials.sh` falla dentro del contenedor (`bash\r`).
+
+**Pendiente:** `init.sql` carga datos fijos de productos y precios. Se revisa
+en el barrido de Catálogo (SUP-349).
+
+---
+
 ## 📁 Estructura de Archivos
 
 Las migraciones recientes de la refactorización se aplican expresamente a
@@ -26,12 +72,12 @@ migraciones ni recrear el volumen para aplicar estos scripts.
 
 | Archivo | Descripción | Cuándo usar |
 |---|---|---|
-| [`init.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/init.sql) | Script completo de inicialización con esquemas y datos seed de prueba (Jumbo, Lider, Santa Isabel, A Cuenta, Cugat). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |
-| [`01_schema_api.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/01_schema_api.sql) | Esquema `api.*` (usuarios, catálogo maestro normalizado, recetas, misiones). | Referencia DDL / auto-init. |
-| [`02_schema_scraper.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/02_schema_scraper.sql) | Esquema `scraper.*` (cadenas, sucursales, trabajos, productos crudos, capturas de precios). | Referencia DDL / auto-init. |
-| [`03_schema_rutas.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/03_schema_rutas.sql) | Esquema `rutas.*` (listas de compras, optimizaciones y paradas). | Referencia DDL / auto-init. |
-| [`03_indices_optimizacion.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/03_indices_optimizacion.sql) | Índices adicionales de rendimiento para consultas frecuentes. | Referencia DDL / auto-init. |
-| [`04_migracion_nuevas_cadenas.sql`](file:///home/chelo/Documentos/GitHub/Taller_integracion_III/infrastructure/db/04_migracion_nuevas_cadenas.sql) | **Script de migración**: Agrega A Cuenta y Cugat a bases de datos en producción o activas. | **Ejecución manual en bases de datos existentes** (ej. clúster Kubernetes UCT). |
+| [`init.sql`](init.sql) | Script completo de inicialización con esquemas y datos seed de prueba (Jumbo, Lider, Santa Isabel, A Cuenta, Cugat). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |
+| [`01_schema_api.sql`](01_schema_api.sql) | Esquema `api.*` (usuarios, catálogo maestro normalizado, recetas, misiones). | Referencia DDL / auto-init. |
+| [`02_schema_scraper.sql`](02_schema_scraper.sql) | Esquema `scraper.*` (cadenas, sucursales, trabajos, productos crudos, capturas de precios). | Referencia DDL / auto-init. |
+| [`03_schema_rutas.sql`](03_schema_rutas.sql) | Esquema `rutas.*` (listas de compras, optimizaciones y paradas). | Referencia DDL / auto-init. |
+| [`03_indices_optimizacion.sql`](03_indices_optimizacion.sql) | Índices adicionales de rendimiento para consultas frecuentes. | Referencia DDL / auto-init. |
+| [`04_migracion_nuevas_cadenas.sql`](04_migracion_nuevas_cadenas.sql) | **Script de migración**: Agrega A Cuenta y Cugat a bases de datos en producción o activas. | **Ejecución manual en bases de datos existentes** (ej. clúster Kubernetes UCT). |
 
 ---
 
