@@ -1,18 +1,18 @@
-# 📋 Requisitos y Lógica de Negocio (Developer Edition)
+# Requisitos
 
-> [!IMPORTANT]
-> **Aviso sobre la oficialidad de estos documentos**
-> 
-> Los archivos contenidos en esta carpeta **NO son los documentos legales, académicos o comerciales oficiales** del proyecto. 
-> 
-> Han sido resumidos, depurados y traducidos a un lenguaje técnico para que sirvan como un **manual de construcción directo y ágil** para el equipo de desarrollo. Su único objetivo es explicar cómo las reglas de negocio, los términos de uso y los requerimientos impactan la arquitectura, las bases de datos y el código (tanto en Frontend como en Backend).
-> 
-> Para consultar los documentos originales formales (con formato académico tipo tesis, detalles legales completos o presentaciones formales para la DIRITT), por favor remítete a la carpeta compartida en Google Drive del equipo.
+Qué debe hacer el sistema y qué reglas debe respetar. Son la versión técnica de
+los documentos formales del Sprint 0, que están en el Drive del equipo.
 
-## Contenido de esta carpeta
+Los identificadores `RF-xx`, `RN-xx` y `RNF-xx` vienen de esos documentos
+formales y los usan los issues de Linear para su trazabilidad. **No se
+renumeran.** Cada requisito indica su estado: implementado, parcial, Sprint 3 o
+fuera de alcance. Un requisito no es una función terminada salvo que su estado
+lo diga.
 
-* ⚙️ **[Requisitos Funcionales](Requisitos_Funcionales.md)**: El MVP estructurado en etapas y roles, explicando exactamente qué funciones programar.
-* 🛠️ **[Requisitos No Funcionales](Requisitos_No_Funcionales.md)**: Restricciones de hardware (el Servidor Pentium), de infraestructura y de arquitectura de software.
-* 🧠 **[Reglas de Negocio](Reglas_de_Negocio.md)**: La lógica estricta del motor de rutas, vigencia de precios y el patrón anti-alucinaciones de la IA.
-* 💰 **[Modelo de Monetización](Modelo_Monetizacion.md)**: Cómo impactan a nivel de código las cuentas Free/Premium, los planes B2B y las comisiones.
-* 📜 **[Términos y Condiciones](Terminos_y_Condiciones.md)**: Reglas legales traducidas a validaciones, protección anti-scraping y gestión de privacidad.
+| Documento | Contenido |
+| --- | --- |
+| [Requisitos funcionales](Requisitos_Funcionales.md) | `RF-01.1` a `RF-04.4`: qué puede hacer cada actor, con su estado e issue |
+| [Requisitos no funcionales](Requisitos_No_Funcionales.md) | `RNF-01` a `RNF-12`, restricciones del entorno y criterios de calidad |
+| [Reglas de negocio](Reglas_de_Negocio.md) | `RN-00` a `RN-26`, patrón anti-alucinación y fórmula del costo de desplazamiento |
+| [Modelo de monetización](Modelo_Monetizacion.md) | Planes y comisiones. **Fuera de alcance de la entrega final** |
+| [Términos y condiciones](Terminos_y_Condiciones.md) | Reglas legales traducidas a validaciones. No es el documento legal oficial |
