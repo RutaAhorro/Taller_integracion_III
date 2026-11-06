@@ -65,8 +65,8 @@ en el README de su servicio durante el barrido; después se eliminan:
 - **Pendientes y tareas:** en Linear, no en documentos.
 - **Bibliografía SWEBOK e investigaciones:** en el Drive del equipo
   ([aviso de investigaciones](Investigaciones/README.md)).
-- [Orientación académica](Guias/GUIA_APRENDIZAJE.md): comprobar calendario y alcance
-  con la planificación del equipo.
+- **Orientación académica** (guía de estudio SWEBOK): fuera del repositorio, junto
+  con la bibliografía.
 
 ## Reglas para mantener esta carpeta
 
