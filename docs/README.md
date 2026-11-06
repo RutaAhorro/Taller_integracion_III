@@ -15,6 +15,9 @@
   volumen vacío con migración de datos existentes.
 - [Docker](Guias/GUIA_DOCKER.md) y [flujo de PR](Guias/GUIA_GITFLOW_Y_PR.md).
 - [Contextos IA breves](Guias/GUIA_CONTEXTO_IA.md): mantenimiento y regeneración.
+- [Contrato de artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md): cómo se
+  identifica un producto entre Catálogo, Listas, IA y Rutas, y los endpoints de
+  artículos (SUP-321).
 
 ## Historial del refactor — no ejecutar como recetas actuales
 
