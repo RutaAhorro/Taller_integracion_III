@@ -210,4 +210,4 @@ Identidad, Catálogo, permisos, ingesta y recuperación existentes, más:
 Los puertos fijos heredados de Gateway/frontend/fixtures requieren ejecutar
 un solo harness a la vez. Los recursos de prueba se retiran al terminar; no
 se ejecuta scraping externo ni se toca el clúster universitario.
-Los resultados efectivos y límites se registran en SEGUIMIENTO_REFACTOR_BACKEND.md.
+Los resultados del refactor quedan en el historial de git; las decisiones vigentes, en `docs/Decisiones/`.

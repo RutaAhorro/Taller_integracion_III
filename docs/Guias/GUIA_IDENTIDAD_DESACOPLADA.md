@@ -377,5 +377,4 @@ Pruebas Go adicionales usan el validador oficial de Google, RSA y una fixture
 JWKS para probar firma, audience, issuer y expiración; no sustituyen un login
 real de Google en el navegador ni habilitan TLS inseguro en producción.
 
-El resultado local y sus límites se registran en
-`SEGUIMIENTO_REFACTOR_BACKEND.md`. Ninguna prueba despliega el clúster.
+Ninguna prueba despliega el clúster.

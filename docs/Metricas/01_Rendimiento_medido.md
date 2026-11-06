@@ -2,7 +2,7 @@
 
 [← Índice de métricas](README.md)
 
-Fuente: [`docs/Guias/README_HPA_BENCHMARK.md`](../Guias/README_HPA_BENCHMARK.md). La prueba se hizo con Fortio 1.76.0 en el clúster del curso.
+Fuente: [`docs/Metricas/Benchmark_HPA_Catalogo.md`](Benchmark_HPA_Catalogo.md). La prueba se hizo con Fortio 1.76.0 en el clúster del curso.
 
 ## Prueba de carga y escalado (Catálogo)
 

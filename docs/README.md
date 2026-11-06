@@ -1,64 +1,77 @@
 # Documentación de RutaAhorro
 
-## Para entender el sistema actual
+Este índice es la única entrada a la documentación del proyecto: un documento
+que no aparece aquí no se considera vigente. Si algo de esta carpeta contradice
+al código, al SQL o a la configuración, vale lo que dice el repositorio y se
+corrige el documento.
 
-- [README principal](../README.md): arquitectura, estado y arranque local.
-- [Frontend](../frontend/web/README.md): configuración, rutas reales y vistas simuladas.
-- [Gateway](../backend/gateway/README.md), [Identidad](../backend/identidad/README.md)
-  y [Catálogo](../backend/catalogo/README.md): responsabilidades y pruebas.
-- [Scraper Go](../backend/scraper_go/README.md): protocolos, extracción y pruebas.
-  Su descripción de cutover Python → Go es histórica; Compose ya usa Go.
+## Por dónde empezar
+
+1. [Visión general de la arquitectura](Arquitectura/01_Vision_general.md): diagrama,
+   estilo y estado de cada componente.
+2. [Glosario](Glosario.md): siglas y términos técnicos del proyecto.
+3. [Plan de realización del Sprint 3](Guias/PLAN_REALIZACION_SPRINT3.md): qué se
+   está construyendo ahora y en qué orden.
+
+## Secciones
+
+| Sección | Qué contiene |
+| --- | --- |
+| [Arquitectura](Arquitectura/README.md) | Servicios, flujo de una petición, datos y permisos, redes y despliegue, seguridad |
+| [Decisiones](Decisiones/README.md) | Cada decisión de arquitectura con su motivo y la alternativa descartada |
+| [Contratos](Contratos/CONTRATO_ARTICULOS_LISTA.md) | Contratos entre servicios. Hoy: artículos de lista (SUP-321) |
+| [Métricas](Metricas/README.md) | Lo medido, lo configurado y lo que no se mide; incluye el [benchmark HPA](Metricas/Benchmark_HPA_Catalogo.md) |
+| [Requisitos](Requisitos/README.md) | Requisitos, reglas de negocio y términos. Describen objetivos, no funciones ya terminadas |
+| [Diagramas](Diagramas/README.md) | MER, casos de uso, flujos y secuencias. Algunos describen etapas anteriores |
+| [Glosario](Glosario.md) | Siglas y términos técnicos |
+
+## Guías de trabajo
+
+- [Flujo de ramas y pull requests](Guias/GUIA_GITFLOW_Y_PR.md).
+- [Barrido de código](Guias/GUIA_BARRIDO_CODIGO.md): tests, mocks, hardcodeo y
+  documentación de cada servicio (Sprint 3).
+- [Docker](Guias/GUIA_DOCKER.md) y [hardware recomendado](Guias/HARDWARE_Y_OPTIMIZACION.md).
+- [Contextos para asistentes de IA](Guias/GUIA_CONTEXTO_IA.md). Se unificarán en
+  `AGENTS.md` (SUP-360).
+
+## Operación
+
+- [Datos y permisos del backend](Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md): roles,
+  propiedad de tablas y migraciones.
+- [Migraciones y orden de los scripts SQL](../infrastructure/db/README.md): no
+  confundir la inicialización de un volumen vacío con migrar una base existente.
 - [Control de scraping](Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md) y
-  [datos/permisos](Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md): base del diseño
-  desacoplado; contrastar detalles de configuración con código, SQL y manifiestos.
-- [Migraciones](../infrastructure/db/README.md): no confundir inicialización de
-  volumen vacío con migración de datos existentes.
-- [Docker](Guias/GUIA_DOCKER.md) y [flujo de PR](Guias/GUIA_GITFLOW_Y_PR.md).
-- [Barrido de código](Guias/GUIA_BARRIDO_CODIGO.md): dónde van los tests, qué
-  cuenta como mock o hardcodeo y cómo se entrega cada barrido (Sprint 3).
-- [Plan de realización del Sprint 3](Guias/PLAN_REALIZACION_SPRINT3.md): orden
-  de las tareas, ruta crítica y quién espera a quién.
-- [Contextos IA breves](Guias/GUIA_CONTEXTO_IA.md): mantenimiento y regeneración.
-- [Contrato de artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md): cómo se
-  identifica un producto entre Catálogo, Listas, IA y Rutas, y los endpoints de
-  artículos (SUP-321).
+  [recuperación del scraping](Guias/GUIA_SCRAPING_RECUPERACION.md). En esta
+  última, los comandos de Python y de transición requieren adaptación.
 
-## Historial del refactor — no ejecutar como recetas actuales
+## Documentación de cada servicio
 
-Se conservan por su trazabilidad, contratos, decisiones y pruebas:
+Cada servicio mantiene su `README.md` junto al código; su barrido lo deja
+verificado. [Frontend](../frontend/web/README.md) ·
+[Gateway](../backend/gateway/README.md) · [Identidad](../backend/identidad/README.md) ·
+[Catálogo](../backend/catalogo/README.md) · [Scraper Go](../backend/scraper_go/README.md) ·
+[Motor de rutas](../backend/motor_rutas/README.md).
 
-- [SUP-265: integración inicial del Gateway](Guias/GUIA_GATEWAY_DESARROLLO_PRUEBAS.md).
-- [SUP-266: módulos dentro del monolito](Guias/GUIA_MODULOS_BACKEND.md).
-- [SUP-267: extracción de Catálogo](Guias/GUIA_CATALOGO_INDEPENDIENTE.md).
-- [SUP-268: enrutamiento de Catálogo](Guias/GUIA_CATALOGO_ENRUTAMIENTO.md).
-- [SUP-269: traslado de ingesta](Guias/GUIA_CATALOGO_INGESTA.md).
-- [SUP-270: recuperación](Guias/GUIA_SCRAPING_RECUPERACION.md): el protocolo sigue
-  siendo útil, pero comandos Python y de transición requieren adaptación.
-- [Seguimiento del refactor](Guias/SEGUIMIENTO_REFACTOR_BACKEND.md).
+Cuatro guías de la extracción de servicios siguen vigentes en parte y se fusionan
+en el README de su servicio durante el barrido; después se eliminan:
+[Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347),
+[Catálogo](Guias/GUIA_CATALOGO_INDEPENDIENTE.md) e
+[ingesta](Guias/GUIA_CATALOGO_INGESTA.md) (SUP-349) y
+[enrutamiento de Catálogo](Guias/GUIA_CATALOGO_ENRUTAMIENTO.md) (SUP-350).
 
-Los comandos con `go_service`, `api-backend` o `backend/scraper` pertenecen a
-etapas anteriores. Los rollbacks requieren imágenes compatibles verificadas;
-no recrear servicios o credenciales antiguos por copiar una guía.
+## Fuera del repositorio
 
-Se retiraron las guías generales de backend/capas y las guías de OTP/algoritmos
-que confundían el diseño actual con un monolito o un motor operativo inexistente.
-Su contenido permanece consultable en el historial Git.
-
-## Diseño, requisitos y estudio
-
-- [Diagramas](Diagramas/README.md): la arquitectura Sprint 2 representa el
-  inventario informado; MER y secuencias pueden describir etapas anteriores o
-  funciones pendientes. No todos los diagramas son evidencia de implementación.
-- [Requisitos y negocio](Requisitos/README.md): resúmenes técnicos, no documentos
-  legales oficiales ni listado de funciones terminadas.
+- **Pendientes y tareas:** en Linear, no en documentos.
+- **Bibliografía SWEBOK e investigaciones:** en el Drive del equipo
+  ([aviso de investigaciones](Investigaciones/README.md)).
 - [Orientación académica](Guias/GUIA_APRENDIZAJE.md): comprobar calendario y alcance
   con la planificación del equipo.
-- Bibliografía SWEBOK: en el Drive del equipo (fuera del repositorio).
-- [Investigaciones](Investigaciones/README.md): aviso de traslado a Drive.
-- [Benchmark HPA](Guias/README_HPA_BENCHMARK.md): resultados históricos de un
-  escenario específico, no capacidad garantizada del despliegue actual.
-- [Hardware](Guias/HARDWARE_Y_OPTIMIZACION.md): recomendaciones generales;
-  inventario y cifras requieren contraste con las cuotas reales.
 
-Una captura, un manifiesto o una prueba local no confirman por sí solos qué
-imagen está ejecutándose en Kubernetes. Registrar versión y entorno al validar.
+## Reglas para mantener esta carpeta
+
+- **Un tema, un documento.** Antes de crear uno nuevo, buscar si ya existe.
+- **Ningún documento fuera de `docs/`**, salvo el `README.md` raíz y el de cada servicio.
+- **Todo documento nuevo se enlaza aquí.** Una decisión nueva va en `Decisiones/`
+  con el número siguiente; una reemplazada no se borra, se marca como reemplazada.
+- Una captura, un manifiesto o una prueba local no confirman qué imagen corre en
+  Kubernetes. Registrar versión y entorno al validar.
