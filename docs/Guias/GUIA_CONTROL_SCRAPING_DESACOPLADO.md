@@ -1,19 +1,14 @@
-# SUP-273: Control de scraping independiente
+# Control de scraping
 
-Parte del squash aprobado de SUP-272, `45aed821` (PR #99), en
-`develop-refactor`. La rama es
-`backend/refactor/sup-273-extraer-coordinacion-scraping-vmatus`.
-
-El último dominio de `backend/api` pasa a `backend/control_scraping` con módulo,
-binario, imagen, Deployment, Service y HPA propios. Se retira el servidor heredado,
-sus modelos globales y su Dockerfile. La herramienta de semillas se conserva en
-`backend/catalogo/cmd/seed_productos`; no se ejecuta al arrancar un servicio.
+Servicio `backend/control_scraping`: crea los trabajos de scraping, sigue su
+estado, los publica en Redis Streams mediante un outbox y entrega los
+resultados a Catálogo. Se extrajo del monolito en SUP-273 (PR #100).
 
 ```mermaid
 flowchart LR
   Web[Frontend y clientes] --> Gateway
   Bot --> Gateway
-  Worker[Worker Scrapy] -->|API existente: lotes y leases| Gateway
+  Worker[Scraper Go] -->|API existente: lotes y leases| Gateway
   Gateway -->|auth| Identidad
   Gateway -->|productos y administración| Catalogo[Catálogo]
   Gateway -->|scraper y health heredado| Control[Control de scraping]
@@ -104,8 +99,8 @@ está vacío, tiene menos de 32 caracteres, contiene espacios o coincide con
 `CATALOGO_INTERNAL_TOKEN`. Los probes no lo exigen. Swagger publica el contrato
 completo, así que sólo se sirve con `SCRAPING_SWAGGER_ENABLED=true` (Compose local
 y CI); en Kubernetes el ConfigMap lo deja en `false` y `/swagger` responde 404.
-Cualquier otro valor impide el arranque. El worker (incluidos
-los procesos Scrapy que lanza) y el bot leen el mismo `SCRAPING_SERVICE_TOKEN`.
+Cualquier otro valor impide el arranque. El Scraper Go y el bot
+leen el mismo `SCRAPING_SERVICE_TOKEN`.
 Permisos por usuario y cuotas siguen fuera de alcance.
 
 Errores internos, panics y errores del contexto devuelven 500 genérico, sin
@@ -140,50 +135,14 @@ los HPA al máximo suman `4*5 + 4*5 + 4*10 = 80` conexiones runtime. No es una
 medición de capacidad de PostgreSQL; hay que contar clientes administrativos.
 Gateway no tiene pool SQL. Las réplicas del worker conservan su política propia.
 
-Orden de corte para el operador:
+**Secret del token de servicio.** Control, el worker y el bot leen
+`scraping-service-secret` (clave `token`) y no arrancan sin él. Igual que
+`catalogo-internal-secret`, no se versiona: crearlo desde un archivo privado
+(`kubectl create secret generic scraping-service-secret --from-file=token=<archivo>`)
+con un valor de `openssl rand -hex 32` distinto del token interno de Catálogo.
+Desplegar Control junto con worker y bot: una versión sin token recibe 401.
 
-1. Registrar imágenes inmutables aprobadas, comprobar roles/grants de SUP-271,
-   Secrets existentes y orígenes reales del frontend. Provisionar el Secret
-   `scraping-service-secret` (clave `token`) antes del rollout: Control, worker
-   y bot lo referencian y no arrancan sin él. Igual que `catalogo-internal-secret`,
-   no se versiona; crearlo desde un archivo privado
-   (`kubectl create secret generic scraping-service-secret --from-file=token=<archivo>`)
-   con un valor de `openssl rand -hex 32` distinto del token interno de Catálogo.
-   Desplegar Control junto con worker y bot: una versión sin token recibe 401.
-2. Aplicar los manifiestos de Control y verificar readiness, permisos y conectividad
-   interna desde Gateway. Conservar temporalmente API SUP-272 durante este paso.
-3. Actualizar Gateway con SCRAPING_URL y retirar BACKEND_URL. Verificar el flujo
-   completo bot/worker → Gateway → Control → Catálogo y la confirmación final.
-4. Mantener sesiones de Identidad/Catálogo, probar independencia de fallos y
-   escalado de Control. No cambiar claves, colas, lotes activos ni spools.
-5. Retirar Deployment/api, HPA/api-hpa y Service/api-backend sólo después de
-   validar el corte. **No retirar Service/api**: sigue siendo alias de Gateway.
-
-## Rollback a SUP-272
-
-En Compose, usar una imagen de API SUP-272 aprobada e inmutable:
-
-```bash
-export SUP273_LEGACY_API_IMAGE='ghcr.io/danirc2024/taller_integracion_iii-api@sha256:<digest-aprobado>'
-docker compose --env-file .env -f docker-compose.yml -f docker-compose.scraping-rollback.yml \
-  up -d --no-deps control_scraping gateway
-```
-
-El override restaura el probe `/health`, desactiva SCRAPING_URL y apunta
-BACKEND_URL al proceso histórico. Conserva sólo el DSN de coordinación, el
-token interno y los servicios independientes de Identidad/Catálogo. No vuelve
-al monolito previo a esas extracciones.
-
-En Kubernetes, primero restaurar una imagen aprobada SUP-272 bajo el Deployment
-de Control, conservando app:control-scraping y sus Secrets. Cambiar startup y
-liveness exec a `/_api/live`, y readiness exec a `/health`; la imagen histórica
-no tiene `/_scraping/*`. Una vez Ready, configurar Gateway con SCRAPING_URL vacío
-y BACKEND_URL apuntando al mismo Service/control-scraping. Mantener IDENTIDAD_URL
-y CATALOGO_URL. Para volver al corte nuevo, restaurar imagen/probes nuevos y luego
-SCRAPING_URL. No hay rollback SQL ni ampliación de permisos.
-
-La imagen histórica también restaura su CORS/errores heredados. Este rollback
-es contingencia temporal; no trasladar esas debilidades al servicio nuevo.
+**No retirar `Service/api`:** es el alias de Gateway que usan el bot y el worker.
 
 ## Validación
 
@@ -204,10 +163,9 @@ Identidad, Catálogo, permisos, ingesta y recuperación existentes, más:
 - Tres réplicas de Control, dieciocho entregas del mismo lote distribuidas entre
   las tres por puertos locales efímeros y confirmación final por Gateway: una
   captura, un incremento y ninguna recreación de Identidad/Catálogo/Gateway.
-- Rollback a API SUP-272 y vuelta sin cambiar tablas/outboxes o sesiones.
 - CORS por allowlist, imagen no root/read-only y ausencia de secretos de Identidad.
 
 Los puertos fijos heredados de Gateway/frontend/fixtures requieren ejecutar
 un solo harness a la vez. Los recursos de prueba se retiran al terminar; no
 se ejecuta scraping externo ni se toca el clúster universitario.
-Los resultados efectivos y límites se registran en SEGUIMIENTO_REFACTOR_BACKEND.md.
+Los resultados del refactor quedan en el historial de git; las decisiones vigentes, en `docs/Decisiones/`.

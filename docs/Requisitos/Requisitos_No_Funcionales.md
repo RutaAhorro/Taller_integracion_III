@@ -1,25 +1,62 @@
-# 🛠️ Requisitos No Funcionales y Restricciones de Hardware
+# Requisitos no funcionales
 
-Este documento explica las limitaciones técnicas de nuestro entorno (Servidor Local Pentium / Clúster UCT) y cómo el código debe adaptarse a ellas.
+Condiciones que el sistema debe cumplir, más allá de sus funciones. Los
+identificadores `RNF-xx` son los del documento de requerimientos v2.5 y **no se
+renumeran**. Cada requisito tiene una sola condición; la estrategia indica cómo
+se cumple hoy.
 
----
+## Scraping y actualización
 
-## 1. Restricciones de Infraestructura (Producción vs Desarrollo)
-Por exigencia del proyecto, la arquitectura **NO** es híbrida en producción: todo el sistema debe vivir en el clúster.
-* **Producción (Clúster K8s UCT):** TODOS los servicios (Frontend, Backend, Scraper, Bot, Base de Datos) se despliegan en Kubernetes. Cada pod tiene un límite estricto de **512MB de RAM y 2 Núcleos**. **Impacto:** Cualquier _memory leak_ o falta de paginación en Go/Python matará el pod por OOM (Out Of Memory). El frontend en Nginx debe estar ultra-optimizado.
-* **Desarrollo (Local con Docker):** El desarrollo se realiza localmente utilizando `docker-compose`. Las máquinas locales (ej. Intel Pentium) deben emular estas restricciones para garantizar que lo que funciona en local, funcione en el clúster.
-* **IA en la Nube:** Ningún entorno puede correr Modelos de Lenguaje Locales (LLaMA). **Impacto:** Es obligatorio delegar la IA a APIs externas (Groq/Gemini).
-* **Portabilidad Total:** El sistema debe levantar en la máquina de cualquier profesor con un solo comando. **Impacto:** Todo debe estar 100% contenerizado (Docker/Docker Compose).
+| ID | Requisito | Condición | Cómo se cumple hoy |
+| --- | --- | --- | --- |
+| RNF-01 | Extracción concurrente | La extracción no bloquea las demás operaciones | Scraper Go como worker separado, con trabajos por Redis Streams |
+| RNF-02 | Integridad de la información | Si la tienda se cae a mitad de la extracción, no se pierden los precios anteriores | Ingesta transaccional e idempotente en Catálogo ([D07](../Decisiones/07_Ingesta_idempotente.md)) |
+| RNF-03 | Frecuencia de actualización | Las actualizaciones masivas corren en horarios de baja demanda, sin detener la plataforma | **Parcial:** los trabajos corren en segundo plano, pero no hay programación horaria (no existe un CronJob); hoy se lanzan a mano con el bot |
+| RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un spider por cadena en `scraper_go/internal/spiders/` |
 
-## 2. Actualización de Datos (Scraping)
-* **Ejecución Asíncrona (Cron):** El web scraping no puede bloquear la API web. Debe correr en segundo plano (Workers) idealmente en la madrugada.
-* **Tolerancia a Fallos (Transacciones):** Si la página del supermercado se cae a la mitad del scraping, **NO se deben borrar** los precios antiguos de nuestra base de datos. Se exige usar transacciones SQL.
+## IA y servicios externos
 
-## 3. Mapas y Privacidad
-* **Desplazamiento Realista:** Las distancias se calculan por calles (usando OpenTripPlanner/OSRM), no por línea recta.
-* **Privacidad Estricta (RAM):** Las coordenadas GPS del usuario SOLO deben existir en la memoria volátil (RAM) mientras se calcula la ruta. **Impacto:** Queda prohibido guardar permanentemente la ubicación de un usuario en PostgreSQL (a menos que guarde una "Dirección Frecuente" explícitamente).
+| ID | Requisito | Condición | Cómo se cumple hoy |
+| --- | --- | --- | --- |
+| RNF-05 | Límite de acción de la IA | La IA nunca modifica, infiere ni altera precios ni disponibilidad | Patrón anti-alucinación de las [reglas de negocio](Reglas_de_Negocio.md). *Cambio:* la versión original limitaba la IA a normalizar nombres; hoy también extrae filtros y redacta recetas, siempre sobre datos validados |
+| RNF-06 | Resiliencia de servicios externos | Si la IA o un servicio externo rechaza peticiones, el sistema se recupera sin caerse | Parcial: respaldo entre Gemini y Groq (`fallback_proveedor.py`); los reintentos acotados y los casos de fallo van en SUP-315 |
 
-## 4. Seguridad y Resiliencia
-* **Límite de Peticiones (Rate Limiting):** Obligatorio en Go para evitar que un ataque de fuerza bruta bote el servidor.
-* **Reintentos en IA (Backoff):** Si la API de Groq o Gemini falla, el backend debe reintentar un par de veces antes de mostrarle un error feo al usuario.
-* **Cifrado Total:** Todas las peticiones al servidor (especialmente porque enviamos ubicación) deben ir por HTTPS. Las contraseñas en DB deben estar hasheadas (Bcrypt/Argon2).
+## Mapas y ubicación
+
+| ID | Requisito | Condición | Cómo se cumple hoy |
+| --- | --- | --- | --- |
+| RNF-07 | Cálculo realista del desplazamiento | El costo se calcula por calles reales y según el medio de transporte | **Diferido:** en el Sprint 3 la distancia se estima con Haversine y un factor declarado, y la interfaz lo rotula como estimado (SUP-323, [D11](../Decisiones/11_Motor_de_rutas_en_Go.md)) |
+| RNF-08 | Privacidad geográfica | La ubicación exacta del usuario no se guarda de forma persistente después del cálculo | Sprint 3: las coordenadas viajan en la solicitud y no se guardan ni se registran en logs (SUP-316, SUP-338) |
+
+## Visualización
+
+| ID | Requisito | Condición | Cómo se cumple hoy |
+| --- | --- | --- | --- |
+| RNF-09 | Agrupación visual de precios | El mismo producto de distintas tiendas se muestra en una sola vista comparativa | Equivalencia por EAN (SUP-244); la vista agrupada queda pendiente (SUP-254) |
+| RNF-10 | Retroalimentación visual | Los cálculos largos muestran un indicador de carga | Estados de carga en las pantallas del recorrido (SUP-330, SUP-261) |
+
+## Seguridad y comunicaciones
+
+| ID | Requisito | Condición | Cómo se cumple hoy |
+| --- | --- | --- | --- |
+| RNF-11 | Protección de comunicaciones | Toda comunicación entre cliente y servidor va cifrada | **Sin verificar:** los manifiestos de Ingress no declaran TLS. Confirmar si el clúster del curso entrega HTTPS por su cuenta |
+| RNF-12 | Protección de acceso | Los puntos críticos resisten la automatización y la fuerza bruta | Rate limit en Redis para login, registro y Google; contraseñas con bcrypt ([D08](../Decisiones/08_Rate_limit_falla_cerrado.md)) |
+
+## Restricciones del entorno
+
+- **Todo corre en el clúster de Kubernetes del curso**, con cuotas estrictas de
+  memoria y CPU por namespace ([escalado y recursos](../Metricas/02_Escalado_y_recursos.md)).
+  Una fuga de memoria o una consulta sin paginar puede matar un pod: toda
+  consulta de listas se pagina y las imágenes parten de bases `-alpine`, `-slim`
+  o `distroless`.
+- **El desarrollo local usa Docker Compose** con límites de memoria parecidos,
+  para que lo que funciona en local funcione en el clúster.
+- **La IA se usa como servicio externo** (Gemini o Groq); no hay modelos locales.
+- **El sistema debe levantarse con un solo comando** (`docker compose up`).
+
+## Criterios de calidad
+
+- **Usabilidad:** entender la comparación de precios y si el desplazamiento
+  compensa el ahorro.
+- **Rendimiento:** respuesta ágil en las búsquedas más frecuentes.
+- **Seguridad:** autenticación protegida y comunicaciones cifradas.
