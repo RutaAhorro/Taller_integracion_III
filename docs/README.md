@@ -19,6 +19,9 @@
 - [Plan de realización del Sprint 3](Guias/PLAN_REALIZACION_SPRINT3.md): orden
   de las tareas, ruta crítica y quién espera a quién.
 - [Contextos IA breves](Guias/GUIA_CONTEXTO_IA.md): mantenimiento y regeneración.
+- [Contrato de artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md): cómo se
+  identifica un producto entre Catálogo, Listas, IA y Rutas, y los endpoints de
+  artículos (SUP-321).
 
 ## Historial del refactor — no ejecutar como recetas actuales
 
