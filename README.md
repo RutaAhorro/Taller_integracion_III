@@ -213,6 +213,7 @@ Fortio es una herramienta de pruebas, no un servicio necesario para la aplicaci�
 - [Propiedad de datos y permisos](docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md).
 - [Control de scraping desacoplado](docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md).
 - [Flujo de ramas y pull requests](docs/Guias/GUIA_GITFLOW_Y_PR.md).
+- [Barrido de código: tests, mocks y hardcodeo](docs/Guias/GUIA_BARRIDO_CODIGO.md).
 
 Las investigaciones y los documentos académicos formales se consultan en el
 Drive del equipo. Los requisitos del repositorio describen también objetivos
