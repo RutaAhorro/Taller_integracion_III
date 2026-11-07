@@ -1,0 +1,5 @@
+# Scripts que se ejecutan dentro de contenedores Linux (PostgreSQL, CI).
+# Con CRLF, bash falla con `bash\r` y psql puede leer mal el archivo.
+# Forzar LF evita el problema en clones de Windows con core.autocrlf activo.
+*.sh  text eol=lf
+*.sql text eol=lf
