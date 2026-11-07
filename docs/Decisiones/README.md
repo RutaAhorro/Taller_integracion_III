@@ -24,7 +24,7 @@ Una decisión nueva va en un archivo nuevo con el número siguiente. Una decisi�
 | 08 | [Rate limit en Redis que falla cerrado](08_Rate_limit_falla_cerrado.md) | Vigente |
 | 09 | [Logout del lado del servidor](09_Logout_en_servidor.md) | Vigente (#124) |
 | 10 | [Componentes opcionales por perfil u opt-in](10_Componentes_opcionales.md) | Vigente |
-| 11 | [Motor de rutas en Go en vez de Python](11_Motor_de_rutas_en_Go.md) | Aceptada, en curso (SUP-348) |
+| 11 | [Motor de rutas en Go en vez de Python](11_Motor_de_rutas_en_Go.md) | Aceptada, implementada (SUP-348) |
 | 12 | [El artículo de lista guarda el id de producto de Catálogo](12_Identidad_del_producto_en_listas.md) | Propuesta (SUP-321) |
 
 [← Arquitectura](../Arquitectura/README.md)

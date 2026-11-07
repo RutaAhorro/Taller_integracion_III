@@ -190,9 +190,9 @@
 | **LLM** | *Large Language Model*. Modelo de lenguaje de gran escala. | Groq y Gemini en la IA conversacional. |
 | **Function calling** | El LLM devuelve una llamada estructurada (JSON) en vez de texto libre. | Etapa 1 del patrón anti-alucinación. |
 | **Alucinación** | Respuesta del LLM inventada o no sustentada en datos. | Mitigada con el patrón de 3 etapas. |
-| **TSP** | *Travelling Salesman Problem*. Encontrar la ruta más corta que visita todos los puntos. | Orden de visita a supermercados (OR-Tools). |
-| **OR-Tools** | Biblioteca de Google para optimización (rutas, asignación). | Motor de rutas. |
-| **OTP** | *OpenTripPlanner*. Planificador de rutas multimodal (incluye transporte público). | Existe `OTPOrToolsStrategy` en el código, pero **no hay un OTP operativo**: la optimización de rutas está pendiente (R2/R3). |
+| **TSP** | *Travelling Salesman Problem*. Encontrar la ruta más corta que visita todos los puntos. | Orden de visita a supermercados. Con 3 paradas como máximo se prueban todas las combinaciones ([D11](Decisiones/11_Motor_de_rutas_en_Go.md)). |
+| **OR-Tools** | Biblioteca de Google para optimización (rutas, asignación). | Descartada para el Motor de rutas ([D11](Decisiones/11_Motor_de_rutas_en_Go.md)). |
+| **OTP** | *OpenTripPlanner*. Planificador de rutas multimodal (incluye transporte público). | **No hay un OTP operativo** ni código que lo use: el transporte público queda fuera del Sprint 3. |
 | **Haversine** | Fórmula de distancia entre dos coordenadas sobre una esfera. | Prototipo de ruta ficticia. |
 | **Greedy** | Algoritmo voraz: elige la mejor opción local en cada paso. | Cálculo TSP inicial del prototipo. |
 

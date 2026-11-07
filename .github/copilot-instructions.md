@@ -22,7 +22,7 @@
   distintos (`admin`/`colaborador`/`registrado` frente a `basico`/`premium`).
 - IA consulta Catálogo por HTTP, nunca PostgreSQL. Pipeline: extracción LLM,
   filtrado determinista y explicación solo con datos validados.
-- Motor FastAPI: CRUD de listas; artículos/optimización pendientes. IA/listas no
+- Motor Go (`net/http`, D11): CRUD de listas; artículos/optimización pendientes. IA/listas no
   están acreditados como servicios desplegados en el inventario de Sprint 2.
 - No hay un OTP operativo ni un servicio monolítico `backend/api` vigente.
 
@@ -38,6 +38,16 @@
 - No asegurar integración, despliegue o rendimiento por un test unitario exitoso.
 - Frontend: `npm run build` tolera fallos de `tsc`; comprobar tipos por separado.
 - Para localizar código usar búsquedas de símbolos/imports, no inventarios completos.
+- Nombres descriptivos en español para variables, parámetros y receptores
+  (`configuracion`, `listaID`, `respuesta`), nunca `c`, `p`, `u` o `l`. Sin
+  excepciones por convención del lenguaje: `peticion`/`respuesta` en vez de
+  `r`/`w`, `contexto`, `errorObtenido`, `prueba` e `indice`; no todo el equipo
+  programa en ese lenguaje.
+- Código comentado y seccionado: comentario de paquete/archivo que explique su
+  rol, comentario en cada función o tipo (qué hace y por qué), bloques
+  `// ===== Sección =====` por tema y constantes con nombre en vez de números
+  sueltos. Comentar el porqué, no repetir el código. Formatear con la
+  herramienta del lenguaje (`gofmt`, `ruff format`, Prettier).
 
 ## Mantenimiento de este contexto
 
@@ -49,12 +59,12 @@ Editar las instrucciones manuales en `CLAUDE.md`; ejecutar
 
 ## Contextos por servicio
 
-- Gateway: `backend/gateway/CLAUDE.md`.
-- Identidad: `backend/identidad/CLAUDE.md`.
-- Catálogo: `backend/catalogo/CLAUDE.md`.
-- Control de scraping: `backend/control_scraping/CLAUDE.md`.
-- Scraper Go: `backend/scraper_go/CLAUDE.md`.
-- Bot Discord: `backend/bot_discord/CLAUDE.md`.
-- IA conversacional: `backend/ia_conversacional/CLAUDE.md`.
-- Motor de rutas / Listas: `backend/motor_rutas/CLAUDE.md`.
-- Frontend: `frontend/web/CLAUDE.md`.
+- Gateway: `backend\gateway/CLAUDE.md`.
+- Identidad: `backend\identidad/CLAUDE.md`.
+- Catálogo: `backend\catalogo/CLAUDE.md`.
+- Control de scraping: `backend\control_scraping/CLAUDE.md`.
+- Scraper Go: `backend\scraper_go/CLAUDE.md`.
+- Bot Discord: `backend\bot_discord/CLAUDE.md`.
+- IA conversacional: `backend\ia_conversacional/CLAUDE.md`.
+- Motor de rutas / Listas: `backend\motor_rutas/CLAUDE.md`.
+- Frontend: `frontend\web/CLAUDE.md`.

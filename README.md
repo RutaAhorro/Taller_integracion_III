@@ -27,7 +27,7 @@ El inventario de clúster informado por el equipo para el cierre del Sprint 2
 incluye estos nueve componentes. **No es una consulta en vivo del clúster.**
 El código incluye además:
 
-- **Motor de rutas/Listas (FastAPI):** CRUD de listas implementado y opcional en
+- **Motor de rutas/Listas (Go):** CRUD de listas implementado y opcional en
   Compose; gestión de artículos y optimización de rutas pendientes.
 - **IA conversacional (FastAPI):** consulta Catálogo por HTTP y usa Gemini/Groq.
   Existe en Compose, pero el cliente web y el enrutamiento del chat todavía no

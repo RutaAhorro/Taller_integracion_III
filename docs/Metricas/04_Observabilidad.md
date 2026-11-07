@@ -10,7 +10,7 @@
 | Identidad (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/identidad/internal/server/server.go` |
 | Catálogo (evento `http_request`) | `request_id`, `path`, `status`, `duration_ms` | `backend/catalogo/internal/server/server.go` |
 | Control de scraping (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/control_scraping/internal/middleware/runtime.go` |
-| Motor de rutas | `duration_ms` y datos de la petición | `backend/motor_rutas/app/main.py` |
+| Motor de rutas (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/motor_rutas/internal/httpapi/server.go` |
 
 Los servicios Go usan `slog`, que escribe logs estructurados de clave y valor.
 
