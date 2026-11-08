@@ -24,7 +24,12 @@ type Config struct {
 	IdleTimeout           time.Duration
 	ShutdownTimeout       time.Duration
 	ReadinessTimeout      time.Duration
+	KeepAliveTimeout      time.Duration
 	TrustedProxies        []netip.Prefix
+	CatalogPrefixes       []string
+	IdentityPrefixes      []string
+	RoutesPrefixes        []string
+	ScrapingPrefixes      []string
 }
 
 // Load reads configuration without credentials or database access.
@@ -90,6 +95,7 @@ func Load(getenv func(string) string) (Config, error) {
 		{"GATEWAY_IDLE_TIMEOUT", &c.IdleTimeout, 60 * time.Second},
 		{"GATEWAY_SHUTDOWN_TIMEOUT", &c.ShutdownTimeout, 10 * time.Second},
 		{"GATEWAY_READINESS_TIMEOUT", &c.ReadinessTimeout, 2 * time.Second},
+		{"GATEWAY_KEEPALIVE_TIMEOUT", &c.KeepAliveTimeout, 30 * time.Second},
 	} {
 		*item.value = item.fallback
 		if value := getenv(item.name); value != "" {
@@ -100,6 +106,11 @@ func Load(getenv func(string) string) (Config, error) {
 			*item.value = duration
 		}
 	}
+
+	c.CatalogPrefixes = parsePrefixList(getenv("GATEWAY_CATALOGO_PREFIXES"), []string{"/api/v1/productos", "/api/v1/admin/productos"})
+	c.IdentityPrefixes = parsePrefixList(getenv("GATEWAY_IDENTIDAD_PREFIXES"), []string{"/api/v1/auth", "/api/v1/admin/usuarios"})
+	c.RoutesPrefixes = parsePrefixList(getenv("GATEWAY_RUTAS_PREFIXES"), []string{"/api/v1/listas"})
+	c.ScrapingPrefixes = parsePrefixList(getenv("GATEWAY_SCRAPING_PREFIXES"), []string{"/api/v1/scraper", "/swagger"})
 
 	if value := getenv("GATEWAY_TRUSTED_PROXIES"); value != "" {
 		for _, entry := range strings.Split(value, ",") {
@@ -135,4 +146,22 @@ func parseOrigin(name, value string) (*url.URL, error) {
 		}
 	}
 	return target, nil
+}
+
+func parsePrefixList(val string, fallback []string) []string {
+	if val == "" {
+		return fallback
+	}
+	parts := strings.Split(val, ",")
+	res := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			res = append(res, p)
+		}
+	}
+	if len(res) == 0 {
+		return fallback
+	}
+	return res
 }

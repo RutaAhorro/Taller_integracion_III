@@ -1,4 +1,4 @@
-package proxy
+package integration_test
 
 import (
 	"encoding/json"
@@ -16,7 +16,7 @@ func TestRutasRoutingAndFailureIsolation(t *testing.T) {
 				t.Error("identidad de header falsificado llegó al servicio")
 			}
 			w.Header().Set("X-Upstream", name)
-			json.NewEncoder(w).Encode(map[string]string{"path": r.URL.EscapedPath(), "cookie": r.Header.Get("Cookie")})
+			_ = json.NewEncoder(w).Encode(map[string]string{"path": r.URL.EscapedPath(), "cookie": r.Header.Get("Cookie")})
 		}))
 	}
 	backend, catalog, rutas := upstream("backend"), upstream("catalogo"), upstream("rutas")
@@ -83,7 +83,7 @@ func TestRutasDiagnosticDoesNotWithdrawGateway(t *testing.T) {
 			if r.URL.Path != path {
 				t.Errorf("probe inesperado %s", r.URL.Path)
 			}
-			w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
+			_, _ = w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
 		}))
 	}
 	b, rutas := healthy("/api/v1/health"), healthy("/_rutas/ready")

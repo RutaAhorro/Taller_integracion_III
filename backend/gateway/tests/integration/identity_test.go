@@ -1,4 +1,4 @@
-package proxy
+package integration_test
 
 import (
 	"encoding/json"
@@ -17,7 +17,7 @@ func TestIdentityRoutingAndFailureIsolation(t *testing.T) {
 			w.Header().Set("X-Upstream", name)
 			w.Header().Add("Set-Cookie", "jwt=issued-token; Path=/; HttpOnly; Secure; SameSite=Lax")
 			w.Header().Add("Set-Cookie", "other=preserved; Path=/")
-			json.NewEncoder(w).Encode(map[string]string{"path": r.URL.EscapedPath(), "query": r.URL.RawQuery, "cookie": r.Header.Get("Cookie"), "origin": r.Header.Get("Origin")})
+			_ = json.NewEncoder(w).Encode(map[string]string{"path": r.URL.EscapedPath(), "query": r.URL.RawQuery, "cookie": r.Header.Get("Cookie"), "origin": r.Header.Get("Origin")})
 		}))
 	}
 	backend, catalog, identity := upstream("backend"), upstream("catalogo"), upstream("identidad")
@@ -66,16 +66,17 @@ func TestIdentityRoutingAndFailureIsolation(t *testing.T) {
 		}
 	}
 }
+
 func TestIdentityDiagnosticAndLocalReadiness(t *testing.T) {
 	b := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
+		_, _ = w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
 	}))
 	defer b.Close()
 	i := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/_identidad/ready" {
 			t.Error(r.URL.Path)
 		}
-		w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
+		_, _ = w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
 	}))
 	defer i.Close()
 	g := gatewayFor(t, b.URL, map[string]string{"IDENTIDAD_URL": i.URL}, nil)
