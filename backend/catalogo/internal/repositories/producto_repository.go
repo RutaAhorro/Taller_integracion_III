@@ -143,7 +143,7 @@ func (r *gormProductoRepository) Listar(ctx context.Context, filtro domain.Filtr
 	`
 
 	items := []domain.ProductoDTO{}
-	err := paginar(q.Select(selectCols).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
+	err := paginar(q.Select(selectCols).Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
 	if err != nil {
 		return nil, 0, err

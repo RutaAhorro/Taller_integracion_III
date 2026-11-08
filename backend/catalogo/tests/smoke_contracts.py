@@ -97,7 +97,6 @@ for path in (
     '/api/v1/productos?categoria=Lacteos&supermercado=Jumbo',
     '/api/v1/productos?precio_min=900&precio_max=1300&en_oferta=true',
     '/api/v1/productos?en_oferta=false&sort_by=marca',
-    '/api/v1/productos?en_stock=false',
     '/api/v1/productos/buscar?q=Contrato&page=1&limit=5',
     '/api/v1/productos/' + fresh,
     '/api/v1/productos/' + stale,
@@ -157,6 +156,13 @@ for email, expected in (('registered.sup267@example.test', 403), ('admin.sup267@
         ):
             compare(path, opener=opener)
         compare('/api/v1/admin/productos?q=le', 400, opener=opener)
+
+# SUP-331: la API legacy de referencia ignoraba el filtro en_stock en Listar.
+# Catálogo ahora filtra correctamente los productos sin stock.
+stale_page = catalog('/api/v1/productos?en_stock=false')
+assert stale_page['total_registros'] == 1 and len(stale_page['data']) == 1
+assert not stale_page['data'][0]['en_stock']
+checks.append('GET /api/v1/productos?en_stock=false: compatible (SUP-331)')
 
 detail = catalog('/api/v1/productos/' + fresh)
 assert detail['precio_normal'] == 1290 and detail['precio_oferta'] == 990 and detail['en_stock']
