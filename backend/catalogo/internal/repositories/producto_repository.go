@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -18,97 +19,112 @@ func NewProductoRepository(db *gorm.DB) domain.ProductoRepository {
 	return &gormProductoRepository{db: db}
 }
 
-// Listar ejecuta la consulta dinámica sobre scraper.productos_crudos con joins a sucursales,
-// cadenas y capturas de precio, aplicando filtros, ordenamiento y paginación.
-func (r *gormProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
-	// 1. Consulta base uniendo productos, sucursales, cadenas y la captura de precio más reciente
-	baseQuery := r.db.WithContext(ctx).
+// consultaBase centraliza los JOINs y los filtros comunes de Listar y ListarParaAdmin.
+func (r *gormProductoRepository) consultaBase(ctx context.Context, filtro domain.FiltroProductosDTO) *gorm.DB {
+	q := r.db.WithContext(ctx).
 		Table("scraper.productos_crudos pc").
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
 		Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true")
 
-	// 2. Encadenamiento dinámico de cláusulas .Where()
 	if filtro.Query != "" {
-		qPattern := "%" + filtro.Query + "%"
-		baseQuery = baseQuery.Where("(pc.titulo_crudo ILIKE ? OR pc.marca_cruda ILIKE ? OR pc.categoria_cruda ILIKE ?)", qPattern, qPattern, qPattern)
+		p := "%" + filtro.Query + "%"
+		q = q.Where("(pc.titulo_crudo ILIKE ? OR pc.marca_cruda ILIKE ? OR pc.categoria_cruda ILIKE ? OR pc.sku ILIKE ?)", p, p, p, p)
 	}
-
-	if filtro.Categoria != "" {
-		terms := strings.FieldsFunc(filtro.Categoria, func(r rune) bool {
-			return r == ' ' || r == ',' || r == '/' || r == ';'
-		})
-		conditions := make([]string, 0, len(terms))
-		args := make([]interface{}, 0, len(terms))
-		for _, term := range terms {
-			if strings.EqualFold(term, "y") || strings.EqualFold(term, "e") {
-				continue
-			}
-			term = strings.ToLower(term)
-			switch {
-			case strings.HasSuffix(term, "es") && len(term) > 4:
-				term = strings.TrimSuffix(term, "es")
-			case strings.HasSuffix(term, "s") && len(term) > 3:
-				term = strings.TrimSuffix(term, "s")
-			}
-			conditions = append(conditions, "pc.titulo_crudo ILIKE ?")
-			args = append(args, "%"+term+"%")
-		}
-		if len(conditions) > 0 {
-			baseQuery = baseQuery.Where("("+strings.Join(conditions, " OR ")+")", args...)
-		}
+	if filtro.SKU != "" {
+		q = q.Where("pc.sku ILIKE ?", "%"+filtro.SKU+"%")
 	}
-
+	if filtro.EnStock != nil {
+		q = q.Where("pc.en_stock = ?", *filtro.EnStock)
+	}
 	if filtro.Supermercado != "" {
-		baseQuery = baseQuery.Where("cs.nombre ILIKE ?", "%"+filtro.Supermercado+"%")
+		q = q.Where("cs.nombre ILIKE ?", "%"+filtro.Supermercado+"%")
 	}
-
 	if filtro.Marca != "" {
-		baseQuery = baseQuery.Where("pc.marca_cruda ILIKE ?", "%"+filtro.Marca+"%")
+		q = q.Where("pc.marca_cruda ILIKE ?", "%"+filtro.Marca+"%")
 	}
-
 	if filtro.PrecioMin != nil {
-		baseQuery = baseQuery.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) >= ?", *filtro.PrecioMin)
+		q = q.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) >= ?", *filtro.PrecioMin)
 	}
-
 	if filtro.PrecioMax != nil {
-		baseQuery = baseQuery.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) <= ?", *filtro.PrecioMax)
+		q = q.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) <= ?", *filtro.PrecioMax)
 	}
-
 	if filtro.EnOferta != nil {
 		if *filtro.EnOferta {
-			baseQuery = baseQuery.Where("cp.precio_oferta IS NOT NULL AND cp.precio_oferta < cp.precio_normal")
+			q = q.Where("cp.precio_oferta IS NOT NULL AND cp.precio_oferta < cp.precio_normal")
 		} else {
-			baseQuery = baseQuery.Where("cp.precio_oferta IS NULL OR cp.precio_oferta >= cp.precio_normal")
+			q = q.Where("(cp.precio_oferta IS NULL OR cp.precio_oferta >= cp.precio_normal)")
 		}
 	}
+	return q
+}
 
-	// 3. Conteo total de registros sin paginar
-	var total int64
-	if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+// filtroCategoriaPublico busca cada término de la categoría (singularizado) en el título.
+func filtroCategoriaPublico(q *gorm.DB, categoria string) *gorm.DB {
+	terms := strings.FieldsFunc(categoria, func(r rune) bool {
+		return r == ' ' || r == ',' || r == '/' || r == ';'
+	})
+	conditions := make([]string, 0, len(terms))
+	args := make([]interface{}, 0, len(terms))
+	for _, term := range terms {
+		if strings.EqualFold(term, "y") || strings.EqualFold(term, "e") {
+			continue
+		}
+		term = strings.ToLower(term)
+		switch {
+		case strings.HasSuffix(term, "es") && len(term) > 4:
+			term = strings.TrimSuffix(term, "es")
+		case strings.HasSuffix(term, "s") && len(term) > 3:
+			term = strings.TrimSuffix(term, "s")
+		}
+		conditions = append(conditions, "pc.titulo_crudo ILIKE ?")
+		args = append(args, "%"+term+"%")
 	}
+	if len(conditions) == 0 {
+		return q
+	}
+	return q.Where("("+strings.Join(conditions, " OR ")+")", args...)
+}
 
-	// 4. Configurar cláusula de ordenamiento seguro
-	direction := "ASC"
+// ordenSeguro construye la cláusula ORDER BY sólo con columnas permitidas.
+func ordenSeguro(filtro domain.FiltroProductosDTO) string {
+	dir := "ASC"
 	if strings.EqualFold(filtro.Order, "desc") {
-		direction = "DESC"
+		dir = "DESC"
 	}
-
-	var orderClause string
+	col := "COALESCE(cp.precio_oferta, cp.precio_normal, 0)" // "precio" por defecto
 	switch strings.ToLower(filtro.SortBy) {
 	case "nombre":
-		orderClause = fmt.Sprintf("pc.titulo_crudo %s, pc.id ASC", direction)
+		col = "pc.titulo_crudo"
 	case "marca":
-		orderClause = fmt.Sprintf("pc.marca_cruda %s, pc.id ASC", direction)
-	default: // "precio" por defecto
-		orderClause = fmt.Sprintf("COALESCE(cp.precio_oferta, cp.precio_normal, 0) %s, pc.id ASC", direction)
+		col = "pc.marca_cruda"
+	case "sku":
+		col = "pc.sku"
+	case "fecha", "ultima_extraccion":
+		col = "pc.ultima_extraccion_el"
 	}
+	return fmt.Sprintf("%s %s, pc.id ASC", col, dir)
+}
 
-	// 5. Paginación (.Offset y .Limit)
+// paginar aplica Limit/Offset a partir de Page y Limit del filtro.
+func paginar(q *gorm.DB, filtro domain.FiltroProductosDTO) *gorm.DB {
 	offset := (filtro.Page - 1) * filtro.Limit
 	if offset < 0 {
 		offset = 0
+	}
+	return q.Limit(filtro.Limit).Offset(offset)
+}
+
+// Listar ejecuta la consulta pública del catálogo. Los productos con stock se muestran primero.
+func (r *gormProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
+	q := r.consultaBase(ctx, filtro)
+	if filtro.Categoria != "" {
+		q = filtroCategoriaPublico(q, filtro.Categoria)
+	}
+
+	var total int64
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
 	selectCols := `
@@ -126,106 +142,25 @@ func (r *gormProductoRepository) Listar(ctx context.Context, filtro domain.Filtr
 		pc.en_stock
 	`
 
-	var items []domain.ProductoDTO
-	err := baseQuery.
-		Select(selectCols).
-		Order(orderClause).
-		Limit(filtro.Limit).
-		Offset(offset).
+	items := []domain.ProductoDTO{}
+	err := paginar(q.Select(selectCols).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
 	if err != nil {
 		return nil, 0, err
 	}
-
-	if items == nil {
-		items = []domain.ProductoDTO{}
-	}
-
 	return items, total, nil
 }
 
-// ListarParaAdmin ejecuta la consulta dinámica para el dashboard administrativo,
-// agregando filtros por SKU y disponibilidad de stock, y proyectando ProductoAdminDTO con datos técnicos.
+// ListarParaAdmin ejecuta la consulta del dashboard administrativo y proyecta ProductoAdminDTO.
 func (r *gormProductoRepository) ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
-	// 1. Consulta base uniendo productos, sucursales, cadenas y la captura de precio más reciente
-	baseQuery := r.db.WithContext(ctx).
-		Table("scraper.productos_crudos pc").
-		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
-		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
-		Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true")
-
-	// 2. Encadenamiento dinámico de cláusulas .Where()
-	if filtro.Query != "" {
-		qPattern := "%" + filtro.Query + "%"
-		baseQuery = baseQuery.Where("(pc.titulo_crudo ILIKE ? OR pc.marca_cruda ILIKE ? OR pc.categoria_cruda ILIKE ? OR pc.sku ILIKE ?)", qPattern, qPattern, qPattern, qPattern)
-	}
-
-	if filtro.SKU != "" {
-		baseQuery = baseQuery.Where("pc.sku ILIKE ?", "%"+filtro.SKU+"%")
-	}
-
-	if filtro.EnStock != nil {
-		baseQuery = baseQuery.Where("pc.en_stock = ?", *filtro.EnStock)
-	}
-
+	q := r.consultaBase(ctx, filtro)
 	if filtro.Categoria != "" {
-		baseQuery = baseQuery.Where("pc.categoria_cruda ILIKE ?", "%"+filtro.Categoria+"%")
+		q = q.Where("pc.categoria_cruda ILIKE ?", "%"+filtro.Categoria+"%")
 	}
 
-	if filtro.Supermercado != "" {
-		baseQuery = baseQuery.Where("cs.nombre ILIKE ?", "%"+filtro.Supermercado+"%")
-	}
-
-	if filtro.Marca != "" {
-		baseQuery = baseQuery.Where("pc.marca_cruda ILIKE ?", "%"+filtro.Marca+"%")
-	}
-
-	if filtro.PrecioMin != nil {
-		baseQuery = baseQuery.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) >= ?", *filtro.PrecioMin)
-	}
-
-	if filtro.PrecioMax != nil {
-		baseQuery = baseQuery.Where("COALESCE(cp.precio_oferta, cp.precio_normal, 0) <= ?", *filtro.PrecioMax)
-	}
-
-	if filtro.EnOferta != nil {
-		if *filtro.EnOferta {
-			baseQuery = baseQuery.Where("cp.precio_oferta IS NOT NULL AND cp.precio_oferta < cp.precio_normal")
-		} else {
-			baseQuery = baseQuery.Where("cp.precio_oferta IS NULL OR cp.precio_oferta >= cp.precio_normal")
-		}
-	}
-
-	// 3. Conteo total de registros sin paginar
 	var total int64
-	if err := baseQuery.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return nil, 0, err
-	}
-
-	// 4. Configurar cláusula de ordenamiento seguro
-	direction := "ASC"
-	if strings.EqualFold(filtro.Order, "desc") {
-		direction = "DESC"
-	}
-
-	var orderClause string
-	switch strings.ToLower(filtro.SortBy) {
-	case "nombre":
-		orderClause = fmt.Sprintf("pc.titulo_crudo %s, pc.id ASC", direction)
-	case "marca":
-		orderClause = fmt.Sprintf("pc.marca_cruda %s, pc.id ASC", direction)
-	case "sku":
-		orderClause = fmt.Sprintf("pc.sku %s, pc.id ASC", direction)
-	case "fecha", "ultima_extraccion":
-		orderClause = fmt.Sprintf("pc.ultima_extraccion_el %s, pc.id ASC", direction)
-	default: // "precio" por defecto
-		orderClause = fmt.Sprintf("COALESCE(cp.precio_oferta, cp.precio_normal, 0) %s, pc.id ASC", direction)
-	}
-
-	// 5. Paginación (.Offset y .Limit)
-	offset := (filtro.Page - 1) * filtro.Limit
-	if offset < 0 {
-		offset = 0
 	}
 
 	selectCols := `
@@ -245,26 +180,22 @@ func (r *gormProductoRepository) ListarParaAdmin(ctx context.Context, filtro dom
 		pc.sucursal_id
 	`
 
-	var items []domain.ProductoAdminDTO
-	err := baseQuery.
-		Select(selectCols).
-		Order(orderClause).
-		Limit(filtro.Limit).
-		Offset(offset).
+	items := []domain.ProductoAdminDTO{}
+	err := paginar(q.Select(selectCols).Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
 	if err != nil {
 		return nil, 0, err
 	}
-
-	if items == nil {
-		items = []domain.ProductoAdminDTO{}
-	}
-
 	return items, total, nil
 }
 
 // ObtenerPorID busca el producto por su UUID en scraper.productos_crudos e incluye su historial de precios
 func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
+	// Un ID que no es UUID no puede existir: se responde "no encontrado" sin consultar la BD.
+	if _, err := uuid.Parse(id); err != nil {
+		return nil, nil
+	}
+
 	selectCols := `
 		pc.id::text AS id,
 		pc.titulo_crudo AS nombre,
@@ -281,38 +212,27 @@ func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*
 	`
 
 	var baseProd domain.ProductoDTO
-	res := r.db.WithContext(ctx).
-		Table("scraper.productos_crudos pc").
-		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
-		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
-		Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true").
-		Where("pc.id::text = ?", id).
+	res := r.consultaBase(ctx, domain.FiltroProductosDTO{}).
+		Where("pc.id = ?::uuid", id).
 		Select(selectCols).
 		Limit(1).
 		Scan(&baseProd)
-
 	if res.Error != nil {
 		return nil, res.Error
 	}
-
 	if res.RowsAffected == 0 || baseProd.ID == "" {
 		return nil, nil
 	}
 
-	var historial []domain.HistorialPrecioDTO
+	historial := []domain.HistorialPrecioDTO{}
 	err := r.db.WithContext(ctx).
 		Table("scraper.capturas_precios").
-		Where("producto_crudo_id::text = ?", id).
+		Where("producto_crudo_id = ?::uuid", id).
 		Order("capturado_el DESC").
 		Select("precio_normal, precio_oferta, capturado_el").
 		Scan(&historial).Error
-
 	if err != nil {
 		return nil, err
-	}
-
-	if historial == nil {
-		historial = []domain.HistorialPrecioDTO{}
 	}
 
 	return &domain.ProductoDetalleDTO{
