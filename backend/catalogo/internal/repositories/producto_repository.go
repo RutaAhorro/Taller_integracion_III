@@ -92,18 +92,18 @@ func ordenSeguro(filtro domain.FiltroProductosDTO) string {
 	if strings.EqualFold(filtro.Order, "desc") {
 		dir = "DESC"
 	}
-	col := "COALESCE(cp.precio_oferta, cp.precio_normal, 0)" // "precio" por defecto
 	switch strings.ToLower(filtro.SortBy) {
 	case "nombre":
-		col = "pc.titulo_crudo"
+		return fmt.Sprintf("pc.titulo_crudo %s, pc.id ASC", dir)
 	case "marca":
-		col = "pc.marca_cruda"
+		return fmt.Sprintf("pc.marca_cruda %s, pc.id ASC", dir)
 	case "sku":
-		col = "pc.sku"
+		return fmt.Sprintf("pc.sku %s, pc.id ASC", dir)
 	case "fecha", "ultima_extraccion":
-		col = "pc.ultima_extraccion_el"
+		return fmt.Sprintf("pc.ultima_extraccion_el %s, pc.id ASC", dir)
+	default: // "precio" por defecto: precios faltantes (NULL) al final
+		return fmt.Sprintf("COALESCE(cp.precio_oferta, cp.precio_normal) %s NULLS LAST, pc.id ASC", dir)
 	}
-	return fmt.Sprintf("%s %s, pc.id ASC", col, dir)
 }
 
 // paginar aplica Limit/Offset a partir de Page y Limit del filtro.
@@ -143,7 +143,7 @@ func (r *gormProductoRepository) Listar(ctx context.Context, filtro domain.Filtr
 	`
 
 	items := []domain.ProductoDTO{}
-	err := paginar(q.Select(selectCols).Order(ordenSeguro(filtro)), filtro).
+	err := paginar(q.Select(selectCols).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
 	if err != nil {
 		return nil, 0, err
@@ -191,10 +191,11 @@ func (r *gormProductoRepository) ListarParaAdmin(ctx context.Context, filtro dom
 
 // ObtenerPorID busca el producto por su UUID en scraper.productos_crudos e incluye su historial de precios
 func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
-	// Un ID que no es UUID no puede existir: se responde "no encontrado" sin consultar la BD.
-	if _, err := uuid.Parse(id); err != nil {
+	parsedUUID, err := uuid.Parse(id)
+	if err != nil {
 		return nil, nil
 	}
+	canonicalID := parsedUUID.String()
 
 	selectCols := `
 		pc.id::text AS id,
@@ -213,7 +214,7 @@ func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*
 
 	var baseProd domain.ProductoDTO
 	res := r.consultaBase(ctx, domain.FiltroProductosDTO{}).
-		Where("pc.id = ?::uuid", id).
+		Where("pc.id = ?::uuid", canonicalID).
 		Select(selectCols).
 		Limit(1).
 		Scan(&baseProd)
@@ -225,9 +226,9 @@ func (r *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*
 	}
 
 	historial := []domain.HistorialPrecioDTO{}
-	err := r.db.WithContext(ctx).
+	err = r.db.WithContext(ctx).
 		Table("scraper.capturas_precios").
-		Where("producto_crudo_id = ?::uuid", id).
+		Where("producto_crudo_id = ?::uuid", canonicalID).
 		Order("capturado_el DESC").
 		Select("precio_normal, precio_oferta, capturado_el").
 		Scan(&historial).Error
