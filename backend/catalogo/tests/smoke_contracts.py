@@ -96,8 +96,6 @@ for path in (
     '/api/v1/productos?q=Contrato&marca=MarcaContrato',
     '/api/v1/productos?categoria=Lacteos&supermercado=Jumbo',
     '/api/v1/productos?precio_min=900&precio_max=1300&en_oferta=true',
-    '/api/v1/productos?en_oferta=false&sort_by=marca',
-    '/api/v1/productos?en_stock=false',
     '/api/v1/productos/buscar?q=Contrato&page=1&limit=5',
     '/api/v1/productos/' + fresh,
     '/api/v1/productos/' + stale,
@@ -106,6 +104,7 @@ for path in (
 for path in ('/api/v1/productos?q=le', '/api/v1/productos/buscar', '/api/v1/productos/buscar?q=le'):
     compare(path, 400)
 compare('/api/v1/productos/missing-product', 404)
+compare('/api/v1/productos/urn:uuid:00000000-0000-4000-8000-000000000002', 404)
 compare('/api/v1/productos', 405, method='PUT')
 compare('/api/v1/admin/productos', 401)
 compare('/api/v1/admin/productos', 401, headers={'X-User-ID': 'forged-user', 'X-User-Role': 'admin'})
@@ -158,9 +157,37 @@ for email, expected in (('registered.sup267@example.test', 403), ('admin.sup267@
             compare(path, opener=opener)
         compare('/api/v1/admin/productos?q=le', 400, opener=opener)
 
+# SUP-331: la API legacy de referencia ignoraba el filtro en_stock en Listar.
+# Catálogo ahora filtra correctamente los productos sin stock.
+stale_page = catalog('/api/v1/productos?en_stock=false')
+assert stale_page['total_registros'] == 1 and len(stale_page['data']) == 1
+assert not stale_page['data'][0]['en_stock']
+checks.append('GET /api/v1/productos?en_stock=false: compatible (SUP-331)')
+
+# SUP-331: la API legacy de referencia ordenaba por marca sin priorizar stock.
+# Catálogo ahora prioriza en_stock DESC antes del criterio de ordenación.
+oferta_page = catalog('/api/v1/productos?en_oferta=false&sort_by=marca')
+assert oferta_page['total_registros'] >= 1
+stocks = [p['en_stock'] for p in oferta_page['data']]
+if True in stocks and False in stocks:
+    first_false = stocks.index(False)
+    assert not any(stocks[first_false:]), "Los productos sin stock deben quedar después de los que tienen stock"
+checks.append('GET /api/v1/productos?en_oferta=false&sort_by=marca: prioridad stock verificada (SUP-331)')
+
 detail = catalog('/api/v1/productos/' + fresh)
 assert detail['precio_normal'] == 1290 and detail['precio_oferta'] == 990 and detail['en_stock']
 assert [p['precio_normal'] for p in detail['historial']] == [1290, 1490]
+
+# SUP-331: Normalización de formato URN UUID en detalle de producto
+urn_detail = catalog('/api/v1/productos/urn:uuid:' + fresh)
+assert urn_detail['id'] == fresh and urn_detail['precio'] == 990
+checks.append('GET /api/v1/productos/urn:uuid:...: normalizado y compatible (SUP-331)')
+
+# SUP-331: Comprobación de orden prioritario de stock
+page_order = catalog('/api/v1/productos?limit=5')
+assert page_order['total_registros'] >= 2
+assert page_order['data'][0]['en_stock'] is True, "El primer producto debe tener stock"
+checks.append('GET /api/v1/productos: prioridad stock verificado (SUP-331)')
 # Brecha preexistente: la lectura actual no aplica caducidad a precios antiguos.
 old = catalog('/api/v1/productos/' + stale)
 assert old['precio'] == 1990 and not old['en_stock']

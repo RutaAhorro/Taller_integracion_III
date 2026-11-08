@@ -196,6 +196,16 @@ func TestProductoHandler_ObtenerDetalleProducto(t *testing.T) {
 			t.Fatalf("se esperaba HTTP 404, se obtuvo %d. Body: %s", w.Code, w.Body.String())
 		}
 	})
+
+	t.Run("404 Not Found cuando se consulta UUID no existente en formato URN (SUP-331)", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodGet, "/api/v1/productos/urn:uuid:00000000-0000-4000-8000-000000000002", nil)
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("se esperaba HTTP 404, se obtuvo %d. Body: %s", w.Code, w.Body.String())
+		}
+	})
 }
 
 func TestProductoHandler_ObtenerProductosAdmin(t *testing.T) {
