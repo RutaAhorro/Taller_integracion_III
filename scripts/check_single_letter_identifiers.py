@@ -9,8 +9,8 @@ listaID, respuesta), nunca c, p, u o l...".
 Excepción permitida: '_' (identificador mudo o descarte).
 
 Uso:
-  python3 scripts/check_single_letter_identifiers.py [--base origin/develop]
-  python3 scripts/check_single_letter_identifiers.py --staged
+  python3 scripts/check_single_letter_identifiers.py [--base origin/develop] [--warning]
+  python3 scripts/check_single_letter_identifiers.py --staged [--warning]
   python3 scripts/check_single_letter_identifiers.py --file ruta/al/archivo.go
 """
 
@@ -26,16 +26,14 @@ import sys
 EXTENSIONES_VALIDAS = {".go", ".py", ".ts", ".tsx", ".js", ".mjs"}
 
 
-def enmascarar_comentarios_y_cadenas(codigo_fuente: str, extension: str) -> str:
+def enmascarar_go(codigo_fuente: str) -> str:
     """
-    Reemplaza comentarios y cadenas literales por espacios, conservando los
-    saltos de linea ('\\n') para preservar exactamente la numeracion de lineas.
+    Reemplaza comentarios y cadenas literales de Go por espacios, conservando
+    los saltos de linea ('\\n') para preservar exactamente la numeracion de lineas.
     """
     resultado_caracteres: list[str] = []
     indice = 0
     total_caracteres = len(codigo_fuente)
-    es_lenguaje_go = (extension == ".go")
-    es_lenguaje_javascript = (extension in {".js", ".mjs", ".ts", ".tsx"})
 
     while indice < total_caracteres:
         # Comentario de una linea //
@@ -62,8 +60,8 @@ def enmascarar_comentarios_y_cadenas(codigo_fuente: str, extension: str) -> str:
                 indice += 2
             continue
 
-        # Cadenas raw en Go o plantillas multilinea en JS/TS
-        if codigo_fuente[indice] == "`" and (es_lenguaje_go or es_lenguaje_javascript):
+        # Cadenas raw en Go `...` (sin secuencias de escape)
+        if codigo_fuente[indice] == "`":
             resultado_caracteres.append(" ")
             indice += 1
             while indice < total_caracteres and codigo_fuente[indice] != "`":
@@ -96,7 +94,7 @@ def enmascarar_comentarios_y_cadenas(codigo_fuente: str, extension: str) -> str:
                 indice += 1
             continue
 
-        # Caracter o cadena con comillas simples '...'
+        # Caracter o runa con comillas simples '...'
         if codigo_fuente[indice] == "'":
             resultado_caracteres.append(" ")
             indice += 1
@@ -119,6 +117,147 @@ def enmascarar_comentarios_y_cadenas(codigo_fuente: str, extension: str) -> str:
         indice += 1
 
     return "".join(resultado_caracteres)
+
+
+def enmascarar_javascript(codigo_fuente: str) -> str:
+    """
+    Analizador lexico con pila de estados para JavaScript y TypeScript.
+    Maneja comentarios, strings, literales RegExp y plantillas con expresiones interpoladas ${...}.
+    """
+    resultado_caracteres: list[str] = []
+    indice = 0
+    total_caracteres = len(codigo_fuente)
+
+    pila_estados: list[str] = ["CODE"]
+    pila_llaves_expresion: list[int] = []
+
+    while indice < total_caracteres:
+        estado_actual = pila_estados[-1]
+
+        # 1. Comentarios de linea //
+        if estado_actual == "CODE" and codigo_fuente[indice:indice + 2] == "//":
+            resultado_caracteres.append("  ")
+            indice += 2
+            while indice < total_caracteres and codigo_fuente[indice] != "\n":
+                resultado_caracteres.append(" ")
+                indice += 1
+            continue
+
+        # 2. Comentarios de bloque /* ... */
+        if estado_actual == "CODE" and codigo_fuente[indice:indice + 2] == "/*":
+            resultado_caracteres.append("  ")
+            indice += 2
+            while indice < total_caracteres and codigo_fuente[indice:indice + 2] != "*/":
+                resultado_caracteres.append("\n" if codigo_fuente[indice] == "\n" else " ")
+                indice += 1
+            if indice < total_caracteres:
+                resultado_caracteres.append("  ")
+                indice += 2
+            continue
+
+        # 3. Expresiones Regulares Literales /.../
+        if estado_actual == "CODE" and codigo_fuente[indice] == "/":
+            posicion_anterior = len(resultado_caracteres) - 1
+            while posicion_anterior >= 0 and resultado_caracteres[posicion_anterior] in " \t\r\n":
+                posicion_anterior -= 1
+            caracter_previo = resultado_caracteres[posicion_anterior] if posicion_anterior >= 0 else ""
+            es_expresion_regular = (caracter_previo in "=(,[{:;!&|?+-*^~><" or caracter_previo == "")
+            if es_expresion_regular:
+                resultado_caracteres.append(" ")
+                indice += 1
+                dentro_clase_caracteres = False
+                while indice < total_caracteres:
+                    caracter_regex = codigo_fuente[indice]
+                    if caracter_regex == "\\":
+                        resultado_caracteres.append("  ")
+                        indice += 2
+                        continue
+                    if caracter_regex == "[" and not dentro_clase_caracteres:
+                        dentro_clase_caracteres = True
+                    elif caracter_regex == "]" and dentro_clase_caracteres:
+                        dentro_clase_caracteres = False
+                    elif caracter_regex == "/" and not dentro_clase_caracteres:
+                        resultado_caracteres.append(" ")
+                        indice += 1
+                        while indice < total_caracteres and codigo_fuente[indice].isalpha():
+                            resultado_caracteres.append(" ")
+                            indice += 1
+                        break
+                    resultado_caracteres.append("\n" if caracter_regex == "\n" else " ")
+                    indice += 1
+                continue
+
+        # 4. Strings con comillas dobles o simples
+        if estado_actual == "CODE" and codigo_fuente[indice] in ('"', "'"):
+            delimitador = codigo_fuente[indice]
+            resultado_caracteres.append(" ")
+            indice += 1
+            while indice < total_caracteres and codigo_fuente[indice] != delimitador:
+                if codigo_fuente[indice] == "\\":
+                    resultado_caracteres.append("  ")
+                    indice += 2
+                    continue
+                resultado_caracteres.append("\n" if codigo_fuente[indice] == "\n" else " ")
+                indice += 1
+            if indice < total_caracteres:
+                resultado_caracteres.append(" ")
+                indice += 1
+            continue
+
+        # 5. Template literals `...`
+        if estado_actual == "CODE" and codigo_fuente[indice] == "`":
+            pila_estados.append("TEMPLATE")
+            resultado_caracteres.append(" ")
+            indice += 1
+            continue
+
+        if estado_actual == "TEMPLATE":
+            if codigo_fuente[indice] == "\\":
+                resultado_caracteres.append("  ")
+                indice += 2
+                continue
+            if codigo_fuente[indice:indice + 2] == "${":
+                pila_estados.append("CODE")
+                pila_llaves_expresion.append(0)
+                resultado_caracteres.append("  ")
+                indice += 2
+                continue
+            if codigo_fuente[indice] == "`":
+                pila_estados.pop()
+                resultado_caracteres.append(" ")
+                indice += 1
+                continue
+            resultado_caracteres.append("\n" if codigo_fuente[indice] == "\n" else " ")
+            indice += 1
+            continue
+
+        # 6. Llaves dentro de expresion ${...}
+        if len(pila_llaves_expresion) > 0:
+            if codigo_fuente[indice] == "{":
+                pila_llaves_expresion[-1] += 1
+            elif codigo_fuente[indice] == "}":
+                if pila_llaves_expresion[-1] == 0:
+                    pila_llaves_expresion.pop()
+                    pila_estados.pop()
+                    resultado_caracteres.append(" ")
+                    indice += 1
+                    continue
+                else:
+                    pila_llaves_expresion[-1] -= 1
+
+        resultado_caracteres.append(codigo_fuente[indice])
+        indice += 1
+
+    return "".join(resultado_caracteres)
+
+
+def enmascarar_comentarios_y_cadenas(codigo_fuente: str, extension: str) -> str:
+    """Enmascara comentarios y cadenas segun la extension del archivo."""
+    if extension == ".go":
+        return enmascarar_go(codigo_fuente)
+    elif extension in {".js", ".mjs", ".ts", ".tsx"}:
+        return enmascarar_javascript(codigo_fuente)
+    return codigo_fuente
 
 
 class DetectorPython(ast.NodeVisitor):
@@ -477,6 +616,7 @@ def main() -> int:
     analizador_argumentos.add_argument("--base", default="origin/develop", help="Rama base para comparar diff (por defecto: origin/develop)")
     analizador_argumentos.add_argument("--staged", action="store_true", help="Analizar solo cambios en stage (para hook pre-commit)")
     analizador_argumentos.add_argument("--file", help="Analizar un archivo completo")
+    analizador_argumentos.add_argument("--warning", action="store_true", help="Reportar advertencias pedagógicas sin fallar con código 1 en CI")
     argumentos = analizador_argumentos.parse_args()
 
     errores_encontrados: list[str] = []
@@ -500,6 +640,14 @@ def main() -> int:
             errores_encontrados.extend(analizar_archivo(ruta_relativa, lineas_filtradas=lineas_anadidas))
 
     if errores_encontrados:
+        if argumentos.warning:
+            print("⚠️ Advertencia de nomenclatura: se detectaron declaraciones con identificadores de una sola letra:")
+            for error_descripcion in errores_encontrados:
+                print(f"   {error_descripcion}")
+            print("\n💡 Regla de estilo (CLAUDE.md / GEMINI.md): usa nombres descriptivos en español")
+            print("   (ej. 'indice', 'respuesta', 'peticion', 'configuracion', 'errorObtenido') en lugar de variables de 1 letra.")
+            return 0
+
         print("❌ Se encontraron declaraciones con identificadores de una sola letra:")
         for error_descripcion in errores_encontrados:
             print(f"   {error_descripcion}")

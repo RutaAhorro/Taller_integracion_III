@@ -4,7 +4,9 @@ Pruebas unitarias para el validador de nomenclatura scripts/check_single_letter_
 Verifica:
 1. Deteccion de casos comunes (arrows tipados, desestructuracion, Go methods/:=, Python multilinea).
 2. Ausencia de falsos positivos en comentarios, docstrings y plantillas multilinea.
-3. Comportamiento estricto ante bases no validas o ejecucion fuera de git.
+3. Hostile Corpus JS/TS: regexes con comillas, escapes de backticks, expresiones interpoladas ${...}.
+4. Comportamiento estricto ante bases no validas o ejecucion fuera de git.
+5. Soporte de modo advertencia (--warning) con retorno 0.
 """
 
 from __future__ import annotations
@@ -29,7 +31,9 @@ from check_single_letter_identifiers import (
 
 
 class PruebaValidadorNomenclatura(unittest.TestCase):
-    """Bateria de pruebas unitarias para detecciones de una sola letra."""
+    """Bateria de pruebas unitarias para detecciones de una sola letra y Hostile Corpus."""
+
+    # --- Casos JS / TS Base ---
 
     def test_javascript_arrow_sin_parentesis(self) -> None:
         codigo = "const procesar = r => r.id;"
@@ -40,7 +44,7 @@ class PruebaValidadorNomenclatura(unittest.TestCase):
     def test_javascript_arrow_con_parentesis_y_tipos(self) -> None:
         codigo_sin_tipo = "const procesar = (r) => r.id;"
         codigo_con_tipo = "const procesar = (r: Respuesta) => r.id;"
-        
+
         violaciones_sin_tipo = analizar_js_ts(enmascarar_comentarios_y_cadenas(codigo_sin_tipo, ".ts"))
         violaciones_con_tipo = analizar_js_ts(enmascarar_comentarios_y_cadenas(codigo_con_tipo, ".ts"))
 
@@ -81,6 +85,49 @@ const respuestaCorrecta = true;
         violaciones = analizar_js_ts(codigo_enmascarado)
         self.assertEqual(len(violaciones), 0)
 
+    # --- Hostile Corpus JS / TS (Problemas P2 Resueltos) ---
+
+    def test_javascript_regex_con_comillas_no_oculta_variables_posteriores(self) -> None:
+        codigo = """const patron = /["']/g;
+const r = 1;"""
+        codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".ts")
+        violaciones = analizar_js_ts(codigo_enmascarado)
+        identificadores = [identificador for _, identificador, _ in violaciones]
+        self.assertIn("r", identificadores)
+
+    def test_javascript_plantilla_con_backtick_escapado_no_genera_falsos_positivos(self) -> None:
+        codigo = """const plantilla = `comilla escapada: \\`
+const r = ejemplo
+`;
+const respuestaValida = true;"""
+        codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".ts")
+        violaciones = analizar_js_ts(codigo_enmascarado)
+        identificadores = [identificador for _, identificador, _ in violaciones]
+        self.assertNotIn("r", identificadores)
+        self.assertEqual(len(violaciones), 0)
+
+    def test_javascript_codigo_ejecutable_dentro_de_interpolacion(self) -> None:
+        codigo = "const texto = `${elementos.map((r) => r.id)}`;"
+        codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".ts")
+        violaciones = analizar_js_ts(codigo_enmascarado)
+        identificadores = [identificador for _, identificador, _ in violaciones]
+        self.assertIn("r", identificadores)
+
+    def test_javascript_interpolacion_con_llaves_y_objetos_anidados(self) -> None:
+        codigo = "const texto = `${{ prop: (r) => r.id }}`; const r = 10;"
+        codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".ts")
+        violaciones = analizar_js_ts(codigo_enmascarado)
+        identificadores = [identificador for _, identificador, _ in violaciones]
+        self.assertIn("r", identificadores)
+
+    def test_javascript_division_aritmetica_no_se_confunde_con_regex(self) -> None:
+        codigo = "const division = total / 2 / factor;"
+        codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".ts")
+        violaciones = analizar_js_ts(codigo_enmascarado)
+        self.assertEqual(len(violaciones), 0)
+
+    # --- Casos Go ---
+
     def test_go_asignacion_corta_multiple(self) -> None:
         codigo_asignacion = "c, err := cargarConfiguracion()"
         codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo_asignacion, ".go")
@@ -115,6 +162,8 @@ func FuncionCorrecta(servidor *Servidor, peticion *http.Request) {}
         codigo_enmascarado = enmascarar_comentarios_y_cadenas(codigo, ".go")
         violaciones = analizar_go(codigo_enmascarado)
         self.assertEqual(len(violaciones), 0)
+
+    # --- Casos Python ---
 
     def test_python_parametros_multilinea(self) -> None:
         codigo = """
@@ -160,6 +209,8 @@ resultado = [p for p in lista_elementos]
         self.assertIn("p", identificadores)
         self.assertNotIn("_", identificadores)
 
+    # --- Integracion y Manejo de Errores de Git ---
+
     def test_extraccion_lineas_diff(self) -> None:
         diff_simulado = """--- a/archivo.go
 +++ b/archivo.go
@@ -183,7 +234,6 @@ func ServidorNuevo(w http.ResponseWriter) {}
             ruta_temporal = archivo_temporal.name
 
         try:
-            # Solo la linea 3 fue anadida en el diff
             reportes = analizar_archivo(ruta_temporal, lineas_filtradas={3})
             self.assertEqual(len(reportes), 1)
             self.assertIn(":3: identificador 'w'", reportes[0])
@@ -196,6 +246,29 @@ func ServidorNuevo(w http.ResponseWriter) {}
         with self.assertRaises(SystemExit) as contexto_exit:
             obtener_diff(argumentos)
         self.assertEqual(contexto_exit.exception.code, 2)
+
+    def test_modo_advertencia_retorna_cero(self) -> None:
+        with tempfile.NamedTemporaryFile("w+", suffix=".go", delete=False) as archivo_temporal:
+            archivo_temporal.write("package main\nfunc ServidorInvalido(c int) {}\n")
+            ruta_temporal = archivo_temporal.name
+
+        try:
+            ruta_script = Path(__file__).resolve().parent / "check_single_letter_identifiers.py"
+            resultado_estricto = subprocess.run(
+                [sys.executable, str(ruta_script), "--file", ruta_temporal],
+                capture_output=True,
+                text=True
+            )
+            resultado_advertencia = subprocess.run(
+                [sys.executable, str(ruta_script), "--file", ruta_temporal, "--warning"],
+                capture_output=True,
+                text=True
+            )
+            self.assertEqual(resultado_estricto.returncode, 1)
+            self.assertEqual(resultado_advertencia.returncode, 0)
+            self.assertIn("⚠️ Advertencia", resultado_advertencia.stdout)
+        finally:
+            Path(ruta_temporal).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

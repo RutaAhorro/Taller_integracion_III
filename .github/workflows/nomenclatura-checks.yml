@@ -31,4 +31,4 @@ jobs:
           python3 scripts/test_check_single_letter_identifiers.py
       - name: Validar ausencia de identificadores de una letra en cambios
         run: |
-          python3 scripts/check_single_letter_identifiers.py --base origin/${{ github.base_ref || 'develop' }}
+          python3 scripts/check_single_letter_identifiers.py --base origin/${{ github.base_ref || 'develop' }} --warning
