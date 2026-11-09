@@ -51,12 +51,17 @@ Todas las URLs de servicio deben ser **orígenes HTTP(S) limpios**: deben inclui
 
 | Nombre | Servicio Dueño | Servicios Consumidores | Propósito y formato requerido | Valor por defecto en Compose / local |
 | --- | --- | --- | --- | --- |
-| `CATALOGO_URL` | Catálogo | Gateway | Origen HTTP de Catálogo para enrutar `/api/v1/productos*`, `/api/v1/cadenas*` y `/api/v1/sucursales*`. Formato origen sin path. | `http://catalogo:8080` (en Compose) / `http://127.0.0.1:8083` (local). |
+| `CATALOGO_URL` | Catálogo | Gateway | Origen HTTP de Catálogo para enrutar `/api/v1/productos*`. Las rutas `/api/v1/cadenas*` y `/api/v1/sucursales*` son rutas objetivo pendientes de implementación (Gateway hoy enruta principalmente `/api/v1/productos*`; un 404 en ellas no es fallo de configuración). Formato origen sin path. | `http://catalogo:8080` (en Compose) / `http://127.0.0.1:8083` (local). |
 | `CATALOGO_INTERNAL_URL` | Catálogo | Control de scraping, IA conversacional | Origen HTTP interno de Catálogo para ingesta de lotes y consulta de productos/precios sin pasar por Gateway. Formato origen sin path. | `http://catalogo:8080` (en Compose) / `http://127.0.0.1:8080` o `:8083` (local). |
 | `IDENTIDAD_URL` | Identidad | Gateway | Origen HTTP de Identidad para enrutar `/api/v1/auth/*` a través de la red aislada `identidad_edge`. Formato origen sin path. | `http://identidad-upstream:8080` (en Compose) / `http://127.0.0.1:8084` (local). |
 | `SCRAPING_URL` | Control de scraping | Gateway | Origen HTTP de Control de scraping para enrutar `/api/v1/scraper/*`. Formato origen sin path. | `http://control-scraping:8080` (en Compose) / `http://127.0.0.1:8080` (local). |
 | `RUTAS_URL` | Motor de rutas | Gateway | Origen HTTP del motor de rutas para enrutar `/api/v1/listas*`. Si está vacío, Gateway devuelve 404 (servicio opcional bajo perfil `rutas`). Formato origen sin path. | Vacío por defecto (`${RUTAS_URL:-}`). Con perfil `rutas`: `http://motor-rutas:8001`. |
-| `IA_URL` | IA conversacional | Gateway / Frontend (`VITE_IA_URL`) | Origen HTTP del microservicio de IA conversacional (`/api/v1/chat*`, `/api/v1/explicacion*`). Formato origen sin path. | `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
+| `IA_URL` | IA conversacional | Gateway / Frontend (`VITE_IA_URL`) | [Convención objetivo / Pendiente SUP-278] Origen HTTP del microservicio de IA conversacional (`/api/v1/chat*`, `/api/v1/explicacion*`). Gateway actualmente NO la consume ni la enruta (el chat hoy se conecta directo o mediante frontend). Formato origen sin path. | `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
+
+#### Excepciones a la regla de URLs sin path
+
+- `SCRAPER_API_URL`: consumida por Scraper Go (`scraper_worker`), requiere el path completo (en Compose: `http://gateway:8080/api/v1/scraper/productos`).
+- `SCRAPER_API_BASE_URL`: consumida por Bot de Discord (`bot_discord`), requiere el path base (en Compose: `http://api:8080/api/v1/scraper/trabajos`).
 
 ### 5. Base de datos PostgreSQL
 
@@ -105,6 +110,9 @@ $$\text{postgres://}\langle\text{usuario}\rangle:\langle\text{password}\rangle@\
 Para evitar colisiones entre servicios en desarrollo local y permitir orígenes diferenciados por servicio, se adopta el patrón prefijado:
 
 $$\langle\text{SERVICIO}\rangle\text{\_CORS\_ALLOWED\_ORIGINS}$$
+
+> [!NOTE]
+> El patrón `<SERVICIO>_CORS_ALLOWED_ORIGINS` con fallback a `CORS_ALLOWED_ORIGINS` es la convención objetivo para los barridos de código del Sprint 3. Hoy en día Compose inyecta variables específicas y algunos servicios aún leen directamente `CORS_ALLOWED_ORIGINS`.
 
 | Variable | Servicio que la utiliza | Valor por defecto Compose / local |
 | --- | --- | --- |
