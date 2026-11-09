@@ -1,6 +1,6 @@
 module github.com/equipo/bot_discord
 
-go 1.27.1
+go 1.26.0
 
 require (
 	github.com/bwmarrin/discordgo v0.29.0 // indirect
