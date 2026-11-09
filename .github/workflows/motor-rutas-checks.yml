@@ -13,6 +13,10 @@ on:
       - '.github/workflows/motor-rutas-checks.yml'
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -37,4 +41,5 @@ jobs:
             go build -o /tmp/motor_rutas ./cmd/motor_rutas
           else
             docker build --target test -t sup240-motor-rutas-test:local backend/motor_rutas
+            docker build -t sup240-motor-rutas:local backend/motor_rutas
           fi
