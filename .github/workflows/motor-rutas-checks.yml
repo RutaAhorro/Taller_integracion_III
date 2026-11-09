@@ -1,0 +1,40 @@
+name: Motor de rutas checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+    paths:
+      - 'backend/motor_rutas/**'
+      - '.github/workflows/motor-rutas-checks.yml'
+  push:
+    branches: [develop-refactor]
+    paths:
+      - 'backend/motor_rutas/**'
+      - '.github/workflows/motor-rutas-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  motor-rutas:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Motor de rutas tests, vet and build
+        run: |
+          if [ -f backend/motor_rutas/go.mod ]; then
+            cd backend/motor_rutas
+            go test -race ./...
+            go vet ./...
+            go build -o /tmp/motor_rutas ./cmd/motor_rutas
+          else
+            docker build --target test -t sup240-motor-rutas-test:local backend/motor_rutas
+          fi

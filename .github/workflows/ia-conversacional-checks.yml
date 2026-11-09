@@ -1,0 +1,41 @@
+name: IA conversacional checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+    paths:
+      - 'backend/ia_conversacional/**'
+      - '.github/workflows/ia-conversacional-checks.yml'
+  push:
+    branches: [develop-refactor]
+    paths:
+      - 'backend/ia_conversacional/**'
+      - '.github/workflows/ia-conversacional-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ia-conversacional:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'backend/ia_conversacional/requirements-dev.txt'
+      - name: Install dependencies
+        working-directory: backend/ia_conversacional
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run pytest
+        working-directory: backend/ia_conversacional
+        run: pytest tests/
+      - name: Build container image
+        run: docker build -t ia-conversacional:local backend/ia_conversacional
