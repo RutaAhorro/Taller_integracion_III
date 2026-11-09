@@ -26,6 +26,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+      - name: Pruebas unitarias del validador de nomenclatura
+        run: |
+          python3 scripts/test_check_single_letter_identifiers.py
       - name: Validar ausencia de identificadores de una letra en cambios
         run: |
           python3 scripts/check_single_letter_identifiers.py --base origin/${{ github.base_ref || 'develop' }}
