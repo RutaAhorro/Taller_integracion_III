@@ -28,7 +28,7 @@ Se cuentan archivos `*_test.go`, `test_*.py` y `*.test.mjs`, no tests individual
 | `motor-rutas-checks.yml` | `go test -race`, `go vet` y build (Go) con fallback condicional (SUP-346) |
 | `ia-conversacional-checks.yml` | `pytest tests/` (Python 3.11) y build Docker (SUP-346) |
 | `bot-discord-checks.yml` | `go test -race`, `go vet`, build Go y build Docker (SUP-346) |
-| `frontend-checks.yml` | `npm ci`, typecheck (`tsc --noEmit`), lint (`oxlint`), tests (`node --test`) y build (SUP-346) |
+| `frontend-checks.yml` | `npm ci`, typecheck (`npx tsc -b`), lint (`oxlint`), tests (`node --test`) y build (SUP-346) |
 | `docker-publish.yml` | Publicación de imágenes |
 
 ## Control de memoria del Scraper Go 📏⚙️
@@ -44,7 +44,7 @@ Esta prueba corre en CI y **falla si se supera** el límite. Es el único umbral
 
 ## Política conocida
 
-`npm run build` tolera los errores de `tsc` (`tsc -b || true`). Por eso el workflow `frontend-checks.yml` ejecuta `npx tsc --noEmit` de forma independiente para asegurar la corrección de tipos antes de empaquetar.
+`npm run build` tolera los errores de `tsc` (`tsc -b || true`). Por eso el workflow `frontend-checks.yml` ejecuta `npx tsc -b` de forma independiente para asegurar la corrección de tipos antes de empaquetar.
 
 ## Lo que falta
 
