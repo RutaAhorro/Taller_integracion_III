@@ -106,8 +106,9 @@ que cambie la lógica.
 - Cada servicio mantiene un `.env.example` con todas sus variables, una
   descripción corta y un valor de ejemplo **sin secretos reales**.
 - Las variables que usan varios servicios (`JWT_SECRET`, URLs internas, token
-  de servicio, Redis, base de datos) tienen **un único nombre** acordado en
-  SUP-345. Ningún servicio las renombra por su cuenta.
+  de servicio, Redis, base de datos) tienen **un único nombre** acordado en la
+  [guía de configuración](GUIA_CONFIGURACION.md) (SUP-345). Ningún servicio las
+  renombra por su cuenta.
 
 ## 4. Código muerto
 
@@ -137,7 +138,7 @@ integrantes y cambiarlos rompería a otros:
 - **Contratos HTTP:** rutas y nombres de campos JSON.
 - **Base de datos:** nombres de tablas y columnas (el esquema `scraper` lo
   comparten Catálogo y Control).
-- **Variables de entorno compartidas** (ver SUP-345).
+- **Variables de entorno compartidas** (ver [guía de configuración](GUIA_CONFIGURACION.md) y SUP-345).
 - **Archivos compartidos:** compose, k8s y CI (responsable: Renato) e
   `infrastructure/db` (responsable: Esban). Los cambios ahí se le piden a su
   responsable.
