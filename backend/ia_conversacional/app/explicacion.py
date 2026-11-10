@@ -2,7 +2,7 @@ import json
 import logging
 import time
 
-import httpx
+from app import config
 
 logger = logging.getLogger(__name__)
 
@@ -11,14 +11,14 @@ def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list
     """Prompt compartido entre Groq y Gemini para la etapa de explicacion."""
     resumen = [
         {
-            "nombre": p["nombre"],
-            "precio": p["precio"],
-            "categoria": p["categoria"],
-            "distancia_km": p["distancia_km"],
+            "nombre": producto["nombre"],
+            "precio": producto["precio"],
+            "categoria": producto["categoria"],
+            "distancia_km": producto["distancia_km"],
         }
-        # los primeros 8 alcanzan de sobra (ya vienen ordenados por precio
+        # los primeros config.EXPLICACION_MAX_PRODUCTOS alcanzan de sobra (ya vienen ordenados por precio
         # ascendente) y mantiene el prompt corto -> respuesta mas rapida.
-        for p in productos_filtrados[:8]
+        for producto in productos_filtrados[: config.EXPLICACION_MAX_PRODUCTOS]
     ]
 
     return (
@@ -53,8 +53,8 @@ async def generar_explicacion_con_tiempo(generador, mensaje_usuario: str, produc
     inicio = time.perf_counter()
     try:
         explicacion = await generador(mensaje_usuario, productos_filtrados)
-    except Exception as e:
-        logger.warning("No se pudo generar la explicacion: %s", e)
+    except Exception as error_explicacion:
+        logger.warning("No se pudo generar la explicacion: %s", error_explicacion)
         explicacion = None
     tiempo_ms = round((time.perf_counter() - inicio) * 1000)
 

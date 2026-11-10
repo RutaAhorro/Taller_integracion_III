@@ -6,9 +6,9 @@ repositorio de productos y los proveedores de IA con su configuracion, y
 los conecta a los routers. Toda la logica real (filtrado, llamadas a las
 APIs, manejo de errores, prompts) vive en app/ -- ver el README para el
 detalle de que hace cada modulo.
-
-no me funciona la z y derrepente se me olvida usar el teclado en pantalla perdon
 """
+
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,35 +20,37 @@ from app.proveedores.gemini_proveedor import GeminiProveedor
 from app.proveedores.groq_proveedor import GroqProveedor
 from app.proveedores.fallback_proveedor import FallbackProveedor
 from app.routers.chat import crear_router_chat
-from app.routers.productos import crear_router_productos
 from app.utils import RespuestaUTF8, fix_encoding_consola
 
 fix_encoding_consola()
 
+
+@asynccontextmanager
+async def lifespan(app_instancia: FastAPI):
+    config.validar_configuracion()
+    yield
+
+
 app = FastAPI(
-    title="Prototipo IA - Comparacion Groq vs Gemini",
+    title="IA Conversacional",
     default_response_class=RespuestaUTF8,
+    lifespan=lifespan,
 )
-
-
-origenes_cors = [
-    origin.strip()
-    for origin in config.CORS_ALLOWED_ORIGINS.split(",")
-    if origin.strip()
-]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origenes_cors,
+    allow_origins=config.obtener_origenes_cors(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-
 repositorio_productos = ProductoRepositorio(
     base_url=config.CATALOGO_INTERNAL_URL,
     timeout=config.CATALOGO_TIMEOUT,
+    cache_ttl=config.CATALOGO_CACHE_TTL,
+    page_limit=config.CATALOGO_PAGE_LIMIT,
+    max_paginas=config.CATALOGO_MAX_PAGINAS,
 )
 
 proveedor_groq = GroqProveedor(
@@ -65,16 +67,17 @@ proveedor_gemini = GeminiProveedor(
     modelo=config.GEMINI_MODEL,
     definicion_funcion=definicion_funcion_filtros_gemini,
 )
+
 proveedor_fallback = FallbackProveedor(
     proveedores=[
         proveedor_gemini,
-        proveedor_groq,    
+        proveedor_groq,
     ],
-    max_retries_primario=4,   
-    max_retries_secundario=1,   
-    backoff_base=1.5,           
-    timeout=30.0,               
+    max_retries_primario=config.FALLBACK_RETRIES_PRIMARIO,
+    max_retries_secundario=config.FALLBACK_RETRIES_SECUNDARIO,
+    backoff_base=config.FALLBACK_BACKOFF_BASE,
 )
+
 # --------------------------------------------------------------------------
 # Healthcheck & Root
 # --------------------------------------------------------------------------
@@ -92,12 +95,9 @@ def health_check():
 # Routers
 # --------------------------------------------------------------------------
 
-app.include_router(crear_router_productos(repositorio_productos))
 app.include_router(
     crear_router_chat(
         repositorio=repositorio_productos,
         proveedor_fallback=proveedor_fallback,
-        proveedor_groq=proveedor_groq,
-        proveedor_gemini=proveedor_gemini,
     )
 )

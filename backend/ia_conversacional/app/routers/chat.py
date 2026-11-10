@@ -8,7 +8,6 @@ y evitar alucinaciones.
 """
 
 import logging
-from typing import Optional
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -25,8 +24,6 @@ logger = logging.getLogger(__name__)
 def crear_router_chat(
     repositorio: ProductoRepositorio,
     proveedor_fallback: ProveedorIA,
-    proveedor_groq: Optional[ProveedorIA] = None,
-    proveedor_gemini: Optional[ProveedorIA] = None,
 ) -> APIRouter:
     router = APIRouter(tags=["chat"])
 

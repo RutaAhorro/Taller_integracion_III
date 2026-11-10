@@ -4,12 +4,16 @@ Prioridad: Gemini (con reintentos) → Groq (con reintentos simples).
 """
 
 import asyncio
+import logging
 import random
-import time
+from typing import Any
 
 import httpx
 
+from app import config
 from app.proveedores.base import ProveedorIA, ResultadoExtraccion
+
+logger = logging.getLogger(__name__)
 
 
 class FallbackProveedor(ProveedorIA):
@@ -24,16 +28,32 @@ class FallbackProveedor(ProveedorIA):
     def __init__(
         self,
         proveedores: list[ProveedorIA],
-        max_retries_primario: int = 3,
-        max_retries_secundario: int = 1,
-        backoff_base: float = 1.0,
-        timeout: float = 30.0,
+        max_retries_primario: int | None = None,
+        max_retries_secundario: int | None = None,
+        backoff_base: float | None = None,
+        jitter_max: float | None = None,
     ):
         self.proveedores = proveedores
-        self.max_retries_primario = max_retries_primario
-        self.max_retries_secundario = max_retries_secundario
-        self.backoff_base = backoff_base
-        self.timeout = timeout
+        self.max_retries_primario = (
+            max_retries_primario
+            if max_retries_primario is not None
+            else config.FALLBACK_RETRIES_PRIMARIO
+        )
+        self.max_retries_secundario = (
+            max_retries_secundario
+            if max_retries_secundario is not None
+            else config.FALLBACK_RETRIES_SECUNDARIO
+        )
+        self.backoff_base = (
+            backoff_base
+            if backoff_base is not None
+            else config.FALLBACK_BACKOFF_BASE
+        )
+        self.jitter_max = (
+            jitter_max
+            if jitter_max is not None
+            else config.FALLBACK_JITTER_MAX
+        )
 
     def _es_error_recuperable(self, error: Exception) -> bool:
         """Determina si el error es transitorio (podemos reintentar)."""
@@ -52,9 +72,8 @@ class FallbackProveedor(ProveedorIA):
         metodo: str,
         *args,
         max_retries: int = 3,
-        es_primario: bool = True,
         **kwargs,
-    ) -> any:
+    ) -> Any:
         """
         Ejecuta un método del proveedor con reintentos y backoff.
         """
@@ -67,20 +86,24 @@ class FallbackProveedor(ProveedorIA):
                     return await proveedor.generar_explicacion(*args, **kwargs)
                 else:
                     raise ValueError(f"Método desconocido: {metodo}")
-            except Exception as e:
-                ultimo_error = e
-                if not self._es_error_recuperable(e):
-                    print(f"Error no recuperable en {proveedor.nombre}: {e}")
+            except Exception as error:
+                ultimo_error = error
+                if not self._es_error_recuperable(error):
+                    logger.warning("Error no recuperable en %s: %s", proveedor.nombre, error)
                     raise
                 if intento < max_retries:
-                    espera = (self.backoff_base * (2 ** intento)) + random.uniform(0, 0.5)
-                    print(
-                        f"Error recuperable en {proveedor.nombre} (intento {intento+1}/{max_retries+1}): "
-                        f"{e}. Reintentando en {espera:.2f}s..."
+                    espera = (self.backoff_base * (2 ** intento)) + random.uniform(0, self.jitter_max)
+                    logger.info(
+                        "Error recuperable en %s (intento %d/%d): %s. Reintentando en %.2fs...",
+                        proveedor.nombre,
+                        intento + 1,
+                        max_retries + 1,
+                        error,
+                        espera,
                     )
                     await asyncio.sleep(espera)
                 else:
-                    print(f"{proveedor.nombre} falló tras {max_retries+1} intentos: {e}")
+                    logger.error("%s falló tras %d intentos: %s", proveedor.nombre, max_retries + 1, error)
                     raise
 
         # Esto nunca debería ejecutarse, pero por si acaso
@@ -98,7 +121,6 @@ class FallbackProveedor(ProveedorIA):
                     "extraer_filtros",
                     mensaje,
                     max_retries=max_retries,
-                    es_primario=(idx == 0),
                 )
                 # Si llegamos aquí, el proveedor respondió exitosamente
                 nota = f"Usado proveedor: {proveedor.nombre}"
@@ -106,15 +128,15 @@ class FallbackProveedor(ProveedorIA):
                     nota += f" (nota: {resultado.nota})"
                 resultado.nota = nota
                 return resultado
-            except Exception as e:
-                ultimo_error = e
-                print(f"{proveedor.nombre} falló definitivamente, pasando al siguiente...")
+            except Exception as error:
+                ultimo_error = error
+                logger.warning("%s falló definitivamente, pasando al siguiente...", proveedor.nombre)
                 continue
 
         # Si todos fallaron
         return ResultadoExtraccion(
             error=f"Todos los proveedores fallaron. Último error: {ultimo_error}",
-            nota="Se intentaron: " + ", ".join(p.nombre for p in self.proveedores)
+            nota="Se intentaron: " + ", ".join(prov.nombre for prov in self.proveedores),
         )
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
@@ -129,16 +151,15 @@ class FallbackProveedor(ProveedorIA):
                     mensaje_usuario,
                     productos_filtrados,
                     max_retries=max_retries,
-                    es_primario=(idx == 0),
                 )
                 if explicacion and explicacion.strip():
-                    print(f"Explicación generada por {proveedor.nombre}")
+                    logger.info("Explicación generada por %s", proveedor.nombre)
                     return explicacion
                 else:
                     raise ValueError("Explicación vacía o None")
-            except Exception as e:
-                ultimo_error = e
-                print(f"{proveedor.nombre} falló generando explicación, pasando al siguiente...")
+            except Exception as error:
+                ultimo_error = error
+                logger.warning("%s falló generando explicación, pasando al siguiente...", proveedor.nombre)
                 continue
 
         # Si todos fallaron
