@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShoppingBasket, X } from 'lucide-react';
 import { ROUTES } from '@/core/routes';
 import { useAuth } from '@/hooks/useAuth';
-import type { AdminSection } from './admin-mock-data';
+import type { AdminSection } from './admin-types';
 
 type AdminLayoutProps = {
   children: ReactNode;

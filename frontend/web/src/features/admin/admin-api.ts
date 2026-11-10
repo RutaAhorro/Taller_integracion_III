@@ -1,11 +1,11 @@
 // Capa de acceso a endpoints de administración (SUP-242 / SUP-243 / SUP-279).
 // Usa VITE_API_URL como base (ya incluye /api/v1); sin esa variable los hooks
-// caen a mocks. SUP-242 (usuarios) ya tiene backend en Identidad; SUP-243
+// muestran un error de configuración. SUP-242 (usuarios) ya tiene backend en Identidad; SUP-243
 // (fuentes) y SUP-279 (métricas) dependen de sus propias tareas.
 //
 // Convención de ramas: backend/feat/[tarea]-[nombre], frontend/feat/[tarea]-[nombre].
 
-import type { AdminPlan, AdminRole, AdminSource, AdminUser, AdminUserRole } from './admin-mock-data';
+import type { AdminPlan, AdminRole, AdminSource, AdminUser, AdminUserRole } from './admin-types';
 
 const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
@@ -112,7 +112,7 @@ export type AdminUsersPage = {
   totalPages: number;
 };
 
-// Sólo los usuarios reales tienen UUID; los mocks usan ids `usr-00X`.
+// Identidad utiliza UUID para los identificadores de usuario.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isPersistableId(id: string): boolean {
@@ -160,8 +160,8 @@ export type ControlMetrics = {
 };
 
 // Error de autorización del backend (auditoría H-03).
-// Permite a los hooks distinguir 401/403 (fail-closed, sin mocks) del resto
-// de fallos de red (fallback visual a mocks). Los hooks de useAdminData lo
+// Permite a los hooks distinguir 401/403 del resto
+// de fallos de red. Los hooks de useAdminData lo
 // usan para cerrar la sesión y volver a /login (SUP-256).
 export class AdminAuthError extends Error {
   readonly status: 401 | 403;
