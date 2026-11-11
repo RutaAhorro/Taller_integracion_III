@@ -68,11 +68,11 @@ spec:
               port: http
             periodSeconds: 5
             timeoutSeconds: 3
-          # Holgura para OR-Tools dentro del límite de 512 MiB por pod.
+          # SUP-348: servicio Go, como Catálogo; ya no carga OR-Tools.
           resources:
             requests:
               cpu: 50m
-              memory: 96Mi
+              memory: 32Mi
             limits:
               cpu: 500m
-              memory: 384Mi
+              memory: 128Mi

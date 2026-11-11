@@ -1,9 +1,10 @@
 # Motor de rutas
 
-Servicio FastAPI que implementa el CRUD de listas de compra sobre tablas de
-`rutas.*` (SUP-240). La optimización sigue pendiente: el prototipo TSP con datos
-ficticios no constituye una API de rutas real. No hay un motor OTP/OSRM operativo
-incluido en Compose. Las ejecuciones y paradas aún no tienen permisos runtime.
+Servicio Go (`net/http`) que implementa el CRUD de listas de compra sobre tablas
+de `rutas.*` (SUP-240). Se reescribió desde Python en SUP-348
+([D11](../../docs/Decisiones/11_Motor_de_rutas_en_Go.md)) sin cambiar el
+contrato HTTP ni la base. El cálculo de rutas todavía no existe (SUP-313 y
+SUP-328); las ejecuciones y paradas aún no tienen permisos runtime.
 
 El servicio es opcional en Compose y no forma parte del inventario de nueve pods
 informado por el equipo para el cierre del Sprint 2. Tener código y manifiestos
@@ -24,7 +25,7 @@ no acredita un despliegue activo.
   cualquier dueño enviado en el cuerpo.
 - Una lista ajena o un id mal formado responden 404, sin revelar si existe.
 - Nombre: 1 a 150 caracteres tras quitar caracteres de control y espacios extra.
-  Máximo 100 listas por usuario (409 al superarlo).
+  Máximo de listas por usuario configurable, 100 por defecto (409 al superarlo).
 - Errores con el envoltorio común `{"estado", "mensaje", "detalle"?}`; las
   validaciones nunca repiten el valor recibido.
 - Agregar o quitar artículos llega con SUP-241 (`/api/v1/listas/{id}/articulos`).
@@ -39,6 +40,10 @@ Probes internos: `/_rutas/live` (sin SQL) y `/_rutas/ready` (ping SQL, 2 s).
 | `JWT_SECRET` | La misma clave de Identidad y Catálogo, al menos 32 bytes |
 | `CORS_ALLOWED_ORIGINS` | Orígenes HTTP(S) exactos del frontend, separados por comas |
 | `RUTAS_DB_POOL_MAX` | Conexiones máximas por proceso, 5 por defecto (1 a 20) |
+| `RUTAS_MAX_LISTAS` | Máximo de listas por usuario, 100 por defecto (1 a 1000) |
+| `PORT` | Puerto HTTP, 8001 por defecto |
+
+Ejemplo en [`.env.example`](.env.example).
 
 Al arrancar valida una vez los grants de `06_propiedad_permisos.sql`; sin ellos
 no abre HTTP. No ejecuta migraciones.
@@ -58,14 +63,26 @@ no abre HTTP. No ejecuta migraciones.
    en `.env`, y levantar `docker compose --profile rutas up -d motor_rutas gateway`.
    Sin `RUTAS_URL`, el Gateway no enruta `/api/v1/listas` (404).
 
+## Estructura
+
+| Ruta | Contenido |
+| --- | --- |
+| `cmd/motor_rutas` | Arranque, conexión y apagado ordenado |
+| `internal/config` | Variables de entorno validadas; los errores nunca incluyen secretos |
+| `internal/auth` | Validación del JWT de Identidad |
+| `internal/db` | Pool `pgx` y verificación de grants al arrancar |
+| `internal/listas` | Modelo, normalización del nombre y SQL |
+| `internal/httpapi` | Rutas, CORS, `X-Request-ID`, logs y errores |
+| `tests/unit`, `tests/integration` | Pruebas fuera del código de producción |
+
 ## Pruebas
 
 ```bash
-pip install -r requirements.txt
-python -m unittest discover -s tests -t .
-docker build --target test backend/motor_rutas   # lo mismo en la CI
+go test ./... && go vet ./...
+docker build --target test backend/motor_rutas   # lo mismo en la CI, con -race
 ```
 
-`tests/test_repositorio_postgres.py` corre contra una base desechable sólo si
-existen `RUTAS_TEST_DB_URL` (app_rutas) y `RUTAS_TEST_ADMIN_URL` (operador):
-prueba los grants reales, el aislamiento por usuario y el borrado en cascada.
+`tests/integration` corre contra una base desechable sólo si existen
+`RUTAS_TEST_DB_URL` (app_rutas) y `RUTAS_TEST_ADMIN_URL` (operador): prueba los
+grants reales, el aislamiento por usuario y el borrado en cascada. Nunca
+apuntarlas a una base compartida.

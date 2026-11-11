@@ -1,25 +1,29 @@
-# Motor de rutas (FastAPI + OR-Tools): dueño de rutas.* (SUP-240).
-FROM python:3.11-slim AS base
+# Motor de rutas en Go (SUP-348, D11): dueño de rutas.*.
+FROM golang:1.26 AS source
+WORKDIR /src
+ENV GOTOOLCHAIN=local
+COPY go.mod go.sum ./
+RUN --mount=type=secret,id=network_ca,target=/run/secrets/network_ca \
+    if [ -f /run/secrets/network_ca ]; then export SSL_CERT_FILE=/run/secrets/network_ca; fi; \
+    go mod download
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
 
-# Sin .pyc ni caché de pip: la raíz del contenedor es de sólo lectura en Compose y K8s.
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY app/ ./app/
-
-FROM base AS test
+# Las pruebas de integración se omiten sin RUTAS_TEST_DB_URL; aquí corren las unitarias.
+FROM source AS test
 COPY tests/ ./tests/
-RUN python -m unittest discover -s tests -t .
+RUN go test -race ./... && go vet ./...
 
-FROM base AS runtime
+FROM source AS build
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/motor_rutas ./cmd/motor_rutas
+
+FROM alpine:3.23 AS runtime
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=build /out/motor_rutas /usr/local/bin/motor_rutas
+# Puerto 8001 para no chocar con el Gateway en el host; el Gateway ya apunta aquí.
+ENV PORT=8001
 USER 65532:65532
-# Puerto 8001 para no chocar con el Gateway en el host.
 EXPOSE 8001
-HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/_rutas/ready', timeout=2)" || exit 1
-# Un solo worker y sin --reload: el pod tiene 512 MiB y OR-Tools resuelve en el mismo proceso.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001", "--workers", "1", "--no-access-log"]
+HEALTHCHECK --interval=10s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -q --spider http://127.0.0.1:8001/_rutas/ready || exit 1
+ENTRYPOINT ["/usr/local/bin/motor_rutas"]

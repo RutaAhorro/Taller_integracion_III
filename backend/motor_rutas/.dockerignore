@@ -1,7 +1,4 @@
-__pycache__/
-*.pyc
-.venv/
-venv/
-research/
-docs/
 *.md
+docs/
+research/
+.env*
