@@ -31,7 +31,7 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 	}
 	reads := http.DefaultTransport.(*http.Transport).Clone()
 	reads.Proxy = nil // Internal upstream traffic must not inherit an egress proxy.
-	reads.DialContext = (&net.Dialer{Timeout: c.DialTimeout, KeepAlive: 30 * time.Second}).DialContext
+	reads.DialContext = (&net.Dialer{Timeout: c.DialTimeout, KeepAlive: c.KeepAliveTimeout}).DialContext
 	reads.TLSHandshakeTimeout = c.DialTimeout
 	reads.ResponseHeaderTimeout = c.ResponseHeaderTimeout
 	reads.DisableCompression = true // Preserve the upstream representation and headers.
@@ -184,13 +184,13 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), c.RequestTimeout)
 		defer cancel()
-		if identityProxy != nil && isIdentityPath(r.URL.Path) {
+		if identityProxy != nil && isPrefixedPath(r.URL.Path, c.IdentityPrefixes) {
 			identityProxy.ServeHTTP(response, r.WithContext(ctx))
-		} else if catalogProxy != nil && isCatalogPath(r.URL.Path) {
+		} else if catalogProxy != nil && isPrefixedPath(r.URL.Path, c.CatalogPrefixes) {
 			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
-		} else if routesProxy != nil && isRoutesPath(r.URL.Path) {
+		} else if routesProxy != nil && isPrefixedPath(r.URL.Path, c.RoutesPrefixes) {
 			routesProxy.ServeHTTP(response, r.WithContext(ctx))
-		} else if scrapingProxy != nil && isScrapingPath(r.URL.Path) {
+		} else if scrapingProxy != nil && isScrapingPath(r.URL.Path, c.ScrapingPrefixes) {
 			scrapingProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if backendProxy != nil {
 			backendProxy.ServeHTTP(response, r.WithContext(ctx))
@@ -203,35 +203,22 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 	return &Gateway{handler: handler, reads: reads, writes: writes}
 }
 
-func isScrapingPath(path string) bool {
-	if path == "/api/v1/scraper" || strings.HasPrefix(path, "/api/v1/scraper/") || path == "/swagger" || strings.HasPrefix(path, "/swagger/") {
+func isPrefixedPath(path string, prefixes []string) bool {
+	for _, prefix := range prefixes {
+		if path == prefix || strings.HasPrefix(path, prefix+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func isScrapingPath(path string, prefixes []string) bool {
+	if isPrefixedPath(path, prefixes) {
 		return true
 	}
 	switch path {
 	case "/", "/health", "/health/", "/api/v1/health", "/api/v1/health/":
 		return true
-	}
-	return false
-}
-
-func isIdentityPath(path string) bool {
-	for _, prefix := range []string{"/api/v1/auth", "/api/v1/admin/usuarios"} {
-		if path == prefix || strings.HasPrefix(path, prefix+"/") {
-			return true
-		}
-	}
-	return false
-}
-
-func isRoutesPath(path string) bool {
-	return path == "/api/v1/listas" || strings.HasPrefix(path, "/api/v1/listas/")
-}
-
-func isCatalogPath(path string) bool {
-	for _, prefix := range []string{"/api/v1/productos", "/api/v1/admin/productos"} {
-		if path == prefix || strings.HasPrefix(path, prefix+"/") {
-			return true
-		}
 	}
 	return false
 }

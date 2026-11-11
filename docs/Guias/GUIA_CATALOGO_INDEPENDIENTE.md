@@ -20,8 +20,9 @@ Scraping conserva el escritor de productos y precios hasta SUP-269. No se cambia
 su cola ni se ejecutan migraciones sobre los datos actuales en SUP-267.
 
 SUP-268 retira ese lector transitorio, activa el destino independiente y prepara
-Compose/Kubernetes/HPA. El procedimiento vigente de activación y rollback está
-en [Enrutamiento y despliegue](GUIA_CATALOGO_ENRUTAMIENTO.md). El humo independiente
+Compose/Kubernetes/HPA. El procedimiento vigente de enrutamiento y rollback está
+en el [README del Gateway](../../backend/gateway/README.md), sección
+«Procedimiento de Rollback y Despliegue». El humo independiente
 de esta guía compara con la API archivada del merge de SUP-267, no con la API
 actual, que ya no publica rutas de consulta de productos.
 

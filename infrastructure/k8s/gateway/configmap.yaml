@@ -4,3 +4,9 @@ metadata:
   name: gateway-config
 data:
   GATEWAY_TRUSTED_PROXIES: "10.42.0.0/16,10.43.0.0/16,127.0.0.1"
+  GATEWAY_KEEPALIVE_TIMEOUT: "30s"
+  # Prefijos por dominio (mismos defaults que internal/config/config.go).
+  GATEWAY_IDENTIDAD_PREFIXES: "/api/v1/auth,/api/v1/admin/usuarios"
+  GATEWAY_CATALOGO_PREFIXES: "/api/v1/productos,/api/v1/admin/productos"
+  GATEWAY_RUTAS_PREFIXES: "/api/v1/listas"
+  GATEWAY_SCRAPING_PREFIXES: "/api/v1/scraper,/swagger"

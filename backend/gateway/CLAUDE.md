@@ -20,6 +20,7 @@
 
 10 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 9 archivos.
+- `internal`: 3 archivos.
+- `tests`: 6 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

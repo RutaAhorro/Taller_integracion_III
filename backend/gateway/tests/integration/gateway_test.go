@@ -1,4 +1,4 @@
-package proxy
+package integration_test
 
 import (
 	"bytes"
@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/config"
+	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/proxy"
 )
 
 func gatewayFor(t *testing.T, backend string, env map[string]string, logger *slog.Logger) *httptest.Server {
@@ -28,7 +29,7 @@ func gatewayFor(t *testing.T, backend string, env map[string]string, logger *slo
 	if err != nil {
 		t.Fatal(err)
 	}
-	gateway := New(c, logger)
+	gateway := proxy.New(c, logger)
 	t.Cleanup(gateway.CloseIdleConnections)
 	server := httptest.NewServer(gateway)
 	t.Cleanup(server.Close)

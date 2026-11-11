@@ -1,8 +1,35 @@
-# Gateway — SUP-264 a SUP-273
+# Gateway — SUP-264 a SUP-273 / Barrido SUP-350
 
 Servicio Go independiente que enruta productos y administración de productos a
-Catálogo, autenticación a Identidad y scraping a Control de scraping. No incluye reglas de negocio.
-La Gateway no tiene conexión PostgreSQL, Redis ni dependencias de negocio.
+Catálogo, autenticación a Identidad, listas a Motor de rutas y scraping a Control
+de scraping. No incluye reglas de negocio ni conexión directa a PostgreSQL o Redis.
+
+## Flujo de enrutamiento
+
+```mermaid
+flowchart LR
+    Clientes[Frontend / bot / worker] --> Gateway
+    Gateway -->|/api/v1/productos/*| Catalogo[Catálogo]
+    Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*| Identidad[Identidad]
+    Gateway -->|/api/v1/listas/*| Rutas[Motor de rutas]
+    Gateway -->|/api/v1/scraper/*, /swagger/*, health| Control[Control de scraping]
+```
+
+| Ruta / Prefijo | Destino upstream | Comportamiento |
+|---|---|---|
+| `/api/v1/productos` y subrutas | Catálogo (`CATALOGO_URL`) | Consultas de catálogo y detalle público |
+| `/api/v1/admin/productos` y subrutas | Catálogo (`CATALOGO_URL`) | Gestión administrativa de catálogo |
+| `/api/v1/auth` y subrutas | Identidad (`IDENTIDAD_URL`) | Login, registro, sesiones y OAuth |
+| `/api/v1/admin/usuarios` y subrutas | Identidad (`IDENTIDAD_URL`) | Métricas y administración de cuentas |
+| `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
+| `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
+| `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Healthchecks heredados agregados |
+| `/_gateway/live`, `/_gateway/ready` | Gateway (local) | Liveness y readiness del proceso router |
+| `/_gateway/dependencies` | Gateway (agregado) | Diagnóstico conjunto de upstreams en paralelo |
+
+El enrutamiento comprueba el segmento completo (por ejemplo, `/api/v1/productos-falso`
+no coincide con Catálogo). No se normalizan rutas ni se realiza fallback silencioso
+entre destinos: si Catálogo falla, responde 502/504 identificando el servicio caído.
 
 ## Ejecutar
 
@@ -23,145 +50,156 @@ curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 ```
 
 `/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
-Las rutas `/api/v1/productos` y `/api/v1/admin/productos`, con sus subrutas, se
-envían a Catálogo para todos los métodos. `/api/v1/auth` y sus subrutas se envían
-a Identidad. `/api/v1/scraper/*`, health, raíz y Swagger se envían a Control.
-En modo final no hay API residual; rutas ajenas/probes privados devuelven 404.
-No se normalizan rutas ni se hace fallback entre destinos. En `/api/v1/health`, verificar también los
-campos de PostgreSQL y Redis: SQL fallido produce 503, pero Redis degradado puede
-convivir con Control listo por su outbox SQL.
+`/_gateway/dependencies` consulta en paralelo la salud de Control, Catálogo,
+Identidad y Motor de rutas con un límite común (`GATEWAY_READINESS_TIMEOUT`) y sin
+seguir redirects. Responde 503 si alguno falla. Este diagnóstico está desacoplado del
+readiness probe de Kubernetes para evitar que la caída de un servicio retire el
+tráfico hacia los dominios sanos.
 
-`/_gateway/dependencies` consulta en paralelo la salud de Control, Catálogo e Identidad,
-con un límite común y sin seguir redirects. Responde 503 si alguno falla. Este
-diagnóstico no es el readiness probe: retirar Gateway porque falla un dominio
-impediría acceder también a los otros. Los tres endpoints aceptan GET/HEAD.
+## Configuración (.env)
 
-## Configuración
+Ver `.env.example` para una plantilla lista para usar.
 
 | Variable | Valor por defecto | Uso |
 |---|---|---|
-| `SCRAPING_URL` | Vacío en modo legado; configurada en despliegue final | Origen de Control; sin credenciales, ruta, query o fragmento |
-| `BACKEND_URL` | Obligatoria sólo sin SCRAPING_URL | Origen HTTP/HTTPS, por ejemplo `http://127.0.0.1:8080`; sin credenciales, prefijo de ruta, query o fragmento |
-| `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; vacío sólo para rollback con una API anterior a SUP-268 que conserve el lector |
-| `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad; vacío sólo para rollback con API anterior a SUP-272 |
-| `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección de escucha; usar `127.0.0.1:8082` para restringirla a la máquina local |
-| `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo máximo de la solicitud proxificada |
-| `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el backend |
-| `GATEWAY_RESPONSE_HEADER_TIMEOUT` | `10s` | Espera de headers después de enviar la solicitud al backend |
-| `GATEWAY_READ_HEADER_TIMEOUT` | `5s` | Lectura de headers del cliente |
-| `GATEWAY_IDLE_TIMEOUT` | `60s` | Conexión entrante inactiva |
-| `GATEWAY_SHUTDOWN_TIMEOUT` | `10s` | Espera de solicitudes activas al recibir SIGINT/SIGTERM |
-| `GATEWAY_READINESS_TIMEOUT` | `2s` | Límite conjunto de las consultas de diagnóstico de dependencias |
-| `GATEWAY_TRUSTED_PROXIES` | Vacío | IPs/CIDRs de proxies de entrada confiables, separados por coma |
+| `SCRAPING_URL` | Vacío en modo legado; requerida en despliegue final | Origen HTTP/HTTPS de Control de scraping |
+| `BACKEND_URL` | Obligatoria sólo sin `SCRAPING_URL` | Origen de respaldo para rollback hacia API monolítica |
+| `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo |
+| `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad |
+| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; vacío devuelve 404 en `/api/v1/listas` |
+| `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
+| `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
+| `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el upstream |
+| `GATEWAY_RESPONSE_HEADER_TIMEOUT` | `10s` | Espera de cabeceras de respuesta del upstream |
+| `GATEWAY_READ_HEADER_TIMEOUT` | `5s` | Lectura de cabeceras enviadas por el cliente |
+| `GATEWAY_IDLE_TIMEOUT` | `60s` | Tiempo máximo de conexión inactiva |
+| `GATEWAY_SHUTDOWN_TIMEOUT` | `10s` | Espera de peticiones activas ante SIGINT/SIGTERM |
+| `GATEWAY_READINESS_TIMEOUT` | `2s` | Límite conjunto para `/_gateway/dependencies` |
+| `GATEWAY_KEEPALIVE_TIMEOUT` | `30s` | Keep-alive de conexiones de lectura hacia upstreams |
+| `GATEWAY_TRUSTED_PROXIES` | Vacío | IPs o CIDRs de proxies reversos de entrada confiables |
+| `GATEWAY_CATALOGO_PREFIXES` | `/api/v1/productos,/api/v1/admin/productos` | Prefijos enrutados a Catálogo |
+| `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios` | Prefijos enrutados a Identidad |
+| `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas` | Prefijos enrutados a Motor de rutas |
+| `GATEWAY_SCRAPING_PREFIXES` | `/api/v1/scraper,/swagger` | Prefijos enrutados a Control de scraping |
 
-Los timeouts deben ser duraciones positivas de Go, como `500ms` o `30s`. Una
-configuración inválida impide el arranque. El servidor también limita la lectura
-del request completo al tiempo configurado de solicitud. No apuntar un upstream
-a la propia Gateway. Los HTTPS del backend conservan verificación TLS; las
-conexiones internas no usan automáticamente el proxy de salida de la máquina.
+Los timeouts deben ser duraciones positivas de Go (`500ms`, `5s`, `30s`). Una
+configuración inválida aborta el arranque con mensaje explicativo.
+
+Las variables `GATEWAY_*_PREFIXES` son listas separadas por comas. Vacías usan
+el valor por defecto. Cada prefijo es un path absoluto (`/api/v1/productos`)
+que coincide consigo mismo y con sus rutas hijas (`/api/v1/productos/123`),
+pero no con rutas vecinas (`/api/v1/productos-falso`). Reglas al arrancar:
+
+- El `/` final se **recorta**: `/api/v1/productos/` equivale a `/api/v1/productos`.
+- Los espacios alrededor de cada coma se ignoran.
+- Abortan el arranque, con un error que nombra la variable y el valor: URLs
+  completas (`http://...`), paths sin `/` inicial o que empiezan con `//`, query
+  (`?`), fragmento (`#`), `%`, espacios internos, segmentos vacíos o `.`/`..`,
+  la raíz `/` sola, elementos vacíos (`a,,b` o coma final) y prefijos repetidos,
+  ya sea en la misma variable o entre variables distintas.
 
 ## Transparencia y seguridad de la entrada
 
-- Conserva método, path codificado, query, cuerpo, Host, códigos y representación
-  de respuesta. Propaga cookies, Authorization, CORS, redirects y headers de la
-  aplicación. Los headers de salto HTTP se gestionan con `httputil.ReverseProxy`.
-- CORS, autenticación, autorización y rate limiting continúan en cada servicio;
-  esta tarea no introduce contadores duplicados ni cambia permisos.
-- Acepta un `X-Request-ID` de hasta 128 caracteres ASCII alfanuméricos, `.`, `_`
-  o `-`; genera uno si falta o es inválido. Lo propaga al backend, respuesta y
-  logs JSON. No registra query, cookies, Authorization ni cuerpos.
-- Elimina `X-User-ID`, `X-Role` y `X-User-Role` del cliente: no constituyen identidad verificada.
-- Reconstruye los headers `X-Forwarded-*`. Sin proxies confiables configurados,
-  usa la IP de la conexión y el protocolo real de entrada. Si el peer inmediato
-  es confiable, recorre la cadena de IPs desde la derecha hasta el primer salto
-  no confiable, para que un cliente no pueda falsificar la primera IP. Se detiene
-  también ante un salto inválido, sin saltarlo ni inspeccionar su prefijo. Así,
-  `invalid_string, 203.0.113.5` conserva la IP real que anexó el proxy confiable.
-- Antes de colocarla detrás de Nginx/Ingress, configurar los CIDRs/IPs reales de
-  ese proxy; no confiar en todas las redes. De lo contrario el rate limiter
-  existente verá la IP del proxy en vez de la del cliente. El backend también
-  debe configurar sus proxies confiables al integrar el despliegue.
+- Conserva método, path codificado, query, cuerpo, cabecera `Host` y códigos HTTP.
+- Propaga cookies, `Authorization`, cabeceras CORS y redirects.
+- Inyecta o propaga `X-Request-ID` (hasta 128 caracteres seguros).
+- **Elimina cabeceras de identidad falsificables**: descarta `X-User-ID`, `X-Role` y
+  `X-User-Role` enviadas por el cliente para evitar suplantaciones.
+- Reconstruye `X-Forwarded-*`: con `GATEWAY_TRUSTED_PROXIES` configurado, recorre la
+  cadena desde el salto más cercano hasta el primer proxy no confiable para fijar la
+  IP real del cliente.
+- Las lecturas (`GET`, `HEAD`, `OPTIONS`, `TRACE`) reutilizan conexiones. Las
+  escrituras (`POST`, `PUT`, `DELETE`, `PATCH`) abren una conexión nueva sin
+  reintentos automáticos para proteger operaciones con `Idempotency-Key`.
+- Si un upstream no responde, devuelve HTTP 502 (`<servicio>_unavailable`) o
+  HTTP 504 (`<servicio>_timeout`), con JSON estructurado que incluye el `request_id`.
 
-Los GET/HEAD/OPTIONS/TRACE reutilizan conexiones al backend. Para los demás
-métodos se abre una conexión HTTP/1 por solicitud: se evita que el transporte
-reenvíe una escritura ante un fallo de una conexión reutilizada, incluso con
-`Idempotency-Key`. Esto agrega costo de conexión a las escrituras. Las pruebas de
-integración verifican el comportamiento funcional; el rendimiento bajo carga
-debe medirse en el entorno de prueba. La Gateway no implementa reintentos de negocio.
+## Procedimiento de Rollback y Despliegue (SUP-268 / SUP-272)
 
-Si no se puede conectar al backend, devuelve HTTP 502 con `backend_unavailable`.
-Un timeout antes de empezar la respuesta devuelve HTTP 504 con `backend_timeout`.
-Ambos contienen `request_id`, sin detalles internos en la respuesta. Los códigos
-de error enviados por el backend se conservan. Una respuesta cuyo cuerpo ya
-empezó no puede cambiar a 504: al vencer el plazo se interrumpe la transferencia.
-El cierre del cliente cancela la solicitud al backend.
+Si Catálogo o Identidad presentan fallas críticas durante un despliegue, Gateway
+puede volver al modo legado (`BACKEND_URL` con `CATALOGO_URL` o `IDENTIDAD_URL`
+vacíos). **Cambiar solo esas variables no basta:** el Control de scraping actual
+no implementa catálogo ni autenticación, así que esas rutas responderían 404. El
+orden es obligatorio: primero la imagen histórica de la API, después Gateway.
 
-## Pruebas
+### Rollback de Catálogo (SUP-268) en Compose
 
-Desde `backend/gateway`:
+1. **Restaurar la imagen histórica de la API.** Fijar una imagen verificada
+   anterior a SUP-268 (con el lector de productos), por digest y no por un tag
+   mutable, y levantarla junto con Gateway usando el override
+   `docker-compose.catalogo-rollback.yml`. Mantener el mismo proyecto y `.env`:
+
+   ```bash
+   export SUP268_LEGACY_API_IMAGE='<imagen-pre-SUP268-verificada@sha256:...>'
+   docker compose -f docker-compose.yml -f docker-compose.catalogo-rollback.yml \
+     up -d --wait control_scraping gateway
+   ```
+
+   El override reemplaza la imagen de `control_scraping`, le devuelve el DSN con
+   acceso a las tablas de Catálogo y deja Gateway con `BACKEND_URL` y
+   `CATALOGO_URL`/`IDENTIDAD_URL`/`SCRAPING_URL` vacíos. `--wait` exige que
+   la API histórica esté sana antes de dar por terminado el paso.
+2. **Recrear los clientes que fijan la IP de Gateway** (Nginx del frontend):
+
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.catalogo-rollback.yml \
+     up -d --no-deps --force-recreate --wait frontend
+   ```
+
+3. **Verificar** productos, login y administración a través de Gateway
+   (`http://127.0.0.1:8082`) y `/_gateway/dependencies` antes de continuar.
+4. **Detener Catálogo** solo después de esa verificación:
+   `docker compose stop catalogo`.
+
+No se requieren migraciones ni borrar volúmenes. Para volver a activar Catálogo,
+retirar el override, reconstruir la imagen actual de Control y recrear Gateway y
+los clientes que hayan fijado su IP.
+
+### Rollback de Identidad (SUP-272) en Compose
+
+Mismo orden, con `docker-compose.identidad-rollback.yml` y una imagen aprobada de
+SUP-271 en `SUP272_LEGACY_API_IMAGE`: primero la API histórica con ambos DSN,
+después Gateway con `IDENTIDAD_URL` vacío. En el despliegue normal, Identidad se
+alcanza por el alias `identidad-upstream` en la red aislada `identidad_edge`, con
+IP fija de Gateway; Identidad confía únicamente en esa IP para preservar la
+trazabilidad del cliente.
+
+### Rollback en Kubernetes
+
+1. Restaurar la imagen anterior de la API, esperar su rollout y verificar sus
+   lecturas (productos o autenticación, según el caso).
+2. Después, quitar `CATALOGO_URL` (o `IDENTIDAD_URL`) del Deployment de Gateway y
+   esperar su rollout.
+3. Comprobar productos y administración por el Service público antes de reducir
+   Catálogo. Si tiene HPA, retirarlo antes de escalar el Deployment a cero. Nunca
+   apuntar el selector público a una API sin el lector.
+
+## Pruebas y estructura de tests
+
+Las pruebas del Gateway se encuentran organizadas en `tests/` fuera del código de aplicación:
+
+```
+backend/gateway/
+  cmd/gateway/         ← binario principal
+  internal/
+    config/            ← carga y validación de variables de entorno
+    proxy/             ← reverse proxy, handlers y dependencias
+  tests/
+    unit/              ← pruebas unitarias de configuración (tests/unit/config_test.go)
+    integration/       ← pruebas de proxy HTTP end-to-end con servidores locales
+```
+
+Para ejecutar las pruebas:
 
 ```bash
+cd backend/gateway
 go test -race ./...
 go vet ./...
 go build ./cmd/gateway
 ```
 
-Las pruebas usan servidores HTTP locales y cubren transparencia de requests y
-respuestas, cookies, estados de error del backend, compresión, redirects, IPs de
-proxies confiables, correlación sin credenciales en logs, conexión fallida,
-timeout, cancelación, escrituras sin replay, enrutamiento por dominio y diagnóstico
-de dependencias separado de readiness.
-
-Desde la raíz, el humo usa Docker Compose y Python 3 estándar:
+Para ejecutar las pruebas de integración en Compose desde la raíz:
 
 ```bash
 bash scripts/smoke_catalogo_routing_compose.sh
 ```
-
-Utiliza fixtures, credenciales y recursos aislados; los elimina al terminar.
-Cubre contratos frente a una API anterior al corte, frontend, cookies, roles,
-registro/perfil, trabajos/ingesta, tres réplicas de Catálogo, fallos independientes
-y rollback con la imagen anterior. No inicia workers ni spiders reales.
-
-No basta con una salida exitosa de los tests del proxy para afirmar compatibilidad
-del backend real. Registrar resultados de ambas suites y del humo por separado.
-
-## Docker, integración y retorno al estado anterior
-
-Desde la raíz del repositorio:
-
-```bash
-docker build --target test -t gateway-tests backend/gateway
-docker build -t gateway backend/gateway
-bash scripts/smoke_gateway_compose.sh
-```
-
-La imagen ejecuta un binario estático como UID/GID 65532. Compose y Kubernetes
-añaden filesystem de solo lectura, recursos y probes. Gateway no recibe secretos
-JWT, acceso Redis ni credenciales PostgreSQL.
-
-Los clientes usan `api:8080`. Desde SUP-268, Gateway reenvía consultas de productos
-a `catalogo:8080`; Identidad y Control de scraping tienen sus upstreams propios.
-La API heredada está retirada. Consultar la guía SUP-273 para el corte y rollback.
-
-La [guía de SUP-268](../../docs/Guias/GUIA_CATALOGO_ENRUTAMIENTO.md)
-describe configuración, pruebas aisladas, orden de activación y rollback.
-El script prueba también el frontend tras detener Gateway y devolver el alias
-`api` a la API original. Los manifiestos no implican un despliegue automático en
-el clúster de la universidad.
-
-## Extracción de Identidad (SUP-272)
-
-`IDENTIDAD_URL` es un origen HTTP(S) interno, sin path/credenciales/query. Vacío
-permite rollback sólo junto a una API histórica que conserve auth. Con la API
-extraída, omitirlo deja auth sin propietario y devuelve 404. No hay fallback
-cuando el servicio se cae. Diagnóstico incluye `identidad`, `identidad_database`
-y `identidad_redis`; readiness de Gateway continúa local.
-
-Compose usa el alias exclusivo `identidad-upstream` en una red de entrada con
-IP de Gateway reservada fuera del rango dinámico. Identidad confía únicamente
-en esa IP para conservar el cliente real y su contador de login. En Kubernetes,
-configurar proxies reales y NetworkPolicy antes del corte. Procedimiento:
-`docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`.
-
-Estado final y operación: [SUP-273](../../docs/Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md).

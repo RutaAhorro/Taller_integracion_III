@@ -1,4 +1,4 @@
-package proxy
+package integration_test
 
 import (
 	"encoding/json"

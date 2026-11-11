@@ -193,6 +193,13 @@ services:
       RUTAS_URL: ${RUTAS_URL:-}
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
+      GATEWAY_KEEPALIVE_TIMEOUT: ${GATEWAY_KEEPALIVE_TIMEOUT:-30s}
+      # Prefijos por dominio (mismos defaults que internal/config/config.go).
+      # Un formato inválido impide arrancar; el "/" final se recorta.
+      GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios}
+      GATEWAY_CATALOGO_PREFIXES: ${GATEWAY_CATALOGO_PREFIXES:-/api/v1/productos,/api/v1/admin/productos}
+      GATEWAY_RUTAS_PREFIXES: ${GATEWAY_RUTAS_PREFIXES:-/api/v1/listas}
+      GATEWAY_SCRAPING_PREFIXES: ${GATEWAY_SCRAPING_PREFIXES:-/api/v1/scraper,/swagger}
     depends_on:
       control_scraping:
         condition: service_healthy
