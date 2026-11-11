@@ -9,7 +9,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/config"
 )
 
-func TestLoadDefaults(t *testing.T) {
+func TestLoadDefaults(prueba *testing.T) {
 	configuracion, err := config.Load(func(key string) string {
 		if key == "BACKEND_URL" {
 			return "http://127.0.0.1:8080"
@@ -17,17 +17,17 @@ func TestLoadDefaults(t *testing.T) {
 		return ""
 	})
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	if configuracion.ListenAddr != ":8082" || configuracion.RequestTimeout != 30*time.Second || configuracion.ReadinessTimeout != 2*time.Second || configuracion.KeepAliveTimeout != 30*time.Second || len(configuracion.TrustedProxies) != 0 {
-		t.Fatalf("unexpected defaults: %+v", configuracion)
+		prueba.Fatalf("unexpected defaults: %+v", configuracion)
 	}
 	if len(configuracion.CatalogPrefixes) != 2 || len(configuracion.IdentityPrefixes) != 2 || len(configuracion.RoutesPrefixes) != 1 || len(configuracion.ScrapingPrefixes) != 2 {
-		t.Fatalf("unexpected default route prefixes: %+v", configuracion)
+		prueba.Fatalf("unexpected default route prefixes: %+v", configuracion)
 	}
 }
 
-func TestLoadRejectsInvalidConfiguration(t *testing.T) {
+func TestLoadRejectsInvalidConfiguration(prueba *testing.T) {
 	for _, tc := range []struct{ key, value string }{
 		{"BACKEND_URL", ""},
 		{"BACKEND_URL", "ftp://backend:8080"},
@@ -65,7 +65,7 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 		{"GATEWAY_KEEPALIVE_TIMEOUT", "-5s"},
 		{"GATEWAY_TRUSTED_PROXIES", "localhost"},
 	} {
-		t.Run(tc.key+"="+tc.value, func(t *testing.T) {
+		prueba.Run(tc.key+"="+tc.value, func(subprueba *testing.T) {
 			_, err := config.Load(func(key string) string {
 				if key == tc.key {
 					return tc.value
@@ -76,24 +76,24 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 				return ""
 			})
 			if err == nil {
-				t.Fatal("expected configuration error")
+				subprueba.Fatal("expected configuration error")
 			}
 			if strings.Contains(err.Error(), "password") || strings.Contains(err.Error(), "private") {
-				t.Fatalf("error exposes supplied credentials: %v", err)
+				subprueba.Fatalf("error exposes supplied credentials: %v", err)
 			}
 		})
 	}
 }
 
-func TestFinalTopologyDoesNotRequireLegacyBackend(t *testing.T) {
+func TestFinalTopologyDoesNotRequireLegacyBackend(prueba *testing.T) {
 	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080", "RUTAS_URL": "http://motor-rutas:8001"}
 	configuracion, err := config.Load(func(key string) string { return env[key] })
 	if err != nil || configuracion.Backend != nil || configuracion.Scraping == nil || configuracion.Identidad == nil || configuracion.Catalogo == nil || configuracion.Rutas == nil {
-		t.Fatalf("topología final inválida: %v %v", configuracion, err)
+		prueba.Fatalf("topología final inválida: %v %v", configuracion, err)
 	}
 }
 
-func TestLoadOverrides(t *testing.T) {
+func TestLoadOverrides(prueba *testing.T) {
 	env := map[string]string{
 		"BACKEND_URL": "https://[::1]:8443/", "GATEWAY_LISTEN_ADDR": "127.0.0.1:9000",
 		"CATALOGO_URL":            "http://catalogo:8080",
@@ -103,13 +103,13 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	configuracion, err := config.Load(func(key string) string { return env[key] })
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	if configuracion.ListenAddr != env["GATEWAY_LISTEN_ADDR"] || configuracion.Catalogo.String() != env["CATALOGO_URL"] || configuracion.RequestTimeout != 2*time.Second || configuracion.KeepAliveTimeout != 15*time.Second || len(configuracion.TrustedProxies) != 3 {
-		t.Fatalf("overrides not applied: %+v", configuracion)
+		prueba.Fatalf("overrides not applied: %+v", configuracion)
 	}
 	if len(configuracion.CatalogPrefixes) != 1 || configuracion.CatalogPrefixes[0] != "/api/v1/custom-productos" {
-		t.Fatalf("custom catalog prefix not applied: %+v", configuracion.CatalogPrefixes)
+		prueba.Fatalf("custom catalog prefix not applied: %+v", configuracion.CatalogPrefixes)
 	}
 }
 
