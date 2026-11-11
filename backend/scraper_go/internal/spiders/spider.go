@@ -1,11 +1,13 @@
-// Package spiders contiene los spiders y su registro. Cada spider conoce un
-// sitio; el worker sólo ve las interfaces Fetcher, Emitter y Spider.
+// Package spiders contiene el ciclo de vida de cada spider y su registro. Los
+// parsers viven en internal/extract y la configuración en internal/catalog.
 package spiders
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
@@ -20,48 +22,33 @@ const (
 	LiderName       = "lider_rsc"
 )
 
-// spiderFactory construye un spider con las mismas dependencias que recibe el
-// registry.
-type spiderFactory func(Fetcher, string, int, *slog.Logger) Spider
-
-// asFactory adapta un constructor concreto a spiderFactory. Evita repetir el
-// mismo envoltorio por cada spider.
-func asFactory[T Spider](newSpider func(Fetcher, string, int, *slog.Logger) T) spiderFactory {
-	return func(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) Spider {
-		return newSpider(fetcher, categoryDir, maxPages, logger)
+// Build construye el spider correspondiente al parser declarado en el catálogo.
+func Build(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (Spider, error) {
+	switch site.Parser {
+	case "jumbo":
+		return newJumbo(site, fetcher, categoryDir, maxPages, logger), nil
+	case "santa_isabel":
+		return newSantaIsabel(site, fetcher, categoryDir, maxPages, logger), nil
+	case "cugat":
+		return newCugat(site, fetcher, categoryDir, maxPages, logger), nil
+	case "acuenta":
+		return newAcuenta(site, fetcher, categoryDir, maxPages, logger), nil
+	case "lider":
+		return newLider(site, fetcher, categoryDir, maxPages, logger), nil
+	default:
+		return nil, fmt.Errorf("parser desconocido %q", site.Parser)
 	}
-}
-
-// spiderCatalog es la única fuente de nombres y constructores. De aquí salen
-// IsKnown, Names y NewRegistry, de modo que no haya listas paralelas.
-var spiderCatalog = []struct {
-	name  string
-	build spiderFactory
-}{
-	{JumboName, asFactory(NewJumbo)},
-	{SantaIsabelName, asFactory(NewSantaIsabel)},
-	{CugatName, asFactory(NewCugat)},
-	{AcuentaName, asFactory(NewAcuenta)},
-	{LiderName, asFactory(NewLider)},
 }
 
 // IsKnown indica si el nombre pertenece al catálogo de spiders.
 func IsKnown(name string) bool {
-	for _, entry := range spiderCatalog {
-		if entry.name == name {
-			return true
-		}
-	}
-	return false
+	_, ok := catalog.Default().Get(name)
+	return ok
 }
 
 // Names devuelve los nombres del catálogo en orden estable.
 func Names() []string {
-	names := make([]string, 0, len(spiderCatalog))
-	for _, entry := range spiderCatalog {
-		names = append(names, entry.name)
-	}
-	return names
+	return catalog.Default().Names()
 }
 
 // Emitter recibe cada producto ya normalizado. El worker lo conecta con el
@@ -83,12 +70,37 @@ type Registry struct {
 	spiders map[string]Spider
 }
 
+// NewRegistry construye el registro con el catálogo embebido.
 func NewRegistry(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Registry {
-	registry := &Registry{spiders: make(map[string]Spider, len(spiderCatalog))}
-	for _, entry := range spiderCatalog {
-		registry.Register(entry.build(fetcher, categoryDir, maxPages, logger))
+	registry, err := NewRegistryFromCatalog(catalog.Default(), fetcher, categoryDir, maxPages, logger)
+	if err != nil {
+		panic(err)
 	}
 	return registry
+}
+
+// NewRegistryFromEnv construye el registro con el catálogo indicado por
+// SCRAPER_SPIDERS_FILE, si existe. Falla al arrancar si la configuración no es
+// válida.
+func NewRegistryFromEnv(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (*Registry, error) {
+	sites, err := catalog.FromEnv()
+	if err != nil {
+		return nil, err
+	}
+	return NewRegistryFromCatalog(sites, fetcher, categoryDir, maxPages, logger)
+}
+
+// NewRegistryFromCatalog construye todos los spiders declarados en el catálogo.
+func NewRegistryFromCatalog(sites catalog.Catalog, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (*Registry, error) {
+	registry := &Registry{spiders: make(map[string]Spider, len(sites.Sites))}
+	for _, site := range sites.Sites {
+		spider, err := Build(site, fetcher, categoryDir, maxPages, logger)
+		if err != nil {
+			return nil, err
+		}
+		registry.Register(spider)
+	}
+	return registry, nil
 }
 
 func (r *Registry) Register(spider Spider) {
