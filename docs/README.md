@@ -19,7 +19,7 @@ corrige el documento.
 | --- | --- |
 | [Arquitectura](Arquitectura/README.md) | Servicios, flujo de una petición, datos y permisos, redes y despliegue, seguridad |
 | [Decisiones](Decisiones/README.md) | Cada decisión de arquitectura con su motivo y la alternativa descartada |
-| [Contratos](Contratos/CONTRATO_ARTICULOS_LISTA.md) | Contratos entre servicios. Hoy: artículos de lista (SUP-321) |
+| Contratos | Contratos entre servicios: [artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md) (SUP-321) y [motor de rutas](Contratos/CONTRATO_MOTOR_RUTAS.md) (SUP-323, en revisión) |
 | [Métricas](Metricas/README.md) | Lo medido, lo configurado y lo que no se mide; incluye el [benchmark HPA](Metricas/Benchmark_HPA_Catalogo.md) |
 | [Requisitos](Requisitos/README.md) | Requisitos, reglas de negocio y términos. Describen objetivos, no funciones ya terminadas |
 | [Diagramas](Diagramas/README.md) | Arquitectura, MER, casos de uso y flujos, con el estado de cada uno |
