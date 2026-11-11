@@ -140,127 +140,232 @@ func TestTransparentRequestAndResponse(t *testing.T) {
 				r.Body = io.NopCloser(bytes.NewReader(body))
 				observed <- r
 				w.Header().Set("Content-Type", "application/json")
-				w.Header().Set("Custom-Header", "preserved")
-				w.Header().Add("Set-Cookie", "first=one; Path=/; HttpOnly")
-				w.Header().Add("Set-Cookie", "second=two; Path=/")
-				w.WriteHeader(http.StatusAccepted)
-				if method != "HEAD" {
-					_, _ = io.WriteString(w, payload)
-				}
+				w.Header().Add("Set-Cookie", "jwt=test-session; Path=/; HttpOnly; SameSite=Lax")
+				w.Header().Add("Set-Cookie", "preference=compact; Path=/")
+				w.Header().Set("Access-Control-Allow-Origin", "https://frontend.example")
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.WriteHeader(http.StatusCreated)
+				_, _ = w.Write([]byte("{\"mensaje\":\"Respuesta del backend\"}"))
 			}))
 			defer backend.Close()
 			gateway := gatewayFor(t, backend.URL, nil, nil)
-			req, _ := http.NewRequest(method, gateway.URL+"/api/v1/productos?q=leche&categoria=L%C3%A1cteos", strings.NewReader(payload))
-			req.Header.Set("Authorization", "Bearer valid-token")
-			req.Header.Set("Cookie", "session=active")
-			req.Header.Set("X-Request-ID", "trace-id-123")
-			req.Header.Set("X-User-ID", "forged-id")
-			req.Header.Set("X-Role", "forged-role")
-			req.Header.Set("X-User-Role", "forged-role")
+			req, err := http.NewRequest(method, gateway.URL+"/api/v1/productos/a%2Fb?q=leche+entera&q=oferta&empty=&encoded=%2F", strings.NewReader(payload))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Host = "api.example"
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Authorization", "Bearer test-token")
+			req.Header.Set("Cookie", "jwt=test-session")
+			req.Header.Set("Origin", "https://frontend.example")
+			req.Header.Set("X-Request-ID", "sup-264.request_1")
+			req.Header.Set("X-Forwarded-For", "203.0.113.200")
+			req.Header.Set("X-Forwarded-Proto", "https")
+			req.Header.Set("X-Role", "admin")
+			req.Header.Set("X-User-ID", "forged-user")
 			res, err := http.DefaultClient.Do(req)
 			if err != nil {
 				t.Fatal(err)
 			}
 			body := bodyOf(t, res)
-			if res.StatusCode != http.StatusAccepted {
-				t.Fatalf("status changed: %d", res.StatusCode)
+			if res.StatusCode != http.StatusCreated || len(res.Header.Values("Set-Cookie")) != 2 ||
+				res.Header.Get("X-Request-ID") != "sup-264.request_1" ||
+				res.Header.Get("Access-Control-Allow-Origin") != "https://frontend.example" ||
+				res.Header.Get("Access-Control-Allow-Credentials") != "true" {
+				t.Fatalf("response contract changed: status=%d headers=%v", res.StatusCode, res.Header)
 			}
-			if res.Header.Get("Custom-Header") != "preserved" || res.Header.Get("X-Request-ID") != "trace-id-123" {
-				t.Fatalf("response headers missing: %v", res.Header)
-			}
-			if cookies := res.Header.Values("Set-Cookie"); len(cookies) != 2 || cookies[0] != "first=one; Path=/; HttpOnly" {
-				t.Fatalf("cookies not preserved: %v", cookies)
-			}
-			if method != "HEAD" && string(body) != payload {
-				t.Fatalf("body changed: %s", body)
+			if method != "HEAD" && string(body) != "{\"mensaje\":\"Respuesta del backend\"}" {
+				t.Fatalf("response body changed: %s", body)
 			}
 			got := <-observed
-			if got.Method != method || got.URL.RawPath != "/api/v1/productos" && got.URL.Path != "/api/v1/productos" {
-				t.Fatalf("request changed: %s %s", got.Method, got.URL.Path)
+			gotBody, _ := io.ReadAll(got.Body)
+			if got.Method != method || got.Host != "api.example" || got.URL.EscapedPath() != "/api/v1/productos/a%2Fb" ||
+				got.URL.RawQuery != req.URL.RawQuery || string(gotBody) != payload ||
+				got.Header.Get("Authorization") != "Bearer test-token" || got.Header.Get("Cookie") != "jwt=test-session" ||
+				got.Header.Get("Origin") != "https://frontend.example" || got.Header.Get("Content-Type") != "application/json" ||
+				got.Header.Get("X-Request-ID") != "sup-264.request_1" {
+				t.Fatalf("request contract changed: method=%s host=%s uri=%s headers=%v body=%s", got.Method, got.Host, got.RequestURI, got.Header, gotBody)
 			}
-			if got.URL.RawQuery != "q=leche&categoria=L%C3%A1cteos" {
-				t.Fatalf("query not preserved: %s", got.URL.RawQuery)
-			}
-			if got.Header.Get("Authorization") != "Bearer valid-token" || got.Header.Get("Cookie") != "session=active" {
-				t.Fatalf("credentials not forwarded: %v", got.Header)
-			}
-			if got.Header.Get("X-User-ID") != "" || got.Header.Get("X-Role") != "" || got.Header.Get("X-User-Role") != "" {
-				t.Fatalf("forged identity header forwarded: %v", got.Header)
-			}
-			if got.Header.Get("X-Forwarded-For") != "127.0.0.1" || got.Header.Get("X-Forwarded-Proto") != "http" {
-				t.Fatalf("forwarding headers incorrect: %v", got.Header)
+			if got.Header.Get("X-Forwarded-For") != "127.0.0.1" || got.Header.Get("X-Forwarded-Proto") != "http" ||
+				got.Header.Get("X-Role") != "" || got.Header.Get("X-User-ID") != "" {
+				t.Fatalf("forged identity forwarded: %v", got.Header)
 			}
 		})
 	}
 }
 
-func TestGzipCompressionPreserved(t *testing.T) {
-	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Encoding", "gzip")
-		w.Header().Set("Content-Type", "application/json")
-		writer := gzip.NewWriter(w)
-		_, _ = writer.Write([]byte(`{"compressed":true}`))
-		_ = writer.Close()
-	}))
-	defer backend.Close()
-	gateway := gatewayFor(t, backend.URL, nil, nil)
-	req, _ := http.NewRequest("GET", gateway.URL+"/api/v1/productos", nil)
-	req.Header.Set("Accept-Encoding", "gzip")
-	transport := &http.Transport{DisableCompression: true}
-	client := &http.Client{Transport: transport}
-	res, err := client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer res.Body.Close()
-	if res.Header.Get("Content-Encoding") != "gzip" {
-		t.Fatalf("content-encoding removed: %v", res.Header)
-	}
-	reader, err := gzip.NewReader(res.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(reader)
-	if string(body) != `{"compressed":true}` {
-		t.Fatalf("payload corrupted: %s", body)
+func TestBackendStatusesAndHealthAreNotReplaced(t *testing.T) {
+	for _, status := range []int{200, 400, 401, 403, 404, 405, 409, 429, 500, 503} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Retry-After", "15")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("backend-response"))
+			}))
+			defer backend.Close()
+			gateway := gatewayFor(t, backend.URL, nil, nil)
+			res, err := http.Get(gateway.URL + "/api/v1/health")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := string(bodyOf(t, res)); res.StatusCode != status || got != "backend-response" || res.Header.Get("Retry-After") != "15" {
+				t.Fatalf("backend response changed: status=%d body=%q", res.StatusCode, got)
+			}
+		})
 	}
 }
 
-func TestTimeoutReturnsGatewayTimeout(t *testing.T) {
+func TestRedirectAndGzipArePreserved(t *testing.T) {
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	_, _ = gz.Write([]byte("backend-content"))
+	_ = gz.Close()
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+		if r.URL.Path == "/redirect" {
+			w.Header().Set("Location", "/api/v1/auth/me?from=login")
+			w.WriteHeader(http.StatusTemporaryRedirect)
+			return
+		}
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = w.Write(compressed.Bytes())
 	}))
 	defer backend.Close()
-	gateway := gatewayFor(t, backend.URL, map[string]string{"GATEWAY_REQUEST_TIMEOUT": "20ms"}, nil)
+	gateway := gatewayFor(t, backend.URL, nil, nil)
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DisableCompression = true
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	res, err := client.Get(gateway.URL + "/redirect")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = bodyOf(t, res)
+	if res.StatusCode != http.StatusTemporaryRedirect || res.Header.Get("Location") != "/api/v1/auth/me?from=login" {
+		t.Fatal("redirect changed")
+	}
+	res, err = client.Get(gateway.URL + "/compressed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bodyOf(t, res); res.Header.Get("Content-Encoding") != "gzip" || !bytes.Equal(got, compressed.Bytes()) {
+		t.Fatal("upstream compression changed")
+	}
+}
+
+func TestUpstreamFailureAndLocalLiveness(t *testing.T) {
+	backend := httptest.NewServer(http.NotFoundHandler())
+	backend.Close()
+	gateway := gatewayFor(t, backend.URL, nil, nil)
 	res, err := http.Get(gateway.URL + "/api/v1/productos")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := bodyOf(t, res)
-	if res.StatusCode != http.StatusGatewayTimeout || !strings.Contains(string(body), "backend_timeout") {
-		t.Fatalf("incorrect timeout response: %d %s", res.StatusCode, body)
+	if res.StatusCode != http.StatusBadGateway || !bytes.Contains(body, []byte("backend_unavailable")) || res.Header.Get("X-Request-ID") == "" {
+		t.Fatalf("incorrect upstream failure: %d %s", res.StatusCode, body)
+	}
+	res, err = http.Get(gateway.URL + "/_gateway/live")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body := bodyOf(t, res); res.StatusCode != http.StatusOK || !bytes.Contains(body, []byte("gateway")) {
+		t.Fatalf("local liveness failed: %d %s", res.StatusCode, body)
 	}
 }
 
-func TestClientCancellationAbortsUpstreamRequest(t *testing.T) {
-	canceled := make(chan struct{})
+func TestUpstreamTimeoutCancelsBackend(t *testing.T) {
+	for _, env := range []map[string]string{
+		{"GATEWAY_RESPONSE_HEADER_TIMEOUT": "50ms"},
+		{"GATEWAY_REQUEST_TIMEOUT": "50ms"},
+	} {
+		t.Run("timeout", func(t *testing.T) {
+			canceled := make(chan struct{})
+			backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				<-r.Context().Done()
+				close(canceled)
+			}))
+			defer backend.Close()
+			gateway := gatewayFor(t, backend.URL, env, nil)
+			res, err := http.Get(gateway.URL + "/slow")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if body := bodyOf(t, res); res.StatusCode != http.StatusGatewayTimeout || !bytes.Contains(body, []byte("backend_timeout")) {
+				t.Fatalf("incorrect timeout response: %d %s", res.StatusCode, body)
+			}
+			select {
+			case <-canceled:
+			case <-time.After(2 * time.Second):
+				t.Fatal("timeout was not propagated to backend")
+			}
+		})
+	}
+}
+
+func TestClientCancellationReachesBackend(t *testing.T) {
+	started, canceled := make(chan struct{}), make(chan struct{})
 	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
 		<-r.Context().Done()
 		close(canceled)
 	}))
 	defer backend.Close()
 	gateway := gatewayFor(t, backend.URL, nil, nil)
 	ctx, cancel := context.WithCancel(context.Background())
-	req, _ := http.NewRequestWithContext(ctx, "GET", gateway.URL+"/api/v1/productos", nil)
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, "GET", gateway.URL+"/waiting", nil)
+	done := make(chan error, 1)
 	go func() {
-		time.Sleep(20 * time.Millisecond)
-		cancel()
+		res, err := http.DefaultClient.Do(req)
+		if res != nil {
+			_ = res.Body.Close()
+		}
+		done <- err
 	}()
-	_, _ = http.DefaultClient.Do(req)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend did not receive request")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("client did not observe cancellation")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("client request did not stop")
+	}
 	select {
 	case <-canceled:
-	case <-time.After(time.Second):
-		t.Fatal("client cancellation did not cancel backend")
+	case <-time.After(2 * time.Second):
+		t.Fatal("backend request did not stop")
+	}
+}
+
+func TestDeadlineInterruptsResponseAlreadyStarted(t *testing.T) {
+	canceled := make(chan struct{})
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("partial-response"))
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		close(canceled)
+	}))
+	defer backend.Close()
+	gateway := gatewayFor(t, backend.URL, map[string]string{"GATEWAY_REQUEST_TIMEOUT": "100ms"}, nil)
+	res, err := http.Get(gateway.URL + "/stream")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK || string(body) != "partial-response" || err == nil {
+		t.Fatalf("stream was not interrupted after deadline: status=%d body=%q err=%v", res.StatusCode, body, err)
+	}
+	select {
+	case <-canceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream deadline did not cancel backend")
 	}
 }
 
