@@ -12,8 +12,6 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
-const DefaultMaxPages = 100
-
 const (
 	JumboName       = "jumbo_rsc"
 	SantaIsabelName = "santa_isabel_rsc"

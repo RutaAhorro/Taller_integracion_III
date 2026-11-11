@@ -4,7 +4,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"flag"
@@ -19,6 +18,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/input"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
@@ -50,7 +50,7 @@ func run() error {
 	file := flag.String("file", "", "archivo con URLs, una por línea")
 	product := flag.Bool("product", false, "tratar la URL como ficha de producto")
 	enrichEAN := flag.Bool("enrich-ean", false, "consultar la ficha para completar EAN cuando falte (Jumbo)")
-	maxPages := flag.Int("max-pages", spiders.DefaultMaxPages, "máximo de páginas por categoría")
+	maxPages := flag.Int("max-pages", config.DefaultMaxPages, "máximo de páginas por categoría")
 	categoryDir := flag.String("category-dir", "", "directorio de categorías; por defecto backend/scraper_go/categories")
 	delay := flag.Duration("delay", -1, "pausa entre requests; -1 usa SCRAPER_DOWNLOAD_DELAY_MS")
 	timeout := flag.Duration("timeout", 0, "timeout HTTP; 0 usa SCRAPER_DOWNLOAD_TIMEOUT")
@@ -65,7 +65,7 @@ func run() error {
 		return fmt.Errorf("-max-pages debe ser mayor que cero")
 	}
 
-	collected, err := collectURLs(urls, *file)
+	collected, err := input.Collect(urls, *file)
 	if err != nil {
 		return err
 	}
@@ -89,12 +89,17 @@ func run() error {
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel}))
 	httpClient := crawler.New(crawler.Options{
-		UserAgent:  cfg.UserAgent,
-		Delay:      cfg.DownloadDelay,
-		Timeout:    cfg.DownloadTimeout,
-		MaxSize:    cfg.MaxDownloadSize,
-		MaxRetries: cfg.MaxRetries,
-		Logger:     logger,
+		UserAgent:        cfg.UserAgent,
+		Delay:            cfg.DownloadDelay,
+		Timeout:          cfg.DownloadTimeout,
+		MaxSize:          cfg.MaxDownloadSize,
+		MaxRetries:       cfg.MaxRetries,
+		RobotsCacheTTL:   cfg.RobotsCacheTTL,
+		RobotsFailureTTL: cfg.RobotsFailureTTL,
+		RobotsMaxBytes:   cfg.RobotsMaxBytes,
+		BackoffMin:       cfg.BackoffMin,
+		BackoffMax:       cfg.BackoffMax,
+		Logger:           logger,
 	})
 
 	dir := *categoryDir
@@ -113,7 +118,10 @@ func run() error {
 		}
 	}
 
-	registry := spiders.NewRegistry(httpClient, dir, *maxPages, logger)
+	registry, err := spiders.NewRegistryFromEnv(httpClient, dir, *maxPages, logger)
+	if err != nil {
+		return err
+	}
 	spider, ok := registry.Get(*spiderName)
 	if !ok {
 		return fmt.Errorf("spider no registrado: %s", *spiderName)
@@ -147,31 +155,6 @@ func run() error {
 	}
 	fmt.Fprintf(os.Stderr, "extraidos=%d\n", emitted)
 	return nil
-}
-
-func collectURLs(values []string, file string) ([]string, error) {
-	result := append([]string(nil), values...)
-	if file == "" {
-		return result, nil
-	}
-	handle, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("abrir %s: %w", file, err)
-	}
-	defer handle.Close()
-
-	scanner := bufio.NewScanner(handle)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		result = append(result, line)
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("leer %s: %w", file, err)
-	}
-	return result, nil
 }
 
 func directoryExists(path string) bool {

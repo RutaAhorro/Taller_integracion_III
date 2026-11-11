@@ -39,7 +39,7 @@ end
 redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
 redis.call('XDEL', KEYS[1], ARGV[2])
 if redis.call('HGET', KEYS[2], ARGV[6]) == ARGV[2] then redis.call('HDEL', KEYS[2], ARGV[6]) end
-if ARGV[6] ~= '' then redis.call('SET', KEYS[4], '1', 'EX', 86400) end
+if ARGV[6] ~= '' then redis.call('SET', KEYS[4], '1', 'EX', ARGV[7]) end
 return 1
 `
 
@@ -47,6 +47,8 @@ type Options struct {
 	Stream       string
 	Group        string
 	Lease        time.Duration
+	Block        time.Duration
+	ClosedTTL    time.Duration
 	Consumer     string
 	IndexKey     string
 	DeadLetter   string
@@ -59,6 +61,8 @@ type Queue struct {
 	group        string
 	consumer     string
 	lease        time.Duration
+	block        time.Duration
+	closedTTL    time.Duration
 	indexKey     string
 	deadLetter   string
 	closedPrefix string
@@ -90,12 +94,20 @@ func New(client *redis.Client, opts Options) (*Queue, error) {
 	if opts.ClosedPrefix == "" {
 		opts.ClosedPrefix = JobClosedPrefix
 	}
+	if opts.Block <= 0 {
+		opts.Block = time.Second
+	}
+	if opts.ClosedTTL <= 0 {
+		opts.ClosedTTL = 24 * time.Hour
+	}
 	return &Queue{
 		client:       client,
 		stream:       opts.Stream,
 		group:        opts.Group,
 		consumer:     opts.Consumer,
 		lease:        opts.Lease,
+		block:        opts.Block,
+		closedTTL:    opts.ClosedTTL,
 		indexKey:     opts.IndexKey,
 		deadLetter:   opts.DeadLetter,
 		closedPrefix: opts.ClosedPrefix,
@@ -160,7 +172,7 @@ func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 		Consumer: q.consumer,
 		Streams:  []string{q.stream, ">"},
 		Count:    1,
-		Block:    time.Second,
+		Block:    q.block,
 	}).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
@@ -187,6 +199,7 @@ func (q *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason strin
 	result, err := q.ackScript.Run(
 		ctx, q.client, keys,
 		q.group, messageID, q.consumer, rawJob, reason, workID,
+		int64(q.closedTTL/time.Second),
 	).Int64()
 	if err != nil {
 		return false, err

@@ -82,10 +82,6 @@ func (s *Spool) initialize() error {
 	return os.Chmod(filepath.Join(s.directory, "outbox.sqlite"), 0o600)
 }
 
-func (s *Spool) WorkID() string {
-	return s.workID
-}
-
 func (s *Spool) Directory() string {
 	return s.directory
 }

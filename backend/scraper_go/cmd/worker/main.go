@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/redis/go-redis/v9"
 
@@ -50,32 +49,42 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("REDIS_URL inválida: %w", err)
 	}
-	redisOptions.DialTimeout = 5 * time.Second
-	redisOptions.ReadTimeout = 5 * time.Second
-	redisOptions.WriteTimeout = 5 * time.Second
+	redisOptions.DialTimeout = cfg.RedisDialTimeout
+	redisOptions.ReadTimeout = cfg.RedisDialTimeout
+	redisOptions.WriteTimeout = cfg.RedisDialTimeout
 	redisClient := redis.NewClient(redisOptions)
 	defer redisClient.Close()
 
-	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	pingCtx, cancel := context.WithTimeout(ctx, cfg.RedisPingTimeout)
 	defer cancel()
 	if err := redisClient.Ping(pingCtx).Err(); err != nil {
 		return fmt.Errorf("no se pudo conectar a Redis: %w", err)
 	}
 
 	httpClient := crawler.New(crawler.Options{
-		UserAgent:  cfg.UserAgent,
-		Delay:      cfg.DownloadDelay,
-		Timeout:    cfg.DownloadTimeout,
-		MaxSize:    cfg.MaxDownloadSize,
-		MaxRetries: cfg.MaxRetries,
-		Logger:     logger,
+		UserAgent:        cfg.UserAgent,
+		Delay:            cfg.DownloadDelay,
+		Timeout:          cfg.DownloadTimeout,
+		MaxSize:          cfg.MaxDownloadSize,
+		MaxRetries:       cfg.MaxRetries,
+		RobotsCacheTTL:   cfg.RobotsCacheTTL,
+		RobotsFailureTTL: cfg.RobotsFailureTTL,
+		RobotsMaxBytes:   cfg.RobotsMaxBytes,
+		BackoffMin:       cfg.BackoffMin,
+		BackoffMax:       cfg.BackoffMax,
+		Logger:           logger,
 	})
-	registry := spiders.NewRegistry(httpClient, cfg.CategoryDir, spiders.DefaultMaxPages, logger)
+	registry, err := spiders.NewRegistryFromEnv(httpClient, cfg.CategoryDir, cfg.MaxPages, logger)
+	if err != nil {
+		return err
+	}
 
 	queueClient, err := queue.New(redisClient, queue.Options{
-		Stream: cfg.QueueName,
-		Group:  cfg.Group,
-		Lease:  cfg.Lease,
+		Stream:    cfg.QueueName,
+		Group:     cfg.Group,
+		Lease:     cfg.Lease,
+		Block:     cfg.QueueBlock,
+		ClosedTTL: cfg.QueueClosedTTL,
 	})
 	if err != nil {
 		return err
