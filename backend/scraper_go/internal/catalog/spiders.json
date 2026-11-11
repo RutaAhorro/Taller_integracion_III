@@ -1,0 +1,252 @@
+{
+  "sites": [
+    {
+      "name": "jumbo_rsc",
+      "parser": "jumbo",
+      "supermarket": "Jumbo",
+      "category_file": "jumbo_categories.txt",
+      "category_env": "JUMBO_CATEGORY_URLS",
+      "default_categories": [
+        "https://www.jumbo.cl/frutas-y-verduras/verduras"
+      ],
+      "allowed_hosts": [
+        "jumbo.cl",
+        "www.jumbo.cl"
+      ],
+      "category_url": {
+        "message": "La categoría debe ser una URL HTTPS pública de jumbo.cl"
+      },
+      "product_url": {
+        "message": "product_url debe ser una URL HTTPS pública de jumbo.cl"
+      },
+      "pagination": {
+        "mode": "query",
+        "param": "page",
+        "include_first": false,
+        "keep_existing": true
+      },
+      "category_from": {
+        "mode": "last",
+        "fallback": ""
+      },
+      "selectors": {
+        "json_ld": "script[type=\"application/ld+json\"]"
+      },
+      "settings": {
+        "sku_prefix": "JUMBO-",
+        "sku_trailing_segment": "p"
+      },
+      "limits": {
+        "sku_max_length": 100,
+        "slug_max_length": 80,
+        "hash_length": 12
+      }
+    },
+    {
+      "name": "santa_isabel_rsc",
+      "parser": "santa_isabel",
+      "supermarket": "Santa Isabel",
+      "category_file": "santa_isabel_categories.txt",
+      "category_env": "SANTA_ISABEL_CATEGORY_URLS",
+      "default_categories": [
+        "https://www.santaisabel.cl/despensa"
+      ],
+      "allowed_hosts": [
+        "santaisabel.cl",
+        "www.santaisabel.cl"
+      ],
+      "category_url": {
+        "message": "La categoría debe ser una URL HTTPS pública de santaisabel.cl"
+      },
+      "product_url": {
+        "prefix": "",
+        "suffix": "/p",
+        "min_segments": 2,
+        "message": "product_url debe ser una URL HTTPS de ficha /p de santaisabel.cl"
+      },
+      "pagination": {
+        "mode": "query",
+        "param": "page",
+        "include_first": false,
+        "keep_existing": true
+      },
+      "category_from": {
+        "mode": "last",
+        "fallback": ""
+      },
+      "selectors": {
+        "json_ld": "script[type=\"application/ld+json\"]"
+      },
+      "settings": {
+        "seller": "santaisabel",
+        "product_suffix": "/p",
+        "promotion_separator": ", "
+      }
+    },
+    {
+      "name": "cugat_rsc",
+      "parser": "cugat",
+      "supermarket": "Cugat",
+      "category_file": "cugat_categories.txt",
+      "category_env": "CUGAT_CATEGORY_URLS",
+      "default_categories": [
+        "https://cugat.cl/categoria-producto/bebidas-jugos-y-aguas/"
+      ],
+      "allowed_hosts": [
+        "cugat.cl",
+        "www.cugat.cl"
+      ],
+      "category_url": {
+        "message": "La categoría debe ser una URL HTTPS pública de cugat.cl"
+      },
+      "product_url": {
+        "message": "product_url debe ser una URL HTTPS pública de cugat.cl"
+      },
+      "pagination": {
+        "mode": "path",
+        "path_segment": "page",
+        "include_first": false
+      },
+      "category_from": {
+        "mode": "cugat",
+        "page_segment": "page",
+        "fallback": "sin_categoria"
+      },
+      "selectors": {
+        "json_ld": "script[type=\"application/ld+json\"]",
+        "product_card": "div.products div.product-small.product",
+        "title": "p.product-title a",
+        "price_offer": "ins",
+        "price_normal": "del",
+        "price_fallback": "span.price",
+        "price_amount": "span.woocommerce-Price-amount",
+        "cart": "a.add_to_cart_button",
+        "image": "img",
+        "noscript": "noscript"
+      },
+      "settings": {
+        "card_id_prefix": "product-",
+        "stock_class": "instock"
+      }
+    },
+    {
+      "name": "acuenta_rsc",
+      "parser": "acuenta",
+      "supermarket": "A Cuenta",
+      "category_file": "acuenta_categories.txt",
+      "category_env": "ACUENTA_CATEGORY_URLS",
+      "default_categories": [
+        "https://www.acuenta.cl/ca/congelados/04"
+      ],
+      "allowed_hosts": [
+        "acuenta.cl",
+        "www.acuenta.cl"
+      ],
+      "category_url": {
+        "prefix": "/ca/",
+        "message": "La categoría de A Cuenta debe usar una URL HTTPS /ca/ de acuenta.cl"
+      },
+      "product_url": {
+        "prefix": "/p/",
+        "message": "product_url debe ser una URL HTTPS /p/ de acuenta.cl"
+      },
+      "pagination": {
+        "mode": "query",
+        "param": "currentPage",
+        "include_first": true,
+        "replace_query": true,
+        "start_from_url": true
+      },
+      "category_from": {
+        "mode": "acuenta",
+        "fallback": "sin_categoria"
+      },
+      "selectors": {
+        "card_link": "a[href^=\"/p/\"]",
+        "image": "img"
+      },
+      "settings": {
+        "sku_prefix": "ACUENTA-",
+        "image_base": "https://images.lider.cl/wmtcl?source=url[file:/productos/",
+        "image_suffix": "a.jpg]&sink",
+        "promotion": "promoción"
+      },
+      "limits": {
+        "rsc_window": 1800,
+        "sku_max_length": 100,
+        "name_min_intersection": 2,
+        "token_min_length": 3
+      },
+      "lists": {
+        "brands": [
+          "Lider",
+          "Super Cerdo",
+          "La Crianza",
+          "Savory",
+          "Mega",
+          "PF"
+        ]
+      }
+    },
+    {
+      "name": "lider_rsc",
+      "parser": "lider",
+      "supermarket": "Lider",
+      "category_file": "lider_categories.txt",
+      "category_env": "LIDER_CATEGORY_URLS",
+      "default_categories": [
+        "https://super.lider.cl/browse/frutas-y-verduras/frutas/22884697_93034836"
+      ],
+      "allowed_hosts": [
+        "super.lider.cl"
+      ],
+      "category_url": {
+        "prefix": "/browse/",
+        "message": "La categoría debe ser una URL HTTPS /browse/ de super.lider.cl"
+      },
+      "product_url": {
+        "prefix": "/ip/",
+        "message": "product_url debe ser una URL HTTPS /ip/ de super.lider.cl"
+      },
+      "pagination": {
+        "mode": "query",
+        "param": "page",
+        "include_first": false,
+        "keep_existing": true,
+        "start_from_url": true
+      },
+      "category_from": {
+        "mode": "lider",
+        "strip_prefix": "browse",
+        "id_pattern": "^\\d+(?:_\\d+)*$",
+        "fallback": "sin_categoria"
+      },
+      "selectors": {
+        "json_ld": "script[type=\"application/ld+json\"]",
+        "next_data": "script#__NEXT_DATA__",
+        "product_card": "[data-testid='item-stack'] div[role='group'][data-item-id]",
+        "product_card_fallback": "div[role='group'][data-dca-id]",
+        "card_title": "[data-automation-id='product-title']",
+        "product_link": "a[href*=\"/ip/\"]",
+        "price_block": "[data-automation-id='product-price']",
+        "price_current": "div[aria-hidden='true']",
+        "price_normal": "span.strike",
+        "image": "img[data-testid='productTileImage']",
+        "brand": "div.mb1.mt2.b"
+      },
+      "settings": {
+        "promotion": "promoción"
+      },
+      "lists": {
+        "stock_in": [
+          "available for despacho",
+          "available for pickup"
+        ],
+        "stock_out": [
+          "agotado",
+          "no disponible"
+        ]
+      }
+    }
+  ]
+}
