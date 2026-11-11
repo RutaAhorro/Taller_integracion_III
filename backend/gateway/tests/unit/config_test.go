@@ -1,6 +1,7 @@
 package unit_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestLoadDefaults(t *testing.T) {
-	c, err := config.Load(func(key string) string {
+	configuracion, err := config.Load(func(key string) string {
 		if key == "BACKEND_URL" {
 			return "http://127.0.0.1:8080"
 		}
@@ -18,11 +19,11 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != ":8082" || c.RequestTimeout != 30*time.Second || c.ReadinessTimeout != 2*time.Second || c.KeepAliveTimeout != 30*time.Second || len(c.TrustedProxies) != 0 {
-		t.Fatalf("unexpected defaults: %+v", c)
+	if configuracion.ListenAddr != ":8082" || configuracion.RequestTimeout != 30*time.Second || configuracion.ReadinessTimeout != 2*time.Second || configuracion.KeepAliveTimeout != 30*time.Second || len(configuracion.TrustedProxies) != 0 {
+		t.Fatalf("unexpected defaults: %+v", configuracion)
 	}
-	if len(c.CatalogPrefixes) != 2 || len(c.IdentityPrefixes) != 2 || len(c.RoutesPrefixes) != 1 || len(c.ScrapingPrefixes) != 2 {
-		t.Fatalf("unexpected default route prefixes: %+v", c)
+	if len(configuracion.CatalogPrefixes) != 2 || len(configuracion.IdentityPrefixes) != 2 || len(configuracion.RoutesPrefixes) != 1 || len(configuracion.ScrapingPrefixes) != 2 {
+		t.Fatalf("unexpected default route prefixes: %+v", configuracion)
 	}
 }
 
@@ -86,9 +87,9 @@ func TestLoadRejectsInvalidConfiguration(t *testing.T) {
 
 func TestFinalTopologyDoesNotRequireLegacyBackend(t *testing.T) {
 	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080", "RUTAS_URL": "http://motor-rutas:8001"}
-	c, err := config.Load(func(key string) string { return env[key] })
-	if err != nil || c.Backend != nil || c.Scraping == nil || c.Identidad == nil || c.Catalogo == nil || c.Rutas == nil {
-		t.Fatalf("topología final inválida: %v %v", c, err)
+	configuracion, err := config.Load(func(key string) string { return env[key] })
+	if err != nil || configuracion.Backend != nil || configuracion.Scraping == nil || configuracion.Identidad == nil || configuracion.Catalogo == nil || configuracion.Rutas == nil {
+		t.Fatalf("topología final inválida: %v %v", configuracion, err)
 	}
 }
 
@@ -100,14 +101,96 @@ func TestLoadOverrides(t *testing.T) {
 		"GATEWAY_KEEPALIVE_TIMEOUT": "15s",
 		"GATEWAY_CATALOGO_PREFIXES": "/api/v1/custom-productos",
 	}
-	c, err := config.Load(func(key string) string { return env[key] })
+	configuracion, err := config.Load(func(key string) string { return env[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ListenAddr != env["GATEWAY_LISTEN_ADDR"] || c.Catalogo.String() != env["CATALOGO_URL"] || c.RequestTimeout != 2*time.Second || c.KeepAliveTimeout != 15*time.Second || len(c.TrustedProxies) != 3 {
-		t.Fatalf("overrides not applied: %+v", c)
+	if configuracion.ListenAddr != env["GATEWAY_LISTEN_ADDR"] || configuracion.Catalogo.String() != env["CATALOGO_URL"] || configuracion.RequestTimeout != 2*time.Second || configuracion.KeepAliveTimeout != 15*time.Second || len(configuracion.TrustedProxies) != 3 {
+		t.Fatalf("overrides not applied: %+v", configuracion)
 	}
-	if len(c.CatalogPrefixes) != 1 || c.CatalogPrefixes[0] != "/api/v1/custom-productos" {
-		t.Fatalf("custom catalog prefix not applied: %+v", c.CatalogPrefixes)
+	if len(configuracion.CatalogPrefixes) != 1 || configuracion.CatalogPrefixes[0] != "/api/v1/custom-productos" {
+		t.Fatalf("custom catalog prefix not applied: %+v", configuracion.CatalogPrefixes)
+	}
+}
+
+// TestRoutePrefixValidation recorre los formatos de prefijo aceptados y
+// rechazados. El "/" final se recorta; el resto de formatos inválidos impide
+// arrancar y el error nombra la variable.
+func TestRoutePrefixValidation(prueba *testing.T) {
+	for _, caso := range []struct {
+		nombre, valor string
+		esperado      []string
+		debeFallar    bool
+	}{
+		{nombre: "valido", valor: "/api/v1/productos,/api/v1/admin/productos", esperado: []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{nombre: "vacio_usa_defaults", valor: "", esperado: []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{nombre: "solo_espacios_usa_defaults", valor: "   ", esperado: []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{nombre: "barra_final_se_recorta", valor: "/api/v1/productos/", esperado: []string{"/api/v1/productos"}},
+		{nombre: "varias_barras_finales_se_recortan", valor: "/api/v1/productos//", esperado: []string{"/api/v1/productos"}},
+		{nombre: "espacios_alrededor_se_recortan", valor: " /api/v1/productos , /api/v1/admin/productos ", esperado: []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{nombre: "url_completa", valor: "http://catalogo:8080/api/v1/productos", debeFallar: true},
+		{nombre: "sin_barra_inicial", valor: "api/v1/productos", debeFallar: true},
+		{nombre: "relativa_al_esquema", valor: "//catalogo/api/v1/productos", debeFallar: true},
+		{nombre: "query", valor: "/api/v1/productos?en_stock=true", debeFallar: true},
+		{nombre: "fragmento", valor: "/api/v1/productos#lista", debeFallar: true},
+		{nombre: "espacio_interno", valor: "/api/v1/mis productos", debeFallar: true},
+		{nombre: "tabulador_interno", valor: "/api/v1/mis\tproductos", debeFallar: true},
+		{nombre: "codificado", valor: "/api/v1/productos%2Fadmin", debeFallar: true},
+		{nombre: "segmento_punto", valor: "/api/v1/../admin", debeFallar: true},
+		{nombre: "segmento_vacio", valor: "/api//productos", debeFallar: true},
+		{nombre: "solo_raiz", valor: "/", debeFallar: true},
+		{nombre: "elemento_vacio", valor: "/api/v1/productos,,/api/v1/admin/productos", debeFallar: true},
+		{nombre: "coma_final", valor: "/api/v1/productos,", debeFallar: true},
+		{nombre: "duplicado", valor: "/api/v1/productos,/api/v1/productos", debeFallar: true},
+		{nombre: "duplicado_tras_recortar", valor: "/api/v1/productos,/api/v1/productos/", debeFallar: true},
+		{nombre: "duplicado_con_otro_servicio", valor: "/api/v1/auth", debeFallar: true},
+	} {
+		prueba.Run(caso.nombre, func(subprueba *testing.T) {
+			configuracion, errorCarga := config.Load(func(clave string) string {
+				switch clave {
+				case "BACKEND_URL":
+					return "http://backend:8080"
+				case "GATEWAY_CATALOGO_PREFIXES":
+					return caso.valor
+				}
+				return ""
+			})
+			if caso.debeFallar {
+				if errorCarga == nil {
+					subprueba.Fatalf("se esperaba un error para %q; prefijos: %v", caso.valor, configuracion.CatalogPrefixes)
+				}
+				if !strings.Contains(errorCarga.Error(), "GATEWAY_CATALOGO_PREFIXES") {
+					subprueba.Fatalf("el error no nombra la variable: %v", errorCarga)
+				}
+				return
+			}
+			if errorCarga != nil {
+				subprueba.Fatalf("error inesperado: %v", errorCarga)
+			}
+			if !reflect.DeepEqual(configuracion.CatalogPrefixes, caso.esperado) {
+				subprueba.Fatalf("prefijos = %v, se esperaba %v", configuracion.CatalogPrefixes, caso.esperado)
+			}
+		})
+	}
+}
+
+// TestEveryPrefixVariableIsValidated comprueba que las cuatro variables pasan
+// por la misma validación.
+func TestEveryPrefixVariableIsValidated(prueba *testing.T) {
+	for _, variable := range []string{"GATEWAY_CATALOGO_PREFIXES", "GATEWAY_IDENTIDAD_PREFIXES", "GATEWAY_RUTAS_PREFIXES", "GATEWAY_SCRAPING_PREFIXES"} {
+		prueba.Run(variable, func(subprueba *testing.T) {
+			_, errorCarga := config.Load(func(clave string) string {
+				switch clave {
+				case "BACKEND_URL":
+					return "http://backend:8080"
+				case variable:
+					return "https://externo.example/api?token=1"
+				}
+				return ""
+			})
+			if errorCarga == nil || !strings.Contains(errorCarga.Error(), variable) {
+				subprueba.Fatalf("se esperaba un error que nombre %s, se obtuvo %v", variable, errorCarga)
+			}
+		})
 	}
 }

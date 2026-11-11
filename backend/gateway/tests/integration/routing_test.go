@@ -158,3 +158,68 @@ func TestDiagnosticsIncludeCatalogWithoutBlockingReadiness(t *testing.T) {
 		t.Fatal("catalog failure withdrew gateway")
 	}
 }
+
+// TestCustomRoutePrefixesRouteChildPaths reproduce el caso de la revisión de
+// SUP-350: con GATEWAY_CATALOGO_PREFIXES=/api/v1/productos/ las rutas hijas
+// deben seguir llegando a Catálogo porque el "/" final se recorta al cargar.
+// También verifica que un prefijo propio enrute sin capturar rutas vecinas.
+func TestCustomRoutePrefixesRouteChildPaths(prueba *testing.T) {
+	servidorDestino := func(nombre string) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+			respuesta.Header().Set("X-Upstream", nombre)
+			_, _ = io.WriteString(respuesta, peticion.URL.EscapedPath())
+		}))
+	}
+	backend, catalogo := servidorDestino("backend"), servidorDestino("catalogo")
+	defer backend.Close()
+	defer catalogo.Close()
+
+	for _, escenario := range []struct {
+		nombre, prefijos string
+		rutas            map[string]string
+	}{
+		{
+			nombre:   "barra_final",
+			prefijos: "/api/v1/productos/",
+			rutas: map[string]string{
+				"/api/v1/productos":        "catalogo",
+				"/api/v1/productos/":       "catalogo",
+				"/api/v1/productos/123":    "catalogo",
+				"/api/v1/productos/a%2Fb":  "catalogo",
+				"/api/v1/productos-falso":  "backend",
+				"/api/v1/admin/productos":  "backend",
+				"/api/v1/scraper/trabajos": "backend",
+			},
+		},
+		{
+			nombre:   "prefijos_propios",
+			prefijos: "/api/v2/catalogo, /api/v1/ofertas/",
+			rutas: map[string]string{
+				"/api/v2/catalogo":         "catalogo",
+				"/api/v2/catalogo/item/9":  "catalogo",
+				"/api/v1/ofertas/semana":   "catalogo",
+				"/api/v2/catalogo-viejo":   "backend",
+				"/api/v1/productos":        "backend",
+				"/api/v1/productos/123":    "backend",
+				"/api/v1/scraper/trabajos": "backend",
+			},
+		},
+	} {
+		prueba.Run(escenario.nombre, func(subprueba *testing.T) {
+			gateway := gatewayFor(subprueba, backend.URL, map[string]string{
+				"CATALOGO_URL":              catalogo.URL,
+				"GATEWAY_CATALOGO_PREFIXES": escenario.prefijos,
+			}, nil)
+			for ruta, destino := range escenario.rutas {
+				respuesta, errorPeticion := http.Get(gateway.URL + ruta)
+				if errorPeticion != nil {
+					subprueba.Fatal(errorPeticion)
+				}
+				cuerpo := bodyOf(subprueba, respuesta)
+				if respuesta.StatusCode != http.StatusOK || respuesta.Header.Get("X-Upstream") != destino || string(cuerpo) != ruta {
+					subprueba.Fatalf("%s: estado=%d destino=%q ruta=%q, se esperaba %q", ruta, respuesta.StatusCode, respuesta.Header.Get("X-Upstream"), cuerpo, destino)
+				}
+			}
+		})
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type Config struct {
@@ -107,10 +108,31 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	c.CatalogPrefixes = parsePrefixList(getenv("GATEWAY_CATALOGO_PREFIXES"), []string{"/api/v1/productos", "/api/v1/admin/productos"})
-	c.IdentityPrefixes = parsePrefixList(getenv("GATEWAY_IDENTIDAD_PREFIXES"), []string{"/api/v1/auth", "/api/v1/admin/usuarios"})
-	c.RoutesPrefixes = parsePrefixList(getenv("GATEWAY_RUTAS_PREFIXES"), []string{"/api/v1/listas"})
-	c.ScrapingPrefixes = parsePrefixList(getenv("GATEWAY_SCRAPING_PREFIXES"), []string{"/api/v1/scraper", "/swagger"})
+	// Route prefixes are validated at startup: a malformed value would leave
+	// routes unreachable while the Gateway still reports itself healthy.
+	seenPrefixes := map[string]string{}
+	for _, item := range []struct {
+		name     string
+		value    *[]string
+		fallback []string
+	}{
+		{"GATEWAY_IDENTIDAD_PREFIXES", &c.IdentityPrefixes, []string{"/api/v1/auth", "/api/v1/admin/usuarios"}},
+		{"GATEWAY_CATALOGO_PREFIXES", &c.CatalogPrefixes, []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{"GATEWAY_RUTAS_PREFIXES", &c.RoutesPrefixes, []string{"/api/v1/listas"}},
+		{"GATEWAY_SCRAPING_PREFIXES", &c.ScrapingPrefixes, []string{"/api/v1/scraper", "/swagger"}},
+	} {
+		prefixes, err := parsePrefixList(item.name, getenv(item.name), item.fallback)
+		if err != nil {
+			return c, err
+		}
+		for _, prefix := range prefixes {
+			if owner, duplicated := seenPrefixes[prefix]; duplicated {
+				return c, fmt.Errorf("%s: prefix %q is already assigned by %s", item.name, prefix, owner)
+			}
+			seenPrefixes[prefix] = item.name
+		}
+		*item.value = prefixes
+	}
 
 	if value := getenv("GATEWAY_TRUSTED_PROXIES"); value != "" {
 		for _, entry := range strings.Split(value, ",") {
@@ -148,20 +170,52 @@ func parseOrigin(name, value string) (*url.URL, error) {
 	return target, nil
 }
 
-func parsePrefixList(val string, fallback []string) []string {
-	if val == "" {
-		return fallback
+// parsePrefixList reads a comma-separated list of path prefixes. An empty
+// value keeps the defaults. Each entry must be an absolute path such as
+// /api/v1/productos: no scheme, host, query, fragment, percent-encoding, dot
+// segments or inner whitespace. A trailing slash is trimmed, so "/api/v1/x/"
+// behaves as "/api/v1/x" and still matches its child routes. Empty entries,
+// the bare root "/" and duplicates are rejected so startup fails fast.
+func parsePrefixList(name, value string, fallback []string) ([]string, error) {
+	if strings.TrimSpace(value) == "" {
+		return append([]string(nil), fallback...), nil
 	}
-	parts := strings.Split(val, ",")
-	res := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			res = append(res, p)
+	entries := strings.Split(value, ",")
+	prefixes := make([]string, 0, len(entries))
+	seen := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		prefix := strings.TrimSpace(entry)
+		invalid := func(reason string) error {
+			return fmt.Errorf("%s: invalid prefix %q: %s", name, prefix, reason)
 		}
+		switch {
+		case prefix == "":
+			return nil, fmt.Errorf("%s: empty entry in %q", name, value)
+		case strings.Contains(prefix, "://"):
+			return nil, invalid("must be a path, not a URL")
+		case !strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "//"):
+			return nil, invalid("must start with a single /")
+		case strings.ContainsAny(prefix, "?#"):
+			return nil, invalid("must not contain query or fragment")
+		case strings.Contains(prefix, "%"):
+			return nil, invalid("must not be percent-encoded")
+		case strings.IndexFunc(prefix, unicode.IsSpace) >= 0:
+			return nil, invalid("must not contain whitespace")
+		}
+		prefix = strings.TrimRight(prefix, "/")
+		if prefix == "" {
+			return nil, invalid("the root / would capture every route")
+		}
+		for _, segment := range strings.Split(prefix[1:], "/") {
+			if segment == "" || segment == "." || segment == ".." {
+				return nil, invalid("must not contain empty or dot segments")
+			}
+		}
+		if seen[prefix] {
+			return nil, invalid("duplicated")
+		}
+		seen[prefix] = true
+		prefixes = append(prefixes, prefix)
 	}
-	if len(res) == 0 {
-		return fallback
-	}
-	return res
+	return prefixes, nil
 }

@@ -85,6 +85,19 @@ Ver `.env.example` para una plantilla lista para usar.
 Los timeouts deben ser duraciones positivas de Go (`500ms`, `5s`, `30s`). Una
 configuración inválida aborta el arranque con mensaje explicativo.
 
+Las variables `GATEWAY_*_PREFIXES` son listas separadas por comas. Vacías usan
+el valor por defecto. Cada prefijo es un path absoluto (`/api/v1/productos`)
+que coincide consigo mismo y con sus rutas hijas (`/api/v1/productos/123`),
+pero no con rutas vecinas (`/api/v1/productos-falso`). Reglas al arrancar:
+
+- El `/` final se **recorta**: `/api/v1/productos/` equivale a `/api/v1/productos`.
+- Los espacios alrededor de cada coma se ignoran.
+- Abortan el arranque, con un error que nombra la variable y el valor: URLs
+  completas (`http://...`), paths sin `/` inicial o que empiezan con `//`, query
+  (`?`), fragmento (`#`), `%`, espacios internos, segmentos vacíos o `.`/`..`,
+  la raíz `/` sola, elementos vacíos (`a,,b` o coma final) y prefijos repetidos,
+  ya sea en la misma variable o entre variables distintas.
+
 ## Transparencia y seguridad de la entrada
 
 - Conserva método, path codificado, query, cuerpo, cabecera `Host` y códigos HTTP.
