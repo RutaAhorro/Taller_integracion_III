@@ -1,3 +1,4 @@
+// Conserva el acceso al historial sin mostrar ejecuciones o precios que no fueron guardados.
 import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 
 export default function History() {

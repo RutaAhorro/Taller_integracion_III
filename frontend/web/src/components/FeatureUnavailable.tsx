@@ -1,3 +1,4 @@
+// Avisa de integraciones pendientes sin mostrar resultados simulados y enlaza a las listas.
 import { Link } from 'react-router-dom';
 import { ROUTES } from '@/core/routes';
 

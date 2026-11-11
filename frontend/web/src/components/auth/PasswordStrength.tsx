@@ -1,3 +1,4 @@
+// Evalúa la complejidad de una contraseña y muestra una orientación visual, no una validación del servidor.
 import { cn } from "@/lib/utils"
 
 function scorePassword(password: string) {

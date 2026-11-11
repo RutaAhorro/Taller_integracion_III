@@ -1,3 +1,4 @@
+// Botón reutilizable con variantes visuales y comportamiento accesible de Base UI.
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
 import { cva, type VariantProps } from 'class-variance-authority'
 

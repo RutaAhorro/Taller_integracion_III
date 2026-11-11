@@ -1,3 +1,4 @@
+// Cabecera con búsqueda, acceso al menú y acciones de la sesión.
 import { useState, type FormEvent, useEffect } from 'react'
 import { Menu, MapPin, Search, ShoppingBasket, CircleUserRound, Bot, User, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -18,7 +19,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
     const navigate = useNavigate();
     const { logout } = useAuth();
     
-    // Fallbacks para props futuras (previene hardcodeos strictos)
+    // Ciudad de referencia de la interfaz; aún no representa una ubicación obtenida del perfil.
     const activeCity = "Temuco";
 
     useEffect(() => {

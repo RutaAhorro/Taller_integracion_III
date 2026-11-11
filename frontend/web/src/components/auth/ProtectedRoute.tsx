@@ -30,7 +30,7 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
     if (denied) toast('No tienes permisos para acceder a esa sección.', 'warning');
   }, [denied, toast]);
 
-  // If the user is a guest (not authenticated), show the auth gating UI
+  // Sin sesión, solicita autenticación antes de mostrar la ruta protegida.
   if (isGuest) {
     return (
       <div className="flex h-full min-h-[calc(100vh-4rem)] items-center justify-center p-4 bg-background">
@@ -83,6 +83,6 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
     return <Navigate to={ROUTES.CATALOGO} replace />;
   }
 
-  // Otherwise, render the child routes
+  // Con sesión y permisos válidos, muestra las rutas hijas.
   return <Outlet />;
 }

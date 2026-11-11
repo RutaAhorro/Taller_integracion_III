@@ -1,3 +1,4 @@
+// Centraliza las rutas usadas por navegación, enlaces y controles de acceso.
 export const ROUTES = {
   HOME: '/',
   CATALOGO: '/dashboard',

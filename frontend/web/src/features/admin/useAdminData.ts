@@ -1,8 +1,5 @@
-// Hooks del panel admin (SUP-255 / SUP-280).
-// Sin VITE_API_URL no hay HTTP y se muestra un error de configuración. SUP-242 (usuarios)
-// ya tiene backend; SUP-243 (fuentes) y SUP-279 (métricas) se integran cuando
-// estén disponibles. 401/403 nunca inyectan mocks (fail-closed, auditoría
-// H-03): se cierra la sesión local y se vuelve a /login (SUP-256).
+// Gestiona lecturas y escrituras administrativas sin sustituir errores por datos ficticios.
+// Sin URL de API informa configuración ausente; ante 401/403 cierra la sesión local.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -53,7 +50,7 @@ function authBlockedMessage(feature: string, err: unknown): string {
 
 // Expiración de sesión (SUP-256): ante un 401/403 se cierra la sesión local y
 // se redirige a /login. logout/navigate se leen desde un ref actualizado tras
-// cada render para no recrear los callbacks de carga (y no re-disparar fetch).
+// cada actualización para no recrear las funciones de carga ni repetir las consultas.
 function useExpireSession(): () => void {
   const { logout } = useAuth();
   const navigate = useNavigate();

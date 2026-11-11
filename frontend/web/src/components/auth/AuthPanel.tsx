@@ -1,3 +1,4 @@
+// Formularios de acceso y registro con validación y errores devueltos por Identidad.
 import { useState, type ReactNode } from "react"
 import { useNavigate, useLocation, Link } from "react-router-dom"
 import { ArrowRight, Eye, EyeOff, Lock, Mail, Loader2, ShoppingBasket } from "lucide-react"
@@ -26,7 +27,7 @@ type FormErrors = {
   age?: string
 }
 
-// Los mensajes de validación se ocultan en móvil para no desplazar el formulario.
+/** Muestra validación junto al campo sin desplazar el formulario móvil. */
 function InlineError({ message }: { message?: string }) {
   return <div className="hidden sm:block">{message && <FieldError errors={[{ message }]} />}</div>
 }
@@ -69,7 +70,7 @@ type PasswordFieldProps = {
   error?: string
   placeholder: string
   autoComplete: "current-password" | "new-password"
-  // Contenido junto a la etiqueta (ej. enlace de recuperación) y bajo el input.
+  // Contenido junto a la etiqueta y bajo el campo, como el enlace de recuperación.
   labelExtra?: ReactNode
   children?: ReactNode
 }
@@ -166,6 +167,7 @@ export function AuthPanel() {
   const navigate = useNavigate()
   const { toast } = useToast()
 
+  // Valida los campos antes de delegar la autenticación en Identidad.
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -181,6 +183,7 @@ export function AuthPanel() {
     }
   }
 
+  // Registra la cuenta solo si se cumplen las validaciones locales y los consentimientos.
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -192,7 +195,7 @@ export function AuthPanel() {
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
 
-    // Nombre provisorio a partir del correo; el usuario lo completa en el onboarding.
+    // Nombre inicial requerido por Identidad; la edición de perfil aún no está integrada.
     const exito = await register({
       correo: signupEmail,
       password: signupPassword,
@@ -207,7 +210,6 @@ export function AuthPanel() {
 
   return (
     <div className="relative flex h-full items-center justify-center overflow-y-auto bg-background px-5 py-10 sm:px-8">
-      {/* Street art background without blur */}
       <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat transition-opacity duration-500 grayscale opacity-30 bg-[url('/street_art_supermarket.jpg')]"
@@ -215,7 +217,6 @@ export function AuthPanel() {
       </div>
 
       <div className="relative z-10 w-full max-w-md">
-        {/* Mobile brand */}
         <div className="mb-8 flex items-center justify-center gap-2.5 lg:hidden">
           <Link to="/" className="flex items-center gap-2.5">
             <span className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">

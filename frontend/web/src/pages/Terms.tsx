@@ -1,3 +1,4 @@
+// Presenta los términos de uso y permite regresar a la navegación de la plataforma.
 import { buttonVariants } from "@/components/ui/button"
 import { Link } from "react-router-dom"
 import { ArrowLeft, CheckCircle2 } from "lucide-react"

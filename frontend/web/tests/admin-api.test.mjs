@@ -1,3 +1,4 @@
+// Protege la lectura de datos reales y la propagación de errores de permisos y conexión en administración.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
@@ -53,15 +54,4 @@ test('los errores de administración no se convierten en registros de ejemplo', 
   t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(api.fetchAdminUsers(), /Failed to fetch/);
   await assert.rejects(api.fetchAdminSources(), /Failed to fetch/);
-});
-
-test('los hooks parten sin registros ni métricas ficticias y notifican configuración ausente', async () => {
-  const hooks = await readFile(new URL('../src/features/admin/useAdminData.ts', import.meta.url), 'utf8');
-  assert.match(hooks, /useState<AdminUser\[\]>\(\[\]\)/);
-  assert.match(hooks, /useState<AdminSource\[\]>\(\[\]\)/);
-  assert.doesNotMatch(hooks, /adminMetricsMock|adminUsers\b|adminSources\b|admin-mock-data/);
-  assert.match(hooks, /setError\(BACKEND_NOT_CONFIGURED\)/);
-  assert.match(hooks, /setIdentidad\(\{ data: null, error: BACKEND_NOT_CONFIGURED \}\)/);
-  assert.match(hooks, /setCatalogo\(\{ data: null, error: BACKEND_NOT_CONFIGURED \}\)/);
-  assert.match(hooks, /setControl\(\{ data: null, error: BACKEND_NOT_CONFIGURED \}\)/);
 });

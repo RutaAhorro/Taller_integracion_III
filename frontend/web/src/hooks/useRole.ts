@@ -1,7 +1,7 @@
 import { useAuth } from './useAuth';
 import { normalizeRole, ROLE_ADMIN, ROLE_COLABORADOR } from '@/lib/roles';
 
-// Helper de rol para guards y menú (SUP-256).
+// Consulta el rol para los controles de acceso y el menú (SUP-256).
 // canAccessColaborador cubre /colaborador: colaborador o admin.
 export function useRole() {
   const { user, isGuest } = useAuth();

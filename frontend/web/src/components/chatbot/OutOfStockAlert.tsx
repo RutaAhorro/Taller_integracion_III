@@ -1,3 +1,4 @@
+// Explica la falta de disponibilidad del producto indicado sin proponer existencias ficticias.
 import { AlertTriangle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

@@ -1,3 +1,4 @@
+// Mantiene la ruta de planes sin simular precios comerciales o cambios de suscripción.
 import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 
 export default function Planes() {

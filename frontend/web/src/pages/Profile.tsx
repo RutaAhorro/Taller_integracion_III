@@ -1,3 +1,4 @@
+// Muestra la cuenta de la sesión y avisa qué ajustes del perfil todavía no tienen integración.
 import { useState } from 'react';
 import { User, ShieldAlert, Zap, Settings, Key } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -15,7 +16,6 @@ export default function Profile() {
     return (
         <div className="flex flex-col bg-background font-sans text-foreground relative">
 
-            {/* Main Content */}
             <main className="p-4 sm:p-8 bg-background">
                 <div className="max-w-[1600px] mx-auto w-full mb-8">
                     <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Perfil y Configuración</h1>
@@ -23,7 +23,6 @@ export default function Profile() {
 
                 <div className="max-w-[1600px] mx-auto flex flex-col md:flex-row gap-8 md:gap-12 w-full">
                     
-                    {/* Sidebar Navigation */}
                     <aside className="w-full md:w-64 shrink-0">
                         <nav className="flex flex-row md:flex-col gap-3 overflow-x-auto pb-2 md:pb-0 scrollbar-hide">
                             {[
@@ -42,14 +41,12 @@ export default function Profile() {
                         </nav>
                     </aside>
 
-                    {/* Tab Content */}
                     <div className="flex-1 min-w-0">
                         
                         {activeTab === 'cuenta' && (
                             <div className="bg-card border border-border rounded-3xl p-6 sm:p-10 shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <h2 className="text-2xl font-bold">Información de Cuenta</h2>
                                 
-                                {/* User Tier / Account Info */}
                                 <section className="bg-gradient-to-r from-secondary to-background rounded-2xl p-6 text-primary-foreground shadow-lg flex flex-col sm:flex-row sm:items-center gap-5">
                                     <div className={`h-16 w-16 bg-white/20 rounded-full flex items-center justify-center shrink-0 border-2 border-white/30 ${user.plan === 'Plus' ? 'border-amber-400 bg-amber-500/20' : ''}`}>
                                         {user.plan === 'Plus' ? <Zap className="h-8 w-8 text-amber-500" /> : <User className="h-8 w-8 text-primary-foreground" />}
@@ -71,7 +68,6 @@ export default function Profile() {
                                     </div>
                                 </section>
 
-                                {/* Perfil Fields */}
                                 <section className="space-y-6 pt-6 border-t border-border">
                                     <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Datos Personales</h3>
                                     <div className="space-y-4">

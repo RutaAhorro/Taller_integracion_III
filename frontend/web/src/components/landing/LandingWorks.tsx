@@ -1,5 +1,11 @@
+// Explica cómo consultar productos y listas sin presentar el cálculo pendiente como terminado.
 import { Search, Map, PiggyBank } from "lucide-react";
-import landingData from "@/data/landing.json";
+// Describe el recorrido previsto y distingue las integraciones aún pendientes.
+const steps = [
+  { num: '1', title: 'Consulta el catálogo', desc: 'Busca productos y revisa los datos disponibles de cada supermercado.' },
+  { num: '2', title: 'Organiza tu compra', desc: 'Crea una lista para guardar y consultar los productos que necesitas.' },
+  { num: '3', title: 'Próximamente: calcula tu ruta', desc: 'La integración del asistente, las listas y el motor de rutas está en desarrollo.' },
+];
 
 export function LandingHowItWorks() {
   const getIcon = (i: number) => {
@@ -15,13 +21,13 @@ export function LandingHowItWorks() {
           <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Metodología</span>
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3.2vw,2.4rem)] font-bold text-foreground mb-[0.875rem] leading-[1.15]">No es magia, es optimización matemática</h2>
           <p className="text-muted-foreground text-[1rem] leading-[1.6]">
-            Unimos datos de precios con motores de ruteo para entregarte un
-            análisis de costos real.
+            Consulta el catálogo y organiza tus compras mientras completamos
+            la integración del asistente y el motor de rutas.
           </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[1.75rem]">
-          {landingData.steps.map((s, index) => {
+          {steps.map((s, index) => {
             const numBgClass = index === 0 ? 'bg-[var(--landing-olive-soft)] border-[var(--landing-olive)] text-[#5E7250]' : index === 1 ? 'bg-[var(--landing-amber-soft)] border-[var(--landing-amber)]' : 'bg-[var(--landing-malva-soft)] border-[var(--landing-malva)]';
             return (
             <div key={s.title} className="bg-card border-2 border-border rounded-[var(--radius)] p-[2rem_1.75rem] shadow-[6px_6px_0_var(--color-border)] transition-all duration-[0.25s] ease-in hover:-translate-x-[2px] hover:-translate-y-[2px] hover:shadow-[10px_10px_0_var(--color-border)]">

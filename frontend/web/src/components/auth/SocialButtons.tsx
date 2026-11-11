@@ -1,3 +1,4 @@
+// Conecta el botón oficial de Google con el flujo de autenticación de la aplicación.
 import { useGoogleAuth } from "@/hooks/useGoogleAuth"
 import { GoogleLogin } from '@react-oauth/google';
 

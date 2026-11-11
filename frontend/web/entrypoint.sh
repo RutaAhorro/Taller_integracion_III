@@ -1,4 +1,5 @@
 #!/bin/sh
+# Sustituye los marcadores públicos de Vite en los archivos compilados y arranca Nginx.
 
 echo "Inyectando variables de entorno en tiempo de ejecución..."
 

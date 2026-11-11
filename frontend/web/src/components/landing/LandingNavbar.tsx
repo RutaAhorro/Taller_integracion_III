@@ -1,13 +1,19 @@
+// Navegación adaptable de la portada; controla apertura, cierre y desplazamiento del menú móvil.
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Menu, ShoppingBasket, X } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-import landingData from "@/data/landing.json";
+// Enlaces editoriales de la portada; no contienen resultados ni estadísticas de ejemplo.
+const navigation = [
+  { href: '#como-funciona', label: 'Cómo funciona' },
+  { href: '#beneficios', label: 'Beneficios' },
+  { href: '#supermercados', label: 'Supermercados' },
+];
 
 export function LandingNavbar() {
   const [menuOpen, setMenuOpen] = useState(false);
 
-  // Fix #8: cerrar con Escape y bloquear scroll del fondo cuando el menú está abierto
+  // Cierra con Escape y bloquea el desplazamiento del fondo durante la apertura.
   useEffect(() => {
     if (!menuOpen) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -29,15 +35,13 @@ export function LandingNavbar() {
             <div className="absolute inset-0 pointer-events-none" style={{ background: "repeating-linear-gradient(115deg, transparent 0 5px, oklch(0.2 0.02 60 / 0.12) 5px 6px)" }} />
             <ShoppingBasket size={20} className="relative z-10" aria-hidden="true" />
           </span>
-          {/* Fix #3: Fredoka → Fraunces */}
           <span className="flex flex-col leading-none font-['Fraunces'] font-bold text-[1.25rem]">
             RutaAhorro
           </span>
         </Link>
 
-        {/* Fix #21: altura de links de 29px → ~40px con py-[10px] */}
         <ul className="hidden md:flex gap-8 list-none flex-1 justify-center">
-          {landingData.navigation.map((l) => (
+          {navigation.map((l) => (
             <li key={l.href}>
               <a href={l.href} className="relative py-[10px] text-[0.875rem] font-bold text-foreground no-underline transition-colors duration-200 hover:text-[var(--brand)] group">
                 {l.label}
@@ -52,7 +56,6 @@ export function LandingNavbar() {
             <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/login">Iniciar sesión</Link>
             <Link className={buttonVariants({ size: "sm" })} to="/login" state={{ tab: "signup" }}>Crear cuenta</Link>
           </div>
-          {/* Fix #8: botón con dimensiones correctas (44×44px) y ícono condicional X/Menu */}
           <button
             type="button"
             className="md:hidden inline-flex items-center justify-center w-[44px] h-[44px] border-2 border-border rounded-[var(--radius)] bg-card text-foreground"
@@ -68,7 +71,6 @@ export function LandingNavbar() {
         </div>
       </div>
 
-      {/* Fix #8: overlay que oscurece el fondo y cierra el menú al hacer clic */}
       {menuOpen && (
         <div
           className="fixed inset-0 top-[76px] bg-black/40 z-30 md:hidden"
@@ -77,10 +79,9 @@ export function LandingNavbar() {
         />
       )}
 
-      {/* Fix #8: menú móvil con links de mínimo 44px, scroll bloqueado y botón primario */}
       {menuOpen && (
         <div className="flex flex-col gap-1 p-4 border-t-2 border-border bg-card absolute top-[76px] left-0 w-full shadow-[0_15px_25px_-5px_rgb(0_0_0/0.15)] z-40 md:hidden">
-          {landingData.navigation.map((l) => (
+          {navigation.map((l) => (
             <a
               key={l.href}
               href={l.href}
@@ -97,7 +98,6 @@ export function LandingNavbar() {
           >
             Iniciar sesión
           </Link>
-          {/* Fix #8: "Crear cuenta" como botón primario ancho completo al final */}
           <Link
             to="/login"
             state={{ tab: "signup" }}

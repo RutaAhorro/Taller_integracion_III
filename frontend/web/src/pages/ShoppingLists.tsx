@@ -1,3 +1,4 @@
+// Gestiona listas persistidas de la cuenta actual y mantiene sus artículos en modo de lectura.
 import { useEffect, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
@@ -15,6 +16,7 @@ export default function ShoppingLists() {
   return <ListsContent key={user?.id} />;
 }
 
+/** Carga las listas del usuario y coordina creación y selección con operaciones reales. */
 function ListsContent() {
   const { toast } = useToast();
   const [listas, setListas] = useState<Lista[]>([]);
@@ -98,6 +100,7 @@ function ListsContent() {
   );
 }
 
+/** Consulta y edita una lista; comunica cambios al padre solo después de confirmarlos en la API. */
 function ListDetail({ id, onUpdated, onDeleted, onBusy }: { id: string; onUpdated: (lista: Lista) => void; onDeleted: () => void; onBusy: (busy: boolean) => void }) {
   const { toast } = useToast();
   const [lista, setLista] = useState<ListaDetalle | null>(null);

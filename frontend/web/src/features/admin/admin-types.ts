@@ -1,3 +1,4 @@
+// Contratos de presentación del panel; separan permisos, planes y datos reales del servidor.
 export type AdminSection = 'overview' | 'users' | 'sources' | 'metrics';
 
 // Roles RBAC del panel (SUP-255: Editor -> Colaborador).
@@ -33,7 +34,7 @@ export type AdminSource = {
   lastSync: string;
   products: number;
   branches: number;
-  // Flag administrable (SUP-243: scraper.cadenas_supermercado).
+  // Indicador administrable de habilitación de la fuente (SUP-243).
   // Operativa/Advertencia => habilitada; Inactiva => deshabilitada.
   habilitada: boolean;
 };

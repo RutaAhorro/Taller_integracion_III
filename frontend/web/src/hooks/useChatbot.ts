@@ -1,3 +1,4 @@
+// Gestiona mensajes y solicitudes del chat; la migración al contrato del Gateway sigue en SUP-253.
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 

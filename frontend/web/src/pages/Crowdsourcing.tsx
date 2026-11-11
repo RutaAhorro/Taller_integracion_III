@@ -1,3 +1,4 @@
+// Mantiene la ruta de misiones sin inventar reportes, puntos ni recompensas.
 import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 
 export default function Crowdsourcing() {

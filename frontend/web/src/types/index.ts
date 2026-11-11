@@ -1,3 +1,4 @@
+// Contratos de sesión, datos del dominio y modelos usados por los componentes de interfaz.
 export type Usuario = {
   id: string;
   google_id?: string | null;
@@ -28,7 +29,7 @@ export interface RegisterPayload {
 
 export type PreferenciasDieteticas = {
   usuarioId: string;
-  etiquetas: string[]; // e.g., 'vegan', 'celiac', 'keto', 'none'
+  etiquetas: string[]; // Por ejemplo: 'vegan', 'celiac', 'keto', 'none'.
 };
 
 export type CadenaSupermercado = {
@@ -105,15 +106,11 @@ export type CapturaPrecio = {
   capturadoEl: string;
 };
 
-// UI Specific Types (Derived from DB models for easier frontend consumption)
+// Modelos de interfaz adaptados a partir de las respuestas del servidor.
 
 export type UiSupermarket = {
-  id: string; // derived or mapped
-  dbId: number;
+  id: string;
   name: string;
-  logo: string;
-  color: string;
-  coords: [number, number];
 };
 
 export type UiProduct = {
@@ -125,7 +122,7 @@ export type UiProduct = {
   unit: string;
   price: number;
   originalPrice: number;
-  supermarketId: string; // reference to UiSupermarket
+  supermarketId: string; // Referencia al identificador de UiSupermarket.
   supermarketName?: string;
   inStock?: boolean;
 };

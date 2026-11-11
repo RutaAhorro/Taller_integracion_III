@@ -1,3 +1,4 @@
+// Tarjeta de confirmación; el componente padre determina cuándo una operación fue exitosa.
 import { CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 

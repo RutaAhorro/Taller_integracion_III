@@ -1,8 +1,9 @@
+// Define las rutas públicas y protegidas y reúne los proveedores de la aplicación.
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ROUTES } from '@/core/routes';
 
-// Layouts
+// Estructuras compartidas de navegación y sesión.
 import { MainLayout } from '@/layouts/MainLayout';
 import { CartProvider } from '@/contexts/CartContext';
 import { ToastProvider } from '@/contexts/ToastContext';
@@ -53,7 +54,7 @@ const router = createBrowserRouter([
   },
 
   // ───────────────────────────────────────────────────────────
-  // Grupo B: MainLayout (BottomNav + página con header propio + SideBar global) - PROTEGIDAS
+  // Grupo B: navegación compartida y páginas protegidas con cabecera propia.
   // ───────────────────────────────────────────────────────────
   {
     element: <MainLayout />,
@@ -89,7 +90,7 @@ const router = createBrowserRouter([
   },
 
   // ───────────────────────────────────────────────────────────
-  // Grupo C: sin layout (pantalla completa)
+  // Grupo C: sin estructura compartida (pantalla completa).
   // ───────────────────────────────────────────────────────────
   { path: ROUTES.HOME, element: <Home />, errorElement: <ErrorBoundary /> },
   { path: ROUTES.LOGIN, element: <Login /> },
@@ -112,7 +113,7 @@ const router = createBrowserRouter([
     ]
   },
 
-  // Catch-all
+  // Destino de las rutas no reconocidas.
   { path: '*', element: <NotFound /> },
 ]);
 

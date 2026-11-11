@@ -13,13 +13,16 @@
 - `VITE_API_URL` incluye `/api/v1`; no duplicar prefijo. Variables VITE públicas:
   jamás incluir contraseñas, claves IA ni tokens internos de scraping.
 - Carrito en Context es temporal, no está sincronizado con listas persistidas.
-- MockShell identifica chat, misiones, rutas e historial. No presentar como
-  datos reales los mocks del panel o costos/ahorros simulados de rutas.
+- Las vistas pendientes usan FeatureUnavailable, sin costos, puntos ni resultados
+  simulados. Administración no sustituye errores por datos ficticios.
+- La portada consulta productos reales. Las cadenas corresponden a la página
+  recibida, no a todo el catálogo; cobertura completa pendiente de SUP-371.
+- Marcas blancas está deshabilitado hasta disponer de clasificación en el backend.
 - Chat usa URL directa `/chat/gemini`; backend IA expone `/api/v1/chat`, sin ruta
   Gateway. No afirmar flujo receta → lista → ruta terminado.
 - Reutilizar estilos/componentes del proyecto; comprobar imports antes de borrar.
 - Validar `npm run lint`, `npx tsc -b --noEmit` y
-  `node --test tests/listas-api.test.mjs`. Build tolera errores de tsc: su éxito
+  `npm test`. Build tolera errores de tsc: su éxito
   no demuestra tipos correctos. No modificar esa política sin una tarea explícita.
 
 <!-- ARCHITECTURE:AUTO-GENERATED — NO EDITAR DEBAJO DE ESTA LÍNEA -->

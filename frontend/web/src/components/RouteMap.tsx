@@ -1,3 +1,4 @@
+// Dibuja el origen y las paradas recibidas; la línea entre puntos no calcula navegación vial.
 'use client'
 
 import { useEffect, useRef } from 'react'
@@ -24,6 +25,7 @@ export function RouteMap({ home, stops }: RouteMapProps) {
   useEffect(() => {
     let cancelled = false
 
+    // Carga Leaflet al montar y evita crear el mapa si la vista ya se desmontó.
     async function init() {
       const L = (await import('leaflet')).default
       if (cancelled || !containerRef.current || mapRef.current) return

@@ -1,3 +1,4 @@
+// Conserva la ruta del visor sin generar paradas, costos o ahorros simulados.
 import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 
 export default function RouteViewer() {

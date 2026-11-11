@@ -1,3 +1,4 @@
+// Panel administrativo con usuarios, fuentes y métricas reales o errores explícitos por servicio.
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -508,6 +509,7 @@ function MetricsSection() {
   );
 }
 
+/** Resuelve los alias de ruta y consulta sin aceptar secciones desconocidas. */
 function resolveSection(pathname: string, search: string): AdminSection {
   if (pathname.endsWith('/metricas')) return 'metrics';
   const raw = new URLSearchParams(search).get('section');

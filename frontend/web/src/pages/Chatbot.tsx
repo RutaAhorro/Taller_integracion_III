@@ -1,3 +1,4 @@
+// Vista del asistente: presenta mensajes de la API y delega las solicitudes en useChatbot.
 import { 
   Sparkles, CheckCircle2, 
   Trash2, 
@@ -67,7 +68,6 @@ export default function Chatbot() {
 
   return (
     <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden relative">
-      {/* Header */}
       <header className="flex-none flex items-center justify-between px-4 py-3 bg-card border-b border-border shadow-sm z-10">
         <div className="flex items-center gap-3">
           <div className="relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full bg-primary items-center justify-center">
@@ -88,7 +88,6 @@ export default function Chatbot() {
           <div className="hidden sm:flex group relative items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-accent transition-colors">
             <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary"/>
             Consultas IA: {user?.cuota_tokens_ia ?? 0}/5 disponibles
-            {/* Tooltip */}
             <div className="absolute top-full mt-2 w-48 rounded-md border border-border bg-card p-2 text-center text-xs text-muted-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 pointer-events-none z-50">
               Conviértete en Colaborador para cuota extendida
             </div>
@@ -102,20 +101,17 @@ export default function Chatbot() {
         </div>
       </header>
 
-      {/* Main Chat Area */}
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
         <div className="max-w-3xl mx-auto space-y-6">
           {messages.map((msg) => (
             <div key={msg.id} className={cn("flex gap-3 sm:gap-4", msg.role === 'user' ? "justify-end" : "justify-start")}>
               
-              {/* Assistant Avatar */}
               {msg.role === 'assistant' && (
                 <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] mt-1">
                   <Bot className="h-5 w-5"/>
                 </div>
               )}
 
-              {/* Message Content */}
               <div className={cn(
                 "relative max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm",
                 msg.role === 'user' 
@@ -165,7 +161,6 @@ export default function Chatbot() {
                 )}
               </div>
 
-              {/* User Avatar */}
               {msg.role === 'user' && (
                 <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 mt-1">
                   <User className="h-5 w-5"/>
@@ -176,7 +171,6 @@ export default function Chatbot() {
         </div>
       </main>
 
-      {/* Input Area */}
       <div className="flex-none bg-card border-t border-border p-4">
         <div className="max-w-3xl mx-auto">
           <form 
@@ -211,7 +205,6 @@ export default function Chatbot() {
         </div>
       </div>
 
-      {/* Auth Gating Modal Overlay */}
       {showAuthModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-in fade-in duration-200">
           <div className="relative bg-card border border-border rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">

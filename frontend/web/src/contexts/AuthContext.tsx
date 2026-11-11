@@ -1,7 +1,8 @@
+// Comparte la sesión de Identidad; el usuario local no sustituye la autorización por cookie del servidor.
 import { createContext, useState, useEffect, type ReactNode } from 'react';
 import type { Usuario, LoginPayload, RegisterPayload } from '@/types';
 
-// Local storage key for persistence
+// Clave del usuario de interfaz almacenado entre recargas.
 const AUTH_USER_KEY = 'auth_user';
 
 interface AuthContextType {
@@ -49,7 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Sync state changes with localStorage
+  // Sincroniza el usuario de interfaz con el almacenamiento local.
   useEffect(() => {
     if (user) {
       localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
