@@ -4,6 +4,7 @@
 
 - `README.md`: arquitectura, configuración y límites actuales.
 - `docs/README.md`: documentos vigentes frente a históricos.
+- `docs/Guias/GUIA_CONFIGURACION.md`: tabla canónica de variables de entorno compartidas y servicios dueños.
 - El contexto del servicio afectado; no cargar todos los archivos del repositorio.
 - Código, SQL y configuración prevalecen sobre planes o mapas desactualizados.
 
@@ -32,6 +33,8 @@
   merge, despliegue o migración sin autorización para esa operación.
 - Ramas de trabajo: `[área]/[tipo]/[tarea]-[nombre]`; commits convencionales.
   Consultar `docs/Guias/GUIA_GITFLOW_Y_PR.md` para PR hacia `develop`.
+- Durante el barrido ningún servicio renombra una variable de entorno compartida
+  por su cuenta; consultar `docs/Guias/GUIA_CONFIGURACION.md`.
 - No imprimir secretos ni copiar `.env`, JWT, cookies o credenciales a logs/docs.
 - No hacer SQL cruzado entre dominios, AutoMigrate ni ampliar permisos por comodidad.
 - No ejecutar fixtures/destrucción sobre BD o clúster compartidos. Probar aislado.

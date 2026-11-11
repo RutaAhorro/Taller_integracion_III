@@ -1,0 +1,34 @@
+name: Nomenclatura checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+  push:
+    branches: [develop-refactor]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  nomenclatura:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Pruebas unitarias del validador de nomenclatura
+        run: |
+          python3 scripts/test_check_single_letter_identifiers.py
+      - name: Validar ausencia de identificadores de una letra en cambios
+        run: |
+          python3 scripts/check_single_letter_identifiers.py --base origin/${{ github.base_ref || 'develop' }} --warning

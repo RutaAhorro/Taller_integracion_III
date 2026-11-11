@@ -30,6 +30,8 @@ corrige el documento.
 - [Flujo de ramas y pull requests](Guias/GUIA_GITFLOW_Y_PR.md).
 - [Barrido de código](Guias/GUIA_BARRIDO_CODIGO.md): tests, mocks, hardcodeo y
   documentación de cada servicio (Sprint 3).
+- [Configuración y variables compartidas](Guias/GUIA_CONFIGURACION.md): nombres
+  acordados y reglas de configuración compartida (Sprint 3 · SUP-345).
 - [Docker para desarrollo](Guias/GUIA_DOCKER.md). Los límites de recursos están en
   [escalado y recursos](Metricas/02_Escalado_y_recursos.md).
 - [Contextos para asistentes de IA](Guias/GUIA_CONTEXTO_IA.md). Se unificarán en

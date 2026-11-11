@@ -1,0 +1,42 @@
+name: Bot Discord checks
+
+on:
+  pull_request:
+    branches: [main, develop, develop-refactor]
+    paths:
+      - 'backend/bot_discord/**'
+      - '.github/workflows/bot-discord-checks.yml'
+  push:
+    branches: [develop-refactor]
+    paths:
+      - 'backend/bot_discord/**'
+      - '.github/workflows/bot-discord-checks.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  bot-discord:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: false
+      - name: Bot Discord tests, vet and build
+        working-directory: backend/bot_discord
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -o /tmp/bot_discord .
+      - name: Build container image
+        run: docker build -t bot-discord:local backend/bot_discord
