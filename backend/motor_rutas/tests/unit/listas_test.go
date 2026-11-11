@@ -123,6 +123,33 @@ func TestValidacionConEnvoltorioYSinEcoDelValor(prueba *testing.T) {
 	}
 }
 
+// TestRechazaContenidoTrasElObjeto cubre la review del PR #136: un '}' o ']'
+// sobrante tras el objeto debe dar 400 sin escribir en el repositorio, tanto
+// al crear como al actualizar.
+func TestRechazaContenidoTrasElObjeto(prueba *testing.T) {
+	clienteHTTP := nuevoCliente(prueba)
+	sobrantes := []string{`{"nombre":"Otra"}}`, `{"nombre":"Otra"}]`, `{"nombre":"Otra"} {}`, `{"nombre":"Otra"} x`}
+	for _, cuerpo := range sobrantes {
+		if respuesta := clienteHTTP.pedir(http.MethodPost, api, cuerpo, nil); respuesta.Code != http.StatusBadRequest {
+			prueba.Fatalf("POST %s: %d %s", cuerpo, respuesta.Code, respuesta.Body)
+		}
+	}
+	if cuerpo := clienteHTTP.pedir(http.MethodGet, api, "", nil).Body.String(); !strings.Contains(cuerpo, `"listas":[]`) {
+		prueba.Fatalf("POST inválido creó listas: %s", cuerpo)
+	}
+
+	idLista := crear(prueba, clienteHTTP, "Semana")["id"].(string)
+	for _, cuerpo := range sobrantes {
+		if respuesta := clienteHTTP.pedir(http.MethodPut, api+"/"+idLista, cuerpo, nil); respuesta.Code != http.StatusBadRequest {
+			prueba.Fatalf("PUT %s: %d %s", cuerpo, respuesta.Code, respuesta.Body)
+		}
+	}
+	respuesta := clienteHTTP.pedir(http.MethodGet, api+"/"+idLista, "", nil)
+	if nombre := decodificar(prueba, respuesta.Body.Bytes())["nombre"]; nombre != "Semana" {
+		prueba.Fatalf("PUT inválido modificó la lista: %v", nombre)
+	}
+}
+
 func TestJSONMalFormadoUsaEnvoltorio(prueba *testing.T) {
 	clienteHTTP := nuevoCliente(prueba)
 	respuesta := clienteHTTP.pedir(http.MethodPost, api, "{\"nombre\": \"s\xe1bado\"}", nil)

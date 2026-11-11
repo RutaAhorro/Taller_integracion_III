@@ -112,8 +112,11 @@ func leerJSON(respuesta http.ResponseWriter, peticion *http.Request, destino any
 		escribirError(respuesta, http.StatusBadRequest, mensajeSolicitudInvalida, detalleErrorJSON(errorObtenido))
 		return false
 	}
-	// More() detecta un segundo valor después del objeto, por ejemplo: {"a":1} {}
-	if decodificador.More() {
+	// Tras el objeto solo puede quedar el fin del cuerpo. More() no sirve aquí:
+	// devuelve false ante un '}' o ']' sobrante, así que {"a":1}} se aceptaría.
+	// Una segunda decodificación debe devolver exactamente io.EOF.
+	var sobrante json.RawMessage
+	if errorObtenido := decodificador.Decode(&sobrante); !errors.Is(errorObtenido, io.EOF) {
 		escribirError(respuesta, http.StatusBadRequest, mensajeSolicitudInvalida, "El cuerpo no es JSON válido.")
 		return false
 	}
