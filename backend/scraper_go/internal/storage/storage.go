@@ -90,6 +90,7 @@ type Collector struct {
 	stateDir  string
 	minFree   int64
 	retention time.Duration
+	timeout   time.Duration
 	logger    *slog.Logger
 	// cursor rota la revisión entre llamadas. Sin él, los primeros 20
 	// directorios podrían acaparar todos los turnos y los spools antiguos
@@ -97,8 +98,20 @@ type Collector struct {
 	cursor string
 }
 
-func NewCollector(stateDir string, minFree int64, retention time.Duration, logger *slog.Logger) *Collector {
-	return &Collector{stateDir: stateDir, minFree: minFree, retention: retention, logger: logger}
+func NewCollector(
+	stateDir string,
+	minFree int64,
+	retention time.Duration,
+	timeout time.Duration,
+	logger *slog.Logger,
+) *Collector {
+	return &Collector{
+		stateDir:  stateDir,
+		minFree:   minFree,
+		retention: retention,
+		timeout:   timeout,
+		logger:    logger,
+	}
 }
 
 func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error) {
@@ -140,7 +153,7 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 		}
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(c.timeout)
 	removed := 0
 	processed := 0
 	for offset := 0; offset < len(names) && processed < limit; offset++ {

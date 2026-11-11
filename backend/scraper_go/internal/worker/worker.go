@@ -29,7 +29,7 @@ import (
 )
 
 var (
-	ErrCrawlExhausted = errors.New("el crawl agotó 3 intentos; el spool se conserva")
+	ErrCrawlExhausted = errors.New("el crawl agotó los intentos configurados; el spool se conserva")
 	ErrLeaseLost      = errors.New("se perdió la lease del trabajo")
 	ErrNoProducts     = errors.New("el crawl terminó sin productos")
 )
@@ -54,18 +54,24 @@ func New(
 	if logger == nil {
 		logger = slog.Default()
 	}
-	gcTimeout := 2 * time.Second
+	gcTimeout := cfg.GCTimeout
 	if cfg.APITimeout > 0 && cfg.APITimeout < gcTimeout {
 		gcTimeout = cfg.APITimeout
 	}
 	return &Worker{
-		cfg:       cfg,
-		api:       api,
-		gcAPI:     controlscraping.New(cfg.APIURL, cfg.Token, gcTimeout),
-		queue:     queueClient,
-		registry:  registry,
-		collector: storage.NewCollector(cfg.StateDir, cfg.MinFreeBytes, cfg.FailedRetention, logger),
-		logger:    logger,
+		cfg:      cfg,
+		api:      api,
+		gcAPI:    controlscraping.New(cfg.APIURL, cfg.Token, gcTimeout),
+		queue:    queueClient,
+		registry: registry,
+		collector: storage.NewCollector(
+			cfg.StateDir,
+			cfg.MinFreeBytes,
+			cfg.FailedRetention,
+			cfg.CollectTimeout,
+			logger,
+		),
+		logger: logger,
 	}
 }
 
@@ -90,17 +96,17 @@ func (w *Worker) Run(ctx context.Context) error {
 		}
 		if err := w.queue.EnsureGroup(ctx); err != nil {
 			w.logger.Warn("worker_group_unavailable", "error", err)
-			if !sleep(ctx, 5*time.Second) {
+			if !sleep(ctx, w.cfg.RetryInterval) {
 				return nil
 			}
 			continue
 		}
 
 		if time.Now().After(nextCollection) {
-			if _, err := w.collector.Collect(ctx, w.gcAPI, w.queue, 20); err != nil {
+			if _, err := w.collector.Collect(ctx, w.gcAPI, w.queue, w.cfg.CollectLimit); err != nil {
 				w.logger.Warn("worker_collection_pending", "error", err)
 			}
-			nextCollection = time.Now().Add(10 * time.Second)
+			nextCollection = time.Now().Add(w.cfg.CollectInterval)
 		}
 
 		if err := storage.EnsureCapacity(w.cfg.StateDir, w.cfg.MinFreeBytes, 0); err != nil {
@@ -109,7 +115,7 @@ func (w *Worker) Run(ctx context.Context) error {
 			} else {
 				w.logger.Warn("worker_storage_unavailable", "error", err)
 			}
-			if !sleep(ctx, 5*time.Second) {
+			if !sleep(ctx, w.cfg.RetryInterval) {
 				return nil
 			}
 			continue
@@ -121,13 +127,13 @@ func (w *Worker) Run(ctx context.Context) error {
 				return nil
 			}
 			w.logger.Warn("worker_dependency_unavailable", "error", err)
-			if !sleep(ctx, 5*time.Second) {
+			if !sleep(ctx, w.cfg.RetryInterval) {
 				return nil
 			}
 			continue
 		}
 		if message == nil {
-			if !sleep(ctx, 200*time.Millisecond) {
+			if !sleep(ctx, w.cfg.PollInterval) {
 				return nil
 			}
 			continue
@@ -294,7 +300,7 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 		if err != nil {
 			return "", err
 		}
-		if attempts >= 3 {
+		if attempts >= w.cfg.CrawlAttempts {
 			return "", ErrCrawlExhausted
 		}
 		if err := store.SetProgress("crawl_attempts", attempts+1); err != nil {

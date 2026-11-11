@@ -42,7 +42,7 @@ func newBaseSpider(
 	cfg spiderConfig,
 ) baseSpider {
 	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
+		maxPages = 1
 	}
 	if logger == nil {
 		logger = slog.Default()

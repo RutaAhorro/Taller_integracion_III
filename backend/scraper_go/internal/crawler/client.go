@@ -68,12 +68,17 @@ func (e *HTTPStatusError) Error() string {
 }
 
 type Options struct {
-	UserAgent  string
-	Delay      time.Duration
-	Timeout    time.Duration
-	MaxSize    int64
-	MaxRetries int
-	Logger     *slog.Logger
+	UserAgent        string
+	Delay            time.Duration
+	Timeout          time.Duration
+	MaxSize          int64
+	MaxRetries       int
+	RobotsCacheTTL   time.Duration
+	RobotsFailureTTL time.Duration
+	RobotsMaxBytes   int64
+	BackoffMin       time.Duration
+	BackoffMax       time.Duration
+	Logger           *slog.Logger
 }
 
 type Client struct {
@@ -82,6 +87,8 @@ type Client struct {
 	delay      time.Duration
 	maxSize    int64
 	maxRetries int
+	backoffMin time.Duration
+	backoffMax time.Duration
 	logger     *slog.Logger
 	robots     *robotsCache
 	throttle   *throttle
@@ -97,6 +104,21 @@ func New(opts Options) *Client {
 	if opts.MaxRetries < 0 {
 		opts.MaxRetries = 0
 	}
+	if opts.RobotsCacheTTL <= 0 {
+		opts.RobotsCacheTTL = time.Hour
+	}
+	if opts.RobotsFailureTTL <= 0 {
+		opts.RobotsFailureTTL = 10 * time.Minute
+	}
+	if opts.RobotsMaxBytes <= 0 {
+		opts.RobotsMaxBytes = 512 * 1024
+	}
+	if opts.BackoffMin <= 0 {
+		opts.BackoffMin = 10 * time.Millisecond
+	}
+	if opts.BackoffMax <= 0 {
+		opts.BackoffMax = 120 * time.Second
+	}
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
@@ -106,10 +128,19 @@ func New(opts Options) *Client {
 		delay:      opts.Delay,
 		maxSize:    opts.MaxSize,
 		maxRetries: opts.MaxRetries,
+		backoffMin: opts.BackoffMin,
+		backoffMax: opts.BackoffMax,
 		logger:     opts.Logger,
 		throttle:   newThrottle(),
 	}
-	client.robots = newRobotsCache(client.http, client.userAgent, client.logger)
+	client.robots = newRobotsCache(
+		client.http,
+		client.userAgent,
+		opts.RobotsCacheTTL,
+		opts.RobotsFailureTTL,
+		opts.RobotsMaxBytes,
+		client.logger,
+	)
 	return client
 }
 
@@ -255,8 +286,8 @@ func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Durat
 	wait := retryAfter
 	if wait <= 0 {
 		base := c.delay
-		if base < 10*time.Millisecond {
-			base = 10 * time.Millisecond
+		if base < c.backoffMin {
+			base = c.backoffMin
 		}
 		exponential := base * time.Duration(1<<min(attempt, 7))
 		// Jitter completo sobre la mitad superior: conserva el crecimiento
@@ -266,8 +297,8 @@ func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Durat
 	}
 	// Retry-After es una instrucción del servidor: se respeta incluso si es
 	// mayor que el techo del backoff propio. El techo sólo aplica al jitter.
-	if retryAfter <= 0 && wait > 120*time.Second {
-		wait = 120 * time.Second
+	if retryAfter <= 0 && wait > c.backoffMax {
+		wait = c.backoffMax
 	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
@@ -392,27 +423,35 @@ type robotsEntry struct {
 	fetched    time.Time
 }
 
-const (
-	robotsCacheTTL   = time.Hour
-	robotsFailureTTL = 10 * time.Minute
-)
-
 type robotsCache struct {
-	mu        sync.Mutex
-	entries   map[string]*robotsEntry
-	failures  map[string]time.Time
-	http      *http.Client
-	userAgent string
-	logger    *slog.Logger
+	mu         sync.Mutex
+	entries    map[string]*robotsEntry
+	failures   map[string]time.Time
+	http       *http.Client
+	userAgent  string
+	cacheTTL   time.Duration
+	failureTTL time.Duration
+	maxBytes   int64
+	logger     *slog.Logger
 }
 
-func newRobotsCache(client *http.Client, userAgent string, logger *slog.Logger) *robotsCache {
+func newRobotsCache(
+	client *http.Client,
+	userAgent string,
+	cacheTTL time.Duration,
+	failureTTL time.Duration,
+	maxBytes int64,
+	logger *slog.Logger,
+) *robotsCache {
 	return &robotsCache{
-		entries:   make(map[string]*robotsEntry),
-		failures:  make(map[string]time.Time),
-		http:      client,
-		userAgent: userAgent,
-		logger:    logger,
+		entries:    make(map[string]*robotsEntry),
+		failures:   make(map[string]time.Time),
+		http:       client,
+		userAgent:  userAgent,
+		cacheTTL:   cacheTTL,
+		failureTTL: failureTTL,
+		maxBytes:   maxBytes,
+		logger:     logger,
 	}
 }
 
@@ -423,8 +462,8 @@ func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.
 	failedAt, failed := r.failures[base]
 	r.mu.Unlock()
 
-	if entry == nil || time.Since(entry.fetched) > robotsCacheTTL {
-		if failed && time.Since(failedAt) < robotsFailureTTL {
+	if entry == nil || time.Since(entry.fetched) > r.cacheTTL {
+		if failed && time.Since(failedAt) < r.failureTTL {
 			// Fail-open sin repetir el aviso en cada pagina. Cugat, por
 			// ejemplo, redirige robots.txt en bucle; sin esta cache el
 			// worker registraria un warning por cada categoria.
@@ -465,7 +504,7 @@ func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, err
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, 512*1024))
+	body, err := io.ReadAll(io.LimitReader(response.Body, r.maxBytes))
 	if err != nil {
 		return nil, err
 	}
