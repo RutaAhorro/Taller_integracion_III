@@ -11,8 +11,8 @@ export function LandingCTA() {
           
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3vw,2.4rem)] mb-[0.875rem] relative text-primary-foreground font-bold">Tu hogar merece compras más inteligentes</h2>
           <p className="text-[1rem] opacity-85 mb-[2rem] max-w-[560px] mx-auto relative leading-[1.6]">
-            Crea tu cuenta gratis para organizar tus listas de compras.
-            También puedes explorar el catálogo sin iniciar sesión.
+            Crea tu cuenta gratis y descubre cuánto puedes ahorrar esta semana.
+            Sin tarjetas, sin compromisos.
           </p>
           <div className="relative flex flex-col md:flex-row gap-[0.875rem] justify-center flex-wrap">
             <Link

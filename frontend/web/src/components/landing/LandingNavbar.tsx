@@ -3,12 +3,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Menu, ShoppingBasket, X } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
-// Enlaces editoriales de la portada; no contienen resultados ni estadísticas de ejemplo.
-const navigation = [
-  { href: '#como-funciona', label: 'Cómo funciona' },
-  { href: '#beneficios', label: 'Beneficios' },
-  { href: '#supermercados', label: 'Supermercados' },
-];
+import landingData from '@/data/landing.json';
 
 export function LandingNavbar() {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -41,7 +36,7 @@ export function LandingNavbar() {
         </Link>
 
         <ul className="hidden md:flex gap-8 list-none flex-1 justify-center">
-          {navigation.map((l) => (
+          {landingData.navigation.map((l) => (
             <li key={l.href}>
               <a href={l.href} className="relative py-[10px] text-[0.875rem] font-bold text-foreground no-underline transition-colors duration-200 hover:text-[var(--brand)] group">
                 {l.label}
@@ -81,7 +76,7 @@ export function LandingNavbar() {
 
       {menuOpen && (
         <div className="flex flex-col gap-1 p-4 border-t-2 border-border bg-card absolute top-[76px] left-0 w-full shadow-[0_15px_25px_-5px_rgb(0_0_0/0.15)] z-40 md:hidden">
-          {navigation.map((l) => (
+          {landingData.navigation.map((l) => (
             <a
               key={l.href}
               href={l.href}

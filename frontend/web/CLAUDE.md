@@ -15,8 +15,9 @@
 - Carrito en Context es temporal, no está sincronizado con listas persistidas.
 - Las vistas pendientes usan FeatureUnavailable, sin costos, puntos ni resultados
   simulados. Administración no sustituye errores por datos ficticios.
-- La portada consulta productos reales. Las cadenas corresponden a la página
-  recibida, no a todo el catálogo; cobertura completa pendiente de SUP-371.
+- La portada es informativa y usa landing.json; sus ejemplos no son resultados de
+  la API. En el catálogo, las cadenas corresponden a los productos recibidos;
+  cobertura completa pendiente de SUP-371. No reutilizar ejemplos de la portada como datos reales.
 - Marcas blancas está deshabilitado hasta disponer de clasificación en el backend.
 - Chat usa URL directa `/chat/gemini`; backend IA expone `/api/v1/chat`, sin ruta
   Gateway. No afirmar flujo receta → lista → ruta terminado.

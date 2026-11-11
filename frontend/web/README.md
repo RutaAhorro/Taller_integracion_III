@@ -96,8 +96,9 @@ La fuente de verdad es `src/app/router.tsx`, con constantes en
 | `/terminos` | Página pública de términos |
 
 Las vistas pendientes usan `FeatureUnavailable`; no generan resultados simulados.
-La portada consume una página del catálogo y no muestra ahorros ni métricas ficticias.
-Las cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
+La portada es informativa: sus textos, productos y cifras ilustrativas provienen
+de `src/data/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
+El catálogo funcional no usa esos ejemplos. Sus cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
 representan la cobertura completa ni las facetas de una búsqueda. El filtro
 «Marcas blancas» está deshabilitado hasta disponer de clasificación en el backend.
 El carrito temporal del catálogo **no se sincroniza con las listas**.

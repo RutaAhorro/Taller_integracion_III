@@ -1,0 +1,51 @@
+{
+  "navigation": [
+    { "href": "#como-funciona", "label": "Cómo funciona" },
+    { "href": "#beneficios", "label": "Beneficios" },
+    { "href": "#ahorro", "label": "Ahorro real" },
+    { "href": "#supermercados", "label": "Supermercados" }
+  ],
+  "heroProducts": [
+    { "name": "Leche descremada 1L", "meta": "Líder Express · 2.1 km", "price": "$1.190", "save": "−18%" },
+    { "name": "Pan integral molde", "meta": "Jumbo · 4.8 km", "price": "$2.290", "save": "−9%" },
+    { "name": "Huevos color 12u", "meta": "Santa Isabel · 3.5 km", "price": "$3.490", "save": "−6%" }
+  ],
+  "features": [
+    { "icon": "Tag", "title": "Comparación real, no nominal", "desc": "Homologamos productos que están escritos distinto en cada supermercado, para que compares peras con peras." },
+    { "icon": "Bus", "title": "Costo de traslado incluido", "desc": "Auto, transporte público o a pie. Calculamos con rutas reales cuánto te cuesta moverte." },
+    { "icon": "Bot", "title": "Asistente con IA confiable", "desc": "Te sugiere reemplazos y recetas, siempre validando contra nuestra base de datos." },
+    { "icon": "MapPin", "title": "Privacidad ante todo", "desc": "Tu ubicación se procesa en memoria y no se guarda. Tu casa es tu espacio y lo respetamos." },
+    { "icon": "Leaf", "title": "Adaptado a tu hogar", "desc": "Configura restricciones alimentarias, presupuesto y preferencias para cada familia." },
+    { "icon": "Zap", "title": "Rápido y liviano", "desc": "Diseñado para funcionar ágil incluso en equipos modestos, sin esperas innecesarias." }
+  ],
+  "savings": {
+    "bars": [
+      { "label": "Súper lejano (1 parada)", "value": "$55.340", "width": "100%", "variant": "worst" },
+      { "label": "Súper cercano (1 parada)", "value": "$49.600", "width": "89%", "variant": "mid" },
+      { "label": "RutaAhorro (ruta óptima)", "value": "$45.780", "width": "82%", "variant": "best" }
+    ],
+    "items": [
+      "Compra en un solo súper lejano: $52.140 + $3.200 de bencina.",
+      "Compra en el más cercano: $49.600, pero con menos variedad.",
+      "Con RutaAhorro (2 paradas óptimas): $45.780 todo incluido."
+    ],
+    "weeklySaving": "$9.560"
+  },
+  "stores": [
+    { "name": "Líder", "desc": "Express & Supermercados" },
+    { "name": "Jumbo", "desc": "Portal & C.A." },
+    { "name": "Santa Isabel", "desc": "Cadenas regionales" },
+    { "name": "Próximamente", "desc": "Más cadenas en evaluación" }
+  ],
+  "steps": [
+    { "num": "1", "title": "Crea tu lista", "desc": "Agrega los productos de tu semana o deja que nuestro asistente con IA te sugiera recetas según tus preferencias." },
+    { "num": "2", "title": "Comparamos por ti", "desc": "Cruzamos precios, stock y promociones entre supermercados y normalizamos los productos." },
+    { "num": "3", "title": "Ves el costo real", "desc": "Sumamos combustible, tiempo y transporte público para mostrarte la opción más conveniente." }
+  ],
+  "metrics": [
+    { "num": "6+", "lines": ["Cadenas de", "supermercados integradas"] },
+    { "num": "3.200+", "lines": ["Productos comparados", "en tiempo real"] },
+    { "num": "$9.560", "lines": ["Ahorro neto promedio", "por compra semanal"] },
+    { "num": "2 min", "lines": ["Lo que tardas", "en decidir tu compra"] }
+  ]
+}

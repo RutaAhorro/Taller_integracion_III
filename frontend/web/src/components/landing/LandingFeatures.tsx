@@ -1,14 +1,6 @@
-// Presenta las características del producto y distingue las integraciones pendientes.
+// Presenta la propuesta informativa del producto desde el contenido editorial de la portada.
 import { Filter, Car, Bot, ShieldCheck, House, Gauge } from "lucide-react";
-// Contenido informativo: no acredita funcionalidades desplegadas ni presenta métricas ficticias.
-const features = [
-  { title: 'Catálogo de productos', desc: 'Consulta productos, precios y disponibilidad obtenidos de supermercados.' },
-  { title: 'Rutas en integración', desc: 'El cálculo de alternativas de compra y traslado se encuentra en desarrollo.' },
-  { title: 'Asistente de recetas', desc: 'El asistente se está conectando al catálogo para proponer ingredientes verificables.' },
-  { title: 'Acceso a tu cuenta', desc: 'Inicia sesión para consultar tus listas y mantener tus compras organizadas.' },
-  { title: 'Listas de compras', desc: 'Organiza los productos que necesitas y consulta tus listas guardadas.' },
-  { title: 'Consulta desde el navegador', desc: 'Explora la aplicación desde tu computador o teléfono.' },
-];
+import landingData from '@/data/landing.json';
 
 export function LandingFeatures() {
   const getIcon = (i: number) => {
@@ -36,7 +28,7 @@ export function LandingFeatures() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[1.5rem]">
-          {features.map((f, index) => {
+          {landingData.features.map((f, index) => {
             const bgClass = index === 0 ? 'bg-[var(--landing-amber-soft)]' : 
                             index === 1 ? 'bg-[var(--landing-sky-soft)]' : 
                             index === 2 ? 'bg-[var(--landing-malva-soft)]' : 
