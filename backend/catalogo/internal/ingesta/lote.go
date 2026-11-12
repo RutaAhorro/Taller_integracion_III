@@ -16,9 +16,9 @@ var ErrIdempotencia = errors.New("la clave del lote ya se utilizó con otro cont
 
 // IngestarLote confirma productos y precios juntos. Un error SQL revierte el lote
 // completo; nunca se continúa con una transacción PostgreSQL ya abortada.
-func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaResultadoDTO, error) {
+func (repositorio *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaResultadoDTO, error) {
 	result := &IngestaResultadoDTO{SucursalID: input.SucursalID, TotalRecibidos: len(input.Productos)}
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		data, err := json.Marshal(input)
 		if err != nil {
 			return err
@@ -47,21 +47,21 @@ func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaR
 			}
 		}
 		ahora := time.Now()
-		for i, p := range input.Productos {
-			sku, titulo := strings.TrimSpace(p.SKU), strings.TrimSpace(p.Producto)
+		for indice, producto := range input.Productos {
+			sku, titulo := strings.TrimSpace(producto.SKU), strings.TrimSpace(producto.Producto)
 			if sku == "" || titulo == "" {
-				result.Errores = append(result.Errores, fmt.Sprintf("item %d: SKU o título vacío", i))
+				result.Errores = append(result.Errores, fmt.Sprintf("item %d: SKU o título vacío", indice))
 				continue
 			}
 			var imagen *string
-			if p.URLImagen != nil && strings.TrimSpace(*p.URLImagen) != "" {
-				imagen = p.URLImagen
-			} else if p.Imagen != nil && strings.TrimSpace(*p.Imagen) != "" {
-				imagen = p.Imagen
+			if producto.URLImagen != nil && strings.TrimSpace(*producto.URLImagen) != "" {
+				imagen = producto.URLImagen
+			} else if producto.Imagen != nil && strings.TrimSpace(*producto.Imagen) != "" {
+				imagen = producto.Imagen
 			}
 			stock := true
-			if p.EnStock != nil {
-				stock = *p.EnStock
+			if producto.EnStock != nil {
+				stock = *producto.EnStock
 			}
 			var product struct {
 				ID        string
@@ -82,8 +82,8 @@ func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaR
      formato_crudo = COALESCE(NULLIF(EXCLUDED.formato_crudo, ''), pc.formato_crudo),
      url_producto = COALESCE(NULLIF(EXCLUDED.url_producto, ''), pc.url_producto),
      url_imagen = COALESCE(NULLIF(EXCLUDED.url_imagen, ''), pc.url_imagen)
-    RETURNING id, (xmax = 0) AS insertado`, input.SucursalID, sku, p.EANGTIN,
-				titulo, p.Marca, p.Categoria, p.FormatoCrudo, p.URLProducto, imagen, stock, ahora).Scan(&product)
+    RETURNING id, (xmax = 0) AS insertado`, input.SucursalID, sku, producto.EANGTIN,
+				titulo, producto.Marca, producto.Categoria, producto.FormatoCrudo, producto.URLProducto, imagen, stock, ahora).Scan(&product)
 			if query.Error != nil {
 				return query.Error
 			}
@@ -92,16 +92,16 @@ func (r *Repository) IngestarLote(ctx context.Context, input Request) (*IngestaR
 			} else {
 				result.Actualizados++
 			}
-			oferta := p.PrecioOferta
-			if oferta == nil && p.Precio != nil && *p.Precio < p.PrecioNormal {
-				oferta = p.Precio
+			oferta := producto.PrecioOferta
+			if oferta == nil && producto.Precio != nil && *producto.Precio < producto.PrecioNormal {
+				oferta = producto.Precio
 			}
 			// INSERT explícito conserva stock=false, sin el default:true de GORM.
 			if err := tx.Exec(`INSERT INTO scraper.capturas_precios
     (producto_crudo_id, precio_normal, precio_oferta, precio_tarjeta,
      precio_por_unidad, metrica_unidad, mecanica_promocion, esta_disponible, capturado_el)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, product.ID, p.PrecioNormal, oferta,
-				p.PrecioTarjeta, p.PrecioPorUnidad, p.MetricaUnidad, p.MecanicaPromocion, stock, ahora).Error; err != nil {
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, product.ID, producto.PrecioNormal, oferta,
+				producto.PrecioTarjeta, producto.PrecioPorUnidad, producto.MetricaUnidad, producto.MecanicaPromocion, stock, ahora).Error; err != nil {
 				return err
 			}
 			result.PreciosRegistrados++
