@@ -34,6 +34,7 @@ endpoint se expone en SUP-316.
 | Candidatos | Como máximo `RUTAS_MAX_SUCURSALES` sucursales (valor inicial: 10), las más cercanas al origen dentro del radio. |
 | Artículos | Como máximo `RUTAS_MAX_ARTICULOS` artículos por cálculo (valor inicial: 30). |
 | Distancia | Haversine × `RUTAS_FACTOR_DISTANCIA` (valor inicial: 1,3). |
+| Umbral de ahorro | Una ruta con varias tiendas solo se recomienda si ahorra más de `RUTAS_UMBRAL_AHORRO` pesos frente a comprar todo en una tienda (valor inicial: $500). Regla RN-08. |
 | Transporte | Solo auto particular. Transporte público (OTP) queda fuera del Sprint 3. |
 | Perfil | No se usa el perfil avanzado ni el plan premium. |
 
@@ -104,6 +105,19 @@ sigue este orden:
 2. Menor distancia.
 3. Menor lista de `sucursal_id`, ordenada de forma ascendente.
 
+**Umbral de ahorro (RN-08).** Si la ganadora tiene varias tiendas y existe una
+base de una tienda (sección 2.5), se compara su ahorro con el umbral:
+
+```text
+si base.total − ganadora.total <= RUTAS_UMBRAL_AHORRO  →  se recomienda la base
+```
+
+Visitar más tiendas cansa y el traslado es solo una estimación, así que un
+ahorro pequeño no justifica la ruta. Si no hay base, porque ninguna tienda sola
+cubre la compra, el umbral no aplica y se mantiene la ganadora. Con
+`RUTAS_UMBRAL_AHORRO=0` se recomienda cualquier ahorro positivo. Ver el
+[caso C](#caso-c-el-ahorro-no-supera-el-umbral).
+
 En el orden de visita, un recorrido y su inverso miden lo mismo. En ese caso se
 elige el que **visita primero la tienda más cercana al origen**.
 
@@ -112,7 +126,8 @@ elige el que **visita primero la tienda más cercana al origen**.
 - **Base:** la mejor alternativa de **una sola tienda** que cubra lo mismo que
   la alternativa elegida, incluido su traslado.
 - `ahorro = base.total − elegida.total`. Si la elegida es de una tienda, el
-  ahorro es 0.
+  ahorro es 0. Esto incluye el caso en que el umbral (sección 2.4) descartó una
+  combinación: la respuesta recomienda la base y no informa el ahorro descartado.
 - Si ninguna tienda sola cubre la compra, `base` es `null` y no se informa
   ahorro. **No se inventa un precio de referencia.**
 - La alternativa es la mejor **entre los candidatos y reglas evaluados**, no
@@ -157,7 +172,7 @@ para un ejemplo completo. La forma general es:
 | Campo | Qué es |
 | --- | --- |
 | `estimado` | Siempre `true`. Recuerda que distancias y costos son aproximados |
-| `parametros` | Valores usados: factor de distancia, rendimiento y combustible (`precio_l`, `fuente`, `fecha`) |
+| `parametros` | Valores usados: factor de distancia, rendimiento, umbral de ahorro y combustible (`precio_l`, `fuente`, `fecha`) |
 | `ruta` | La alternativa elegida: `paradas` en orden, `tramos`, `distancia_km`, `costo_productos`, `costo_traslado` y `total` |
 | `ruta.paradas[]` | `orden`, `sucursal_id`, `nombre`, `cadena`, `lat`, `lon`, `subtotal` y `articulos` (con `producto_id` de la lista, `producto_id_oferta`, `cantidad`, `precio_unitario` y `subtotal`) |
 | `base_una_tienda` | `sucursal_id`, `nombre`, `total`; o `null` si ninguna tienda sola alcanza |
@@ -288,19 +303,19 @@ Lista: leche ×2, arroz ×1, detergente ×1, quinoa ×1.
 
 | Producto | Jumbo (1) | Lider (2) | Unimarc (3) |
 | --- | --- | --- | --- |
-| Leche | 990 | 1.190 | — |
+| Leche | 690 | 1.190 | — |
 | Arroz | 1.690 | 1.590 | 1.490 |
 | Detergente | 9.990 | 6.990 | 7.490 |
 | Quinoa | — | — | — |
 
 | Alternativa | Productos | Distancia | Traslado | Total |
 | --- | --- | --- | --- | --- |
-| **Jumbo → Lider** | 10.560 | 2,86 km | 310 | **10.870** |
-| Lider → Jumbo → Unimarc | 10.460 | 5,37 km | 582 | 11.042 |
+| **Jumbo → Lider** | 9.960 | 2,86 km | 310 | **10.270** |
+| Lider → Jumbo → Unimarc | 9.860 | 5,37 km | 582 | 10.442 |
+| Jumbo → Unimarc | 10.360 | 3,24 km | 351 | 10.711 |
 | Lider (base de una tienda) | 10.960 | 2,14 km | 232 | 11.192 |
-| Jumbo → Unimarc | 10.960 | 3,24 km | 351 | 11.311 |
 | Lider → Unimarc | 10.860 | 5,36 km | 580 | 11.440 |
-| Jumbo | 13.660 | 0,73 km | 79 | 13.739 |
+| Jumbo | 13.060 | 0,73 km | 79 | 13.139 |
 
 Cada orden de visita ya aplica el desempate de la sección 2.4. En la ruta
 elegida, Jumbo va primero porque es la tienda más cercana al origen.
@@ -309,10 +324,11 @@ elegida, Jumbo va primero porque es la tienda más cercana al origen.
 
 - Quinoa sale como `no_cubierto` y no se calcula.
 - Se compran la leche en Jumbo y el arroz y el detergente en Lider, con un total
-  de $10.870.
+  de $10.270.
 - La tercera parada en Unimarc ahorra $100 en arroz, pero cuesta $272 más de
   traslado, así que no conviene.
-- La base es Lider ($11.192), por lo que el ahorro es de $322.
+- La base es Lider ($11.192), por lo que el ahorro es de $922. Supera el umbral
+  de $500, así que se recomienda la combinación.
 
 ```json
 {
@@ -320,15 +336,16 @@ elegida, Jumbo va primero porque es la tienda más cercana al origen.
   "parametros": {
     "factor_distancia": 1.3,
     "rendimiento_km_l": 12,
+    "umbral_ahorro": 500,
     "combustible": { "precio_l": 1300, "fuente": "respaldo", "fecha": null }
   },
   "ruta": {
     "paradas": [
       {
         "orden": 1, "sucursal_id": 1, "nombre": "Jumbo Los Pablos", "cadena": "Jumbo",
-        "lat": -38.741, "lon": -72.6, "subtotal": 1980,
+        "lat": -38.741, "lon": -72.6, "subtotal": 1380,
         "articulos": [
-          { "producto_id": "…leche", "producto_id_oferta": "…leche-jumbo", "cantidad": 2, "precio_unitario": 990, "subtotal": 1980 }
+          { "producto_id": "…leche", "producto_id_oferta": "…leche-jumbo", "cantidad": 2, "precio_unitario": 690, "subtotal": 1380 }
         ]
       },
       {
@@ -346,12 +363,12 @@ elegida, Jumbo va primero porque es la tienda más cercana al origen.
       { "desde": 2, "hasta": "origen", "distancia_km": 1.07 }
     ],
     "distancia_km": 2.86,
-    "costo_productos": 10560,
+    "costo_productos": 9960,
     "costo_traslado": 310,
-    "total": 10870
+    "total": 10270
   },
   "base_una_tienda": { "sucursal_id": 2, "nombre": "Lider Prieto Norte", "total": 11192 },
-  "ahorro": 322,
+  "ahorro": 922,
   "no_cubiertos": [ { "producto_id": "…quinoa", "motivo": "sin_oferta_en_radio" } ],
   "candidatas_evaluadas": 3
 }
@@ -359,11 +376,33 @@ elegida, Jumbo va primero porque es la tienda más cercana al origen.
 
 Los `producto_id` del ejemplo se abrevian; en la respuesta real son UUID.
 
+### Caso C: el ahorro no supera el umbral
+
+Misma lista y precios del caso B, salvo la leche en Jumbo, que vuelve a costar
+$990.
+
+| Alternativa | Productos | Distancia | Traslado | Total |
+| --- | --- | --- | --- | --- |
+| Jumbo → Lider | 10.560 | 2,86 km | 310 | 10.870 |
+| Lider → Jumbo → Unimarc | 10.460 | 5,37 km | 582 | 11.042 |
+| **Lider (base de una tienda)** | 10.960 | 2,14 km | 232 | **11.192** |
+| Jumbo → Unimarc | 10.960 | 3,24 km | 351 | 11.311 |
+| Lider → Unimarc | 10.860 | 5,36 km | 580 | 11.440 |
+| Jumbo | 13.660 | 0,73 km | 79 | 13.739 |
+
+**Resultado esperado:**
+
+- Por total gana Jumbo → Lider ($10.870), pero solo ahorra $322 frente a Lider.
+- $322 no supera el umbral de $500, así que se recomienda comprar todo en Lider,
+  con un total de $11.192.
+- `ruta` tiene una sola parada, `base_una_tienda` es Lider, `ahorro` es 0 y
+  quinoa sigue como `no_cubierto`.
+
 ## 6. Qué usa cada servicio
 
 | Servicio | Tarea | Qué necesita de este contrato |
 | --- | --- | --- |
-| **Rutas** (Vicho) | SUP-313, SUP-328 | Reglas de las secciones 1 y 2 y los casos de la sección 5 como pruebas |
+| **Rutas** (Vicho) | SUP-313, SUP-328 | Reglas de las secciones 1 y 2 y los casos de la sección 5 como pruebas. El umbral de ahorro (RN-08, sección 2.4) se implementa en SUP-328 |
 | **Rutas** (Vicho) | SUP-316 | Endpoint de la sección 3 y consulta a Catálogo de la sección 4 |
 | **Catálogo** (Marcelo) | SUP-317 | Sección 4: qué enviar, qué no inventar y qué informar como faltante |
 | **Listas** (Esban) | SUP-241, SUP-348 | Rutas lee `producto_id` + `cantidad` de los artículos sin comprar; la migración a Go conserva este endpoint |
@@ -379,6 +418,10 @@ Los `producto_id` del ejemplo se abrevian; en la respuesta real son UUID.
   Identidad), premium y límites por plan.
 - Horarios de apertura de las sucursales.
 - Comprar parte de un artículo en una tienda y el resto en otra.
+- **Monto mínimo de compra (RN-20).** Se difiere: no se rechazan listas por
+  subtotal bajo. Con el umbral de ahorro, una lista pequeña ya termina en una
+  sola tienda, y rechazarla obligaría a un error nuevo y a que el frontend
+  sugiera agregar productos. Se puede retomar en un sprint posterior.
 
 ## Preguntas abiertas
 
@@ -387,7 +430,7 @@ Los `producto_id` del ejemplo se abrevian; en la respuesta real son UUID.
 - [ ] **Equipo:** ¿se calcula la ruta sin los productos no cubiertos (propuesta
   actual) o se rechaza toda la lista con 422?
 - [ ] **Equipo:** valores iniciales de radio (10 km), factor (1,3), rendimiento
-  (12 km/L) y combustible de respaldo.
+  (12 km/L), umbral de ahorro ($500) y combustible de respaldo.
 - [ ] **Marcelo:** ¿Catálogo puede distinguir sucursales físicas de tiendas solo
   en línea (A Cuenta y Cugat)? Si no, ¿se excluyen por cadena mientras tanto?
 - [ ] **Marcelo:** las coordenadas de sucursales del `init.sql` parecen
