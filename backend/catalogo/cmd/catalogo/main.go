@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
@@ -47,7 +46,7 @@ func run(log *slog.Logger) error {
 	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
 	// Validar una sola vez antes de exponer HTTP; no migrar ni servir con grants
 	// incompletos. Durante la ejecución readiness sólo comprueba conectividad.
-	storageCtx, storageCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	storageCtx, storageCancel := context.WithTimeout(context.Background(), cfg.StartupTimeout)
 	storageErr := ingesta.VerifyStorage(storageCtx, db, cfg.InternalToken != "")
 	storageCancel()
 	if storageErr != nil {
@@ -60,8 +59,8 @@ func run(log *slog.Logger) error {
 	httpServer := &http.Server{
 		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
 			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),
-		ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second,
-		WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second,
+		ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout,
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -75,7 +74,7 @@ func run(log *slog.Logger) error {
 		}
 		return err
 	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		if err := httpServer.Shutdown(shutdown); err != nil {
 			_ = httpServer.Close()
