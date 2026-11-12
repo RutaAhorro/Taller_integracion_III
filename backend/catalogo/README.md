@@ -2,7 +2,7 @@
 
 Servicio Go independiente para consultar productos, precios, historial y catálogo
 administrativo, y persistir lotes enviados por coordinación de scraping mediante
-una API interna autenticada. No requiere Redis ni importa paquetes de `backend/api`.
+una API interna autenticada. No requiere Redis.
 
 ## Configuración y ejecución local
 
@@ -27,18 +27,30 @@ go run ./cmd/catalogo
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
 | `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer para `/internal/v1/*`. Vacía activa el modo sólo lectura |
 | `PORT` | `8080` (ejemplo `8083`) | Puerto de escucha HTTP |
-| `CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas. Vacío rechaza peticiones con `Origin` |
+| `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas. Si está vacía se usa `CORS_ALLOWED_ORIGINS`. Vacías ambas, se rechazan las peticiones con `Origin` |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
 | `DB_MAX_IDLE_CONNS` | `5` | Conexiones inactivas máximas (no puede superar `DB_MAX_OPEN_CONNS`) |
 | `DB_CONN_MAX_LIFETIME` | `30m` | Tiempo máximo de vida por conexión |
+| `CATALOGO_READ_HEADER_TIMEOUT` | `5s` | Lectura de cabeceras de la petición |
+| `CATALOGO_READ_TIMEOUT` | `30s` | Lectura completa de la petición |
+| `CATALOGO_WRITE_TIMEOUT` | `30s` | Escritura de la respuesta |
+| `CATALOGO_IDLE_TIMEOUT` | `60s` | Conexión keep-alive inactiva |
+| `CATALOGO_SHUTDOWN_TIMEOUT` | `15s` | Espera de peticiones activas al recibir SIGINT/SIGTERM |
+| `CATALOGO_STARTUP_TIMEOUT` | `5s` | Verificación de tablas y permisos al arrancar |
+| `CATALOGO_READINESS_TIMEOUT` | `2s` | Ping a PostgreSQL de `/_catalogo/ready` |
+| `CATALOGO_DEFAULT_PAGE_SIZE` | `20` | Tamaño de página cuando no se envía `limit` |
+| `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
+| `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Caracteres conservados del texto de búsqueda |
+| `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
 
-El servidor aplica plazos estrictos de red: 5 s para lectura de cabeceras, 30 s para
-lectura/escritura de peticiones y 60 s de inactividad, con un cierre ordenado
-de hasta 15 s.
+Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
+los límites, enteros positivos. Un valor inválido impide arrancar con un mensaje
+que nombra la variable. `CATALOGO_DEFAULT_PAGE_SIZE` no puede superar
+`CATALOGO_MAX_PAGE_SIZE`.
 
 ### CORS y seguridad de errores
 
-`CORS_ALLOWED_ORIGINS` contiene orígenes HTTP(S) exactos sin rutas ni comodines.
+`CATALOGO_CORS_ALLOWED_ORIGINS` (o `CORS_ALLOWED_ORIGINS`) contiene orígenes HTTP(S) exactos sin rutas ni comodines.
 Si está vacío o el origen no coincide, las peticiones con cabecera `Origin`
 reciben 403; las peticiones sin `Origin` continúan funcionando. Las cabeceras
 permitidas se limitan a `Content-Type`, `Authorization` y `X-Request-ID`, y los
@@ -162,13 +174,14 @@ Catálogo persiste productos y precios de forma atómica:
 
 ## Ventanas de fallo con coordinación de scraping
 
-Catálogo y el coordinador de scraping no comparten transacción distribuida.
-El flujo gestiona las siguientes condiciones de fallo:
+Catálogo y Control de scraping no comparten transacción distribuida. Las
+respuestas de esta tabla las emite **Control** (`backend/control_scraping`) al
+cliente que entrega resultados; Catálogo solo confirma o rechaza el lote:
 
-| Escenario | Respuesta / Código | Comportamiento |
+| Escenario | Respuesta de Control | Comportamiento |
 | --- | --- | --- |
 | Catálogo no responde o error SQL | HTTP 503 (`catalogo_unavailable`) | El lote no se confirma; coordinación no incrementa el contador del trabajo |
-| Plazo de conexión excedido | HTTP 504 (`catalogo_timeout`) | Timeout en cliente (default 10 s, `CATALOGO_INGEST_TIMEOUT`); sin reintento ciego |
+| Plazo de conexión excedido | HTTP 504 (`catalogo_timeout`) | Plazo del cliente HTTP de Control (`CATALOGO_INGEST_TIMEOUT`, por defecto 10 s); sin reintento ciego |
 | Catálogo confirma pero falla el contador del trabajo | HTTP 409 (`contador_pendiente`, `catalogo_confirmado: true`) | El lote ya fue persistido; el reintento debe usar el mismo `lote_id` para resolver por idempotencia sin duplicar precios |
 | Caída del coordinador tras confirmación de Catálogo | Resultado incierto | El reintento con el mismo `lote_id` es seguro gracias a `scraper.lotes_catalogo` |
 
@@ -208,13 +221,12 @@ Para revertir el enrutamiento de Gateway y consultar productos a través de una 
 anterior desacoplando Catálogo, se aplica
 [docker-compose.catalogo-rollback.yml](../../docker-compose.catalogo-rollback.yml):
 
-```bash
-SUP268_LEGACY_API_IMAGE=<imagen_api_anterior> \
-docker compose -f docker-compose.yml -f docker-compose.catalogo-rollback.yml up -d
-```
-
-Este procedimiento restablece `CATALOGO_URL=''` en el Gateway y devuelve las
-rutas públicas al backend histórico.
+El override deja `CATALOGO_URL=''` en Gateway y devuelve las rutas públicas a una
+imagen histórica de la API (`SUP268_LEGACY_API_IMAGE`). El orden importa: primero
+debe estar sana la imagen histórica y solo después se cambia Gateway; si no, las
+consultas de productos responden 404. El procedimiento paso a paso, con los
+comandos exactos, está en el
+[README del Gateway](../gateway/README.md) (sección «Rollback de Catálogo (SUP-268) en Compose»).
 
 ### Rollback en Kubernetes
 
