@@ -33,7 +33,7 @@ func NewProductoService(repo domain.ProductoRepository) ProductoService {
 }
 
 // ObtenerCatalogo valida parámetros, aplica valores por defecto y sanitización, y obtiene los productos paginados
-func (s *productoService) ObtenerCatalogo(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error) {
+func (servicio *productoService) ObtenerCatalogo(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error) {
 	// 1. Validación y sanitización del término de búsqueda general
 	if strings.TrimSpace(filtro.Query) != "" {
 		filtro.Query = utils.SanitizarInputBusqueda(filtro.Query)
@@ -75,7 +75,7 @@ func (s *productoService) ObtenerCatalogo(ctx context.Context, filtro domain.Fil
 	}
 
 	// 5. Invocar repositorio
-	productos, totalRegistros, err := s.repo.Listar(ctx, filtro)
+	productos, totalRegistros, err := servicio.repo.Listar(ctx, filtro)
 	if err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (s *productoService) ObtenerCatalogo(ctx context.Context, filtro domain.Fil
 }
 
 // ObtenerCatalogoAdmin valida parámetros, aplica valores por defecto y sanitización, y obtiene los productos enriquecidos para administración
-func (s *productoService) ObtenerCatalogoAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error) {
+func (servicio *productoService) ObtenerCatalogoAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error) {
 	// 1. Validación y sanitización del término de búsqueda general
 	if strings.TrimSpace(filtro.Query) != "" {
 		filtro.Query = utils.SanitizarInputBusqueda(filtro.Query)
@@ -149,7 +149,7 @@ func (s *productoService) ObtenerCatalogoAdmin(ctx context.Context, filtro domai
 	}
 
 	// 5. Invocar repositorio administrativo
-	productos, totalRegistros, err := s.repo.ListarParaAdmin(ctx, filtro)
+	productos, totalRegistros, err := servicio.repo.ListarParaAdmin(ctx, filtro)
 	if err != nil {
 		return nil, err
 	}
@@ -178,13 +178,13 @@ func (s *productoService) ObtenerCatalogoAdmin(ctx context.Context, filtro domai
 }
 
 // ObtenerPorID busca un producto específico por su identificador e incluye su historial de precios
-func (s *productoService) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
+func (servicio *productoService) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, ErrProductoNoEncontrado
 	}
 
-	producto, err := s.repo.ObtenerPorID(ctx, id)
+	producto, err := servicio.repo.ObtenerPorID(ctx, id)
 	if err != nil {
 		return nil, err
 	}

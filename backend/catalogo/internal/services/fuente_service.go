@@ -28,19 +28,19 @@ func NewFuenteService(repo domain.FuenteRepository) FuenteService {
 }
 
 // ListarFuentes entrega todas las cadenas para el panel de administración.
-func (s *fuenteService) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
-	return s.repo.ListarFuentes(ctx)
+func (servicio *fuenteService) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
+	return servicio.repo.ListarFuentes(ctx)
 }
 
 // ActualizarFuente habilita o deshabilita una fuente.
-func (s *fuenteService) ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error) {
+func (servicio *fuenteService) ActualizarFuente(ctx context.Context, id int, input domain.ActualizarFuenteDTO) (*domain.FuenteDTO, error) {
 	if id <= 0 {
 		return nil, ErrFuenteNoEncontrada
 	}
 	if input.Habilitada == nil {
 		return nil, ErrEstadoFuenteRequerido
 	}
-	fuente, err := s.repo.ActualizarEstadoFuente(ctx, id, *input.Habilitada)
+	fuente, err := servicio.repo.ActualizarEstadoFuente(ctx, id, *input.Habilitada)
 	if err != nil {
 		return nil, err
 	}
