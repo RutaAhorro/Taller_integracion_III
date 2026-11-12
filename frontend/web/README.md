@@ -103,6 +103,11 @@ representan la cobertura completa ni las facetas de una búsqueda. El filtro
 «Marcas blancas» está deshabilitado hasta disponer de clasificación en el backend.
 El carrito temporal del catálogo **no se sincroniza con las listas**.
 
+Antes de modificar o retirar `landing.json`, consultar el
+[contrato de la landing informativa](../../docs/Contratos/CONTRATO_LANDING_INFORMATIVA.md):
+documenta el motivo de su conservación y los límites de la excepción propuesta
+al barrido.
+
 ## Organización del código
 
 ```text

@@ -81,36 +81,12 @@ Nunca se deja una pantalla rota o en blanco.
 
 ### 2.1 Excepción propuesta: contenido informativo de la portada (SUP-354)
 
-**Estado:** decisión de la autora del frontend, registrada para ratificación
-del equipo en el PR #141. No modifica los contratos HTTP ni autoriza mocks en
-las vistas funcionales.
-
-Se propone conservar `frontend/web/src/data/landing.json` únicamente como
-contenido editorial de la portada pública (`/`). Contiene textos de
-presentación y ejemplos ilustrativos de productos, compras y ahorro; no es una
-respuesta simulada de la API ni una fuente de datos del catálogo funcional.
-Esta excepción acotada aplica a la prohibición general de ejemplos en `src/`
-y de archivos de datos sueltos de la tabla anterior.
-
-**Motivo:** tras las pruebas manuales, la autora decidió recuperar la portada
-informativa para explicar la propuesta del producto antes de ingresar a la
-aplicación. Los ejemplos estables permiten ilustrar esa propuesta sin depender
-de la disponibilidad del backend ni presentar una consulta real como realizada.
-El JSON reúne ese contenido en un solo archivo, separado de los clientes HTTP
-y de la lógica funcional.
-
-**Condiciones de la excepción:**
-
-- Solo lo consumen los componentes informativos de la portada. No alimenta
-  catálogo, carrito, listas, chat, rutas, administración ni registros de la base
-  de datos, tampoco como respaldo cuando falle una API.
-- Los productos, precios, distancias, métricas y ahorros son ilustrativos; no
-  acreditan datos actuales, mediciones reales ni resultados calculados para el
-  usuario. La interfaz debe identificarlos como tales.
-- Conservar el archivo no autoriza afirmar que los ejemplos se verifican en
-  tiempo real ni presentar funcionalidades pendientes como ya implementadas.
-- Cualquier uso fuera de la portada requiere revisar esta excepción con el
-  equipo. La prohibición de simulaciones en las vistas funcionales se mantiene.
+La conservación de `frontend/web/src/data/landing.json`, su justificación y sus
+límites se definen en el
+[contrato de la landing informativa](../Contratos/CONTRATO_LANDING_INFORMATIVA.md).
+Consultar ese contrato antes de proponer eliminar el archivo durante el barrido.
+La excepción está propuesta para ratificación del equipo en el PR #141; no
+autoriza simulaciones en las vistas funcionales.
 
 ## 3. Qué cuenta como hardcodeo
 
