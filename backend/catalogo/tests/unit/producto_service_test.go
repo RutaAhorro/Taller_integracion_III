@@ -1,4 +1,4 @@
-package tests
+package unit_test
 
 import (
 	"context"
@@ -20,33 +20,33 @@ type mockProductoRepository struct {
 	detalle    *domain.ProductoDetalleDTO
 }
 
-func (m *mockProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
-	m.lastFilter = filtro
-	if m.err != nil {
-		return nil, 0, m.err
+func (repositorio *mockProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
+	repositorio.lastFilter = filtro
+	if repositorio.err != nil {
+		return nil, 0, repositorio.err
 	}
-	return m.items, m.total, nil
+	return repositorio.items, repositorio.total, nil
 }
 
-func (m *mockProductoRepository) ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
-	m.lastFilter = filtro
-	if m.err != nil {
-		return nil, 0, m.err
+func (repositorio *mockProductoRepository) ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
+	repositorio.lastFilter = filtro
+	if repositorio.err != nil {
+		return nil, 0, repositorio.err
 	}
-	return m.adminItems, m.total, nil
+	return repositorio.adminItems, repositorio.total, nil
 }
 
-func (m *mockProductoRepository) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
-	if m.err != nil {
-		return nil, m.err
+func (repositorio *mockProductoRepository) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
+	if repositorio.err != nil {
+		return nil, repositorio.err
 	}
-	if m.detalle != nil && m.detalle.ID == id {
-		return m.detalle, nil
+	if repositorio.detalle != nil && repositorio.detalle.ID == id {
+		return repositorio.detalle, nil
 	}
 	return nil, nil
 }
 
-func TestProductoService_ValoresPorDefecto(t *testing.T) {
+func TestProductoService_ValoresPorDefecto(prueba *testing.T) {
 	mockRepo := &mockProductoRepository{
 		items: []domain.ProductoDTO{
 			{ID: "prod-1", Nombre: "Leche", Precio: 1000},
@@ -58,34 +58,34 @@ func TestProductoService_ValoresPorDefecto(t *testing.T) {
 
 	res, err := service.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{})
 	if err != nil {
-		t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", err)
 	}
 
 	if mockRepo.lastFilter.Page != 1 {
-		t.Errorf("se esperaba Page=1, se obtuvo %d", mockRepo.lastFilter.Page)
+		prueba.Errorf("se esperaba Page=1, se obtuvo %d", mockRepo.lastFilter.Page)
 	}
 	if mockRepo.lastFilter.Limit != 20 {
-		t.Errorf("se esperaba Limit=20, se obtuvo %d", mockRepo.lastFilter.Limit)
+		prueba.Errorf("se esperaba Limit=20, se obtuvo %d", mockRepo.lastFilter.Limit)
 	}
 	if mockRepo.lastFilter.SortBy != "precio" {
-		t.Errorf("se esperaba SortBy=precio, se obtuvo %s", mockRepo.lastFilter.SortBy)
+		prueba.Errorf("se esperaba SortBy=precio, se obtuvo %s", mockRepo.lastFilter.SortBy)
 	}
 	if mockRepo.lastFilter.Order != "asc" {
-		t.Errorf("se esperaba Order=asc, se obtuvo %s", mockRepo.lastFilter.Order)
+		prueba.Errorf("se esperaba Order=asc, se obtuvo %s", mockRepo.lastFilter.Order)
 	}
 
 	if res.Paginacion.TotalRegistros != 45 {
-		t.Errorf("se esperaba TotalRegistros=45, se obtuvo %d", res.Paginacion.TotalRegistros)
+		prueba.Errorf("se esperaba TotalRegistros=45, se obtuvo %d", res.Paginacion.TotalRegistros)
 	}
 	if res.Paginacion.TotalPaginas != 3 {
-		t.Errorf("se esperaba TotalPaginas=3, se obtuvo %d", res.Paginacion.TotalPaginas)
+		prueba.Errorf("se esperaba TotalPaginas=3, se obtuvo %d", res.Paginacion.TotalPaginas)
 	}
 	if res.Paginacion.PaginaActual != 1 {
-		t.Errorf("se esperaba PaginaActual=1, se obtuvo %d", res.Paginacion.PaginaActual)
+		prueba.Errorf("se esperaba PaginaActual=1, se obtuvo %d", res.Paginacion.PaginaActual)
 	}
 }
 
-func TestProductoService_SanitizacionYLimites(t *testing.T) {
+func TestProductoService_SanitizacionYLimites(prueba *testing.T) {
 	mockRepo := &mockProductoRepository{
 		items: []domain.ProductoDTO{},
 		total: 0,
@@ -105,24 +105,24 @@ func TestProductoService_SanitizacionYLimites(t *testing.T) {
 
 	_, err := service.ObtenerCatalogo(context.Background(), filtro)
 	if err != nil {
-		t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", err)
 	}
 
 	if mockRepo.lastFilter.Page != 1 {
-		t.Errorf("se esperaba Page=1 al recibir valor negativo, se obtuvo %d", mockRepo.lastFilter.Page)
+		prueba.Errorf("se esperaba Page=1 al recibir valor negativo, se obtuvo %d", mockRepo.lastFilter.Page)
 	}
 	if mockRepo.lastFilter.Limit != 100 {
-		t.Errorf("se esperaba Limit acotado a 100, se obtuvo %d", mockRepo.lastFilter.Limit)
+		prueba.Errorf("se esperaba Limit acotado a 100, se obtuvo %d", mockRepo.lastFilter.Limit)
 	}
 	if mockRepo.lastFilter.SortBy != "precio" {
-		t.Errorf("se esperaba SortBy por defecto ante valor no permitido, se obtuvo %s", mockRepo.lastFilter.SortBy)
+		prueba.Errorf("se esperaba SortBy por defecto ante valor no permitido, se obtuvo %s", mockRepo.lastFilter.SortBy)
 	}
 	if mockRepo.lastFilter.Order != "desc" {
-		t.Errorf("se esperaba Order=desc, se obtuvo %s", mockRepo.lastFilter.Order)
+		prueba.Errorf("se esperaba Order=desc, se obtuvo %s", mockRepo.lastFilter.Order)
 	}
 }
 
-func TestProductoService_Busqueda_Minimo3Caracteres(t *testing.T) {
+func TestProductoService_Busqueda_Minimo3Caracteres(prueba *testing.T) {
 	mockRepo := &mockProductoRepository{
 		items: []domain.ProductoDTO{
 			{ID: "p1", Nombre: "Leche Colun", Precio: 1000},
@@ -143,29 +143,29 @@ func TestProductoService_Busqueda_Minimo3Caracteres(t *testing.T) {
 	}
 
 	for _, tc := range casosError {
-		t.Run(tc.nombre, func(t *testing.T) {
+		prueba.Run(tc.nombre, func(subprueba *testing.T) {
 			_, err := service.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{Query: tc.query})
 			if !errors.Is(err, services.ErrBusquedaCorta) {
-				t.Errorf("para '%s' se esperaba ErrBusquedaCorta, se obtuvo %v", tc.query, err)
+				subprueba.Errorf("para '%s' se esperaba ErrBusquedaCorta, se obtuvo %v", tc.query, err)
 			}
 		})
 	}
 
-	t.Run("3 letras validas", func(t *testing.T) {
+	prueba.Run("3 letras validas", func(subprueba *testing.T) {
 		res, err := service.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{Query: "lec"})
 		if err != nil {
-			t.Fatalf("se esperaba exito, se obtuvo error: %v", err)
+			subprueba.Fatalf("se esperaba exito, se obtuvo error: %v", err)
 		}
 		if res.TotalRegistros != 1 {
-			t.Errorf("se esperaba 1 registro, se obtuvieron %d", res.TotalRegistros)
+			subprueba.Errorf("se esperaba 1 registro, se obtuvieron %d", res.TotalRegistros)
 		}
 		if mockRepo.lastFilter.Query != "lec" {
-			t.Errorf("se esperaba query 'lec', se obtuvo '%s'", mockRepo.lastFilter.Query)
+			subprueba.Errorf("se esperaba query 'lec', se obtuvo '%s'", mockRepo.lastFilter.Query)
 		}
 	})
 }
 
-func TestProductoService_ObtenerPorID(t *testing.T) {
+func TestProductoService_ObtenerPorID(prueba *testing.T) {
 	fecha := time.Date(2026, 9, 27, 10, 0, 0, 0, time.UTC)
 	oferta := 990.0
 	mockRepo := &mockProductoRepository{
@@ -190,35 +190,35 @@ func TestProductoService_ObtenerPorID(t *testing.T) {
 
 	service := services.NewProductoService(mockRepo)
 
-	t.Run("Exitoso", func(t *testing.T) {
+	prueba.Run("Exitoso", func(subprueba *testing.T) {
 		res, err := service.ObtenerPorID(context.Background(), "test-id-123")
 		if err != nil {
-			t.Fatalf("se esperaba nil error, se obtuvo %v", err)
+			subprueba.Fatalf("se esperaba nil error, se obtuvo %v", err)
 		}
 		if res.ID != "test-id-123" {
-			t.Errorf("se esperaba ID test-id-123, se obtuvo %s", res.ID)
+			subprueba.Errorf("se esperaba ID test-id-123, se obtuvo %s", res.ID)
 		}
 		if len(res.Historial) != 1 {
-			t.Errorf("se esperaba 1 registro histórico, se obtuvieron %d", len(res.Historial))
+			subprueba.Errorf("se esperaba 1 registro histórico, se obtuvieron %d", len(res.Historial))
 		}
 	})
 
-	t.Run("No encontrado", func(t *testing.T) {
+	prueba.Run("No encontrado", func(subprueba *testing.T) {
 		_, err := service.ObtenerPorID(context.Background(), "inexistente")
 		if !errors.Is(err, services.ErrProductoNoEncontrado) {
-			t.Errorf("se esperaba ErrProductoNoEncontrado, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba ErrProductoNoEncontrado, se obtuvo %v", err)
 		}
 	})
 
-	t.Run("ID vacio", func(t *testing.T) {
+	prueba.Run("ID vacio", func(subprueba *testing.T) {
 		_, err := service.ObtenerPorID(context.Background(), "   ")
 		if !errors.Is(err, services.ErrProductoNoEncontrado) {
-			t.Errorf("se esperaba ErrProductoNoEncontrado para id vacio, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba ErrProductoNoEncontrado para id vacio, se obtuvo %v", err)
 		}
 	})
 }
 
-func TestProductoService_ObtenerCatalogoAdmin(t *testing.T) {
+func TestProductoService_ObtenerCatalogoAdmin(prueba *testing.T) {
 	stock := true
 	oferta := 990
 	fecha := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
@@ -246,32 +246,32 @@ func TestProductoService_ObtenerCatalogoAdmin(t *testing.T) {
 
 	service := services.NewProductoService(mockRepo)
 
-	t.Run("Valores por defecto y cálculo de paginación", func(t *testing.T) {
+	prueba.Run("Valores por defecto y cálculo de paginación", func(subprueba *testing.T) {
 		res, err := service.ObtenerCatalogoAdmin(context.Background(), domain.FiltroProductosDTO{})
 		if err != nil {
-			t.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+			subprueba.Fatalf("se esperaba nil error, se obtuvo: %v", err)
 		}
 		if mockRepo.lastFilter.Page != 1 {
-			t.Errorf("se esperaba Page=1, se obtuvo %d", mockRepo.lastFilter.Page)
+			subprueba.Errorf("se esperaba Page=1, se obtuvo %d", mockRepo.lastFilter.Page)
 		}
 		if mockRepo.lastFilter.Limit != 20 {
-			t.Errorf("se esperaba Limit=20, se obtuvo %d", mockRepo.lastFilter.Limit)
+			subprueba.Errorf("se esperaba Limit=20, se obtuvo %d", mockRepo.lastFilter.Limit)
 		}
 		if res.Paginacion.TotalPaginas != 3 {
-			t.Errorf("se esperaba 3 páginas para 50 registros, se obtuvo %d", res.Paginacion.TotalPaginas)
+			subprueba.Errorf("se esperaba 3 páginas para 50 registros, se obtuvo %d", res.Paginacion.TotalPaginas)
 		}
 		if len(res.Data) != 1 {
-			t.Fatalf("se esperaba 1 producto admin, se obtuvieron %d", len(res.Data))
+			subprueba.Fatalf("se esperaba 1 producto admin, se obtuvieron %d", len(res.Data))
 		}
 		if res.Data[0].SKU != "SKU12345" {
-			t.Errorf("se esperaba SKU 'SKU12345', se obtuvo '%s'", res.Data[0].SKU)
+			subprueba.Errorf("se esperaba SKU 'SKU12345', se obtuvo '%s'", res.Data[0].SKU)
 		}
 		if res.Data[0].SucursalID != 10 {
-			t.Errorf("se esperaba SucursalID 10, se obtuvo %d", res.Data[0].SucursalID)
+			subprueba.Errorf("se esperaba SucursalID 10, se obtuvo %d", res.Data[0].SucursalID)
 		}
 	})
 
-	t.Run("Sanitización de SKU y filtros", func(t *testing.T) {
+	prueba.Run("Sanitización de SKU y filtros", func(subprueba *testing.T) {
 		filtro := domain.FiltroProductosDTO{
 			SKU:     "SKU-ABC-123!@#$%",
 			EnStock: &stock,
@@ -280,16 +280,16 @@ func TestProductoService_ObtenerCatalogoAdmin(t *testing.T) {
 		}
 		_, err := service.ObtenerCatalogoAdmin(context.Background(), filtro)
 		if err != nil {
-			t.Fatalf("error inesperado: %v", err)
+			subprueba.Fatalf("error inesperado: %v", err)
 		}
 		if mockRepo.lastFilter.SKU != "SKU-ABC-123" {
-			t.Errorf("se esperaba SKU sanitizado 'SKU-ABC-123', se obtuvo '%s'", mockRepo.lastFilter.SKU)
+			subprueba.Errorf("se esperaba SKU sanitizado 'SKU-ABC-123', se obtuvo '%s'", mockRepo.lastFilter.SKU)
 		}
 		if mockRepo.lastFilter.EnStock == nil || !*mockRepo.lastFilter.EnStock {
-			t.Errorf("se esperaba EnStock=true")
+			subprueba.Errorf("se esperaba EnStock=true")
 		}
 		if mockRepo.lastFilter.SortBy != "sku" {
-			t.Errorf("se esperaba SortBy=sku, se obtuvo %s", mockRepo.lastFilter.SortBy)
+			subprueba.Errorf("se esperaba SortBy=sku, se obtuvo %s", mockRepo.lastFilter.SortBy)
 		}
 	})
 }

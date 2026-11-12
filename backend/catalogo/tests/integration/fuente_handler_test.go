@@ -1,4 +1,4 @@
-package tests
+package integration_test
 
 import (
 	"bytes"
@@ -30,8 +30,8 @@ func fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine {
 	)
 }
 
-func solicitarFuente(t *testing.T, router http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder {
-	t.Helper()
+func solicitarFuente(prueba *testing.T, router http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder {
+	prueba.Helper()
 	var reader io.Reader
 	if body != "" {
 		reader = bytes.NewBufferString(body)
@@ -48,11 +48,11 @@ func solicitarFuente(t *testing.T, router http.Handler, method, path, cookie, bo
 	return response
 }
 
-func TestFuenteHandler_HTTP(t *testing.T) {
+func TestFuenteHandler_HTTP(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	future := time.Now().Add(time.Hour)
-	admin := signedToken(t, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
-	registered := signedToken(t, "registrado", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
+	admin := signedToken(prueba, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
+	registered := signedToken(prueba, "registrado", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
 	fecha := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 
 	nuevaRepo := func() *mockFuenteRepository {
@@ -64,46 +64,46 @@ func TestFuenteHandler_HTTP(t *testing.T) {
 		}
 	}
 
-	t.Run("GET sin cookie", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", "", "")
+	prueba.Run("GET sin cookie", func(subprueba *testing.T) {
+		response := solicitarFuente(subprueba, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", "", "")
 		if response.Code != http.StatusUnauthorized {
-			t.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
+			subprueba.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
 		}
 	})
 
-	t.Run("GET con rol registrado", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", registered, "")
+	prueba.Run("GET con rol registrado", func(subprueba *testing.T) {
+		response := solicitarFuente(subprueba, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", registered, "")
 		if response.Code != http.StatusForbidden {
-			t.Fatalf("HTTP %d; esperado 403: %s", response.Code, response.Body)
+			subprueba.Fatalf("HTTP %d; esperado 403: %s", response.Code, response.Body)
 		}
 	})
 
-	t.Run("GET con admin", func(t *testing.T) {
-		response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", admin, "")
+	prueba.Run("GET con admin", func(subprueba *testing.T) {
+		response := solicitarFuente(subprueba, fuenteHTTPRouter(nuevaRepo()), http.MethodGet, "/api/v1/admin/productos/fuentes", admin, "")
 		if response.Code != http.StatusOK {
-			t.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
+			subprueba.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
 		}
 		var fuentes []domain.FuenteDTO
 		if err := json.Unmarshal(response.Body.Bytes(), &fuentes); err != nil {
-			t.Fatal(err)
+			subprueba.Fatal(err)
 		}
 		if len(fuentes) != 2 || fuentes[0].Nombre != "Jumbo" || !fuentes[0].Habilitada {
-			t.Fatalf("listado de fuentes inesperado: %+v", fuentes)
+			subprueba.Fatalf("listado de fuentes inesperado: %+v", fuentes)
 		}
 	})
 
-	t.Run("PUT deshabilita y persiste", func(t *testing.T) {
+	prueba.Run("PUT deshabilita y persiste", func(subprueba *testing.T) {
 		repo := nuevaRepo()
-		response := solicitarFuente(t, fuenteHTTPRouter(repo), http.MethodPut, "/api/v1/admin/productos/fuentes/1", admin, `{"habilitada":false}`)
+		response := solicitarFuente(subprueba, fuenteHTTPRouter(repo), http.MethodPut, "/api/v1/admin/productos/fuentes/1", admin, `{"habilitada":false}`)
 		if response.Code != http.StatusOK {
-			t.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
+			subprueba.Fatalf("HTTP %d; esperado 200: %s", response.Code, response.Body)
 		}
 		var fuente domain.FuenteDTO
 		if err := json.Unmarshal(response.Body.Bytes(), &fuente); err != nil {
-			t.Fatal(err)
+			subprueba.Fatal(err)
 		}
 		if fuente.Habilitada || repo.fuentes[0].Habilitada {
-			t.Fatalf("la fuente no quedó deshabilitada: respuesta=%+v repo=%+v", fuente, repo.fuentes[0])
+			subprueba.Fatalf("la fuente no quedó deshabilitada: respuesta=%+v repo=%+v", fuente, repo.fuentes[0])
 		}
 	})
 
@@ -118,13 +118,13 @@ func TestFuenteHandler_HTTP(t *testing.T) {
 		{"PUT sin estado", "/api/v1/admin/productos/fuentes/1", admin, `{}`, http.StatusBadRequest, "estado de la fuente"},
 		{"PUT de fuente inexistente", "/api/v1/admin/productos/fuentes/99", admin, `{"habilitada":true}`, http.StatusNotFound, "no encontrada"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			response := solicitarFuente(t, fuenteHTTPRouter(nuevaRepo()), http.MethodPut, tc.path, tc.cookie, tc.body)
+		prueba.Run(tc.name, func(subprueba *testing.T) {
+			response := solicitarFuente(subprueba, fuenteHTTPRouter(nuevaRepo()), http.MethodPut, tc.path, tc.cookie, tc.body)
 			if response.Code != tc.status {
-				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
+				subprueba.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
 			}
 			if tc.contains != "" && !strings.Contains(response.Body.String(), tc.contains) {
-				t.Fatalf("respuesta sin %q: %s", tc.contains, response.Body)
+				subprueba.Fatalf("respuesta sin %q: %s", tc.contains, response.Body)
 			}
 		})
 	}
