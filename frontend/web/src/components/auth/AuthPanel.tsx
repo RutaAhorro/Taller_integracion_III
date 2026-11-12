@@ -4,6 +4,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom"
 import { ArrowRight, Eye, EyeOff, Lock, Mail, Loader2, ShoppingBasket } from "lucide-react"
 import { useToast } from "@/contexts/ToastContext"
 import { useAuth } from "@/hooks/useAuth"
+import { ROUTES } from "@/core/routes"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -204,7 +205,7 @@ export function AuthPanel() {
 
     if (exito) {
       toast("Cuenta creada con éxito. Revisa tu correo.", "success")
-      navigate("/onboarding")
+      navigate(ROUTES.CATALOGO)
     }
   }
 

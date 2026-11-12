@@ -434,7 +434,7 @@ function Overview() {
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 text-sm font-bold text-primary">{new Date().toLocaleDateString('es-CL', { dateStyle: 'full' })}</p>
-          <h2 className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Hola, administradora 👋</h2>
+          <h2 className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Hola, equipo de administración 👋</h2>
           <p className="mt-2 max-w-2xl text-muted-foreground">Este es el estado general de tu plataforma. Revisa usuarios y fuentes desde un mismo lugar.</p>
         </div>
         <button

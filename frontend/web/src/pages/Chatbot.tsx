@@ -87,7 +87,7 @@ export default function Chatbot() {
         <div className="flex items-center gap-2">
           <div className="hidden sm:flex group relative items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-accent transition-colors">
             <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary"/>
-            Consultas IA: {user?.cuota_tokens_ia ?? 0}/5 disponibles
+            Consultas IA: {user?.cuota_tokens_ia ?? 0} disponibles
             <div className="absolute top-full mt-2 w-48 rounded-md border border-border bg-card p-2 text-center text-xs text-muted-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 pointer-events-none z-50">
               Conviértete en Colaborador para cuota extendida
             </div>
