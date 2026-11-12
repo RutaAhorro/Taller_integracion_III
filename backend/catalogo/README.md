@@ -42,6 +42,7 @@ go run ./cmd/catalogo
 | `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
 | `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
 | `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
+| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en el cuerpo JSON de la ingesta; más allá responde 413 |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
 los límites, enteros positivos. Un valor inválido impide arrancar con un mensaje
@@ -113,9 +114,10 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
-3. **Límites del cuerpo HTTP:** tamaño máximo de 8 MiB (`MaxBodyBytes`), rechazo de
-   campos JSON desconocidos (`DisallowUnknownFields`), rechazo de contenido extra
-   tras el cierre del JSON y lote acotado a un rango de 1 a 1000 productos.
+3. **Límites del cuerpo HTTP:** tamaño máximo `CATALOGO_MAX_BODY_BYTES` (8 MiB
+   por defecto, HTTP 413 si se supera), rechazo de campos JSON desconocidos
+   (`DisallowUnknownFields`), rechazo de contenido extra tras el cierre del JSON
+   y lote acotado de 1 a `CATALOGO_MAX_BATCH_PRODUCTOS` productos (1000 por defecto).
 4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío, el servidor
    no registra las rutas internas y opera únicamente como lector.
 5. **Seguridad del token:** debe ser una cadena aleatoria de al menos 32

@@ -37,7 +37,12 @@ type Config struct {
 	MaxPageSize       int // tope de limit en listados públicos y de administración
 	MaxSearchLength   int // bytes conservados del texto de búsqueda
 	MaxBatchProductos int // productos aceptados por lote de ingesta
+	MaxBodyBytes      int // bytes aceptados en el cuerpo JSON de la ingesta
 }
+
+// cuerpoIngestaPredeterminado son 8 MiB: cubre un lote completo de productos
+// con holgura y corta antes cuerpos que agotarían la memoria.
+const cuerpoIngestaPredeterminado = 8 << 20
 
 // duracionConfigurable describe una variable de entorno de tipo duración.
 type duracionConfigurable struct {
@@ -108,6 +113,7 @@ func Load() (Config, error) {
 		{"CATALOGO_MAX_PAGE_SIZE", &configuracion.MaxPageSize, 100},
 		{"CATALOGO_MAX_SEARCH_LENGTH", &configuracion.MaxSearchLength, 100},
 		{"CATALOGO_MAX_BATCH_PRODUCTOS", &configuracion.MaxBatchProductos, 1000},
+		{"CATALOGO_MAX_BODY_BYTES", &configuracion.MaxBodyBytes, cuerpoIngestaPredeterminado},
 	} {
 		*variable.destino = variable.predetermina
 		if valorCrudo := os.Getenv(variable.nombre); valorCrudo != "" {

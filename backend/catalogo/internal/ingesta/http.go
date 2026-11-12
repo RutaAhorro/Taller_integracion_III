@@ -15,8 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-const MaxBodyBytes = 8 << 20
-
 type Store interface {
 	ObtenerCadena(context.Context, int, string) (*CadenaSupermercado, error)
 	ObtenerSucursal(context.Context, int, *int, *string) (*SucursalSupermercado, error)
@@ -28,6 +26,8 @@ type Config struct {
 	Token      string
 	// MaxProductos es el tope de productos por lote (CATALOGO_MAX_BATCH_PRODUCTOS).
 	MaxProductos int
+	// MaxBodyBytes es el tamaño máximo del cuerpo JSON en bytes (CATALOGO_MAX_BODY_BYTES).
+	MaxBodyBytes int
 }
 
 // Register mantiene el contrato privado fuera de las rutas públicas y de JWT.
@@ -37,6 +37,9 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 	} // modo lector cerrado
 	if cfg.MaxProductos < 1 {
 		panic("ingesta.Config.MaxProductos debe ser positivo")
+	}
+	if cfg.MaxBodyBytes < 1 {
+		panic("ingesta.Config.MaxBodyBytes debe ser positivo")
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -73,7 +76,7 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 			CadenaID int    `json:"cadena_id"`
 			Nombre   string `json:"nombre"`
 		}
-		if !decode(contexto, &input) {
+		if !decode(contexto, &input, cfg.MaxBodyBytes) {
 			return
 		}
 		if input.CadenaID <= 0 && strings.TrimSpace(input.Nombre) == "" {
@@ -97,7 +100,7 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 			SucursalID     *int    `json:"sucursal_id"`
 			CodigoSucursal *string `json:"codigo_sucursal"`
 		}
-		if !decode(contexto, &input) {
+		if !decode(contexto, &input, cfg.MaxBodyBytes) {
 			return
 		}
 		if input.CadenaID <= 0 && (input.SucursalID == nil || *input.SucursalID <= 0) &&
@@ -118,7 +121,7 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 	})
 	group.POST("/ingestas", func(contexto *gin.Context) {
 		var input Request
-		if !decode(contexto, &input) {
+		if !decode(contexto, &input, cfg.MaxBodyBytes) {
 			return
 		}
 		if input.SucursalID <= 0 || len(input.Productos) < 1 || len(input.Productos) > cfg.MaxProductos {
@@ -147,8 +150,10 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 	})
 }
 
-func decode(contexto *gin.Context, input any) bool {
-	contexto.Request.Body = http.MaxBytesReader(contexto.Writer, contexto.Request.Body, MaxBodyBytes)
+// decode lee un único objeto JSON estricto y corta el cuerpo en maximoBytes
+// para que un lote enorme no agote la memoria del proceso.
+func decode(contexto *gin.Context, input any, maximoBytes int) bool {
+	contexto.Request.Body = http.MaxBytesReader(contexto.Writer, contexto.Request.Body, int64(maximoBytes))
 	decoder := json.NewDecoder(contexto.Request.Body)
 	decoder.DisallowUnknownFields()
 	err := decoder.Decode(input)

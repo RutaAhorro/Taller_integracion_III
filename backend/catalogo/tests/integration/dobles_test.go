@@ -88,3 +88,6 @@ const plazoReadinessDePrueba = 2 * time.Second
 
 // productosPorLoteDePrueba replica CATALOGO_MAX_BATCH_PRODUCTOS por defecto.
 const productosPorLoteDePrueba = 1000
+
+// bytesPorCuerpoDePrueba replica CATALOGO_MAX_BODY_BYTES por defecto (8 MiB).
+const bytesPorCuerpoDePrueba = 8 << 20
