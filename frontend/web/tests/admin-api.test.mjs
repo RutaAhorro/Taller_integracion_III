@@ -10,14 +10,14 @@ const { outputText } = ts.transpileModule(source.replace('import.meta.env.VITE_A
 });
 const api = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 
-test('administración conserva usuarios, fuentes y métricas reales del backend', async t => {
+test('administración conserva usuarios, fuentes y métricas reales del backend', async prueba => {
   const calls = [];
   const user = {
     id: '00000000-0000-4000-8000-000000000001',
     correo: 'prueba@example.com', nombre_completo: 'Cuenta de prueba',
     rol: 'registrado', esta_activo: true,
   };
-  t.mock.method(globalThis, 'fetch', async (url, init) => {
+  prueba.mock.method(globalThis, 'fetch', async (url, init) => {
     calls.push({ url, ...init });
     if (url.endsWith('/usuarios/metricas')) {
       return Response.json({ total_usuarios: 0, usuarios_activos: 0 });
@@ -39,9 +39,9 @@ test('administración conserva usuarios, fuentes y métricas reales del backend'
   assert.ok(calls.every(call => call.credentials === 'include' && call.url.startsWith('/api/v1/')));
 });
 
-test('los errores de administración no se convierten en registros de ejemplo', async t => {
+test('los errores de administración no se convierten en registros de ejemplo', async prueba => {
   for (const status of [401, 403, 404, 500]) {
-    const mock = t.mock.method(globalThis, 'fetch', async () => Response.json({ mensaje: 'No disponible' }, { status }));
+    const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json({ mensaje: 'No disponible' }, { status }));
     for (const load of [api.fetchAdminUsers, api.fetchAdminSources, api.fetchIdentidadMetrics, api.fetchCatalogoMetrics, api.fetchControlMetrics]) {
       await assert.rejects(() => load(), error => {
         assert.equal(error.status, status);
@@ -51,7 +51,7 @@ test('los errores de administración no se convierten en registros de ejemplo', 
     }
     mock.mock.restore();
   }
-  t.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
+  prueba.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Failed to fetch'); });
   await assert.rejects(api.fetchAdminUsers(), /Failed to fetch/);
   await assert.rejects(api.fetchAdminSources(), /Failed to fetch/);
 });

@@ -29,18 +29,18 @@ export function LandingSavings() {
             </Link>
           </div>
           <div className="bg-gradient-to-br from-[var(--landing-amber-soft)] to-[var(--landing-terracotta-soft)] border-2 border-border rounded-[var(--radius)] p-[1.75rem] shadow-[4px_4px_0_var(--color-border)] mt-6 md:mt-0">
-            {landingData.savings.bars.map(b => {
-              const bgGradient = b.variant === 'worst' ? 'bg-gradient-to-r from-[var(--landing-terracotta)] to-[oklch(0.7_0.1_40)]' :
-                b.variant === 'mid' ? 'bg-gradient-to-r from-[var(--landing-amber)] to-[oklch(0.78_0.09_75)]' :
+            {landingData.savings.bars.map(barra => {
+              const bgGradient = barra.variant === 'worst' ? 'bg-gradient-to-r from-[var(--landing-terracotta)] to-[oklch(0.7_0.1_40)]' :
+                barra.variant === 'mid' ? 'bg-gradient-to-r from-[var(--landing-amber)] to-[oklch(0.78_0.09_75)]' :
                   'bg-gradient-to-r from-[var(--landing-olive)] to-[oklch(0.6_0.08_130)]';
               return (
-                <div key={b.label} className="mb-[1.125rem]">
+                <div key={barra.label} className="mb-[1.125rem]">
                   <div className="flex justify-between text-[0.8125rem] font-bold mb-[0.4rem] text-foreground">
-                    <span>{b.label}</span>
-                    <span className="font-mono text-brand-dark">{b.value}</span>
+                    <span>{barra.label}</span>
+                    <span className="font-mono text-brand-dark">{barra.value}</span>
                   </div>
                   <div className="h-[14px] rounded-full bg-card border-2 border-border overflow-hidden">
-                    <div className={`h-full rounded-full transition-[width] duration-[0.6s] ease ${bgGradient}`} style={{ width: b.width }} />
+                    <div className={`h-full rounded-full transition-[width] duration-[0.6s] ease ${bgGradient}`} style={{ width: barra.width }} />
                   </div>
                 </div>
               );

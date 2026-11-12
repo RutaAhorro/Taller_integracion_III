@@ -45,18 +45,18 @@ export function LandingHero() {
               </span>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">Ejemplo ilustrativo de compra y ahorro.</p>
-            {landingData.heroProducts.map(p => (
-              <div key={p.name} className="flex items-center gap-3 p-[0.7rem] rounded-[calc(var(--radius)-4px)] mb-2 bg-muted border-2 border-transparent transition-all duration-150 hover:bg-secondary hover:border-border">
+            {landingData.heroProducts.map(producto => (
+              <div key={producto.name} className="flex items-center gap-3 p-[0.7rem] rounded-[calc(var(--radius)-4px)] mb-2 bg-muted border-2 border-transparent transition-all duration-150 hover:bg-secondary hover:border-border">
                 <div className="w-[42px] h-[42px] rounded-[calc(var(--radius)-4px)] bg-card border-2 border-border flex items-center justify-center text-[1.25rem] shrink-0">
                   <ShoppingBasket size={20} aria-hidden="true" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="font-bold text-[0.8125rem] text-foreground whitespace-nowrap overflow-hidden text-ellipsis">{p.name}</div>
-                  <div className="text-[0.6875rem] text-muted-foreground mt-[2px]">{p.meta}</div>
+                  <div className="font-bold text-[0.8125rem] text-foreground whitespace-nowrap overflow-hidden text-ellipsis">{producto.name}</div>
+                  <div className="text-[0.6875rem] text-muted-foreground mt-[2px]">{producto.meta}</div>
                 </div>
                 <div>
-                  <div className="font-mono font-bold text-[0.875rem] text-brand-dark">{p.price}</div>
-                  <div className="text-[0.6875rem] font-bold text-[var(--landing-olive)] text-right mt-[2px]">{p.save}</div>
+                  <div className="font-mono font-bold text-[0.875rem] text-brand-dark">{producto.price}</div>
+                  <div className="text-[0.6875rem] font-bold text-[var(--landing-olive)] text-right mt-[2px]">{producto.save}</div>
                 </div>
               </div>
             ))}

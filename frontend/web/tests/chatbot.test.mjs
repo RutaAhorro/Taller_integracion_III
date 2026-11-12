@@ -39,27 +39,27 @@ async function send() {
   return states[3].at(-1).content;
 }
 
-test('un HTTP no exitoso nunca se presenta como respuesta real del asistente', async t => {
+test('un HTTP no exitoso nunca se presenta como respuesta real del asistente', async prueba => {
   for (const status of [401, 403, 404, 500, 502]) {
     for (const body of [{ detail: 'Not Found' }, { explicacion: 'Respuesta que no debe mostrarse' }]) {
-      const mock = t.mock.method(globalThis, 'fetch', async () => Response.json(body, { status }));
+      const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json(body, { status }));
       assert.equal(await send(), ERROR_IA);
       mock.mock.restore();
     }
   }
-  t.mock.method(globalThis, 'fetch', async () => new Response('<html>Bad gateway</html>', { status: 502 }));
+  prueba.mock.method(globalThis, 'fetch', async () => new Response('<html>Bad gateway</html>', { status: 502 }));
   assert.equal(await send(), ERROR_IA);
 });
 
-test('un JSON sin explicación válida no se convierte en un éxito inventado', async t => {
+test('un JSON sin explicación válida no se convierte en un éxito inventado', async prueba => {
   for (const body of [{}, null, { explicacion: '' }, { explicacion: '  ' }, { explicacion: 123 }, { error: 'No disponible', explicacion: 'Ignorar' }]) {
-    const mock = t.mock.method(globalThis, 'fetch', async () => Response.json(body));
+    const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json(body));
     assert.equal(await send(), ERROR_IA);
     mock.mock.restore();
   }
 });
 
-test('conserva la explicación real de una respuesta exitosa', async t => {
-  t.mock.method(globalThis, 'fetch', async () => Response.json({ explicacion: 'Necesitas tomate y cebolla.' }));
+test('conserva la explicación real de una respuesta exitosa', async prueba => {
+  prueba.mock.method(globalThis, 'fetch', async () => Response.json({ explicacion: 'Necesitas tomate y cebolla.' }));
   assert.equal(await send(), 'Necesitas tomate y cebolla.');
 });
