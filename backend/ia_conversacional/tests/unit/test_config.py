@@ -184,3 +184,51 @@ def test_lectores_env_toleran_cadena_vacia_y_fallan_con_texto_invalido(monkeypat
     monkeypatch.setenv("VAR_PRUEBA_INT", "abc")
     with pytest.raises(RuntimeError, match="entero valido"):
         config._leer_env_int("VAR_PRUEBA_INT", 10)
+
+
+def test_lector_env_float_rechaza_valores_no_finitos(monkeypatch):
+    """Verifica que _leer_env_float rechace nan, inf y -inf con RuntimeError."""
+    for valor_no_finito in ("nan", "NaN", "inf", "-inf", "+inf", "Infinity", "-Infinity"):
+        monkeypatch.setenv("VAR_PRUEBA_FLOAT", valor_no_finito)
+        with pytest.raises(RuntimeError, match="decimal valido y finito"):
+            config._leer_env_float("VAR_PRUEBA_FLOAT", 5.0)
+
+
+def test_validar_configuracion_catalogo_url_invalido_puerto_y_host(monkeypatch):
+    """Verifica que CATALOGO_INTERNAL_URL rechace hosts vacios y puertos fuera de rango."""
+    casos_invalidos = [
+        "http://:8080",
+        "http://catalogo:puerto",
+        "http://catalogo:99999",
+        "http://catalogo:0",
+        "http://catalogo:-80",
+    ]
+    for url_invalida in casos_invalidos:
+        monkeypatch.setattr(config, "CATALOGO_INTERNAL_URL", url_invalida)
+        with pytest.raises(RuntimeError):
+            config.validar_configuracion()
+
+
+def test_validar_configuracion_cors_invalido_formato_estricto(monkeypatch):
+    """Verifica que CORS rechace origenes sin scheme, con credenciales, rutas, query o fragmento."""
+    origenes_invalidos = [
+        "localhost:3000",
+        "http://localhost:3000/ruta",
+        "https://usuario:clave@ejemplo.cl",
+        "https://ejemplo.cl?parametro=valor",
+        "https://ejemplo.cl#seccion",
+        "http://ejemplo.cl:99999",
+    ]
+    for origen_invalido in origenes_invalidos:
+        monkeypatch.setattr(config, "CORS_ALLOWED_ORIGINS", origen_invalido)
+        with pytest.raises(RuntimeError):
+            config.validar_configuracion()
+
+
+def test_validar_configuracion_advertencia_gemini_endpoint_vs_modelo(monkeypatch, caplog):
+    """Verifica que se emita advertencia si GEMINI_ENDPOINT y GEMINI_MODEL divergen."""
+    monkeypatch.setenv("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/models/otro-modelo:generateContent")
+    monkeypatch.setenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    with caplog.at_level("WARNING"):
+        config.validar_configuracion()
+    assert "esta configurado explicitamente y anula a GEMINI_MODEL" in caplog.text

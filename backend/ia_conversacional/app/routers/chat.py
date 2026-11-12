@@ -39,7 +39,7 @@ def crear_router_chat(
             )
 
         if resultado.filtros is None:
-            logger.info("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
+            logger.debug("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
             return {
                 "respuesta": "No logré identificar qué productos buscas. ¿Puedes reformularlo? Ej: \"verduras bajo $2.000\"",
                 "filtros": None,

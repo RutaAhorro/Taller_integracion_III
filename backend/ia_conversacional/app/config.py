@@ -4,6 +4,7 @@ constantes de los proveedores de IA (endpoints, modelos, limites y timeouts).
 """
 
 import logging
+import math
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -27,15 +28,18 @@ def _leer_env_str(nombre_variable: str, valor_defecto: str) -> str:
 
 
 def _leer_env_float(nombre_variable: str, valor_defecto: float) -> float:
-    """Lee una variable decimal de entorno; tolera vacio con default y falla claro ante formato invalido."""
+    """Lee una variable decimal de entorno; tolera vacio con default y falla claro ante formato invalido o no finito."""
     valor_crudo = os.getenv(nombre_variable)
     if valor_crudo is None or not valor_crudo.strip():
         return valor_defecto
     try:
-        return float(valor_crudo)
+        valor_decimal = float(valor_crudo)
+        if not math.isfinite(valor_decimal):
+            raise ValueError("valor no finito")
+        return valor_decimal
     except ValueError as error_parseo:
         raise RuntimeError(
-            f"Configuracion invalida: {nombre_variable} debe ser un decimal valido, recibido: '{valor_crudo}'."
+            f"Configuracion invalida: {nombre_variable} debe ser un decimal valido y finito, recibido: '{valor_crudo}'."
         ) from error_parseo
 
 
@@ -141,8 +145,16 @@ def validar_configuracion() -> None:
         raise RuntimeError(
             f"CATALOGO_INTERNAL_URL esquema no soportado: '{partes_url.scheme}'. Debe ser http o https."
         )
-    if not partes_url.netloc:
-        raise RuntimeError("CATALOGO_INTERNAL_URL debe incluir un host o netloc valido.")
+    if not partes_url.hostname:
+        raise RuntimeError("CATALOGO_INTERNAL_URL debe incluir un host o nombre de dominio valido.")
+    try:
+        puerto_catalogo = partes_url.port
+        if puerto_catalogo is not None and not (1 <= puerto_catalogo <= 65535):
+            raise ValueError()
+    except ValueError:
+        raise RuntimeError(
+            f"CATALOGO_INTERNAL_URL puerto invalido en '{CATALOGO_INTERNAL_URL}'. Debe ser un entero entre 1 y 65535."
+        )
     if partes_url.username or partes_url.password:
         raise RuntimeError("CATALOGO_INTERNAL_URL no debe incluir credenciales de usuario o contrasena.")
     if partes_url.path not in ("", "/"):
@@ -158,6 +170,25 @@ def validar_configuracion() -> None:
             raise RuntimeError(f"Origen CORS no puede contener comodines '*': '{origen}'.")
         if origen.endswith("/"):
             raise RuntimeError(f"Origen CORS no puede terminar en barra '/': '{origen}'.")
+        partes_origen = urlsplit(origen)
+        if partes_origen.scheme not in ("http", "https") or not partes_origen.hostname:
+            raise RuntimeError(
+                f"Origen CORS invalido: '{origen}'. Debe ser un origen HTTP(S) con host valido (ej. http://localhost:3000)."
+            )
+        try:
+            puerto_origen = partes_origen.port
+            if puerto_origen is not None and not (1 <= puerto_origen <= 65535):
+                raise ValueError()
+        except ValueError:
+            raise RuntimeError(
+                f"Origen CORS puerto invalido en '{origen}'. Debe ser un entero entre 1 y 65535."
+            )
+        if partes_origen.username or partes_origen.password:
+            raise RuntimeError(f"Origen CORS no puede contener credenciales: '{origen}'.")
+        if partes_origen.path not in ("", "/"):
+            raise RuntimeError(f"Origen CORS no puede contener path o ruta: '{origen}'.")
+        if partes_origen.query or partes_origen.fragment:
+            raise RuntimeError(f"Origen CORS no puede contener query parameters ni fragmentos: '{origen}'.")
 
     if CATALOGO_TIMEOUT <= 0:
         raise RuntimeError("CATALOGO_TIMEOUT debe ser mayor a 0.")
@@ -197,3 +228,14 @@ def validar_configuracion() -> None:
         logging.getLogger(__name__).warning(
             "Ni GEMINI_API_KEY ni GROQ_API_KEY estan configuradas. Los endpoints con IA fallaran."
         )
+
+    endpoint_explicit = os.getenv("GEMINI_ENDPOINT")
+    if endpoint_explicit:
+        modelo_actual = os.getenv("GEMINI_MODEL") or GEMINI_MODEL
+        endpoint_esperado = f"/models/{modelo_actual}:generateContent"
+        if endpoint_esperado not in endpoint_explicit:
+            logging.getLogger(__name__).warning(
+                "GEMINI_ENDPOINT ('%s') esta configurado explicitamente y anula a GEMINI_MODEL ('%s').",
+                endpoint_explicit,
+                modelo_actual,
+            )

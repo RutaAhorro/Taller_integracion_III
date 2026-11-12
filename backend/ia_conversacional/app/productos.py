@@ -38,6 +38,7 @@ class ProductoRepositorio:
         cache_ttl: Optional[float] = None,
         page_limit: Optional[int] = None,
         max_paginas: Optional[int] = None,
+        auto_cargar: bool = True,
     ) -> None:
         url_config = base_url if base_url is not None else config.CATALOGO_INTERNAL_URL
         self._base_url = str(url_config).rstrip("/")
@@ -51,8 +52,8 @@ class ProductoRepositorio:
         self._ultima_actualizacion: float = 0.0
         self._fuente: str = "sin_datos"
 
-        # Carga inicial al inicializar el repositorio
-        self.cargar_productos()
+        if auto_cargar:
+            self.cargar_productos()
 
     @property
     def fuente(self) -> str:

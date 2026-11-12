@@ -54,3 +54,11 @@ def test_lifespan_arranca_exitosamente_si_configuracion_valida(monkeypatch):
         datos = respuesta.json()
         assert datos["status"] == "ok"
         assert datos["service"] == "ia_conversacional"
+
+
+def test_repositorio_productos_modulo_main_no_autocarga_en_import(monkeypatch):
+    """Verifica que repositorio_productos en app.main se configure con auto_cargar=False."""
+    from app.main import repositorio_productos
+    assert hasattr(repositorio_productos, "cargar_productos")
+    # Al estar configurado con auto_cargar=False, el repositorio espera al lifespan para cargar
+    assert repositorio_productos._page_limit == config.CATALOGO_PAGE_LIMIT

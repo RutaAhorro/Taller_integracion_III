@@ -28,6 +28,7 @@ fix_encoding_consola()
 @asynccontextmanager
 async def lifespan(app_instancia: FastAPI):
     config.validar_configuracion()
+    repositorio_productos.cargar_productos()
     yield
 
 
@@ -51,6 +52,7 @@ repositorio_productos = ProductoRepositorio(
     cache_ttl=config.CATALOGO_CACHE_TTL,
     page_limit=config.CATALOGO_PAGE_LIMIT,
     max_paginas=config.CATALOGO_MAX_PAGINAS,
+    auto_cargar=False,
 )
 
 proveedor_groq = GroqProveedor(
