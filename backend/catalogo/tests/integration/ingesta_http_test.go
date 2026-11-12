@@ -33,7 +33,7 @@ func TestInternalSQLDataErrorsArePermanentAndPrivate(prueba *testing.T) {
 			token := strings.Repeat("t", 32)
 			err := fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: tc.code, Message: "secret SQL", TableName: "productos_crudos"})
 			router := gin.New()
-			ingesta.Register(router, ingesta.Config{Repository: &testStore{err: err}, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			ingesta.Register(router, ingesta.Config{Repository: &testStore{err: err}, Token: token, MaxProductos: productosPorLoteDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
 			req.Header.Set("Authorization", "Bearer "+token)
 			respuesta := httptest.NewRecorder()
@@ -81,7 +81,7 @@ func TestInternalIngestSecurityAndValidation(prueba *testing.T) {
 		prueba.Run(tc.name, func(subprueba *testing.T) {
 			store := &testStore{}
 			router := gin.New()
-			ingesta.Register(router, ingesta.Config{Repository: store, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			ingesta.Register(router, ingesta.Config{Repository: store, Token: token, MaxProductos: productosPorLoteDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 			req := httptest.NewRequest("POST", "/internal/v1/"+tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Authorization", tc.auth)
 			req.Header.Set("Origin", tc.origin)
@@ -99,7 +99,7 @@ func TestInternalBatchConflictIsControlled(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	token := strings.Repeat("t", 32)
 	router := gin.New()
-	ingesta.Register(router, ingesta.Config{Repository: &testStore{err: ingesta.ErrIdempotencia}, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ingesta.Register(router, ingesta.Config{Repository: &testStore{err: ingesta.ErrIdempotencia}, Token: token, MaxProductos: productosPorLoteDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"lote_id":"00000000-0000-4000-8000-000000000270","sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	respuesta := httptest.NewRecorder()
@@ -114,7 +114,7 @@ func TestInternalIngestClosedAndGenericError(prueba *testing.T) {
 	for _, token := range []string{"", strings.Repeat("t", 32)} {
 		store := &testStore{err: errors.New("SQL secret scraper.productos_crudos")}
 		router := gin.New()
-		ingesta.Register(router, ingesta.Config{Repository: store, Token: token}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		ingesta.Register(router, ingesta.Config{Repository: store, Token: token, MaxProductos: productosPorLoteDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		req := httptest.NewRequest("POST", "/internal/v1/cadenas/resolver", strings.NewReader(`{"cadena_id":1}`))
 		req.Header.Set("Authorization", "Bearer "+token)
 		respuesta := httptest.NewRecorder()

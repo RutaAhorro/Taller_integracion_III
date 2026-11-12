@@ -40,7 +40,7 @@ go run ./cmd/catalogo
 | `CATALOGO_READINESS_TIMEOUT` | `2s` | Ping a PostgreSQL de `/_catalogo/ready` |
 | `CATALOGO_DEFAULT_PAGE_SIZE` | `20` | Tamaño de página cuando no se envía `limit` |
 | `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
-| `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Caracteres conservados del texto de búsqueda |
+| `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
 | `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;

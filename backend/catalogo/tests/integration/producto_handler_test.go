@@ -32,7 +32,7 @@ func TestProductoHandler_ObtenerProductos(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo)
+	service := services.NewProductoService(mockRepo, limitesDePrueba)
 	handler := handlers.NewProductoHandler(service)
 
 	router := gin.New()
@@ -79,7 +79,7 @@ func TestProductoHandler_BuscarProductos(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo)
+	service := services.NewProductoService(mockRepo, limitesDePrueba)
 	handler := handlers.NewProductoHandler(service)
 
 	router := gin.New()
@@ -159,7 +159,7 @@ func TestProductoHandler_ObtenerDetalleProducto(prueba *testing.T) {
 		},
 	}
 
-	service := services.NewProductoService(mockRepo)
+	service := services.NewProductoService(mockRepo, limitesDePrueba)
 	handler := handlers.NewProductoHandler(service)
 
 	router := gin.New()
@@ -235,7 +235,7 @@ func TestProductoHandler_ObtenerProductosAdmin(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo)
+	service := services.NewProductoService(mockRepo, limitesDePrueba)
 	handler := handlers.NewProductoHandler(service)
 
 	router := gin.New()

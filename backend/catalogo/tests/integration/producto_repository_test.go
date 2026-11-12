@@ -18,8 +18,8 @@ import (
 	"gorm.io/gorm/utils/tests"
 )
 
-// crearRepositorioSeco captura las consultas públicas sin acceder a implementaciones internas.
-// Las consultas generadas se capturan con un controlador SQL que devuelve filas vacías.
+// conectorSQLSinBase y sus tipos asociados forman un controlador SQL que no abre
+// ninguna base: acepta consultas y devuelve filas vacías.
 type conectorSQLSinBase struct{}
 
 type conexionSQLSinBase struct{}
@@ -58,6 +58,8 @@ func (filasSQLSinBase) Columns() []string         { return nil }
 func (filasSQLSinBase) Close() error              { return nil }
 func (filasSQLSinBase) Next([]driver.Value) error { return io.EOF }
 
+// crearRepositorioSeco arma el repositorio público sobre el controlador sin base y
+// devuelve el registro de las consultas SQL generadas.
 func crearRepositorioSeco(prueba *testing.T) (domain.ProductoRepository, *strings.Builder) {
 	prueba.Helper()
 	var consultas strings.Builder

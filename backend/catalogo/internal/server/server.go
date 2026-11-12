@@ -18,7 +18,7 @@ import (
 
 // NewRouter compone sólo las rutas de Catálogo. La verificación de JWT y rol
 // sucede en este servicio, incluso cuando se accede directamente sin Gateway.
-func NewRouter(service services.ProductoService, fuentes services.FuenteService, secret string, ping func(context.Context) error, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine {
+func NewRouter(service services.ProductoService, fuentes services.FuenteService, secret string, ping func(context.Context) error, readinessTimeout time.Duration, logger *slog.Logger, allowedOrigins []string, internal ...ingesta.Config) *gin.Engine {
 	enrutador := gin.New()
 	_ = enrutador.SetTrustedProxies(nil)
 	enrutador.Use(observe(logger), middleware.ErrorHandler(logger), cors(allowedOrigins))
@@ -30,7 +30,7 @@ func NewRouter(service services.ProductoService, fuentes services.FuenteService,
 		contexto.JSON(http.StatusOK, gin.H{"status": "ok", "service": "catalogo"})
 	})
 	ready := func(contexto *gin.Context) {
-		ctx, cancel := context.WithTimeout(contexto.Request.Context(), 2*time.Second)
+		ctx, cancel := context.WithTimeout(contexto.Request.Context(), readinessTimeout)
 		defer cancel()
 		if ping == nil || ping(ctx) != nil {
 			contexto.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "service": "catalogo", "checks": gin.H{"database": "error"}})

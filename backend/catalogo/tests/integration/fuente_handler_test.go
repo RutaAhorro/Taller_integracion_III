@@ -21,10 +21,11 @@ import (
 func fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	return server.NewRouter(
-		services.NewProductoService(&mockProductoRepository{}),
+		services.NewProductoService(&mockProductoRepository{}, limitesDePrueba),
 		services.NewFuenteService(repo),
 		"catalog-test-only-key",
 		nil,
+		plazoReadinessDePrueba,
 		slog.New(slog.NewJSONHandler(io.Discard, nil)),
 		nil,
 	)

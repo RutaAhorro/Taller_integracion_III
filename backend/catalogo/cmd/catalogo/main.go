@@ -53,12 +53,16 @@ func run(log *slog.Logger) error {
 		log.Error("catalogo_storage_invalid", "error", storageErr)
 		return errors.New("Catálogo requiere tablas y permisos runtime antes de iniciar")
 	}
-	service := services.NewProductoService(repositories.NewProductoRepository(db))
+	service := services.NewProductoService(repositories.NewProductoRepository(db), services.LimitesConsulta{
+		TamanoPaginaPredeterminado: cfg.DefaultPageSize,
+		TamanoPaginaMaximo:         cfg.MaxPageSize,
+		LargoMaximoBusqueda:        cfg.MaxSearchLength,
+	})
 	fuenteService := services.NewFuenteService(repositories.NewFuenteRepository(db))
 	ready := sqlDB.PingContext
 	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, log, cfg.CORSAllowedOrigins,
-			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken}),
+		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, cfg.ReadinessTimeout, log, cfg.CORSAllowedOrigins,
+			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken, MaxProductos: cfg.MaxBatchProductos}),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout,
 	}

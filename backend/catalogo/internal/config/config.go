@@ -35,7 +35,7 @@ type Config struct {
 	// Límites de las consultas públicas y de la ingesta.
 	DefaultPageSize   int // tamaño de página cuando el cliente no envía limit
 	MaxPageSize       int // tope de limit en listados públicos y de administración
-	MaxSearchLength   int // caracteres conservados del texto de búsqueda
+	MaxSearchLength   int // bytes conservados del texto de búsqueda
 	MaxBatchProductos int // productos aceptados por lote de ingesta
 }
 

@@ -2,8 +2,10 @@ package integration_test
 
 import (
 	"context"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 )
 
 type mockProductoRepository struct {
@@ -77,3 +79,12 @@ func (repositorio *mockFuenteRepository) ActualizarEstadoFuente(contexto context
 	}
 	return nil, nil
 }
+
+// limitesDePrueba replica los valores por defecto de internal/config para las pruebas.
+var limitesDePrueba = services.LimitesConsulta{TamanoPaginaPredeterminado: 20, TamanoPaginaMaximo: 100, LargoMaximoBusqueda: 100}
+
+// plazoReadinessDePrueba replica CATALOGO_READINESS_TIMEOUT por defecto.
+const plazoReadinessDePrueba = 2 * time.Second
+
+// productosPorLoteDePrueba replica CATALOGO_MAX_BATCH_PRODUCTOS por defecto.
+const productosPorLoteDePrueba = 1000

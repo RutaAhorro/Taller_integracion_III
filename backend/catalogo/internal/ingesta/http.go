@@ -26,6 +26,8 @@ type Store interface {
 type Config struct {
 	Repository Store
 	Token      string
+	// MaxProductos es el tope de productos por lote (CATALOGO_MAX_BATCH_PRODUCTOS).
+	MaxProductos int
 }
 
 // Register mantiene el contrato privado fuera de las rutas públicas y de JWT.
@@ -33,6 +35,9 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 	if cfg.Token == "" || cfg.Repository == nil {
 		return
 	} // modo lector cerrado
+	if cfg.MaxProductos < 1 {
+		panic("ingesta.Config.MaxProductos debe ser positivo")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -116,7 +121,7 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 		if !decode(contexto, &input) {
 			return
 		}
-		if input.SucursalID <= 0 || len(input.Productos) < 1 || len(input.Productos) > 1000 {
+		if input.SucursalID <= 0 || len(input.Productos) < 1 || len(input.Productos) > cfg.MaxProductos {
 			contexto.JSON(400, gin.H{"error": "invalid_batch"})
 			return
 		}

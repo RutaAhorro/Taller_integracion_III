@@ -42,7 +42,7 @@ func TestCatalogCORS(prueba *testing.T) {
 	} {
 		prueba.Run(tc.name, func(subprueba *testing.T) {
 			repo := &mockProductoRepository{}
-			router := server.NewRouter(services.NewProductoService(repo), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(io.Discard, nil)), tc.allowed)
+			router := server.NewRouter(services.NewProductoService(repo, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(io.Discard, nil)), tc.allowed)
 			req := httptest.NewRequest(tc.method, "/api/v1/admin/productos", nil)
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Access-Control-Request-Method", "GET")
@@ -77,7 +77,7 @@ func TestCatalogInternalErrorsArePrivate(prueba *testing.T) {
 	for _, path := range []string{"/api/v1/admin/productos", "/api/v1/productos", "/api/v1/productos/buscar?q=leche", "/api/v1/productos/private-id", "/panic", "/context-error", "/explicit-error"} {
 		prueba.Run(path, func(subprueba *testing.T) {
 			var logs bytes.Buffer
-			router := server.NewRouter(services.NewProductoService(&mockProductoRepository{err: errors.New(diagnostic)}), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
+			router := server.NewRouter(services.NewProductoService(&mockProductoRepository{err: errors.New(diagnostic)}, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
 			router.GET("/panic", func(contexto *gin.Context) { panic(diagnostic) })
 			router.GET("/context-error", func(contexto *gin.Context) { _ = contexto.Error(errors.New(diagnostic)) })
 			router.GET("/explicit-error", func(contexto *gin.Context) {
