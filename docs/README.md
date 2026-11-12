@@ -55,12 +55,11 @@ verificado. [Frontend](../frontend/web/README.md) ·
 [Catálogo](../backend/catalogo/README.md) · [Scraper Go](../backend/scraper_go/README.md) ·
 [Motor de rutas](../backend/motor_rutas/README.md).
 
-Tres guías de la extracción de servicios siguen vigentes en parte y se fusionan
-en el README de su servicio durante el barrido; después se eliminan:
-[Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347),
-[Catálogo](Guias/GUIA_CATALOGO_INDEPENDIENTE.md) e
-[ingesta](Guias/GUIA_CATALOGO_INGESTA.md) (SUP-349). La guía de enrutamiento
-de Catálogo fue integrada en el README de Gateway en SUP-350.
+La guía de extracción de [Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347)
+sigue vigente en parte y se fusiona en el README de su servicio durante el barrido.
+Las guías de Catálogo e ingesta fueron integradas en el [README de Catálogo](../backend/catalogo/README.md)
+en SUP-349. La guía de enrutamiento de Catálogo fue integrada en el [README de Gateway](../backend/gateway/README.md)
+en SUP-350.
 
 ## Fuera del repositorio
 

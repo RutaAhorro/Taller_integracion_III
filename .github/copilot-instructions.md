@@ -62,12 +62,12 @@ Editar las instrucciones manuales en `CLAUDE.md`; ejecutar
 
 ## Contextos por servicio
 
-- Gateway: `backend\gateway/CLAUDE.md`.
-- Identidad: `backend\identidad/CLAUDE.md`.
-- Catálogo: `backend\catalogo/CLAUDE.md`.
-- Control de scraping: `backend\control_scraping/CLAUDE.md`.
-- Scraper Go: `backend\scraper_go/CLAUDE.md`.
-- Bot Discord: `backend\bot_discord/CLAUDE.md`.
-- IA conversacional: `backend\ia_conversacional/CLAUDE.md`.
-- Motor de rutas / Listas: `backend\motor_rutas/CLAUDE.md`.
-- Frontend: `frontend\web/CLAUDE.md`.
+- Gateway: `backend/gateway/CLAUDE.md`.
+- Identidad: `backend/identidad/CLAUDE.md`.
+- Catálogo: `backend/catalogo/CLAUDE.md`.
+- Control de scraping: `backend/control_scraping/CLAUDE.md`.
+- Scraper Go: `backend/scraper_go/CLAUDE.md`.
+- Bot Discord: `backend/bot_discord/CLAUDE.md`.
+- IA conversacional: `backend/ia_conversacional/CLAUDE.md`.
+- Motor de rutas / Listas: `backend/motor_rutas/CLAUDE.md`.
+- Frontend: `frontend/web/CLAUDE.md`.
