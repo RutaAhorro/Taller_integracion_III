@@ -1,22 +1,50 @@
 """Implementacion de ProveedorIA para Gemini (Google AI Studio)."""
 
+import logging
 import time
 
 import httpx
 
+from app import config
 from app.explicacion import construir_prompt_explicacion
 from app.filtros import sanitizar_filtros_crudos
 from app.proveedores.base import ProveedorIA, ResultadoExtraccion
+
+logger = logging.getLogger(__name__)
 
 
 class GeminiProveedor(ProveedorIA):
     nombre = "gemini"
 
-    def __init__(self, api_key: str | None, endpoint: str, modelo: str, definicion_funcion: dict):
+    def __init__(
+        self,
+        api_key: str | None,
+        endpoint: str,
+        modelo: str,
+        definicion_funcion: dict,
+        timeout: float | None = None,
+        thinking_level: str | None = None,
+        max_tokens_extraccion: int | None = None,
+        max_tokens_explicacion: int | None = None,
+    ):
         self.api_key = api_key
         self.endpoint = endpoint
         self.modelo = modelo
         self.definicion_funcion = definicion_funcion
+        self.timeout = timeout if timeout is not None else config.GEMINI_TIMEOUT
+        self.thinking_level = (
+            thinking_level if thinking_level is not None else config.GEMINI_THINKING_LEVEL
+        )
+        self.max_tokens_extraccion = (
+            max_tokens_extraccion
+            if max_tokens_extraccion is not None
+            else config.GEMINI_MAX_TOKENS_EXTRACCION
+        )
+        self.max_tokens_explicacion = (
+            max_tokens_explicacion
+            if max_tokens_explicacion is not None
+            else config.GEMINI_MAX_TOKENS_EXPLICACION
+        )
 
     def _headers(self) -> dict:
         return {
@@ -48,32 +76,34 @@ class GeminiProveedor(ProveedorIA):
             # la tool call en si es corta, para no arriesgarse a un
             # 400/vacio en un mensaje largo.
             "generationConfig": {
-                "thinkingConfig": {"thinkingLevel": "low"},
-                "maxOutputTokens": 1200,
+                "thinkingConfig": {"thinkingLevel": self.thinking_level},
+                "maxOutputTokens": self.max_tokens_extraccion,
             },
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                r = await client.post(self.endpoint, headers=self._headers(), json=payload)
-                r.raise_for_status()
-                data = r.json()
-        except httpx.HTTPStatusError as e:
-            # Bug real: Invoke-RestMethod sin "| ConvertTo-Json" trunca el
-            # error anidado en pantalla ("Gemini respondio 429: {...") 
-            # el body completo SI llegaba, PowerShell solo lo mostraba mal
-            print(f"Gemini respondio {e.response.status_code} - body completo:", e.response.text)
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                respuesta = await client.post(self.endpoint, headers=self._headers(), json=payload)
+                respuesta.raise_for_status()
+                data = respuesta.json()
+        except httpx.HTTPStatusError as error_http:
             estado = None
-            mensaje_error = e.response.text
+            mensaje_error = error_http.response.text
             try:
-                cuerpo_error = e.response.json().get("error", {})
+                cuerpo_error = error_http.response.json().get("error", {})
                 estado = cuerpo_error.get("status")
                 mensaje_error = cuerpo_error.get("message", mensaje_error)
             except ValueError:
                 pass
 
+            logger.warning(
+                "Gemini respondio %s: %s",
+                error_http.response.status_code,
+                mensaje_error,
+            )
+
             nota = None
-            if e.response.status_code == 429:
+            if error_http.response.status_code == 429:
                 nota = (
                     "Si estado_error es RESOURCE_EXHAUSTED, revisa tu cuota real "
                     f"para {self.modelo} en https://aistudio.google.com/rate-limit "
@@ -85,12 +115,13 @@ class GeminiProveedor(ProveedorIA):
                 )
 
             return ResultadoExtraccion(
-                error=f"Gemini respondio {e.response.status_code}: {mensaje_error}",
+                error=f"Gemini respondio {error_http.response.status_code}: {mensaje_error}",
                 error_estado=estado,
                 nota=nota,
             )
-        except httpx.RequestError as e:
-            return ResultadoExtraccion(error=f"No se pudo conectar a Gemini: {e}")
+        except httpx.RequestError as error_red:
+            logger.warning("Error de red conectando a Gemini: %s", error_red)
+            return ResultadoExtraccion(error=f"No se pudo conectar a Gemini: {error_red}")
 
         tiempo_ms = round((time.perf_counter() - inicio) * 1000)
 
@@ -99,17 +130,17 @@ class GeminiProveedor(ProveedorIA):
         except (KeyError, IndexError):
             return ResultadoExtraccion(error="Respuesta inesperada de Gemini", extra={"raw": data})
 
-        for part in parts:
-            if part.get("thought"):
+        for parte in parts:
+            if parte.get("thought"):
                 continue  # ver nota en generar_explicacion
-            if "functionCall" in part:
-                filtros = part["functionCall"].get("args", {})
+            if "functionCall" in parte:
+                filtros = parte["functionCall"].get("args", {})
                 filtros = sanitizar_filtros_crudos(filtros)
-                print("Filtros extraidos (Gemini):", filtros)
+                logger.debug("Filtros extraidos (Gemini): %s", filtros)
                 return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms)
 
         # El modelo no llamo la funcion, respondio con texto libre
-        texto_libre = "".join(p.get("text", "") for p in parts if not p.get("thought"))
+        texto_libre = "".join(parte.get("text", "") for parte in parts if not parte.get("thought"))
         return ResultadoExtraccion(
             texto_libre=texto_libre,
             nota="El modelo no uso function calling esta vez",
@@ -121,7 +152,7 @@ class GeminiProveedor(ProveedorIA):
         payload = {
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": {
-                "maxOutputTokens": 2048,
+                "maxOutputTokens": self.max_tokens_explicacion,
                 # Bug real: sin esto, gemini 3.1 piensa por defecto
                 # antes de responder (el thinking dinamico) y esa vez se comio
                 # el budget de tokens dejando la respuesta vacia/cortada
@@ -131,14 +162,14 @@ class GeminiProveedor(ProveedorIA):
                 # serie 3 no permite apagarlo del todo, solo bajarlo) y de
                 # paso, responde mas rapido
 
-                "thinkingConfig": {"thinkingLevel": "low"},
+                "thinkingConfig": {"thinkingLevel": self.thinking_level},
             },
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(self.endpoint, headers=self._headers(), json=payload)
-            r.raise_for_status()
-            data = r.json()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            respuesta = await client.post(self.endpoint, headers=self._headers(), json=payload)
+            respuesta.raise_for_status()
+            data = respuesta.json()
 
         partes = data["candidates"][0]["content"]["parts"]
         # es por si en algun momento se activa includeThoughts (nosotros
@@ -146,4 +177,4 @@ class GeminiProveedor(ProveedorIA):
         # vienen marcadas con "thought": true y no son la respuesta real
         # se filtran para no mezclar el resumen del razonamiento con la
         # explicacion
-        return "".join(p.get("text", "") for p in partes if not p.get("thought"))
+        return "".join(parte.get("text", "") for parte in partes if not parte.get("thought"))

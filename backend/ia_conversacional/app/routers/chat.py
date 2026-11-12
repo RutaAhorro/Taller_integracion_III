@@ -8,7 +8,6 @@ y evitar alucinaciones.
 """
 
 import logging
-from typing import Optional
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -25,8 +24,6 @@ logger = logging.getLogger(__name__)
 def crear_router_chat(
     repositorio: ProductoRepositorio,
     proveedor_fallback: ProveedorIA,
-    proveedor_groq: Optional[ProveedorIA] = None,
-    proveedor_gemini: Optional[ProveedorIA] = None,
 ) -> APIRouter:
     router = APIRouter(tags=["chat"])
 
@@ -42,7 +39,7 @@ def crear_router_chat(
             )
 
         if resultado.filtros is None:
-            logger.info("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
+            logger.debug("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
             return {
                 "respuesta": "No logré identificar qué productos buscas. ¿Puedes reformularlo? Ej: \"verduras bajo $2.000\"",
                 "filtros": None,

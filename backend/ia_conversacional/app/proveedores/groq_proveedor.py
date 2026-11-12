@@ -1,13 +1,17 @@
 """Implementacion de ProveedorIA para GroqCloud."""
 
 import json
+import logging
 import time
 
 import httpx
 
+from app import config
 from app.explicacion import construir_prompt_explicacion
 from app.filtros import rescatar_filtros_de_error_groq, sanitizar_filtros_crudos
 from app.proveedores.base import ProveedorIA, ResultadoExtraccion
+
+logger = logging.getLogger(__name__)
 
 
 class GroqProveedor(ProveedorIA):
@@ -20,12 +24,32 @@ class GroqProveedor(ProveedorIA):
         modelo_extraccion: str,
         modelo_explicacion: str,
         definicion_funcion: dict,
+        timeout: float | None = None,
+        max_tokens_extraccion: int | None = None,
+        max_tokens_explicacion: int | None = None,
+        frequency_penalty: float | None = None,
     ):
         self.api_key = api_key
         self.endpoint = endpoint
         self.modelo_extraccion = modelo_extraccion
         self.modelo_explicacion = modelo_explicacion
         self.definicion_funcion = definicion_funcion
+        self.timeout = timeout if timeout is not None else config.GROQ_TIMEOUT
+        self.max_tokens_extraccion = (
+            max_tokens_extraccion
+            if max_tokens_extraccion is not None
+            else config.GROQ_MAX_TOKENS_EXTRACCION
+        )
+        self.max_tokens_explicacion = (
+            max_tokens_explicacion
+            if max_tokens_explicacion is not None
+            else config.GROQ_MAX_TOKENS_EXPLICACION
+        )
+        self.frequency_penalty = (
+            frequency_penalty
+            if frequency_penalty is not None
+            else config.GROQ_FREQUENCY_PENALTY
+        )
 
     def _headers(self) -> dict:
         return {
@@ -46,20 +70,20 @@ class GroqProveedor(ProveedorIA):
                 "type": "function",
                 "function": {"name": self.definicion_funcion["function"]["name"]},
             },
-            "max_tokens": 512,
-            "frequency_penalty": 0.4,
+            "max_tokens": self.max_tokens_extraccion,
+            "frequency_penalty": self.frequency_penalty,
         }
 
         try:
-            async with httpx.AsyncClient(timeout=15.0) as client:
-                r = await client.post(self.endpoint, headers=self._headers(), json=payload)
-                r.raise_for_status()
-                data = r.json()
-        except httpx.HTTPStatusError as e:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                respuesta = await client.post(self.endpoint, headers=self._headers(), json=payload)
+                respuesta.raise_for_status()
+                data = respuesta.json()
+        except httpx.HTTPStatusError as error_http:
             tiempo_ms = round((time.perf_counter() - inicio) * 1000)
-            rescatados = rescatar_filtros_de_error_groq(e.response)
+            rescatados = rescatar_filtros_de_error_groq(error_http.response)
             if rescatados is not None:
-                print("Groq rechazo el schema; filtros rescatados del failed_generation:", rescatados)
+                logger.info("Groq rechazo el schema; filtros rescatados del failed_generation: %s", rescatados)
                 return ResultadoExtraccion(
                     filtros=rescatados,
                     tiempo_extraccion_ms=tiempo_ms,
@@ -70,9 +94,11 @@ class GroqProveedor(ProveedorIA):
                         "siguio con los filtros validos en vez de fallar."
                     ),
                 )
-            return ResultadoExtraccion(error=f"Groq respondio {e.response.status_code}: {e.response.text}")
-        except httpx.RequestError as e:
-            return ResultadoExtraccion(error=f"No se pudo conectar a Groq: {e}")
+            logger.warning("Groq respondio %s: %s", error_http.response.status_code, error_http.response.text)
+            return ResultadoExtraccion(error=f"Groq respondio {error_http.response.status_code}: {error_http.response.text}")
+        except httpx.RequestError as error_red:
+            logger.warning("Error de red conectando a Groq: %s", error_red)
+            return ResultadoExtraccion(error=f"No se pudo conectar a Groq: {error_red}")
 
         tiempo_ms = round((time.perf_counter() - inicio) * 1000)
         mensaje_modelo = data["choices"][0]["message"]
@@ -88,7 +114,7 @@ class GroqProveedor(ProveedorIA):
 
         filtros = json.loads(tool_calls[0]["function"]["arguments"])
         filtros = sanitizar_filtros_crudos(filtros)
-        print("Filtros extraidos (Groq):", filtros)
+        logger.debug("Filtros extraidos (Groq): %s", filtros)
         return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms)
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
@@ -96,12 +122,12 @@ class GroqProveedor(ProveedorIA):
         payload = {
             "model": self.modelo_explicacion,
             "messages": [{"role": "user", "content": prompt}],
-            "max_tokens": 200,
+            "max_tokens": self.max_tokens_explicacion,
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            r = await client.post(self.endpoint, headers=self._headers(), json=payload)
-            r.raise_for_status()
-            data = r.json()
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            respuesta = await client.post(self.endpoint, headers=self._headers(), json=payload)
+            respuesta.raise_for_status()
+            data = respuesta.json()
 
         return data["choices"][0]["message"]["content"]

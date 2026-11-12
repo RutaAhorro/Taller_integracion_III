@@ -20,8 +20,8 @@
 
 ## Índice breve generado
 
-22 archivos fuente, incluidos los de pruebas. Distribución:
-- `app`: 18 archivos.
-- `tests`: 4 archivos.
+27 archivos fuente, incluidos los de pruebas. Distribución:
+- `app`: 17 archivos.
+- `tests`: 10 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.
