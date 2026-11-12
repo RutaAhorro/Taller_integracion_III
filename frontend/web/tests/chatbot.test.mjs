@@ -32,6 +32,8 @@ const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por
 async function send() {
   states.length = 0;
   await useChatbot().handleSend('Quiero hacer pebre');
+  // Estas posiciones siguen el orden de useState en useChatbot: isProcessing y messages.
+  // Si cambia ese orden, hay que actualizar este adaptador; no implica un fallo del chat.
   assert.equal(states[2], false, 'libera el estado de procesamiento');
   assert.ok(states[3].every(message => message.type !== 'processing'));
   return states[3].at(-1).content;

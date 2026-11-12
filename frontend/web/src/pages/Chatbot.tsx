@@ -78,7 +78,7 @@ export default function Chatbot() {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)] whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
-                Catálogos al día
+                Integración pendiente
               </span>
             </div>
           </div>
@@ -100,6 +100,11 @@ export default function Chatbot() {
           </div>
         </div>
       </header>
+
+      <div role="note" className="border-b border-border bg-muted px-4 py-3 text-sm text-foreground">
+        Vista previa: el chat aún no está disponible. La conexión con el asistente está pendiente de SUP-253;
+        los envíos pueden devolver un error y no generan recetas ni listas de compra.
+      </div>
 
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
         <div className="max-w-3xl mx-auto space-y-6">
@@ -200,7 +205,7 @@ export default function Chatbot() {
           </form>
           <p className="text-center text-[10px] text-muted-foreground mt-2 flex items-center justify-center gap-1">
             <Info className="h-3 w-3"/>
-            Los precios y el stock son validados contra catálogos vigentes de Temuco.
+            La validación de precios y stock estará disponible al integrar el asistente (SUP-253).
           </p>
         </div>
       </div>

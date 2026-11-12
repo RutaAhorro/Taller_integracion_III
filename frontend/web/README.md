@@ -90,12 +90,12 @@ La fuente de verdad es `src/app/router.tsx`, con constantes en
 | `/onboarding`, `/profile`, `/planes` | Requieren sesión; no implican preferencias persistidas o pagos integrados |
 | `/listas` | Requiere sesión; CRUD de listas si el motor está disponible. Artículos en solo lectura |
 | `/admin`, `/admin/metricas` | Solo rol admin; usuarios, fuentes y métricas según endpoints disponibles |
-| `/chat` | Vista de demostración; el cliente usa `/chat/gemini`, pero la IA expone `/api/v1/chat` y Gateway aún no lo enruta |
+| `/chat` | Vista previa con aviso visible de no disponibilidad hasta SUP-253; el cliente conserva `/chat/gemini`, un endpoint retirado. No es un chat integrado |
 | `/colaborador` | Colaborador/admin; aviso de misiones no disponibles |
 | `/route`, `/history` | Requieren sesión; avisos de cálculo e historial aún no integrados |
 | `/terminos` | Página pública de términos |
 
-Las vistas pendientes usan `FeatureUnavailable`; no generan resultados simulados.
+Las vistas pendientes usan `FeatureUnavailable`, excepto el chat, que conserva su interfaz con un aviso visible de integración pendiente; no generan resultados simulados.
 La portada es informativa: sus textos, productos y cifras ilustrativas provienen
 de `src/data/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
 El catálogo funcional no usa esos ejemplos. Sus cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
@@ -117,7 +117,7 @@ src/lib/roles.ts        Normalización de roles para la interfaz
 src/pages/              Páginas funcionales y avisos de integraciones pendientes
 src/layouts/            Estructura de navegación
 src/components/         Componentes compartidos y primitivas de UI
-tests/                  Pruebas críticas de clientes API de listas y administración
+tests/                  Pruebas críticas de listas, administración y errores del chat
 ```
 
 El alias `@/` apunta a `src/`. Se usan React Context y hooks; no Redux/Zustand.

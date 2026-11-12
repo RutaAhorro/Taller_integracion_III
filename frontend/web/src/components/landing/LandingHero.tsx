@@ -1,6 +1,6 @@
 // Presenta la propuesta del producto con una compra ilustrativa; no representa datos de la sesión ni de la API.
 import { Link } from 'react-router-dom';
-import { ArrowRight, Leaf, Lock, MapPin, ShoppingBasket, Car, PiggyBank } from 'lucide-react';
+import { ArrowRight, Leaf, Info, MapPin, ShoppingBasket, Car, PiggyBank } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
 import landingData from '@/data/landing.json';
 
@@ -24,8 +24,8 @@ export function LandingHero() {
             <a className={buttonVariants({ variant: 'outline', size: 'lg' }) + ' w-full sm:w-auto justify-center'} href="#como-funciona">Ver cómo funciona</a>
           </div>
           <div className="flex flex-col sm:flex-row gap-3 sm:gap-5 text-[0.78125rem] text-muted-foreground font-semibold">
-            <span className="inline-flex items-center gap-[0.4rem]"><Lock size={14} aria-hidden="true" /> No guardamos tu ubicación</span>
-            <span className="inline-flex items-center gap-[0.4rem]"><Leaf size={14} aria-hidden="true" /> Datos verificados en tiempo real</span>
+            <span className="inline-flex items-center gap-[0.4rem]"><Info size={14} aria-hidden="true" /> Esta portada no solicita tu ubicación</span>
+            <span className="inline-flex items-center gap-[0.4rem]"><Leaf size={14} aria-hidden="true" /> Ejemplos ilustrativos, no datos en tiempo real</span>
             <span className="inline-flex items-center gap-[0.4rem]"><MapPin size={14} aria-hidden="true" /> Hecho en Chile</span>
           </div>
         </div>

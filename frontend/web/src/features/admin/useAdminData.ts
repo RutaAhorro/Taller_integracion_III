@@ -201,23 +201,19 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
       prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
     );
     // El cambio optimista solo se conserva si el backend confirma la escritura.
-    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
-      try {
-        const actualizado = await updateAdminUser(id, { esta_activo: nextActive });
-        aplicarActualizado(id, actualizado);
-        setError(null);
-      } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-        if (isAdminAuthError(err)) {
-          setError(authBlockedMessage('el usuario', err));
-          expireSession();
-        } else {
-          setError(userMutationMessage('No se pudo actualizar el usuario.', err));
-        }
-      } finally {
-        endMutation();
+    try {
+      const actualizado = await updateAdminUser(id, { esta_activo: nextActive });
+      aplicarActualizado(id, actualizado);
+      setError(null);
+    } catch (err) {
+      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
+      if (isAdminAuthError(err)) {
+        setError(authBlockedMessage('el usuario', err));
+        expireSession();
+      } else {
+        setError(userMutationMessage('No se pudo actualizar el usuario.', err));
       }
-    } else {
+    } finally {
       endMutation();
     }
   }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
@@ -235,23 +231,19 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
     }
     beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
-    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
-      try {
-        const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(role) });
-        aplicarActualizado(id, actualizado);
-        setError(null);
-      } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-        if (isAdminAuthError(err)) {
-          setError(authBlockedMessage('el rol', err));
-          expireSession();
-        } else {
-          setError(userMutationMessage('No se pudo asignar el rol.', err));
-        }
-      } finally {
-        endMutation();
+    try {
+      const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+      aplicarActualizado(id, actualizado);
+      setError(null);
+    } catch (err) {
+      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
+      if (isAdminAuthError(err)) {
+        setError(authBlockedMessage('el rol', err));
+        expireSession();
+      } else {
+        setError(userMutationMessage('No se pudo asignar el rol.', err));
       }
-    } else {
+    } finally {
       endMutation();
     }
   }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
@@ -269,23 +261,19 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
     }
     beginMutation(id);
     setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
-    if (ADMIN_HAS_BACKEND && isPersistableId(id)) {
-      try {
-        const actualizado = await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
-        setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
-        setError(null);
-      } catch (err) {
-        setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-        if (isAdminAuthError(err)) {
-          setError(authBlockedMessage('el plan', err));
-          expireSession();
-        } else {
-          setError(userMutationMessage('No se pudo asignar el plan.', err));
-        }
-      } finally {
-        endMutation();
+    try {
+      const actualizado = await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
+      setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+      setError(null);
+    } catch (err) {
+      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
+      if (isAdminAuthError(err)) {
+        setError(authBlockedMessage('el plan', err));
+        expireSession();
+      } else {
+        setError(userMutationMessage('No se pudo asignar el plan.', err));
       }
-    } else {
+    } finally {
       endMutation();
     }
   }, [users, beginMutation, endMutation, expireSession]);
@@ -364,21 +352,17 @@ export function useAdminSources() {
           : source
       )),
     );
-    if (ADMIN_HAS_BACKEND) {
-      try {
-        await updateAdminSource(id, { habilitada });
-      } catch (err) {
-        setSources((prev) => prev.map((source) => (source.id === id ? target : source)));
-        if (isAdminAuthError(err)) {
-          setError(authBlockedMessage('la fuente', err));
-          expireSession();
-        } else {
-          setError(`No se pudo actualizar la fuente. (${toMessage(err)})`);
-        }
-      } finally {
-        setPendingId(null);
+    try {
+      await updateAdminSource(id, { habilitada });
+    } catch (err) {
+      setSources((prev) => prev.map((source) => (source.id === id ? target : source)));
+      if (isAdminAuthError(err)) {
+        setError(authBlockedMessage('la fuente', err));
+        expireSession();
+      } else {
+        setError(`No se pudo actualizar la fuente. (${toMessage(err)})`);
       }
-    } else {
+    } finally {
       setPendingId(null);
     }
   }, [sources, pendingId, expireSession]);

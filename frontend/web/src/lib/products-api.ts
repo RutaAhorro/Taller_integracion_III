@@ -76,16 +76,16 @@ export function toUiProduct(product: ApiProduct): Product {
   }
 }
 
-/** Propaga errores y permite cancelar lecturas al abandonar una vista. */
-async function request<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { signal })
+/** Propaga los errores de las lecturas del catálogo. */
+async function request<T>(path: string): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`)
   if (!response.ok) throw new Error(`La API respondió con ${response.status}`)
   return response.json() as Promise<T>
 }
 
 /** Recupera una página de productos con los totales informados por el servidor. */
-export async function getProducts(params = '', signal?: AbortSignal) {
-  const page = await request<ProductPage>(`/productos${params}`, signal)
+export async function getProducts(params = '') {
+  const page = await request<ProductPage>(`/productos${params}`)
   return {
     products: page.data.map(toUiProduct),
     total: page.total_registros,
