@@ -12,6 +12,7 @@ flowchart LR
     Gateway -->|/api/v1/productos/*| Catalogo[Catálogo]
     Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*| Identidad[Identidad]
     Gateway -->|/api/v1/listas/*| Rutas[Motor de rutas]
+    Gateway -->|/api/v1/chat/*| IA[IA conversacional]
     Gateway -->|/api/v1/scraper/*, /swagger/*, health| Control[Control de scraping]
 ```
 
@@ -22,6 +23,7 @@ flowchart LR
 | `/api/v1/auth` y subrutas | Identidad (`IDENTIDAD_URL`) | Login, registro, sesiones y OAuth |
 | `/api/v1/admin/usuarios` y subrutas | Identidad (`IDENTIDAD_URL`) | Métricas y administración de cuentas |
 | `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
+| `/api/v1/chat` y subrutas | IA conversacional (`IA_URL`) | Interacción con asistente de IA conversacional (SUP-278) |
 | `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
 | `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Healthchecks heredados agregados |
 | `/_gateway/live`, `/_gateway/ready` | Gateway (local) | Liveness y readiness del proceso router |
@@ -66,8 +68,8 @@ Ver `.env.example` para una plantilla lista para usar.
 | `BACKEND_URL` | Obligatoria sólo sin `SCRAPING_URL` | Origen de respaldo para rollback hacia API monolítica |
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo |
 | `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad |
-| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; vacío devuelve 404 en `/api/v1/listas` |
-| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; vacío devuelve 404 en `/api/v1/chat` |
+| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él devuelve 404 en `/api/v1/listas` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
+| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; sin ella devuelve 404 en `/api/v1/chat` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el upstream |

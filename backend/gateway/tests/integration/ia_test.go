@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // SUP-278: /api/v1/chat pertenece a IA conversacional;
@@ -90,8 +91,8 @@ func TestIARoutingAndFailureIsolation(prueba *testing.T) {
 }
 
 func TestChatSinIAURLNoSeEnruta(prueba *testing.T) {
-	scrapingServidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		prueba.Errorf("chat no debe caer en Control: %s", r.URL.Path)
+	scrapingServidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		prueba.Errorf("chat no debe caer en Control: %s", peticion.URL.Path)
 	}))
 	defer scrapingServidor.Close()
 
@@ -108,16 +109,16 @@ func TestChatSinIAURLNoSeEnruta(prueba *testing.T) {
 
 func TestIADiagnosticDoesNotWithdrawGateway(prueba *testing.T) {
 	servidorSano := func(rutaSonda string) *httptest.Server {
-		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.Path != rutaSonda {
-				prueba.Errorf("probe inesperado %s", r.URL.Path)
+		return httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+			if peticion.URL.Path != rutaSonda {
+				prueba.Errorf("probe inesperado %s", peticion.URL.Path)
 			}
-			_, _ = w.Write([]byte(`{"status":"ok","service":"ia_conversacional"}`))
+			_, _ = respuesta.Write([]byte(`{"status":"ok","service":"ia_conversacional"}`))
 		}))
 	}
 
-	backendServidor := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
+	backendServidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		_, _ = respuesta.Write([]byte(`{"status":"ok","checks":{"database":"ok","redis":"ok"}}`))
 	}))
 	iaServidor := servidorSano("/health")
 	defer backendServidor.Close()
@@ -135,5 +136,33 @@ func TestIADiagnosticDoesNotWithdrawGateway(prueba *testing.T) {
 	cuerpo = bodyOf(prueba, respuesta)
 	if respuesta.StatusCode != 503 || !strings.Contains(string(cuerpo), `"ia":"error"`) {
 		prueba.Fatalf("esperaba ia:error en dependencias, obtuvo: %s", string(cuerpo))
+	}
+}
+
+func TestIATimeoutResponds504(prueba *testing.T) {
+	servidorLento := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		time.Sleep(120 * time.Millisecond)
+	}))
+	defer servidorLento.Close()
+
+	servidorControl := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		prueba.Errorf("peticion no debe llegar a control: %s", peticion.URL.Path)
+	}))
+	defer servidorControl.Close()
+
+	pasarela := gatewayFor(prueba, "", map[string]string{
+		"SCRAPING_URL":                    servidorControl.URL,
+		"IA_URL":                          servidorLento.URL,
+		"GATEWAY_RESPONSE_HEADER_TIMEOUT": "40ms",
+	}, nil)
+
+	inicio := time.Now()
+	respuesta, errorPeticion := http.Post(pasarela.URL+"/api/v1/chat", "application/json", strings.NewReader(`{"mensaje":"hola"}`))
+	if errorPeticion != nil {
+		prueba.Fatal(errorPeticion)
+	}
+	cuerpo := bodyOf(prueba, respuesta)
+	if respuesta.StatusCode != http.StatusGatewayTimeout || !strings.Contains(string(cuerpo), "ia_timeout") || time.Since(inicio) > time.Second {
+		prueba.Fatalf("esperaba 504 ia_timeout, obtuvo %d: %s", respuesta.StatusCode, string(cuerpo))
 	}
 }
