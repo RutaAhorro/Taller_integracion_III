@@ -1,3 +1,4 @@
+// Bloque de carga sin datos de ejemplo para reservar espacio durante una consulta.
 import { cn } from "@/lib/utils"
 
 function Skeleton({

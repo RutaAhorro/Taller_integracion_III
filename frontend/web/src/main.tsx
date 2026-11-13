@@ -1,3 +1,4 @@
+// Monta la aplicación React con el enrutador y los estilos globales.
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import AppRouter from './app/router';

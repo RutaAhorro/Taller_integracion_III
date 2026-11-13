@@ -1,3 +1,4 @@
+// Representa ingredientes recibidos y delega su agregado al carrito en el componente padre.
 import { ShoppingCart } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatPrice } from '@/lib/formatters';
@@ -5,7 +6,7 @@ import { formatPrice } from '@/lib/formatters';
 export interface RecipeItem {
   name: string;
   marketName: string;
-  marketColor?: string; // Should be a valid CSS color string for inline style or a known Tailwind class
+  marketColor?: string; // Color CSS válido para la etiqueta de la cadena.
   price: number;
   inStock: boolean;
   substitute?: string;

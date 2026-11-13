@@ -19,4 +19,4 @@
 - Si en el futuro se permiten muchas paradas, el orden de visita necesitará una heurística (vecino más cercano, 2-opt) en lugar de OR-Tools.
 - Tope de dos días para la migración; si se complica, se vuelve al servicio en Python.
 
-**Estado:** aceptada; la implementación está en curso (SUP-348).
+**Estado:** aceptada e implementada (SUP-348). El servicio Python se eliminó; queda en el historial de git.

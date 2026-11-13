@@ -1,3 +1,4 @@
+// Gestiona mensajes y solicitudes del chat; la migración al contrato del Gateway sigue en SUP-253.
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 
@@ -67,14 +68,18 @@ export function useChatbot() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mensaje: text }),
       });
-      setStep(3);
+      // Un error HTTP no es una respuesta del asistente, aunque incluya JSON.
+      if (!response.ok) {
+        reply(ERROR_IA);
+        return;
+      }
       const data = await response.json();
 
-      if (data.error) {
-        console.error('Error devuelto por la IA:', data.error);
+      if (data?.error || typeof data?.explicacion !== 'string' || !data.explicacion.trim()) {
         reply(ERROR_IA);
       } else {
-        reply(data.explicacion || 'Procesado.');
+        setStep(3);
+        reply(data.explicacion);
       }
     } catch (error) {
       console.error('Excepción al contactar la API:', error);

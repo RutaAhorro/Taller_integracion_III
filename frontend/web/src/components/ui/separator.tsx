@@ -1,3 +1,4 @@
+// Separador visual horizontal o vertical basado en el componente accesible de Radix.
 "use client"
 
 import { Separator as SeparatorPrimitive } from "@base-ui/react/separator"

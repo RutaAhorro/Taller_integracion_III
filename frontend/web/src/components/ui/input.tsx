@@ -1,3 +1,4 @@
+// Campo de entrada compartido con estilos y atributos nativos del formulario.
 import * as React from "react"
 import { Input as InputPrimitive } from "@base-ui/react/input"
 

@@ -1,10 +1,6 @@
+// Centraliza registros: en producción conserva errores y silencia los mensajes de desarrollo.
 const isDev = import.meta.env.DEV;
 
-/**
- * Sistema centralizado de logs.
- * En producción (cuando import.meta.env.DEV es false), info y warn se silencian
- * automáticamente para no ensuciar la consola del cliente.
- */
 export const logger = {
   info: (msg: string, data?: any) => {
     if (isDev) {
@@ -19,8 +15,7 @@ export const logger = {
     }
   },
   error: (msg: string, error?: any) => {
-    // Los errores sí los mostramos en prod para debuggeo crítico,
-    // pero idealmente aquí se conectaría a un servicio como Sentry.
+    // Conserva el error en producción para permitir el diagnóstico.
     if (error) console.error(`📕 [ERROR]: ${msg}`, error);
     else console.error(`📕 [ERROR]: ${msg}`);
   },

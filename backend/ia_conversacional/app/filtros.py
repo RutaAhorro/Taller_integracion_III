@@ -39,13 +39,13 @@ def sanitizar_filtros_crudos(crudo: dict) -> dict:
 
     palabras_clave = crudo.get("palabras_clave")
     if isinstance(palabras_clave, list):
-        limpio_lista = [i.strip() for i in palabras_clave if isinstance(i, str) and i.strip()]
+        limpio_lista = [termino.strip() for termino in palabras_clave if isinstance(termino, str) and termino.strip()]
         if limpio_lista:
             limpio["palabras_clave"] = limpio_lista
     elif isinstance(palabras_clave, str) and palabras_clave.strip():
         # visto en pruebas: a veces el modelo manda un string suelto
         # ("tomate, ajo") en vez de una lista -- se separa por coma.
-        limpio_lista = [i.strip() for i in palabras_clave.split(",") if i.strip()]
+        limpio_lista = [termino.strip() for termino in palabras_clave.split(",") if termino.strip()]
         if limpio_lista:
             limpio["palabras_clave"] = limpio_lista
 
@@ -102,13 +102,13 @@ _LONGITUD_MIN_SUBSTRING = 4
 def _tokenizar_categoria(texto: str) -> list:
 
     tokens = re.split(r"[^a-zA-Zñáéíóúü]+", texto)
-    return [t for t in tokens if t and t not in _STOPWORDS_CATEGORIA]
+    return [token for token in tokens if token and token not in _STOPWORDS_CATEGORIA]
 
 
-def _texto_contiene(a: str, b: str) -> bool:
-    if len(a) < _LONGITUD_MIN_SUBSTRING or len(b) < _LONGITUD_MIN_SUBSTRING:
-        return a == b
-    return a in b or b in a
+def _texto_contiene(texto_primero: str, texto_segundo: str) -> bool:
+    if len(texto_primero) < _LONGITUD_MIN_SUBSTRING or len(texto_segundo) < _LONGITUD_MIN_SUBSTRING:
+        return texto_primero == texto_segundo
+    return texto_primero in texto_segundo or texto_segundo in texto_primero
 
 
 def _coincide_por_texto(frase: str, producto: dict) -> bool:
@@ -144,16 +144,14 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
 
     precio_max = filtros.get("precio_max")
     if isinstance(precio_max, (int, float)) and precio_max > 0:
-        resultado = [p for p in resultado if p["precio"] <= precio_max]
+        resultado = [producto for producto in resultado if producto["precio"] <= precio_max]
 
     categoria = filtros.get("categoria")
     if isinstance(categoria, str) and categoria.strip():
-        resultado = [p for p in resultado if _coincide_por_texto(categoria, p)]
-
-
+        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto)]
 
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:
-        resultado = [p for p in resultado if p["distancia_km"] <= distancia_max]
+        resultado = [producto for producto in resultado if producto["distancia_km"] <= distancia_max]
 
-    return sorted(resultado, key=lambda p: p["precio"])
+    return sorted(resultado, key=lambda producto: producto["precio"])

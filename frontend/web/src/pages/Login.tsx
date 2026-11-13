@@ -1,3 +1,4 @@
+// Distribuye la bienvenida y los formularios de acceso o registro según el tamaño de pantalla.
 import { AuthVisual } from "@/components/auth/AuthVisual"
 import { AuthPanel } from "@/components/auth/AuthPanel"
 

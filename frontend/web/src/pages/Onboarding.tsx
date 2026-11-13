@@ -1,9 +1,11 @@
-import { OnboardingWizard } from "@/components/onboarding/OnboardingWizard"
+// Conserva la ruta del perfil inicial sin simular el guardado de preferencias.
+import { FeatureUnavailable } from '@/components/FeatureUnavailable';
 
-export default function Page() {
+export default function Onboarding() {
   return (
-    <main className="flex min-h-svh items-center justify-center bg-background px-4 py-10">
-      <OnboardingWizard />
-    </main>
-  )
+    <FeatureUnavailable
+      title="Configuración inicial no disponible"
+      description="Esta vista del perfil aún no está implementada. No se guardan ubicación, preferencias de supermercados ni restricciones alimentarias desde este recorrido."
+    />
+  );
 }

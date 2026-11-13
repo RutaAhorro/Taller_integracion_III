@@ -1,3 +1,4 @@
+// Presenta el catálogo filtrado, sus estados de carga y la continuación del listado paginado.
 import { Store, Loader2 } from 'lucide-react'
 import { useLayoutContext } from '@/layouts/MainLayout'
 import { ProductCard } from '@/components/ProductCard'
@@ -30,7 +31,6 @@ export default function Page() {
         aria-hidden="true"
       />
       <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col gap-6 overflow-hidden px-4 py-6 md:px-6">
-        {/* Left: product grid */}
         <section
           aria-label="Productos en oferta"
           className="flex min-h-0 flex-1 flex-col"

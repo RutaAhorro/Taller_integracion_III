@@ -43,70 +43,70 @@ func NewProductoHandler(service services.ProductoService) *ProductoHandler {
 // @Failure      400           {object}  map[string]interface{}
 // @Failure      500           {object}  map[string]interface{}
 // @Router       /api/v1/productos [get]
-func (h *ProductoHandler) ObtenerProductos(c *gin.Context) {
+func (manejador *ProductoHandler) ObtenerProductos(contexto *gin.Context) {
 	var filtro domain.FiltroProductosDTO
 
-	filtro.Query = c.Query("q")
+	filtro.Query = contexto.Query("q")
 
-	if pageStr := c.Query("page"); pageStr != "" {
+	if pageStr := contexto.Query("page"); pageStr != "" {
 		if page, err := strconv.Atoi(pageStr); err == nil {
 			filtro.Page = page
 		}
 	}
 
-	if limitStr := c.Query("limit"); limitStr != "" {
+	if limitStr := contexto.Query("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
 			filtro.Limit = limit
 		}
 	}
 
-	filtro.Categoria = c.Query("categoria")
-	filtro.Supermercado = c.Query("supermercado")
-	filtro.Marca = c.Query("marca")
+	filtro.Categoria = contexto.Query("categoria")
+	filtro.Supermercado = contexto.Query("supermercado")
+	filtro.Marca = contexto.Query("marca")
 
-	if enStockStr := c.Query("en_stock"); enStockStr != "" {
+	if enStockStr := contexto.Query("en_stock"); enStockStr != "" {
 		if enStock, err := strconv.ParseBool(enStockStr); err == nil {
 			filtro.EnStock = &enStock
 		}
 	}
 
-	if pMinStr := c.Query("precio_min"); pMinStr != "" {
+	if pMinStr := contexto.Query("precio_min"); pMinStr != "" {
 		if pMin, err := strconv.ParseFloat(pMinStr, 64); err == nil {
 			filtro.PrecioMin = &pMin
 		}
 	}
 
-	if pMaxStr := c.Query("precio_max"); pMaxStr != "" {
+	if pMaxStr := contexto.Query("precio_max"); pMaxStr != "" {
 		if pMax, err := strconv.ParseFloat(pMaxStr, 64); err == nil {
 			filtro.PrecioMax = &pMax
 		}
 	}
 
-	if enOfertaStr := c.Query("en_oferta"); enOfertaStr != "" {
+	if enOfertaStr := contexto.Query("en_oferta"); enOfertaStr != "" {
 		if enOferta, err := strconv.ParseBool(enOfertaStr); err == nil {
 			filtro.EnOferta = &enOferta
 		}
 	}
 
-	filtro.SortBy = c.Query("sort_by")
-	filtro.Order = c.Query("order")
+	filtro.SortBy = contexto.Query("sort_by")
+	filtro.Order = contexto.Query("order")
 
-	resultado, err := h.service.ObtenerCatalogo(c.Request.Context(), filtro)
+	resultado, err := manejador.service.ObtenerCatalogo(contexto.Request.Context(), filtro)
 	if err != nil {
 		if errors.Is(err, services.ErrBusquedaCorta) {
-			c.JSON(http.StatusBadRequest, gin.H{
+			contexto.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
-		middleware.LogInternalError(c, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		middleware.LogInternalError(contexto, err)
+		contexto.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Error interno al obtener los productos del catálogo",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, resultado)
+	contexto.JSON(http.StatusOK, resultado)
 }
 
 // ObtenerProductosAdmin godoc
@@ -133,66 +133,66 @@ func (h *ProductoHandler) ObtenerProductos(c *gin.Context) {
 // @Failure      403           {object}  middleware.RespuestaError
 // @Failure      500           {object}  middleware.RespuestaError
 // @Router       /api/v1/admin/productos [get]
-func (h *ProductoHandler) ObtenerProductosAdmin(c *gin.Context) {
+func (manejador *ProductoHandler) ObtenerProductosAdmin(contexto *gin.Context) {
 	var filtro domain.FiltroProductosDTO
 
-	filtro.Query = c.Query("q")
+	filtro.Query = contexto.Query("q")
 
-	if pageStr := c.Query("page"); pageStr != "" {
+	if pageStr := contexto.Query("page"); pageStr != "" {
 		if page, err := strconv.Atoi(pageStr); err == nil {
 			filtro.Page = page
 		}
 	}
 
-	if limitStr := c.Query("limit"); limitStr != "" {
+	if limitStr := contexto.Query("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
 			filtro.Limit = limit
 		}
 	}
 
-	filtro.Categoria = c.Query("categoria")
-	filtro.Supermercado = c.Query("supermercado")
-	filtro.Marca = c.Query("marca")
-	filtro.SKU = c.Query("sku")
+	filtro.Categoria = contexto.Query("categoria")
+	filtro.Supermercado = contexto.Query("supermercado")
+	filtro.Marca = contexto.Query("marca")
+	filtro.SKU = contexto.Query("sku")
 
-	if enStockStr := c.Query("en_stock"); enStockStr != "" {
+	if enStockStr := contexto.Query("en_stock"); enStockStr != "" {
 		if enStock, err := strconv.ParseBool(enStockStr); err == nil {
 			filtro.EnStock = &enStock
 		}
 	}
 
-	if pMinStr := c.Query("precio_min"); pMinStr != "" {
+	if pMinStr := contexto.Query("precio_min"); pMinStr != "" {
 		if pMin, err := strconv.ParseFloat(pMinStr, 64); err == nil {
 			filtro.PrecioMin = &pMin
 		}
 	}
 
-	if pMaxStr := c.Query("precio_max"); pMaxStr != "" {
+	if pMaxStr := contexto.Query("precio_max"); pMaxStr != "" {
 		if pMax, err := strconv.ParseFloat(pMaxStr, 64); err == nil {
 			filtro.PrecioMax = &pMax
 		}
 	}
 
-	if enOfertaStr := c.Query("en_oferta"); enOfertaStr != "" {
+	if enOfertaStr := contexto.Query("en_oferta"); enOfertaStr != "" {
 		if enOferta, err := strconv.ParseBool(enOfertaStr); err == nil {
 			filtro.EnOferta = &enOferta
 		}
 	}
 
-	filtro.SortBy = c.Query("sort_by")
-	filtro.Order = c.Query("order")
+	filtro.SortBy = contexto.Query("sort_by")
+	filtro.Order = contexto.Query("order")
 
-	resultado, err := h.service.ObtenerCatalogoAdmin(c.Request.Context(), filtro)
+	resultado, err := manejador.service.ObtenerCatalogoAdmin(contexto.Request.Context(), filtro)
 	if err != nil {
 		if errors.Is(err, services.ErrBusquedaCorta) {
-			middleware.ResponderError(c, http.StatusBadRequest, services.ErrBusquedaCorta.Error(), middleware.ErrorValidacion{Mensaje: services.ErrBusquedaCorta.Error()})
+			middleware.ResponderError(contexto, http.StatusBadRequest, services.ErrBusquedaCorta.Error(), middleware.ErrorValidacion{Mensaje: services.ErrBusquedaCorta.Error()})
 			return
 		}
-		middleware.ResponderError(c, http.StatusInternalServerError, "Error interno al obtener los productos para administración", err)
+		middleware.ResponderError(contexto, http.StatusInternalServerError, "Error interno al obtener los productos para administración", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, resultado)
+	contexto.JSON(http.StatusOK, resultado)
 }
 
 // BuscarProductos godoc
@@ -207,46 +207,46 @@ func (h *ProductoHandler) ObtenerProductosAdmin(c *gin.Context) {
 // @Failure      400    {object}  map[string]interface{}
 // @Failure      500    {object}  map[string]interface{}
 // @Router       /api/v1/productos/buscar [get]
-func (h *ProductoHandler) BuscarProductos(c *gin.Context) {
-	q := strings.TrimSpace(c.Query("q"))
-	if q == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
+func (manejador *ProductoHandler) BuscarProductos(contexto *gin.Context) {
+	terminoBusqueda := strings.TrimSpace(contexto.Query("q"))
+	if terminoBusqueda == "" {
+		contexto.JSON(http.StatusBadRequest, gin.H{
 			"error": "El parámetro de búsqueda 'q' es obligatorio",
 		})
 		return
 	}
 
 	var filtro domain.FiltroProductosDTO
-	filtro.Query = q
+	filtro.Query = terminoBusqueda
 
-	if pageStr := c.Query("page"); pageStr != "" {
+	if pageStr := contexto.Query("page"); pageStr != "" {
 		if page, err := strconv.Atoi(pageStr); err == nil {
 			filtro.Page = page
 		}
 	}
 
-	if limitStr := c.Query("limit"); limitStr != "" {
+	if limitStr := contexto.Query("limit"); limitStr != "" {
 		if limit, err := strconv.Atoi(limitStr); err == nil {
 			filtro.Limit = limit
 		}
 	}
 
-	resultado, err := h.service.ObtenerCatalogo(c.Request.Context(), filtro)
+	resultado, err := manejador.service.ObtenerCatalogo(contexto.Request.Context(), filtro)
 	if err != nil {
 		if errors.Is(err, services.ErrBusquedaCorta) {
-			c.JSON(http.StatusBadRequest, gin.H{
+			contexto.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
 			return
 		}
-		middleware.LogInternalError(c, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		middleware.LogInternalError(contexto, err)
+		contexto.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Error interno al buscar productos",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, resultado)
+	contexto.JSON(http.StatusOK, resultado)
 }
 
 // ObtenerDetalleProducto godoc
@@ -259,23 +259,23 @@ func (h *ProductoHandler) BuscarProductos(c *gin.Context) {
 // @Failure      404  {object}  map[string]interface{}
 // @Failure      500  {object}  map[string]interface{}
 // @Router       /api/v1/productos/{id} [get]
-func (h *ProductoHandler) ObtenerDetalleProducto(c *gin.Context) {
-	id := c.Param("id")
+func (manejador *ProductoHandler) ObtenerDetalleProducto(contexto *gin.Context) {
+	id := contexto.Param("id")
 
-	producto, err := h.service.ObtenerPorID(c.Request.Context(), id)
+	producto, err := manejador.service.ObtenerPorID(contexto.Request.Context(), id)
 	if err != nil {
 		if errors.Is(err, services.ErrProductoNoEncontrado) {
-			c.JSON(http.StatusNotFound, gin.H{
+			contexto.JSON(http.StatusNotFound, gin.H{
 				"error": "Producto no encontrado",
 			})
 			return
 		}
-		middleware.LogInternalError(c, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		middleware.LogInternalError(contexto, err)
+		contexto.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Error interno al obtener el detalle del producto",
 		})
 		return
 	}
 
-	c.JSON(http.StatusOK, producto)
+	contexto.JSON(http.StatusOK, producto)
 }

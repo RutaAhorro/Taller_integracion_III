@@ -1,3 +1,4 @@
+// Navegación móvil: resalta la sección actual y respeta los permisos del usuario.
 import { Link } from 'react-router-dom';
 import { MessageSquare, Clock, Map, User, Users, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';

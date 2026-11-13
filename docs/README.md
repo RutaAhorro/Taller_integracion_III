@@ -19,7 +19,7 @@ corrige el documento.
 | --- | --- |
 | [Arquitectura](Arquitectura/README.md) | Servicios, flujo de una petición, datos y permisos, redes y despliegue, seguridad |
 | [Decisiones](Decisiones/README.md) | Cada decisión de arquitectura con su motivo y la alternativa descartada |
-| Contratos | Contratos entre servicios: [artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md) (SUP-321) y [motor de rutas](Contratos/CONTRATO_MOTOR_RUTAS.md) (SUP-323, en revisión) |
+| Contratos | [Artículos de lista](Contratos/CONTRATO_ARTICULOS_LISTA.md) (SUP-321), [motor de rutas](Contratos/CONTRATO_MOTOR_RUTAS.md) (SUP-323) y [landing informativa](Contratos/CONTRATO_LANDING_INFORMATIVA.md) (SUP-354, excepción propuesta) |
 | [Métricas](Metricas/README.md) | Lo medido, lo configurado y lo que no se mide; incluye el [benchmark HPA](Metricas/Benchmark_HPA_Catalogo.md) |
 | [Requisitos](Requisitos/README.md) | Requisitos, reglas de negocio y términos. Describen objetivos, no funciones ya terminadas |
 | [Diagramas](Diagramas/README.md) | Arquitectura, MER, casos de uso y flujos, con el estado de cada uno |
@@ -55,12 +55,11 @@ verificado. [Frontend](../frontend/web/README.md) ·
 [Catálogo](../backend/catalogo/README.md) · [Scraper Go](../backend/scraper_go/README.md) ·
 [Motor de rutas](../backend/motor_rutas/README.md).
 
-Tres guías de la extracción de servicios siguen vigentes en parte y se fusionan
-en el README de su servicio durante el barrido; después se eliminan:
-[Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347),
-[Catálogo](Guias/GUIA_CATALOGO_INDEPENDIENTE.md) e
-[ingesta](Guias/GUIA_CATALOGO_INGESTA.md) (SUP-349). La guía de enrutamiento
-de Catálogo fue integrada en el README de Gateway en SUP-350.
+La guía de extracción de [Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347)
+sigue vigente en parte y se fusiona en el README de su servicio durante el barrido.
+Las guías de Catálogo e ingesta fueron integradas en el [README de Catálogo](../backend/catalogo/README.md)
+en SUP-349. La guía de enrutamiento de Catálogo fue integrada en el [README de Gateway](../backend/gateway/README.md)
+en SUP-350.
 
 ## Fuera del repositorio
 

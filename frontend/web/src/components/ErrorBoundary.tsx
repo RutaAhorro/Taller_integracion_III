@@ -1,3 +1,4 @@
+// Registra errores de navegación y ofrece una salida segura hacia el inicio.
 import { useRouteError } from 'react-router-dom';
 import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { logger } from '@/lib/logger';

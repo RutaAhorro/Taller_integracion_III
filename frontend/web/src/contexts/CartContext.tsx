@@ -1,3 +1,4 @@
+// Mantiene productos y cantidades del carrito en memoria; no persiste listas en el servidor.
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
 import type { UiProduct as Product } from '@/types'
 import { useToast } from '@/contexts/ToastContext'
@@ -94,7 +95,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 export function useCart() {
   const context = useContext(CartContext)
   if (context === undefined) {
-    throw new Error('useCart must be used within a CartProvider')
+    throw new Error('useCart debe usarse dentro de CartProvider')
   }
   return context
 }

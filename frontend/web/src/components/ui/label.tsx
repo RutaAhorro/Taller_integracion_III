@@ -1,3 +1,4 @@
+// Etiqueta accesible para asociar textos con controles del formulario.
 "use client"
 
 import * as React from "react"

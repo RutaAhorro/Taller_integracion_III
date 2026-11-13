@@ -1,3 +1,4 @@
+// Compone campos de formulario con etiquetas, descripciones, orientación y mensajes de error.
 "use client"
 
 import { useMemo } from "react"

@@ -1,3 +1,4 @@
+// Centraliza las rutas usadas por navegación, enlaces y controles de acceso.
 export const ROUTES = {
   HOME: '/',
   CATALOGO: '/dashboard',
@@ -15,10 +16,3 @@ export const ROUTES = {
   PLANES: '/planes',
   TERMINOS: '/terminos',
 } as const;
-
-export const MOCK_ROUTES: Record<string, 'Sprint 2' | 'Sprint 3'> = {
-  [ROUTES.CHAT]: 'Sprint 2',
-  [ROUTES.COLABORADOR]: 'Sprint 2',
-  [ROUTES.RUTA]: 'Sprint 3',
-  [ROUTES.HISTORIAL]: 'Sprint 3',
-};

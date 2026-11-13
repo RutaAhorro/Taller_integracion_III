@@ -22,7 +22,7 @@ SERVICES = {
     "backend/scraper_go": ("Scraper Go", (".go",)),
     "backend/bot_discord": ("Bot Discord", (".go",)),
     "backend/ia_conversacional": ("IA conversacional", (".py",)),
-    "backend/motor_rutas": ("Motor de rutas / Listas", (".py",)),
+    "backend/motor_rutas": ("Motor de rutas / Listas", (".go",)),
     "frontend/web/src": ("Frontend", (".ts", ".tsx")),
 }
 

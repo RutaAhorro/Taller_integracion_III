@@ -166,18 +166,18 @@ services:
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     healthcheck:
-      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/_rutas/ready', timeout=2)"]
+      test: [CMD, wget, -q, --spider, http://127.0.0.1:8001/_rutas/ready]
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 15s
+      start_period: 10s
     networks:
       microservices_net:
         aliases: [motor-rutas]
     deploy:
       resources:
-        reservations: {cpus: '0.1', memory: 64M}
-        limits: {cpus: '0.5', memory: 256M}
+        reservations: {cpus: '0.1', memory: 32M}
+        limits: {cpus: '0.5', memory: 128M}
   gateway:
     build:
       context: ./backend/gateway
