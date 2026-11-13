@@ -20,10 +20,10 @@ código.
 | RN-02 | Tratamiento del stock | Sin stock, el producto se excluye de la ruta y se muestra una alerta visual; no se elimina en silencio | Sprint 3 (SUP-331, [contrato de artículos](../Contratos/CONTRATO_ARTICULOS_LISTA.md)) |
 | RN-06 | Validación de la IA | El backend detecta la falta de stock antes de que la IA redacte, para que no recomiende lo que no existe | Sprint 3 (SUP-325, SUP-315) |
 | RN-07 | Límite de locales | La ruta tiene un máximo configurable de tiendas | Sprint 3: máximo 3 (SUP-323) |
-| RN-08 | Umbral de rentabilidad | Solo se sugiere una ruta con varias tiendas si el ahorro neto supera el umbral configurado | Sprint 3 (SUP-328) |
+| RN-08 | Umbral de rentabilidad | Solo se sugiere una ruta con varias tiendas si el ahorro neto supera el umbral configurado | Sprint 3 (SUP-328). `RUTAS_UMBRAL_AHORRO`, definido en el [contrato del motor](../Contratos/CONTRATO_MOTOR_RUTAS.md) (SUP-323) |
 | RN-11 | Control de acceso | Invitado (solo lectura), registrado y colaborador. Una acción protegida de un invitado lo lleva a iniciar sesión | Implementado (roles `registrado`, `colaborador`, `admin`). La cuota de IA por rol queda fuera de alcance |
 | RN-14 | Capacidad de proceso | El motor rechaza listas que superen la capacidad máxima configurada | Sprint 3 (SUP-316) |
-| RN-20 | Monto mínimo | La ruta solo se calcula si el subtotal supera el monto mínimo; si no, se sugiere agregar productos | Sprint 3: definir en SUP-323 |
+| RN-20 | Monto mínimo | La ruta solo se calcula si el subtotal supera el monto mínimo; si no, se sugiere agregar productos | Diferida: fuera del MVP del Sprint 3 ([contrato del motor](../Contratos/CONTRATO_MOTOR_RUTAS.md), sección 7) |
 | RN-22 | Medio de transporte | El cálculo exige saber cómo viaja el usuario para convertir distancia en dinero | Sprint 3, acotado: vehículo particular, con el rendimiento en la solicitud (SUP-323) |
 | RN-25 / RN-26 | Misiones de colaborador | Puntos y tokens de IA por validar precios | Fuera de alcance (crowdsourcing) |
 
