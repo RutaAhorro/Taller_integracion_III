@@ -273,7 +273,8 @@ export function AuthPanel() {
                 <Button
                   variant="ghost"
                   className="text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-transparent"
-                  onClick={() => { logout(); navigate('/dashboard'); }}
+                  disabled={isLoading}
+                  onClick={async () => { await logout(); navigate('/dashboard'); }}
                 >
                   Continuar como invitado
                 </Button>
