@@ -12,6 +12,7 @@ flowchart LR
     Gateway -->|/api/v1/productos/*| Catalogo[Catálogo]
     Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*| Identidad[Identidad]
     Gateway -->|/api/v1/listas/*| Rutas[Motor de rutas]
+    Gateway -->|/api/v1/chat/*| IA[IA conversacional]
     Gateway -->|/api/v1/scraper/*, /swagger/*, health| Control[Control de scraping]
 ```
 
@@ -22,6 +23,7 @@ flowchart LR
 | `/api/v1/auth` y subrutas | Identidad (`IDENTIDAD_URL`) | Login, registro, sesiones y OAuth |
 | `/api/v1/admin/usuarios` y subrutas | Identidad (`IDENTIDAD_URL`) | Métricas y administración de cuentas |
 | `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
+| `/api/v1/chat` y subrutas | IA conversacional (`IA_URL`) | Interacción con asistente de IA conversacional (SUP-278) |
 | `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
 | `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Healthchecks heredados agregados |
 | `/_gateway/live`, `/_gateway/ready` | Gateway (local) | Liveness y readiness del proceso router |
@@ -51,7 +53,7 @@ curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 
 `/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
 `/_gateway/dependencies` consulta en paralelo la salud de Control, Catálogo,
-Identidad y Motor de rutas con un límite común (`GATEWAY_READINESS_TIMEOUT`) y sin
+Identidad, Motor de rutas e IA conversacional con un límite común (`GATEWAY_READINESS_TIMEOUT`) y sin
 seguir redirects. Responde 503 si alguno falla. Este diagnóstico está desacoplado del
 readiness probe de Kubernetes para evitar que la caída de un servicio retire el
 tráfico hacia los dominios sanos.
@@ -66,7 +68,8 @@ Ver `.env.example` para una plantilla lista para usar.
 | `BACKEND_URL` | Obligatoria sólo sin `SCRAPING_URL` | Origen de respaldo para rollback hacia API monolítica |
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo |
 | `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad |
-| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; vacío devuelve 404 en `/api/v1/listas` |
+| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él devuelve 404 en `/api/v1/listas` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
+| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; sin ella devuelve 404 en `/api/v1/chat` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el upstream |
@@ -81,6 +84,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios` | Prefijos enrutados a Identidad |
 | `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas` | Prefijos enrutados a Motor de rutas |
 | `GATEWAY_SCRAPING_PREFIXES` | `/api/v1/scraper,/swagger` | Prefijos enrutados a Control de scraping |
+| `GATEWAY_IA_PREFIXES` | `/api/v1/chat` | Prefijos enrutados a IA conversacional |
 
 Los timeouts deben ser duraciones positivas de Go (`500ms`, `5s`, `30s`). Una
 configuración inválida aborta el arranque con mensaje explicativo.
