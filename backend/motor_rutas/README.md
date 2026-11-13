@@ -73,6 +73,7 @@ no abre HTTP. No ejecuta migraciones.
 | `internal/db` | Pool `pgx` y verificación de grants al arrancar |
 | `internal/listas` | Modelo, normalización del nombre y SQL |
 | `internal/httpapi` | Rutas, CORS, `X-Request-ID`, logs y errores |
+| `internal/optimizacion` | Cálculo de la ruta según el [contrato del motor](../../docs/Contratos/CONTRATO_MOTOR_RUTAS.md): conjuntos de tiendas y asignación (SUP-313), orden de visita, traslado, base de una tienda y umbral de ahorro (SUP-328). Sin HTTP ni SQL; todavía no tiene endpoint (SUP-316) |
 | `tests/unit`, `tests/integration` | Pruebas fuera del código de producción |
 
 ## Pruebas
