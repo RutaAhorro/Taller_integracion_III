@@ -13,7 +13,9 @@
 - 404 y 405 los despacha `httpapi.rutas` a mano para conservar el envoltorio
   `{"estado","mensaje","detalle"?}`; no reemplazar por `ServeMux` con métodos.
 - Agregar/quitar artículos y validar stock llegan con SUP-241: no conceder
-  permisos preventivos. No hay algoritmo de rutas ni OTP/OSRM todavía.
+  permisos preventivos. Sin OTP/OSRM.
+- `internal/optimizacion`: cálculo puro del contrato del motor (SUP-313/328),
+  sin HTTP ni SQL; recibe parámetros, no lee el entorno. Endpoint en SUP-316.
 - Pruebas: `go test ./...` y `go vet ./...` desde el servicio (`-race` en
   Docker/CI). `tests/integration` requiere una BD desechable (ver README).
 
@@ -21,9 +23,9 @@
 
 ## Índice breve generado
 
-13 archivos fuente, incluidos los de pruebas. Distribución:
+19 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 8 archivos.
-- `tests`: 4 archivos.
+- `internal`: 13 archivos.
+- `tests`: 5 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.
