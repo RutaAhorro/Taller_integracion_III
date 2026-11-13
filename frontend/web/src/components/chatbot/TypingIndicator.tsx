@@ -1,3 +1,4 @@
+// Indicador visual de espera mientras el asistente procesa una solicitud.
 import { cn } from '@/lib/utils';
 
 export function TypingIndicator({ className }: { className?: string }) {

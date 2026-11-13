@@ -1,3 +1,4 @@
+// Gestiona avisos temporales de la interfaz y su cierre automático.
 import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { CheckCircle2, AlertCircle, Info, XCircle, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -25,7 +26,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     
     setTimeout(() => {
       removeToast(id);
-    }, 4000); // 4 seconds duration
+    }, 4000);
   }, []);
 
   const removeToast = useCallback((id: string) => {
@@ -35,7 +36,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {/* Toast Container */}
       <div className="fixed top-4 right-0 left-0 sm:left-auto sm:right-4 z-[10000] flex flex-col gap-2 w-full sm:w-80 pointer-events-none px-4 sm:px-0">
         {toasts.map((t) => (
           <ToastItem key={t.id} toast={t} onClose={() => removeToast(t.id)} />
@@ -51,7 +51,7 @@ export const useToast = () => {
   return context;
 };
 
-// Internal Component for the individual Toast
+// Renderiza un aviso individual y permite descartarlo manualmente.
 function ToastItem({ toast, onClose }: { toast: Toast; onClose: () => void }) {
   const icons = {
     success: <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />,

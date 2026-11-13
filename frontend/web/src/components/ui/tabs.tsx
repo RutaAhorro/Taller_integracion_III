@@ -1,3 +1,4 @@
+// Pestañas accesibles con estilos compartidos para controles y contenido de cada sección.
 "use client"
 
 import { Tabs as TabsPrimitive } from "@base-ui/react/tabs"

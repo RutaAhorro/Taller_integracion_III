@@ -1,4 +1,4 @@
-import { supermarkets as fallbackMarkets } from './constants';
+// Consulta Catálogo y adapta sus productos sin añadir cadenas, precios o ubicaciones ficticias.
 import type { UiProduct as Product, UiSupermarket } from '@/types';
 
 const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
@@ -35,6 +35,7 @@ type ProductPage = {
   total_paginas?: number
 }
 
+/** Normaliza el nombre de una cadena para usarlo como identificador de interfaz. */
 export function slugifyMarket(name: string | null | undefined) {
   return (name ?? '')
     .toLowerCase()
@@ -44,26 +45,20 @@ export function slugifyMarket(name: string | null | undefined) {
     .replace(/^-+|-+$/g, '');
 }
 
-function supermarketId(name: string) {
-  return slugifyMarket(name);
-}
-
-// Metadatos visuales (logo/color/coords) para una cadena scrapeada.
-// Usa la lista fija solo como respaldo: si la cadena no está ahí,
-// devuelve valores neutros en vez de romper el filtro.
-export function marketMeta(name: string): Pick<UiSupermarket, 'logo' | 'color' | 'coords'> {
-  const found = fallbackMarkets.find(
-    (market) => slugifyMarket(market.name) === slugifyMarket(name),
-  );
-  return {
-    logo: found?.logo ?? '/placeholder.svg',
-    color: found?.color ?? 'oklch(0.5 0 0)',
-    coords: found?.coords ?? [0, 0],
-  };
-}
-
 export const FALLBACK_MARKET_NAME = 'Sin supermercado';
 
+/** Obtiene solo las cadenas presentes en la muestra recibida; no representa todo el catálogo. */
+export function getMarketsFromProducts(products: Product[]): UiSupermarket[] {
+  const markets = new Map<string, UiSupermarket>();
+  for (const product of products) {
+    const name = product.supermarketName?.trim();
+    if (!name || name === FALLBACK_MARKET_NAME || !product.supermarketId) continue;
+    markets.set(product.supermarketId, { id: product.supermarketId, name });
+  }
+  return Array.from(markets.values());
+}
+
+/** Conserva los datos recibidos y transforma los nombres del contrato para los componentes. */
 export function toUiProduct(product: ApiProduct): Product {
   const marketName = product.supermercado || FALLBACK_MARKET_NAME;
   return {
@@ -75,18 +70,20 @@ export function toUiProduct(product: ApiProduct): Product {
     unit: product.unidad || 'Unidad',
     price: product.precio,
     originalPrice: product.precio_normal || product.precio,
-    supermarketId: supermarketId(marketName),
+    supermarketId: slugifyMarket(marketName),
     supermarketName: marketName,
     inStock: product.en_stock,
   }
 }
 
+/** Propaga los errores de las lecturas del catálogo. */
 async function request<T>(path: string): Promise<T> {
   const response = await fetch(`${API_URL}${path}`)
   if (!response.ok) throw new Error(`La API respondió con ${response.status}`)
   return response.json() as Promise<T>
 }
 
+/** Recupera una página de productos con los totales informados por el servidor. */
 export async function getProducts(params = '') {
   const page = await request<ProductPage>(`/productos${params}`)
   return {
@@ -97,6 +94,7 @@ export async function getProducts(params = '') {
   }
 }
 
+/** Recupera el producto seleccionado y su historial real de precios. */
 export async function getProductDetail(id: string) {
   const product = await request<ApiProductDetail>(`/productos/${encodeURIComponent(id)}`)
   return { product: toUiProduct(product), history: product.historial }

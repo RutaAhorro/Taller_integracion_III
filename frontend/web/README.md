@@ -11,8 +11,8 @@ Vite se utiliza para desarrollo y compilación.
   los servicios del backend.
 - Usar Node.js 22 actualizado (el Dockerfile utiliza `node:22-alpine`) y npm si
   se desarrolla fuera de Docker. Instalar las versiones del lockfile con `npm ci`.
-- No confundir una pantalla disponible con un flujo integrado: chat, misiones,
-  rutas e historial están envueltos como vistas de demostración en el router.
+- No confundir una ruta disponible con un flujo integrado: misiones, rutas,
+  historial, planes y configuración inicial muestran avisos de no disponibilidad.
 
 ## Desarrollo con Docker y recarga automática
 
@@ -90,31 +90,39 @@ La fuente de verdad es `src/app/router.tsx`, con constantes en
 | `/onboarding`, `/profile`, `/planes` | Requieren sesión; no implican preferencias persistidas o pagos integrados |
 | `/listas` | Requiere sesión; CRUD de listas si el motor está disponible. Artículos en solo lectura |
 | `/admin`, `/admin/metricas` | Solo rol admin; usuarios, fuentes y métricas según endpoints disponibles |
-| `/chat` | Vista de demostración; el cliente usa `/chat/gemini`, pero la IA expone `/api/v1/chat` y Gateway aún no lo enruta |
-| `/colaborador` | Colaborador/admin; misiones simuladas |
-| `/route`, `/history` | Requieren sesión; vistas de demostración, no optimización/historial reales |
+| `/chat` | Vista previa con aviso visible de no disponibilidad hasta SUP-253; el cliente conserva `/chat/gemini`, un endpoint retirado. No es un chat integrado |
+| `/colaborador` | Colaborador/admin; aviso de misiones no disponibles |
+| `/route`, `/history` | Requieren sesión; avisos de cálculo e historial aún no integrados |
 | `/terminos` | Página pública de términos |
 
-El router muestra avisos mediante `MockShell` en chat, colaborador, rutas e
-historial. No hay endpoints de IA, misiones o rutas reales disponibles solo por
-tener estas páginas. En el clúster informado para Sprint 2 tampoco está el motor
-de listas. El carrito temporal del catálogo **no se sincroniza con las listas**.
+Las vistas pendientes usan `FeatureUnavailable`, excepto el chat, que conserva su interfaz con un aviso visible de integración pendiente; no generan resultados simulados.
+La portada es informativa: sus textos, productos y cifras ilustrativas provienen
+de `src/data/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
+El catálogo funcional no usa esos ejemplos. Sus cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
+representan la cobertura completa ni las facetas de una búsqueda. El filtro
+«Marcas blancas» está deshabilitado hasta disponer de clasificación en el backend.
+El carrito temporal del catálogo **no se sincroniza con las listas**.
+
+Antes de modificar o retirar `landing.json`, consultar el
+[contrato de la landing informativa](../../docs/Contratos/CONTRATO_LANDING_INFORMATIVA.md):
+documenta el motivo de su conservación y los límites de la excepción propuesta
+al barrido.
 
 ## Organización del código
 
 ```text
 src/app/router.tsx       Router, proveedores y protección de rutas
-src/core/routes.ts      Rutas y clasificación de vistas de demostración
+src/core/routes.ts      Constantes de navegación
 src/contexts/           Sesión, carrito temporal y notificaciones
 src/features/admin/     Panel, clientes API y hooks administrativos
 src/features/listas/    Cliente HTTP de listas
-src/hooks/              Catálogo, autenticación, chat y simulación de rutas
+src/hooks/              Catálogo, autenticación y chat
 src/lib/products-api.ts Cliente de catálogo y adaptación de respuestas
 src/lib/roles.ts        Normalización de roles para la interfaz
-src/pages/              Páginas y vistas de demostración
+src/pages/              Páginas funcionales y avisos de integraciones pendientes
 src/layouts/            Estructura de navegación
 src/components/         Componentes compartidos y primitivas de UI
-tests/                  Pruebas del cliente de listas
+tests/                  Pruebas críticas de listas, administración y errores del chat
 ```
 
 El alias `@/` apunta a `src/`. Se usan React Context y hooks; no Redux/Zustand.
@@ -131,9 +139,8 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
 - `ProtectedRoute` controla navegación; la autorización efectiva corresponde
   al backend. Roles: `registrado`, `colaborador`, `admin`; el plan `premium` es
   un concepto distinto del rol.
-- Los mocks administrativos se utilizan cuando no se configura la base API;
-  no deben presentarse como resultados reales. Revisar los mensajes de carga,
-  error y «sin datos», especialmente ante fallos parciales de métricas.
+- Sin base API, administración muestra un error de configuración y no utiliza
+  datos de ejemplo. Los fallos parciales de métricas se muestran como «sin datos».
 - No existe una cuenta admin precreada documentada. Solicitar su asignación a
   un operador autorizado, sin cambiar validaciones ni falsificar el usuario local.
 
@@ -144,7 +151,7 @@ Desde `frontend/web`:
 ```bash
 npm run lint
 npx tsc -b --noEmit
-node --test tests/listas-api.test.mjs
+npm test
 npm run build
 ```
 

@@ -1,3 +1,4 @@
+// Acceso al estado y operaciones de sesión compartidos por AuthProvider.
 import { useContext } from 'react';
 import { AuthContext } from '../contexts/AuthContext';
 

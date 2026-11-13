@@ -1,3 +1,4 @@
+// Carrusel horizontal para los productos recibidos, con controles de desplazamiento.
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useRef } from 'react'
 import { ProductCard } from '@/components/ProductCard'

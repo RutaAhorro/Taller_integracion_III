@@ -1,3 +1,4 @@
+// Permite revisar y editar el carrito temporal; no equivale a una lista persistida.
 import { X, Minus, Plus, ShoppingBag, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useCart } from '@/contexts/CartContext'
@@ -10,20 +11,17 @@ export function CartSidebar() {
 
   return (
     <>
-      {/* Backdrop overlay */}
       <div 
         className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity"
         onClick={() => setIsCartOpen(false)}
         aria-hidden="true"
       />
 
-      {/* Sidebar Panel */}
       <aside 
         className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-border bg-card shadow-2xl duration-300 animate-in slide-in-from-right"
         role="dialog"
         aria-label="Carrito de compras"
       >
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-5 py-4">
           <div className="flex items-center gap-2 font-semibold">
             <ShoppingBag className="h-5 w-5 text-primary" />
@@ -39,7 +37,6 @@ export function CartSidebar() {
           </Button>
         </div>
 
-        {/* Cart Items List */}
         <div className="flex-1 overflow-y-auto p-5">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center text-muted-foreground">
@@ -51,7 +48,6 @@ export function CartSidebar() {
             <ul className="flex flex-col gap-6">
               {items.map(({ product, quantity }) => (
                 <li key={product.id} className="flex gap-4">
-                  {/* Product Image */}
                   <div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-xl border border-border bg-secondary p-2">
                     <img 
                       src={product.image || '/placeholder.svg'} 
@@ -62,7 +58,6 @@ export function CartSidebar() {
                     />
                   </div>
 
-                  {/* Product Info */}
                   <div className="flex flex-1 flex-col">
                     <h3 className="text-sm font-semibold leading-tight line-clamp-2" title={product.name}>
                       {product.name}
@@ -76,7 +71,6 @@ export function CartSidebar() {
                         {formatPrice(product.price * quantity)}
                       </span>
                       
-                      {/* Quantity Controls */}
                       <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-1">
                         <button
                           className="flex h-6 w-6 items-center justify-center rounded-md hover:bg-secondary disabled:opacity-50"
@@ -104,7 +98,6 @@ export function CartSidebar() {
           )}
         </div>
 
-        {/* Footer / Checkout */}
         {items.length > 0 && (
           <div className="border-t border-border bg-secondary/30 p-5">
             <div className="mb-4 flex items-center justify-between">

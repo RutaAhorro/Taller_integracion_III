@@ -1,3 +1,4 @@
+// Panel administrativo con usuarios, fuentes y métricas reales o errores explícitos por servicio.
 import { useEffect, useMemo, useState } from 'react';
 import {
   Activity,
@@ -20,7 +21,7 @@ import { ROUTES } from '@/core/routes';
 import { useAuth } from '@/hooks/useAuth';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
-import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-mock-data';
+import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-types';
 import { useAdminMetrics, useAdminSources, useAdminUsers, type AdminMetricsState } from './useAdminData';
 
 const statusStyles = {
@@ -432,8 +433,8 @@ function Overview() {
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-2 text-sm font-bold text-primary">Miércoles, 15 de octubre de 2026</p>
-          <h2 className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Hola, administradora 👋</h2>
+          <p className="mb-2 text-sm font-bold text-primary">{new Date().toLocaleDateString('es-CL', { dateStyle: 'full' })}</p>
+          <h2 className="font-serif text-3xl font-bold tracking-tight md:text-4xl">Hola, equipo de administración 👋</h2>
           <p className="mt-2 max-w-2xl text-muted-foreground">Este es el estado general de tu plataforma. Revisa usuarios y fuentes desde un mismo lugar.</p>
         </div>
         <button
@@ -473,7 +474,7 @@ function MetricsSection() {
           <h2 className="font-serif text-3xl font-bold">Métricas</h2>
           <p className="mt-2 max-w-2xl text-muted-foreground">
             Tres endpoints en paralelo (SUP-279), uno por servicio. El Gateway no agrega: el frontend combina.
-            {!ADMIN_HAS_BACKEND && ' Hoy se muestran datos de ejemplo hasta crear los endpoints.'}
+            {!ADMIN_HAS_BACKEND && ' Configura VITE_API_URL para consultar los servicios.'}
           </p>
         </div>
         <button
@@ -508,6 +509,7 @@ function MetricsSection() {
   );
 }
 
+/** Resuelve los alias de ruta y consulta sin aceptar secciones desconocidas. */
 function resolveSection(pathname: string, search: string): AdminSection {
   if (pathname.endsWith('/metricas')) return 'metrics';
   const raw = new URLSearchParams(search).get('section');
@@ -522,7 +524,7 @@ export default function AdminDashboard() {
   const section = resolveSection(pathname, search || `?${params.toString()}`);
 
   // SUP-256: el RBAC vive en el router (ProtectedRoute roles=['admin']).
-  // Este componente solo monta con rol admin; sin backend muestra mocks.
+  // Este componente solo monta con rol admin; los errores no se sustituyen por datos de ejemplo.
   const content = section === 'users'
     ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Usuarios</h2><p className="mt-2 text-muted-foreground">Gestiona las cuentas y permisos de la plataforma.</p></div><UsersTable showActions /></>
     : section === 'sources'
@@ -535,7 +537,7 @@ export default function AdminDashboard() {
     <AdminLayout>
       {!ADMIN_HAS_BACKEND && (
         <p className="mb-4 rounded-xl border border-[#dfe5dc] bg-[#fafbf9] px-4 py-2.5 text-xs text-muted-foreground" role="note">
-          Datos de ejemplo: el backend de administración (SUP-242/243/279) aún no está conectado.
+          Administración no disponible: falta configurar VITE_API_URL. No se muestran datos de ejemplo.
         </p>
       )}
       {content}

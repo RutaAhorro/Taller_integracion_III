@@ -1,8 +1,9 @@
+// Define las rutas públicas y protegidas y reúne los proveedores de la aplicación.
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { ROUTES, MOCK_ROUTES } from '@/core/routes';
+import { ROUTES } from '@/core/routes';
 
-// Layouts
+// Estructuras compartidas de navegación y sesión.
 import { MainLayout } from '@/layouts/MainLayout';
 import { CartProvider } from '@/contexts/CartContext';
 import { ToastProvider } from '@/contexts/ToastContext';
@@ -22,19 +23,14 @@ import ShoppingLists from '@/pages/ShoppingLists';
 import NotFound from '@/pages/NotFound';
 import Terms from '@/pages/Terms';
 
-// Sprint 2+ — componentes ya construidos, envueltos como mock
+// Vistas integradas o con estado explícito de no disponibilidad.
 import Chatbot from '@/pages/Chatbot';
 import Crowdsourcing from '@/pages/Crowdsourcing';
 import RouteViewer from '@/pages/RouteViewer';
 import History from '@/pages/History';
-import MockShell from '@/pages/mocks/MockShell';
 import Planes from '@/pages/Planes';
 import AdminDashboard from '@/features/admin/AdminDashboard';
 
-const chatSprint = MOCK_ROUTES[ROUTES.CHAT];
-const colabSprint = MOCK_ROUTES[ROUTES.COLABORADOR];
-const rutaSprint = MOCK_ROUTES[ROUTES.RUTA];
-const histSprint = MOCK_ROUTES[ROUTES.HISTORIAL];
 
 const router = createBrowserRouter([
   // ───────────────────────────────────────────────────────────
@@ -52,17 +48,13 @@ const router = createBrowserRouter([
       // Sprint 2+ (con SideBar disponible)
       {
         path: ROUTES.CHAT,
-        element: (
-          <MockShell sprint={chatSprint}>
-            <Chatbot />
-          </MockShell>
-        ),
+        element: <Chatbot />,
       },
     ],
   },
 
   // ───────────────────────────────────────────────────────────
-  // Grupo B: MainLayout (BottomNav + página con header propio + SideBar global) - PROTEGIDAS
+  // Grupo B: navegación compartida y páginas protegidas con cabecera propia.
   // ───────────────────────────────────────────────────────────
   {
     element: <MainLayout />,
@@ -80,29 +72,17 @@ const router = createBrowserRouter([
             children: [
               {
                 path: ROUTES.COLABORADOR,
-                element: (
-                  <MockShell sprint={colabSprint}>
-                    <Crowdsourcing />
-                  </MockShell>
-                ),
+                element: <Crowdsourcing />,
               },
             ],
           },
           {
             path: ROUTES.RUTA,
-            element: (
-              <MockShell sprint={rutaSprint}>
-                <RouteViewer />
-              </MockShell>
-            ),
+            element: <RouteViewer />,
           },
           {
             path: ROUTES.HISTORIAL,
-            element: (
-              <MockShell sprint={histSprint}>
-                <History />
-              </MockShell>
-            ),
+            element: <History />,
           },
         ]
       }
@@ -110,7 +90,7 @@ const router = createBrowserRouter([
   },
 
   // ───────────────────────────────────────────────────────────
-  // Grupo C: sin layout (pantalla completa)
+  // Grupo C: sin estructura compartida (pantalla completa).
   // ───────────────────────────────────────────────────────────
   { path: ROUTES.HOME, element: <Home />, errorElement: <ErrorBoundary /> },
   { path: ROUTES.LOGIN, element: <Login /> },
@@ -133,7 +113,7 @@ const router = createBrowserRouter([
     ]
   },
 
-  // Catch-all
+  // Destino de las rutas no reconocidas.
   { path: '*', element: <NotFound /> },
 ]);
 

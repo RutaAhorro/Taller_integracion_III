@@ -1,10 +1,11 @@
+// Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
 import { useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { TopNav } from "@/components/TopNav";
 import { SideBar } from "@/components/Sidebar";
 import { CartSidebar } from "@/components/CartSidebar";
 import BottomNav from "@/components/BottomNav";
-import { getProducts, marketMeta, FALLBACK_MARKET_NAME } from "@/lib/products-api";
+import { getProducts, getMarketsFromProducts } from "@/lib/products-api";
 import type { UiSupermarket } from "@/types";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/contexts/CartContext";
@@ -42,22 +43,8 @@ export function MainLayout() {
       .then(({ products }) => {
         if (!isMounted) return;
 
-        // Cadenas obtenidas del catálogo scrapeado (no hardcodeadas):
-        // cada producto trae su supermercado real y aquí solo se deducen.
-        const markets = new Map<string, UiSupermarket>();
-        products.forEach((product) => {
-          // Se descartan productos sin cadena real para no generar un
-          // botón de filtro ("Sin supermercado") que retorna 0 productos.
-          if (!product.supermarketName || product.supermarketName === FALLBACK_MARKET_NAME || markets.has(product.supermarketId)) return;
-
-          markets.set(product.supermarketId, {
-            id: product.supermarketId,
-            dbId: 0,
-            name: product.supermarketName,
-            ...marketMeta(product.supermarketName),
-          });
-        });
-        setAvailableMarkets(Array.from(markets.values()));
+        // Hasta SUP-371 solo se conocen las cadenas de esta página; no se descarga todo el catálogo.
+        setAvailableMarkets(getMarketsFromProducts(products));
       })
       .catch(() => {
         if (isMounted) setAvailableMarkets([]);
@@ -101,7 +88,6 @@ export function MainLayout() {
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        {/* Main Content Area */}
         <Outlet context={{ query, activeMarket, category, markets: availableMarkets } satisfies LayoutContextType} />
       </div>
 

@@ -1,3 +1,4 @@
+/* Define tipografías, colores, temas y utilidades visuales compartidas de la aplicación. */
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
 @import 'tailwindcss';
 @import 'tw-animate-css';
@@ -5,7 +6,7 @@
 
 :root {
   /* =========================================
-     1. PALETA BASE (Anchor: Olive Green)
+     1. PALETA BASE (verde oliva)
      ========================================= */
   --brand-primary: #5E7250;
   /* Verde sugerido por el ayudante - Fino y natural */
@@ -15,7 +16,7 @@
   /* Tonos madera/tierra para acentos suaves */
   --earth-hover: #DFD7CA;
   --amber: #D4A373;
-  /* Para destellos, ofertas o "glow" */
+  /* Acentos para ofertas y efectos luminosos. */
 
   --bg-warm: #FDFBF7;
   /* Blanco roto/crema para el fondo */
@@ -62,14 +63,14 @@
   --input: var(--border-color);
   --ring: var(--brand-primary);
 
-  /* Gráficos / Charts */
+  /* Gráficos */
   --chart-1: var(--brand-primary);
   --chart-2: var(--amber);
   --chart-3: var(--brand-primary-dark);
   --chart-4: var(--earth-light);
   --chart-5: var(--ai-purple);
 
-  /* Sidebar */
+  /* Panel lateral */
   --sidebar: var(--bg-warm);
   --sidebar-foreground: var(--text-main);
   --sidebar-primary: var(--brand-primary);
@@ -103,7 +104,7 @@
   --shadow-2xl: 0 32px 80px rgba(42, 51, 36, .25);
 
   /* =========================================
-     5. VARIABLES CUSTOM APP
+     5. VARIABLES PROPIAS DE LA APLICACIÓN
      ========================================= */
   --discount: var(--amber);
   --discount-foreground: #FFFFFF;
@@ -113,7 +114,7 @@
   --brand-glow: var(--amber);
   --is-dark: 0;
 
-  /* Landing Page Colors */
+  /* Colores de la portada */
   --landing-olive: #5E7250;
   --landing-olive-soft: #F2EFE9;
   --landing-amber: #D4A373;

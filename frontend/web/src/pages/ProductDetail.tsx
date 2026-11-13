@@ -1,3 +1,4 @@
+// Consulta el producto seleccionado y muestra precios e historial recibidos del backend.
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { PackageCheck, Plus, ShoppingCart, Store, Tag } from 'lucide-react'
@@ -172,7 +173,6 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* Mobile Bottom Bar / Desktop Buttons */}
           <div 
             className="fixed left-0 right-0 z-40 rounded-t-2xl border-t border-border bg-background p-4 shadow-[0_-8px_30px_rgba(0,0,0,0.08)] sm:static sm:z-auto sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none mt-auto flex flex-col gap-3"
             style={{ bottom: 'calc(4rem + env(safe-area-inset-bottom, 0px))' }}

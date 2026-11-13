@@ -1,3 +1,4 @@
+// Gestiona la carga paginada del catálogo y los filtros disponibles en la API.
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLayoutContext } from '@/layouts/MainLayout';
 import { getProducts } from '@/lib/products-api';
@@ -6,25 +7,7 @@ import type { UiProduct as Product } from '@/types';
 
 const PAGE_SIZE = 24;
 
-// Marcas propias de las cadenas chilenas (para el filtro "Marcas blancas").
-const STORE_BRAND_TERMS = [
-  'lider',
-  'a cuenta',
-  'acuenta',
-  'ekono',
-  'jumbo',
-  'santa isabel',
-  'tottus',
-  'unimarc',
-  'cugat',
-  'great value',
-  'mi marca',
-];
-
 const isOfferFilter = (category: string | null) => category === 'ofertas' || category === 'descuentos';
-
-const isStoreBrand = (product: Product) =>
-  STORE_BRAND_TERMS.some((term) => product.brand.toLowerCase().includes(term));
 
 const savings = (p: Product) => p.originalPrice - p.price;
 
@@ -41,8 +24,7 @@ export function useCatalog(query: string, category: string | null, activeMarket:
 
   const marketName = markets.find((m) => m.id === activeMarket)?.name ?? null;
 
-  // Los filtros reales los resuelve la API. "Marcas blancas" no tiene
-  // equivalente en el backend y se aplica abajo, en memoria.
+  // Construye una página con los filtros admitidos por Catálogo.
   const loadPage = (pageNum: number) => {
     const params = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE), en_stock: 'true' });
     const search = query.trim();
@@ -56,6 +38,14 @@ export function useCatalog(query: string, category: string | null, activeMarket:
   // Primera página cada vez que cambian los filtros.
   useEffect(() => {
     const current = ++requestId.current;
+    if (category === 'marcas') {
+      setProducts([]);
+      setPage(1);
+      setTotalPages(0);
+      setIsLoading(false);
+      setError('El filtro de marcas blancas aún no está disponible.');
+      return;
+    }
     setIsLoading(true);
     setError(null);
 
@@ -80,9 +70,9 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     };
   }, [query, category, marketName]);
 
-  // Scroll infinito: agrega la página siguiente sin duplicar productos.
+  // Agrega la página siguiente al continuar el desplazamiento, sin duplicar productos.
   const fetchMore = () => {
-    if (isFetchingMore || isLoading || page >= totalPages) return;
+    if (category === 'marcas' || isFetchingMore || isLoading || page >= totalPages) return;
     const current = requestId.current;
     setIsFetchingMore(true);
 
@@ -109,7 +99,6 @@ export function useCatalog(query: string, category: string | null, activeMarket:
       ? products.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q))
       : products;
 
-    if (category === 'marcas') return result.filter(isStoreBrand);
     // "Mejores ofertas" ordena por ahorro en $; "Mayor descuento", por %.
     if (category === 'ofertas') return [...result].sort((a, b) => savings(b) - savings(a));
     if (category === 'descuentos') {
@@ -121,12 +110,6 @@ export function useCatalog(query: string, category: string | null, activeMarket:
   }, [products, query, category]);
 
   const supermarketCount = useMemo(() => new Set(filtered.map((p) => p.supermarketId)).size, [filtered]);
-
-  // "Marcas blancas" filtra en memoria: si el lote trae pocas coincidencias,
-  // se piden más páginas para que la grilla no quede vacía sin scroll.
-  useEffect(() => {
-    if (category === 'marcas' && filtered.length < PAGE_SIZE / 2) fetchMore();
-  }, [category, filtered.length, page, totalPages, isLoading, isFetchingMore]);
 
   return { isLoading, error, filtered, supermarketCount, isFetchingMore, fetchMore };
 }

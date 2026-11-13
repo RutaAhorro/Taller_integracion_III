@@ -1,3 +1,4 @@
+// Presenta un producto del catálogo y comunica la selección al carrito mediante onAdd.
 'use client'
 
 import { Link } from 'react-router-dom'
@@ -10,7 +11,7 @@ import { cn } from '@/lib/utils'
 
 type ProductCardProps = {
   product: Product
-  // Se agregan props opcionales para no romper usages actuales que dependían del mock interno
+  // Permite usar metadatos visuales entregados por el componente padre.
   marketName?: string
   marketLogo?: string
   onAdd?: (product: Product) => void
@@ -23,7 +24,7 @@ const STOCK_UI = {
 } as const
 
 export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductCardProps) {
-  // Defensive fallbacks for UI
+  // Conserva una etiqueta legible cuando falta el nombre de la cadena.
   const displayMarketName = marketName || product.supermarketName || 'Tienda'
   
   const stockState = product.inStock === false ? 'out' : 'in'

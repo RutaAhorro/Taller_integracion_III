@@ -1,3 +1,4 @@
+// Reúne navegación y filtros; las cadenas proceden de productos reales y los permisos de la sesión.
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 
@@ -115,14 +116,15 @@ function SectionTitle({ children }: { children: string }) {
   return <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
 }
 
-type FilterButtonProps = { icon: LucideIcon; label: string; active: boolean; onClick: () => void }
+type FilterButtonProps = { icon: LucideIcon; label: string; active: boolean; onClick: () => void; disabled?: boolean }
 
-function FilterButton({ icon: Icon, label, active, onClick }: FilterButtonProps) {
+function FilterButton({ icon: Icon, label, active, onClick, disabled = false }: FilterButtonProps) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+      disabled={disabled}
+      className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
         active ? 'bg-accent text-accent-foreground font-bold' : 'text-foreground hover:bg-accent hover:text-accent-foreground'
       }`}
     >
@@ -155,7 +157,7 @@ export function SideBar({
     if (closeSidebar) onClose()
   }
 
-  // Close on Escape for accessibility.
+  // Permite cerrar el panel con Escape.
   useEffect(() => {
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
@@ -167,7 +169,6 @@ export function SideBar({
 
   return (
     <>
-      {/* Overlay */}
       <div
         onClick={onClose}
         aria-hidden={!open}
@@ -176,7 +177,6 @@ export function SideBar({
         }`}
       />
 
-      {/* Panel */}
       <aside
         aria-label="Menú de filtros"
         aria-hidden={!open}
@@ -230,7 +230,8 @@ export function SideBar({
                 <li key={c.id}>
                   <FilterButton
                     icon={c.icon}
-                    label={c.label}
+                    label={c.id === 'marcas' ? `${c.label} (no disponible)` : c.label}
+                    disabled={c.id === 'marcas'}
                     active={activeCategory === c.id}
                     onClick={() => handleCategoryClick(activeCategory === c.id ? '' : c.id)}
                   />
@@ -309,6 +310,7 @@ export function SideBar({
 
           <nav aria-label="Supermercados">
             <SectionTitle>Supermercados</SectionTitle>
+            <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas de los productos cargados. El listado completo está pendiente de integración.</p>
             <ul className="flex flex-col gap-1">
               <li>
                 <FilterButton
@@ -356,7 +358,6 @@ export function SideBar({
         </div>
 
         <div className="border-t border-border px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-3">
-          {/* Plan Container */}
           <Link
             to="/planes"
             onClick={onClose}
@@ -404,4 +405,3 @@ export function SideBar({
     </>
   )
 }
-

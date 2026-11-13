@@ -56,7 +56,8 @@ pueden usar lo que el paquete exporta (nombres con mayúscula).
 - `motor_rutas` se migra a Go (SUP-348) en lugar de barrerse en Python. El
   servicio nuevo se escribe directamente con esta estructura y estas reglas.
 - En el frontend, los tests van en `frontend/web/tests/` y nada de pruebas o
-  datos de ejemplo queda dentro de `src/`.
+  datos de ejemplo queda dentro de `src/`, salvo el contenido editorial de la
+  portada descrito en la excepción de la sección 2.1.
 
 ### CI
 
@@ -77,6 +78,15 @@ Si una pantalla o servicio dependía de un mock, al quitarlo debe pasar a una de
 estas tres opciones: **datos reales**, un **estado vacío explícito** ("aún no
 hay datos") o **desaparecer** si la función está fuera del alcance del sprint.
 Nunca se deja una pantalla rota o en blanco.
+
+### 2.1 Excepción propuesta: contenido informativo de la portada (SUP-354)
+
+La conservación de `frontend/web/src/data/landing.json`, su justificación y sus
+límites se definen en el
+[contrato de la landing informativa](../Contratos/CONTRATO_LANDING_INFORMATIVA.md).
+Consultar ese contrato antes de proponer eliminar el archivo durante el barrido.
+La excepción está propuesta para ratificación del equipo en el PR #141; no
+autoriza simulaciones en las vistas funcionales.
 
 ## 3. Qué cuenta como hardcodeo
 

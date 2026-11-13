@@ -1,4 +1,4 @@
-// Contrato de SUP-240. La edición de artículos se incorpora con SUP-241.
+// Cliente de listas persistidas: envía la cookie de sesión y propaga errores sin simular guardados.
 const API_URL = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 
 export type EstadoLista = 'activa' | 'completada' | 'archivada';
@@ -19,6 +19,7 @@ export type ListaDetalle = Lista & {
   }[];
 };
 
+/** Ejecuta una operación de listas y conserva los errores de autenticación o negocio del servidor. */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}/listas${path}`, {
     ...init,
