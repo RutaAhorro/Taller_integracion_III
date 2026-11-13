@@ -51,7 +51,7 @@ curl -fsS 'http://127.0.0.1:8082/api/v1/productos?page=1&limit=5'
 
 `/_gateway/live` y `/_gateway/ready` comprueban el proceso y el router configurado.
 `/_gateway/dependencies` consulta en paralelo la salud de Control, Catálogo,
-Identidad y Motor de rutas con un límite común (`GATEWAY_READINESS_TIMEOUT`) y sin
+Identidad, Motor de rutas e IA conversacional con un límite común (`GATEWAY_READINESS_TIMEOUT`) y sin
 seguir redirects. Responde 503 si alguno falla. Este diagnóstico está desacoplado del
 readiness probe de Kubernetes para evitar que la caída de un servicio retire el
 tráfico hacia los dominios sanos.
@@ -67,6 +67,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo |
 | `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad |
 | `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; vacío devuelve 404 en `/api/v1/listas` |
+| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; vacío devuelve 404 en `/api/v1/chat` |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el upstream |
@@ -81,6 +82,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios` | Prefijos enrutados a Identidad |
 | `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas` | Prefijos enrutados a Motor de rutas |
 | `GATEWAY_SCRAPING_PREFIXES` | `/api/v1/scraper,/swagger` | Prefijos enrutados a Control de scraping |
+| `GATEWAY_IA_PREFIXES` | `/api/v1/chat` | Prefijos enrutados a IA conversacional |
 
 Los timeouts deben ser duraciones positivas de Go (`500ms`, `5s`, `30s`). Una
 configuración inválida aborta el arranque con mensaje explicativo.

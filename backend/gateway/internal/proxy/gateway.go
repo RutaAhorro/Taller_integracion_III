@@ -60,6 +60,9 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		if upstream == "rutas" {
 			unavailableMessage, timeoutMessage = "El motor de rutas no está disponible.", "El motor de rutas no respondió a tiempo."
 		}
+		if upstream == "ia" {
+			unavailableMessage, timeoutMessage = "El asistente de IA no está disponible.", "El asistente de IA no respondió a tiempo."
+		}
 		return &httputil.ReverseProxy{
 			Transport: methodTransport{reads: reads, writes: writes},
 			Rewrite: func(pr *httputil.ProxyRequest) {
@@ -127,6 +130,11 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 		routesProxy = newProxy(c.Rutas, "rutas")
 	}
 
+	var iaProxy *httputil.ReverseProxy
+	if c.IA != nil {
+		iaProxy = newProxy(c.IA, "ia")
+	}
+
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id := requestID(r.Header.Get("X-Request-ID"))
 		r = r.Clone(r.Context())
@@ -190,6 +198,8 @@ func New(c config.Config, logger *slog.Logger) *Gateway {
 			catalogProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if routesProxy != nil && isPrefixedPath(r.URL.Path, c.RoutesPrefixes) {
 			routesProxy.ServeHTTP(response, r.WithContext(ctx))
+		} else if iaProxy != nil && isPrefixedPath(r.URL.Path, c.IAPrefixes) {
+			iaProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if scrapingProxy != nil && isScrapingPath(r.URL.Path, c.ScrapingPrefixes) {
 			scrapingProxy.ServeHTTP(response, r.WithContext(ctx))
 		} else if backendProxy != nil {
