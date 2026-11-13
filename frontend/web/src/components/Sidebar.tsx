@@ -1,5 +1,5 @@
 // Reúne navegación y filtros; las cadenas proceden de productos reales y los permisos de la sesión.
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 
 import {
@@ -25,6 +25,7 @@ import type { UiSupermarket } from '@/types'
 type SideBarProps = {
   open: boolean
   onClose: () => void
+  onResetFilters: () => void
   activeMarket: string | null
   availableMarkets: UiSupermarket[]
   onSelectCategory: (category: string) => void
@@ -137,6 +138,7 @@ function FilterButton({ icon: Icon, label, active, onClick, disabled = false }: 
 export function SideBar({
   open,
   onClose,
+  onResetFilters,
   activeMarket,
   availableMarkets,
   onSelectCategory,
@@ -146,6 +148,8 @@ export function SideBar({
   activeCity
 }: SideBarProps) {
   const [openDept, setOpenDept] = useState<string | null>(null)
+  const panelRef = useRef<HTMLElement>(null)
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
   const navigate = useNavigate()
   const { pathname } = useLocation()
   // SUP-256: Misiones solo colaborador o admin.
@@ -157,29 +161,55 @@ export function SideBar({
     if (closeSidebar) onClose()
   }
 
-  // Permite cerrar el panel con Escape.
+  // Mantiene el foco en el panel y lo devuelve al control de apertura.
   useEffect(() => {
     if (!open) return
+    const previousFocus = document.activeElement
+    closeButtonRef.current?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        onClose()
+      }
+      if (e.key !== 'Tab') return
+      const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(
+        'button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]'
+      ) ?? []).filter(element => !element.closest('[inert]'))
+      const first = controls[0]
+      const last = controls[controls.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last?.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first?.focus()
+      }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
+    }
   }, [open, onClose])
 
   return (
     <>
       <div
         onClick={onClose}
-        aria-hidden={!open}
+        aria-hidden="true"
         className={`fixed inset-0 z-[9998] bg-foreground/40 backdrop-blur-sm transition-opacity duration-300 ${
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       />
 
       <aside
+        id="catalog-filters"
+        ref={panelRef}
+        role="dialog"
+        aria-modal={open ? true : undefined}
         aria-label="Menú de filtros"
         aria-hidden={!open}
+        inert={!open}
         className={`fixed inset-y-0 left-0 z-[9999] flex w-[19rem] max-w-[85vw] flex-col border-r border-border bg-card shadow-2xl transition-transform duration-300 ease-out ${
           open ? 'translate-x-0' : '-translate-x-full'
         }`}
@@ -194,17 +224,28 @@ export function SideBar({
             </span>
           </div>
           <Button
+            ref={closeButtonRef}
             variant="ghost"
             size="icon"
             className="h-9 w-9 rounded-full"
             onClick={onClose}
-            aria-label="Cerrar menú"
+            aria-label="Cerrar filtros"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </Button>
         </div>
 
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto px-4 py-5">
+          <Button
+            variant="outline"
+            onClick={() => {
+              onResetFilters()
+              navigate('/dashboard')
+              onClose()
+            }}
+          >
+            Limpiar filtros
+          </Button>
           <nav aria-label="Navegación">
             <ul className="flex flex-col gap-1">
               <li>
@@ -264,7 +305,8 @@ export function SideBar({
                         {dept.label}
                       </span>
                     </button>
-                    <div
+                     <div
+                       inert={!expanded}
                       className={`grid transition-all duration-200 ease-out ${
                         expanded
                           ? 'grid-rows-[1fr] opacity-100'
