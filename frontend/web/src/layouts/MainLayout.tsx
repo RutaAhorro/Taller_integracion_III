@@ -1,5 +1,5 @@
 // Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { TopNav } from "@/components/TopNav";
 import { SideBar } from "@/components/Sidebar";
@@ -26,6 +26,12 @@ export function MainLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
   const [activeMarket, setActiveMarket] = useState<string | null>(null);
   const [availableMarkets, setAvailableMarkets] = useState<UiSupermarket[]>([]);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+  const resetFilters = () => {
+    setQuery("");
+    setCategory("");
+    setActiveMarket(null);
+  };
   const { totalItems, totalPrice, setIsCartOpen } = useCart();
   const { pathname } = useLocation();
   const activeTab = 
@@ -60,7 +66,8 @@ export function MainLayout() {
       <CartSidebar />
       <SideBar
         open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
+        onClose={closeSidebar}
+        onResetFilters={resetFilters}
         activeMarket={activeMarket}
         availableMarkets={availableMarkets}
         onSelectCategory={(value) => {
@@ -75,16 +82,14 @@ export function MainLayout() {
       />
       
       <TopNav
+        sidebarOpen={sidebarOpen}
         query={query}
         onQueryChange={(value) => {
           setQuery(value);
           if (value.trim()) setCategory("");
         }}
         onMenuClick={() => setSidebarOpen(true)}
-        onResetFilters={() => {
-          setQuery("");
-          setCategory("");
-        }}
+        onResetFilters={resetFilters}
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
