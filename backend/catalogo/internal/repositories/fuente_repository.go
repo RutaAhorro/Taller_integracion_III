@@ -88,9 +88,9 @@ func (row fuenteRow) aDTO() domain.FuenteDTO {
 }
 
 // ListarFuentes devuelve todas las cadenas ordenadas por id.
-func (r *gormFuenteRepository) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
+func (repositorio *gormFuenteRepository) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
 	var rows []fuenteRow
-	if err := r.db.WithContext(ctx).Raw(consultaFuente + "ORDER BY c.id ASC").Scan(&rows).Error; err != nil {
+	if err := repositorio.db.WithContext(ctx).Raw(consultaFuente + "ORDER BY c.id ASC").Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	fuentes := make([]domain.FuenteDTO, 0, len(rows))
@@ -101,10 +101,10 @@ func (r *gormFuenteRepository) ListarFuentes(ctx context.Context) ([]domain.Fuen
 }
 
 // ObtenerFuente devuelve una sola cadena o nil si no existe.
-func (r *gormFuenteRepository) ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error) {
+func (repositorio *gormFuenteRepository) ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error) {
 	var rows []fuenteRow
 	query := consultaFuente + "WHERE c.id = ?"
-	if err := r.db.WithContext(ctx).Raw(query, id).Scan(&rows).Error; err != nil {
+	if err := repositorio.db.WithContext(ctx).Raw(query, id).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {
@@ -116,9 +116,9 @@ func (r *gormFuenteRepository) ObtenerFuente(ctx context.Context, id int) (*doma
 
 // ActualizarEstadoFuente persiste el flag esta_activa y devuelve la fuente
 // actualizada en la misma sentencia SQL.
-func (r *gormFuenteRepository) ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error) {
+func (repositorio *gormFuenteRepository) ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error) {
 	var rows []fuenteRow
-	if err := r.db.WithContext(ctx).Raw(actualizarFuente, habilitada, id).Scan(&rows).Error; err != nil {
+	if err := repositorio.db.WithContext(ctx).Raw(actualizarFuente, habilitada, id).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	if len(rows) == 0 {

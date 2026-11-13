@@ -1,4 +1,4 @@
-package tests
+package unit_test
 
 import (
 	"go/parser"
@@ -10,10 +10,10 @@ import (
 	"testing"
 )
 
-func TestCatalogDependencies(t *testing.T) {
+func TestCatalogDependencies(prueba *testing.T) {
 	const backend = "github.com/danirc2024/Taller_integracion_III/backend/"
 	const own = backend + "catalogo/internal/"
-	err := filepath.WalkDir("..", func(path string, entry fs.DirEntry, err error) error {
+	err := filepath.WalkDir("../../internal", func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -31,21 +31,21 @@ func TestCatalogDependencies(t *testing.T) {
 				return err
 			}
 			if strings.HasPrefix(dep, backend) && !strings.HasPrefix(dep, own) {
-				t.Errorf("%s importa otro servicio: %s", path, dep)
+				prueba.Errorf("%s importa otro servicio: %s", path, dep)
 			}
 			if strings.Contains(dep, "redis") {
-				t.Errorf("%s depende de la cola del coordinador", path)
+				prueba.Errorf("%s depende de la cola del coordinador", path)
 			}
 			if layer == "services" && strings.HasPrefix(dep, own) && dep != own+"domain" && dep != own+"utils" {
-				t.Errorf("%s importa un adaptador desde negocio: %s", path, dep)
+				prueba.Errorf("%s importa un adaptador desde negocio: %s", path, dep)
 			}
 			if layer == "domain" && dep != "context" && dep != "time" {
-				t.Errorf("%s importa infraestructura desde el contrato: %s", path, dep)
+				prueba.Errorf("%s importa infraestructura desde el contrato: %s", path, dep)
 			}
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 }

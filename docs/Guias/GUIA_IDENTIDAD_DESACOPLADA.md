@@ -53,7 +53,7 @@ SameSite=Lax y Secure=true por defecto; Compose local HTTP lo desactiva mediante
 configuración. Catálogo valida la firma del JWT de forma local y autoriza
 `/api/v1/admin/productos` con los claims del token: no reenvía la cookie a
 Identidad, no consulta `api.usuarios` directamente ni importa código de
-Identidad (ver `GUIA_CATALOGO_INDEPENDIENTE.md`). Conservar la misma clave al
+Identidad (ver el [README de Catálogo](../../backend/catalogo/README.md)). Conservar la misma clave al
 hacer el corte permite reutilizar sesiones anteriores.
 
 Desde SUP-242, las rutas protegidas de Identidad revalidan `api.usuarios` en cada

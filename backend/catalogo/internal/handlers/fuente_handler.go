@@ -31,16 +31,16 @@ func NewFuenteHandler(service services.FuenteService) *FuenteHandler {
 // @Failure      403  {object}  map[string]interface{}
 // @Failure      500  {object}  map[string]interface{}
 // @Router       /api/v1/admin/productos/fuentes [get]
-func (h *FuenteHandler) ObtenerFuentes(c *gin.Context) {
-	fuentes, err := h.service.ListarFuentes(c.Request.Context())
+func (manejador *FuenteHandler) ObtenerFuentes(contexto *gin.Context) {
+	fuentes, err := manejador.service.ListarFuentes(contexto.Request.Context())
 	if err != nil {
-		middleware.LogInternalError(c, err)
-		c.JSON(http.StatusInternalServerError, gin.H{
+		middleware.LogInternalError(contexto, err)
+		contexto.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Error interno al obtener fuentes",
 		})
 		return
 	}
-	c.JSON(http.StatusOK, fuentes)
+	contexto.JSON(http.StatusOK, fuentes)
 }
 
 // ActualizarFuente godoc
@@ -58,42 +58,42 @@ func (h *FuenteHandler) ObtenerFuentes(c *gin.Context) {
 // @Failure      404    {object}  map[string]interface{}
 // @Failure      500    {object}  map[string]interface{}
 // @Router       /api/v1/admin/productos/fuentes/{id} [put]
-func (h *FuenteHandler) ActualizarFuente(c *gin.Context) {
-	id, err := strconv.Atoi(c.Param("id"))
+func (manejador *FuenteHandler) ActualizarFuente(contexto *gin.Context) {
+	id, err := strconv.Atoi(contexto.Param("id"))
 	if err != nil || id <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
+		contexto.JSON(http.StatusBadRequest, gin.H{
 			"error": "ID de fuente inválido",
 		})
 		return
 	}
 
 	var input domain.ActualizarFuenteDTO
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
+	if err := contexto.ShouldBindJSON(&input); err != nil {
+		contexto.JSON(http.StatusBadRequest, gin.H{
 			"error": "Payload inválido",
 		})
 		return
 	}
 
-	fuente, err := h.service.ActualizarFuente(c.Request.Context(), id, input)
+	fuente, err := manejador.service.ActualizarFuente(contexto.Request.Context(), id, input)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrFuenteNoEncontrada):
-			c.JSON(http.StatusNotFound, gin.H{
+			contexto.JSON(http.StatusNotFound, gin.H{
 				"error": "Fuente no encontrada",
 			})
 		case errors.Is(err, services.ErrEstadoFuenteRequerido):
-			c.JSON(http.StatusBadRequest, gin.H{
+			contexto.JSON(http.StatusBadRequest, gin.H{
 				"error": err.Error(),
 			})
 		default:
-			middleware.LogInternalError(c, err)
-			c.JSON(http.StatusInternalServerError, gin.H{
+			middleware.LogInternalError(contexto, err)
+			contexto.JSON(http.StatusInternalServerError, gin.H{
 				"error": "Error interno al actualizar fuente",
 			})
 		}
 		return
 	}
 
-	c.JSON(http.StatusOK, fuente)
+	contexto.JSON(http.StatusOK, fuente)
 }

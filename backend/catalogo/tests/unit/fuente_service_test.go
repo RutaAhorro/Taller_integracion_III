@@ -1,4 +1,4 @@
-package tests
+package unit_test
 
 import (
 	"context"
@@ -16,39 +16,39 @@ type mockFuenteRepository struct {
 	err     error
 }
 
-func (m *mockFuenteRepository) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
-	if m.err != nil {
-		return nil, m.err
+func (repositorio *mockFuenteRepository) ListarFuentes(ctx context.Context) ([]domain.FuenteDTO, error) {
+	if repositorio.err != nil {
+		return nil, repositorio.err
 	}
-	return m.fuentes, nil
+	return repositorio.fuentes, nil
 }
 
-func (m *mockFuenteRepository) ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error) {
-	if m.err != nil {
-		return nil, m.err
+func (repositorio *mockFuenteRepository) ObtenerFuente(ctx context.Context, id int) (*domain.FuenteDTO, error) {
+	if repositorio.err != nil {
+		return nil, repositorio.err
 	}
-	for i := range m.fuentes {
-		if m.fuentes[i].ID == id {
-			return &m.fuentes[i], nil
+	for indice := range repositorio.fuentes {
+		if repositorio.fuentes[indice].ID == id {
+			return &repositorio.fuentes[indice], nil
 		}
 	}
 	return nil, nil
 }
 
-func (m *mockFuenteRepository) ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error) {
-	if m.err != nil {
-		return nil, m.err
+func (repositorio *mockFuenteRepository) ActualizarEstadoFuente(ctx context.Context, id int, habilitada bool) (*domain.FuenteDTO, error) {
+	if repositorio.err != nil {
+		return nil, repositorio.err
 	}
-	for i := range m.fuentes {
-		if m.fuentes[i].ID == id {
-			m.fuentes[i].Habilitada = habilitada
-			return &m.fuentes[i], nil
+	for indice := range repositorio.fuentes {
+		if repositorio.fuentes[indice].ID == id {
+			repositorio.fuentes[indice].Habilitada = habilitada
+			return &repositorio.fuentes[indice], nil
 		}
 	}
 	return nil, nil
 }
 
-func TestFuenteService_Listar(t *testing.T) {
+func TestFuenteService_Listar(prueba *testing.T) {
 	fecha := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	mockRepo := &mockFuenteRepository{
 		fuentes: []domain.FuenteDTO{
@@ -60,17 +60,17 @@ func TestFuenteService_Listar(t *testing.T) {
 
 	fuentes, err := service.ListarFuentes(context.Background())
 	if err != nil {
-		t.Fatalf("se esperaba nil error, se obtuvo %v", err)
+		prueba.Fatalf("se esperaba nil error, se obtuvo %v", err)
 	}
 	if len(fuentes) != 2 {
-		t.Fatalf("se esperaban 2 fuentes, se obtuvieron %d", len(fuentes))
+		prueba.Fatalf("se esperaban 2 fuentes, se obtuvieron %d", len(fuentes))
 	}
 	if fuentes[0].Nombre != "Jumbo" || !fuentes[0].Habilitada {
-		t.Errorf("la primera fuente debía ser Jumbo habilitada: %+v", fuentes[0])
+		prueba.Errorf("la primera fuente debía ser Jumbo habilitada: %+v", fuentes[0])
 	}
 }
 
-func TestFuenteService_ActualizarFuente(t *testing.T) {
+func TestFuenteService_ActualizarFuente(prueba *testing.T) {
 	fecha := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	nuevaRepo := func() *mockFuenteRepository {
 		return &mockFuenteRepository{
@@ -81,61 +81,61 @@ func TestFuenteService_ActualizarFuente(t *testing.T) {
 		}
 	}
 
-	t.Run("Deshabilitar fuente", func(t *testing.T) {
+	prueba.Run("Deshabilitar fuente", func(subprueba *testing.T) {
 		service := services.NewFuenteService(nuevaRepo())
 		habilitada := false
 		fuente, err := service.ActualizarFuente(context.Background(), 1, domain.ActualizarFuenteDTO{Habilitada: &habilitada})
 		if err != nil {
-			t.Fatalf("se esperaba nil error, se obtuvo %v", err)
+			subprueba.Fatalf("se esperaba nil error, se obtuvo %v", err)
 		}
 		if fuente == nil || fuente.Habilitada {
-			t.Errorf("la fuente debía quedar deshabilitada: %+v", fuente)
+			subprueba.Errorf("la fuente debía quedar deshabilitada: %+v", fuente)
 		}
 	})
 
-	t.Run("Habilitar fuente", func(t *testing.T) {
+	prueba.Run("Habilitar fuente", func(subprueba *testing.T) {
 		service := services.NewFuenteService(nuevaRepo())
 		habilitada := true
 		fuente, err := service.ActualizarFuente(context.Background(), 2, domain.ActualizarFuenteDTO{Habilitada: &habilitada})
 		if err != nil {
-			t.Fatalf("se esperaba nil error, se obtuvo %v", err)
+			subprueba.Fatalf("se esperaba nil error, se obtuvo %v", err)
 		}
 		if fuente == nil || !fuente.Habilitada {
-			t.Errorf("la fuente debía quedar habilitada: %+v", fuente)
+			subprueba.Errorf("la fuente debía quedar habilitada: %+v", fuente)
 		}
 	})
 
-	t.Run("Fuente inexistente", func(t *testing.T) {
+	prueba.Run("Fuente inexistente", func(subprueba *testing.T) {
 		service := services.NewFuenteService(nuevaRepo())
 		habilitada := true
 		_, err := service.ActualizarFuente(context.Background(), 99, domain.ActualizarFuenteDTO{Habilitada: &habilitada})
 		if !errors.Is(err, services.ErrFuenteNoEncontrada) {
-			t.Errorf("se esperaba ErrFuenteNoEncontrada, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba ErrFuenteNoEncontrada, se obtuvo %v", err)
 		}
 	})
 
-	t.Run("ID inválido", func(t *testing.T) {
+	prueba.Run("ID inválido", func(subprueba *testing.T) {
 		service := services.NewFuenteService(nuevaRepo())
 		habilitada := true
 		_, err := service.ActualizarFuente(context.Background(), 0, domain.ActualizarFuenteDTO{Habilitada: &habilitada})
 		if !errors.Is(err, services.ErrFuenteNoEncontrada) {
-			t.Errorf("se esperaba ErrFuenteNoEncontrada para id inválido, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba ErrFuenteNoEncontrada para id inválido, se obtuvo %v", err)
 		}
 	})
 
-	t.Run("Payload sin estado", func(t *testing.T) {
+	prueba.Run("Payload sin estado", func(subprueba *testing.T) {
 		service := services.NewFuenteService(nuevaRepo())
 		_, err := service.ActualizarFuente(context.Background(), 1, domain.ActualizarFuenteDTO{})
 		if !errors.Is(err, services.ErrEstadoFuenteRequerido) {
-			t.Errorf("se esperaba ErrEstadoFuenteRequerido, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba ErrEstadoFuenteRequerido, se obtuvo %v", err)
 		}
 	})
 
-	t.Run("Error del repositorio", func(t *testing.T) {
+	prueba.Run("Error del repositorio", func(subprueba *testing.T) {
 		repoErr := errors.New("db caída")
 		service := services.NewFuenteService(&mockFuenteRepository{err: repoErr})
 		if _, err := service.ListarFuentes(context.Background()); !errors.Is(err, repoErr) {
-			t.Errorf("se esperaba propagar el error del repositorio, se obtuvo %v", err)
+			subprueba.Errorf("se esperaba propagar el error del repositorio, se obtuvo %v", err)
 		}
 	})
 }

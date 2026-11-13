@@ -11,11 +11,11 @@ import (
 // RequireRole valida que el usuario autenticado posea al menos uno de los roles permitidos en la petición.
 // Si no se encuentra el rol o no coincide con los autorizados, interrumpe el flujo retornando HTTP 403 Forbidden.
 func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		rolVal, exists := c.Get("rol")
+	return func(contexto *gin.Context) {
+		rolVal, exists := contexto.Get("rol")
 		if !exists {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusForbidden,
 				"Acceso denegado: rol de usuario no identificado en la sesión.",
 				errors.New("rol ausente en el contexto de autenticación"),
@@ -26,7 +26,7 @@ func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
 		rolUsuario, ok := rolVal.(string)
 		if !ok || strings.TrimSpace(rolUsuario) == "" {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusForbidden,
 				"Acceso denegado: rol de usuario inválido.",
 				errors.New("formato de rol erróneo o vacío"),
@@ -46,7 +46,7 @@ func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
 
 		if !autorizado {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusForbidden,
 				"Acceso denegado: permisos insuficientes para acceder a este recurso.",
 				errors.New("el rol del usuario no tiene autorización para esta ruta"),
@@ -54,6 +54,6 @@ func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
 			return
 		}
 
-		c.Next()
+		contexto.Next()
 	}
 }

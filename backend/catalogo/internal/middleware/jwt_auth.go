@@ -13,13 +13,13 @@ import (
 // autónomo: no consulta Identidad en cada petición. La revocación inmediata de
 // cuentas desactivadas depende de la vigencia del access token; si se requiere
 // invalidación instantánea, debe resolverse con una lista de revocación
-// desacoplada o refresh tokens (ver GUIA_CATALOGO_INDEPENDIENTE.md).
+// desacoplada o refresh tokens (ver backend/catalogo/README.md).
 func RequireAuth(secret string) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		tokenString, err := c.Cookie("jwt")
+	return func(contexto *gin.Context) {
+		tokenString, err := contexto.Cookie("jwt")
 		if err != nil || strings.TrimSpace(tokenString) == "" {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusUnauthorized,
 				"Cookie de autenticación requerida.",
 				errors.New("cookie 'jwt' ausente o no autorizada"),
@@ -30,7 +30,7 @@ func RequireAuth(secret string) gin.HandlerFunc {
 		token, err := auth.ValidarToken(strings.TrimSpace(tokenString), secret)
 		if err != nil || token == nil || !token.Valid {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusUnauthorized,
 				"Token inválido o expirado.",
 				err,
@@ -41,7 +41,7 @@ func RequireAuth(secret string) gin.HandlerFunc {
 		claims, ok := token.Claims.(*auth.JWTClaims)
 		if !ok {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusUnauthorized,
 				"Claims del token inválidos.",
 				errors.New("no fue posible procesar la información de identidad del token"),
@@ -56,7 +56,7 @@ func RequireAuth(secret string) gin.HandlerFunc {
 		}
 		if userID == "" || rol == "" {
 			ResponderError(
-				c,
+				contexto,
 				http.StatusUnauthorized,
 				"Token inválido o expirado.",
 				errors.New("el token no identifica usuario y rol"),
@@ -64,9 +64,9 @@ func RequireAuth(secret string) gin.HandlerFunc {
 			return
 		}
 
-		c.Set("user_id", userID)
-		c.Set("rol", rol)
-		c.Set("provider", claims.Provider)
-		c.Next()
+		contexto.Set("user_id", userID)
+		contexto.Set("rol", rol)
+		contexto.Set("provider", claims.Provider)
+		contexto.Next()
 	}
 }
