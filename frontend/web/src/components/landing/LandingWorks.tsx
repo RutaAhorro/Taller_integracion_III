@@ -16,8 +16,8 @@ export function LandingHowItWorks() {
           <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Metodología</span>
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3.2vw,2.4rem)] font-bold text-foreground mb-[0.875rem] leading-[1.15]">No es magia, es optimización matemática</h2>
           <p className="text-muted-foreground text-[1rem] leading-[1.6]">
-            Unimos datos de precios con motores de ruteo para entregarte un
-            análisis de costos real.
+            Este es el recorrido propuesto: comparar productos y estimar el traslado.
+            El flujo completo aún está pendiente de integración.
           </p>
         </div>
 

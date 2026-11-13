@@ -10,8 +10,8 @@ export function LandingStores() {
           <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Cobertura</span>
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3.2vw,2.4rem)] font-bold text-foreground mb-[0.875rem] leading-[1.15]">Los supermercados que ya conoces</h2>
           <p className="text-muted-foreground text-[1rem] leading-[1.6]">
-            Estamos integrando continuamente nuevas cadenas y sucursales en la
-            región para que tengas el panorama completo.
+            Estas cadenas ilustran la propuesta de comparación. Su presencia aquí
+            no confirma la cobertura actual del catálogo ni una integración comercial.
           </p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-[0.75rem] md:gap-[1rem]">

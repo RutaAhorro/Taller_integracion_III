@@ -13,8 +13,8 @@ export function LandingSavings() {
             <span className="inline-block text-[0.6875rem] font-bold tracking-[0.18em] uppercase text-brand-dark px-[0.85rem] py-[0.35rem] bg-[var(--landing-amber-soft)] border-2 border-[var(--landing-amber)] rounded-full mb-[1rem]">Ejemplo ilustrativo</span>
             <h2 className="font-['Fredoka'] text-[1.75rem] md:text-[clamp(1.5rem,2.8vw,2rem)] font-bold text-foreground mb-[1rem] leading-[1.15]">El ahorro que sientes en el bolsillo</h2>
             <p className="text-muted-foreground mb-[1.5rem] leading-[1.6]">
-              Una familia en Temuco compra los mismos 8 productos cada semana.
-              Mira lo que pasa cuando considera el costo de traslado:
+              Imagina una compra semanal de 8 productos en Temuco.
+              Estas cifras ilustran cómo podría influir el traslado; no provienen de una compra real.
             </p>
             <ul className="list-none p-0 m-[0_0_1.5rem]">
               {landingData.savings.items.map(item => (
@@ -46,7 +46,7 @@ export function LandingSavings() {
               );
             })}
             <div className="mt-[1.25rem] pt-[1rem] border-t-2 border-dashed border-border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
-              <span className="text-[0.8125rem] text-muted-foreground font-semibold">Ahorro neto semanal</span>
+              <span className="text-[0.8125rem] text-muted-foreground font-semibold">Ahorro ilustrativo del ejemplo</span>
               <span className="font-mono text-[1.5rem] font-bold text-[var(--landing-olive)]">{landingData.savings.weeklySaving}</span>
             </div>
           </div>

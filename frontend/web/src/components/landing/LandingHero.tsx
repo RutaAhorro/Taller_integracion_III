@@ -13,9 +13,9 @@ export function LandingHero() {
             Compra para tu hogar <em className="italic text-brand-dark bg-gradient-to-b from-transparent from-60% to-[var(--landing-amber)] to-60% px-[0.15em] rounded-sm [box-decoration-break:clone]">sin pagar de más</em> por el traslado.
           </h1>
           <p className="text-[1.0625rem] leading-[1.65] text-muted-foreground max-w-[34rem] mb-8">
-            Reunimos los precios de tus supermercados, calculamos el costo real de
-            desplazarte y te mostramos la alternativa que <strong className="font-bold text-foreground">de verdad</strong> te
-            conviene. Sin hojas de cálculo, sin recorrer media ciudad, sin sorpresas.
+            Nuestra propuesta es comparar precios y estimar el traslado para ayudarte
+            a elegir <strong className="font-bold text-foreground">dónde comprar</strong>.
+            Esta portada muestra ejemplos; la integración de recetas, listas y rutas sigue en desarrollo.
           </p>
           <div className="flex flex-col sm:flex-row gap-[0.875rem] mb-8">
             <Link className={buttonVariants({ size: 'lg' }) + ' w-full sm:w-auto justify-center'} to="/dashboard">

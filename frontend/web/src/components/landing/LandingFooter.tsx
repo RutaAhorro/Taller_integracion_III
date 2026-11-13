@@ -14,7 +14,7 @@ export function LandingFooter() {
               RutaAhorro
             </div>
             <p className="text-[0.8125rem] opacity-70 max-w-[320px] leading-[1.6] mt-[0.875rem]">
-              Optimizador de rutas y comparador de precios para supermercados en Temuco, Chile.
+              Proyecto en desarrollo de comparación de precios y estimación de rutas de compra en Temuco, Chile.
               Proyecto académico — Universidad Católica de Temuco.
             </p>
           </div>
@@ -23,7 +23,7 @@ export function LandingFooter() {
             <h4 className="font-['Fraunces'] text-[oklch(0.98_0.01_83)] text-[0.8125rem] font-bold tracking-[0.08em] uppercase mb-[1rem]">Producto</h4>
             <a href="#como-funciona" className="block text-[oklch(0.85_0.02_83)] no-underline text-[0.8125rem] mb-[0.625rem] transition-colors duration-200 opacity-80 hover:text-[oklch(0.98_0.01_83)] hover:opacity-100">Cómo funciona</a>
             <a href="#beneficios" className="block text-[oklch(0.85_0.02_83)] no-underline text-[0.8125rem] mb-[0.625rem] transition-colors duration-200 opacity-80 hover:text-[oklch(0.98_0.01_83)] hover:opacity-100">Beneficios</a>
-            <a href="#ahorro" className="block text-[oklch(0.85_0.02_83)] no-underline text-[0.8125rem] mb-[0.625rem] transition-colors duration-200 opacity-80 hover:text-[oklch(0.98_0.01_83)] hover:opacity-100">Ahorro real</a>
+            <a href="#ahorro" className="block text-[oklch(0.85_0.02_83)] no-underline text-[0.8125rem] mb-[0.625rem] transition-colors duration-200 opacity-80 hover:text-[oklch(0.98_0.01_83)] hover:opacity-100">Ejemplo de ahorro</a>
             <Link to="/dashboard" className="block text-[oklch(0.85_0.02_83)] no-underline text-[0.8125rem] mb-[0.625rem] transition-colors duration-200 opacity-80 hover:text-[oklch(0.98_0.01_83)] hover:opacity-100">Catálogo</Link>
           </div>
         </div>
