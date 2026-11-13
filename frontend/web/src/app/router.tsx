@@ -122,13 +122,14 @@ export default function AppRouter() {
 
   return (
     <GoogleOAuthProvider clientId={googleClientId}>
-      <AuthProvider>
-        <ToastProvider>
+      {/* Los avisos de sesión permanecen visibles después de redirigir o limpiar la cuenta. */}
+      <ToastProvider>
+        <AuthProvider>
           <CartProvider>
             <RouterProvider router={router} />
           </CartProvider>
-        </ToastProvider>
-      </AuthProvider>
+        </AuthProvider>
+      </ToastProvider>
     </GoogleOAuthProvider>
   );
 }

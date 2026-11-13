@@ -17,7 +17,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [localQuery, setLocalQuery] = useState(query || '');
     const navigate = useNavigate();
-    const { logout } = useAuth();
+    const { logout, isLoggingOut } = useAuth();
     
     // Ciudad de referencia de la interfaz; aún no representa una ubicación obtenida del perfil.
     const activeCity = "Temuco";
@@ -143,15 +143,16 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                                         Mis listas
                                     </Link>
                                     <button
-                                        onClick={() => {
+                                        disabled={isLoggingOut}
+                                        onClick={async () => {
                                             setIsDropdownOpen(false);
-                                            logout();
+                                            await logout();
                                             navigate('/login');
                                         }}
                                         className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
                                     >
                                         <LogOut className="h-4 w-4" />
-                                        Cerrar Sesión
+                                        {isLoggingOut ? 'Cerrando sesión…' : 'Cerrar Sesión'}
                                     </button>
                                 </div>
                             </>
