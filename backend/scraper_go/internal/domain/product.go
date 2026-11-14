@@ -38,10 +38,14 @@ type Job struct {
 	EnrichEAN    bool
 }
 
+// StringPtr devuelve un puntero a una copia del valor, para los campos
+// opcionales del contrato.
 func StringPtr(value string) *string {
 	return &value
 }
 
+// BoolPtr devuelve un puntero a una copia del valor, para los campos
+// opcionales del contrato.
 func BoolPtr(value bool) *bool {
 	return &value
 }

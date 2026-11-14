@@ -26,6 +26,7 @@ type Error struct {
 	Err     error
 }
 
+// Error implementa error y muestra el código del contrato cuando existe.
 func (e *Error) Error() string {
 	if e.Code != "" {
 		return fmt.Sprintf("%s (status=%d, codigo=%s)", e.Message, e.Status, e.Code)
@@ -33,10 +34,12 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("%s (status=%d)", e.Message, e.Status)
 }
 
+// Unwrap devuelve el error de red subyacente, si lo hay.
 func (e *Error) Unwrap() error {
 	return e.Err
 }
 
+// Permanent indica si reintentar el mismo lote no cambiará el resultado.
 func (e *Error) Permanent() bool {
 	switch e.Status {
 	case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge:
@@ -49,12 +52,16 @@ func (e *Error) Permanent() bool {
 	return false
 }
 
+// Client entrega lotes y consulta trabajos en Control de Scraping. No sigue
+// redirecciones y es seguro para uso concurrente.
 type Client struct {
 	endpoint string
 	token    string
 	http     *http.Client
 }
 
+// New construye el cliente con el endpoint de ingesta, el token Bearer y el
+// timeout de cada llamada.
 func New(endpoint, token string, timeout time.Duration) *Client {
 	return &Client{
 		endpoint: strings.TrimRight(endpoint, "/"),

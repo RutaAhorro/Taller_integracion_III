@@ -21,6 +21,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/storage"
 )
 
+// Spool es el outbox durable de un trabajo: productos, lotes y progreso de
+// recuperación. Cada trabajo tiene su propio archivo SQLite.
 type Spool struct {
 	workID    string
 	directory string
@@ -82,10 +84,12 @@ func (s *Spool) initialize() error {
 	return os.Chmod(filepath.Join(s.directory, "outbox.sqlite"), 0o600)
 }
 
+// Directory devuelve el directorio donde vive el spool.
 func (s *Spool) Directory() string {
 	return s.directory
 }
 
+// Close cierra la base SQLite del spool.
 func (s *Spool) Close() error {
 	return s.db.Close()
 }
@@ -297,6 +301,7 @@ func (s *Spool) Replay(ctx context.Context, client *controlscraping.Client) erro
 	}
 }
 
+// Progress lee una clave de progreso; devuelve 0 si todavía no existe.
 func (s *Spool) Progress(key string) (int, error) {
 	var value int
 	err := s.db.QueryRow("SELECT value FROM progress WHERE key = ?", key).Scan(&value)
@@ -306,6 +311,7 @@ func (s *Spool) Progress(key string) (int, error) {
 	return value, err
 }
 
+// SetProgress guarda o reemplaza una clave de progreso del trabajo.
 func (s *Spool) SetProgress(key string, value int) error {
 	_, err := s.db.Exec(
 		"INSERT INTO progress(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",

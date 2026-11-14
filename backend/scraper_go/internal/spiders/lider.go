@@ -9,10 +9,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// Lider ejecuta el spider de Lider.
 type Lider struct {
 	baseSpider
 }
 
+// NewLider construye el spider de Lider con el catálogo embebido.
 func NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider {
 	return newLider(mustSite(LiderName), fetcher, categoryDir, maxPages, logger)
 }

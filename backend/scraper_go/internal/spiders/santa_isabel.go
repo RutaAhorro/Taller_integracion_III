@@ -9,10 +9,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// SantaIsabel ejecuta el spider de Santa Isabel.
 type SantaIsabel struct {
 	baseSpider
 }
 
+// NewSantaIsabel construye el spider de Santa Isabel con el catálogo embebido.
 func NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel {
 	return newSantaIsabel(mustSite(SantaIsabelName), fetcher, categoryDir, maxPages, logger)
 }

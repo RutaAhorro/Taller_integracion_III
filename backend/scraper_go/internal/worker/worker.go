@@ -34,6 +34,8 @@ var (
 	ErrNoProducts     = errors.New("el crawl terminó sin productos")
 )
 
+// Worker consume trabajos de la cola y ejecuta el ciclo completo: lease,
+// spool, crawl, entrega y cierre.
 type Worker struct {
 	cfg       config.Config
 	api       *controlscraping.Client
@@ -44,6 +46,8 @@ type Worker struct {
 	logger    *slog.Logger
 }
 
+// New construye el worker y las dependencias derivadas de la configuración:
+// el cliente que usa el recolector y el recolector de spools.
 func New(
 	cfg config.Config,
 	api *controlscraping.Client,
@@ -75,6 +79,9 @@ func New(
 	}
 }
 
+// Run asegura el grupo de consumo, recolecta spools vencidos y procesa
+// mensajes hasta que el contexto se cancela. Los fallos de dependencias se
+// reintentan con RetryInterval.
 func (w *Worker) Run(ctx context.Context) error {
 	if w.cfg.Token == "" {
 		return fmt.Errorf("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
@@ -142,6 +149,8 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 
+// HandleMessage procesa un mensaje ya reclamado: valida el payload, ejecuta
+// el trabajo y confirma o deriva el mensaje según el resultado.
 func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
 	raw, _ := message.Values["payload"].(string)
 	job, err := w.parseJob(raw)
