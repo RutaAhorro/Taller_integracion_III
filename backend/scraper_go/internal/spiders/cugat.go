@@ -9,10 +9,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// Cugat ejecuta el spider de Cugat.
 type Cugat struct {
 	baseSpider
 }
 
+// NewCugat construye el spider de Cugat con el catálogo embebido.
 func NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat {
 	return newCugat(mustSite(CugatName), fetcher, categoryDir, maxPages, logger)
 }

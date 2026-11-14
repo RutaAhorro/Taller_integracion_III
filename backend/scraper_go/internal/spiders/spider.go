@@ -59,11 +59,13 @@ type Fetcher interface {
 	Fetch(ctx context.Context, rawURL string) (*crawler.Response, error)
 }
 
+// Spider es el contrato mínimo de una cadena: nombre y ejecución de un Job.
 type Spider interface {
 	Name() string
 	Run(ctx context.Context, job domain.Job, emit Emitter) error
 }
 
+// Registry contiene los spiders disponibles indexados por nombre.
 type Registry struct {
 	spiders map[string]Spider
 }
@@ -101,10 +103,12 @@ func NewRegistryFromCatalog(sites catalog.Catalog, fetcher Fetcher, categoryDir 
 	return registry, nil
 }
 
+// Register añade o reemplaza un spider en el registro.
 func (r *Registry) Register(spider Spider) {
 	r.spiders[spider.Name()] = spider
 }
 
+// Get devuelve el spider con ese nombre y si existe.
 func (r *Registry) Get(name string) (Spider, bool) {
 	spider, ok := r.spiders[name]
 	return spider, ok

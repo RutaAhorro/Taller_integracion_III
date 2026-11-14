@@ -10,10 +10,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// Jumbo ejecuta el spider de Jumbo.
 type Jumbo struct {
 	baseSpider
 }
 
+// NewJumbo construye el spider de Jumbo con el catálogo embebido.
 func NewJumbo(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Jumbo {
 	return newJumbo(mustSite(JumboName), fetcher, categoryDir, maxPages, logger)
 }

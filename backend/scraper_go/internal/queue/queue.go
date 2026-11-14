@@ -43,6 +43,8 @@ if ARGV[6] ~= '' then redis.call('SET', KEYS[4], '1', 'EX', ARGV[7]) end
 return 1
 `
 
+// Options configura el stream, el grupo, la lease y las claves auxiliares de
+// índice, dead-letter y cierre. New completa los valores vacíos.
 type Options struct {
 	Stream       string
 	Group        string
@@ -55,6 +57,8 @@ type Options struct {
 	ClosedPrefix string
 }
 
+// Queue consume el stream con lease exclusiva por consumidor: sólo el dueño
+// puede renovar o confirmar un mensaje.
 type Queue struct {
 	client       *redis.Client
 	stream       string
@@ -71,6 +75,8 @@ type Queue struct {
 	ackScript    *redis.Script
 }
 
+// New valida la lease mínima de 10 s y completa los nombres y claves que no
+// vengan en Options.
 func New(client *redis.Client, opts Options) (*Queue, error) {
 	if opts.Lease < 10*time.Second {
 		return nil, fmt.Errorf("SCRAPER_LEASE_MS debe ser al menos 10000")
@@ -117,18 +123,23 @@ func New(client *redis.Client, opts Options) (*Queue, error) {
 	}, nil
 }
 
+// Consumer devuelve el nombre con el que este proceso figura en el grupo.
 func (q *Queue) Consumer() string {
 	return q.consumer
 }
 
+// Stream devuelve el nombre del stream de trabajos.
 func (q *Queue) Stream() string {
 	return q.stream
 }
 
+// Group devuelve el nombre del grupo de consumo.
 func (q *Queue) Group() string {
 	return q.group
 }
 
+// EnsureGroup crea el grupo de consumo si no existe. Es seguro llamarlo en
+// cada arranque.
 func (q *Queue) EnsureGroup(ctx context.Context) error {
 	err := q.client.XGroupCreateMkStream(ctx, q.stream, q.group, "0").Err()
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
@@ -186,6 +197,8 @@ func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 	return &streams[0].Messages[0], nil
 }
 
+// Renew extiende la lease sólo si este consumidor sigue siendo el dueño del
+// mensaje. Devuelve false cuando otro consumidor ya lo reclamó.
 func (q *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
 	result, err := q.renewScript.Run(ctx, q.client, []string{q.stream}, q.group, messageID, q.consumer).Int64()
 	if err != nil {
@@ -194,6 +207,8 @@ func (q *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
 	return result == 1, nil
 }
 
+// Ack confirma el mensaje. Si reason no está vacío, primero copia el payload
+// al dead-letter; en ambos casos limpia el índice y marca el trabajo cerrado.
 func (q *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason string) (bool, error) {
 	keys := []string{q.stream, q.indexKey, q.deadLetter, q.closedPrefix + workID}
 	result, err := q.ackScript.Run(
@@ -207,6 +222,8 @@ func (q *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason strin
 	return result == 1, nil
 }
 
+// HasMessage indica si el trabajo todavía tiene un mensaje pendiente en el
+// stream. El recolector lo usa para no borrar un spool con entrega en curso.
 func (q *Queue) HasMessage(ctx context.Context, workID string) (bool, error) {
 	messageID, err := q.client.HGet(ctx, q.indexKey, workID).Result()
 	if errors.Is(err, redis.Nil) {
@@ -269,6 +286,7 @@ func (q *Queue) Heartbeat(parent context.Context, messageID string) (
 	return ctx, cancel, lost, nil
 }
 
+// IsLost informa si el canal de pérdida de lease ya se cerró.
 func IsLost(lost <-chan struct{}) bool {
 	select {
 	case <-lost:

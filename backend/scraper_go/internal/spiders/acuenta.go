@@ -9,10 +9,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// Acuenta ejecuta el spider de A Cuenta.
 type Acuenta struct {
 	baseSpider
 }
 
+// NewAcuenta construye el spider de A Cuenta con el catálogo embebido.
 func NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta {
 	return newAcuenta(mustSite(AcuentaName), fetcher, categoryDir, maxPages, logger)
 }

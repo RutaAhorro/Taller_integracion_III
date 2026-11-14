@@ -36,6 +36,8 @@ var (
 	ErrResponseTooLarge = errors.New("la respuesta supera DOWNLOAD_MAXSIZE")
 )
 
+// Response es la respuesta HTTP aceptada: URL final, estado, cabeceras y
+// cuerpo.
 type Response struct {
 	URL    *url.URL
 	Status int
@@ -43,6 +45,8 @@ type Response struct {
 	Body   []byte
 }
 
+// BlockedError indica que el sitio bloqueó la petición por estado HTTP o por
+// un challenge.
 type BlockedError struct {
 	URL    string
 	Status int
@@ -54,19 +58,25 @@ type BlockedError struct {
 	BlockedResponses int
 }
 
+// Error implementa error con URL, status y motivo del bloqueo.
 func (e *BlockedError) Error() string {
 	return fmt.Sprintf("bloqueo detectado en %s (status=%d, motivo=%s)", e.URL, e.Status, e.Reason)
 }
 
+// HTTPStatusError representa un estado HTTP que el crawler no puede
+// recuperar: 5xx tras agotar los reintentos o 4xx distinto de 404.
 type HTTPStatusError struct {
 	URL    string
 	Status int
 }
 
+// Error implementa error con el estado y la URL.
 func (e *HTTPStatusError) Error() string {
 	return fmt.Sprintf("HTTP %d en %s", e.Status, e.URL)
 }
 
+// Options agrupa la configuración del crawler: identidad, tiempos, tamaño
+// máximo, reintentos, robots.txt y backoff.
 type Options struct {
 	UserAgent        string
 	Delay            time.Duration
@@ -81,6 +91,8 @@ type Options struct {
 	Logger           *slog.Logger
 }
 
+// Client descarga páginas respetando robots.txt, throttle por dominio,
+// tamaño máximo y reintentos con backoff.
 type Client struct {
 	http       *http.Client
 	userAgent  string
@@ -94,6 +106,8 @@ type Client struct {
 	throttle   *throttle
 }
 
+// New construye el cliente y aplica valores seguros a los campos de Options
+// que lleguen en cero.
 func New(opts Options) *Client {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 30 * time.Second

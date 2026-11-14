@@ -19,6 +19,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 )
 
+// ErrStoragePressure indica que el volumen no conserva la reserva mínima
+// configurada.
 var ErrStoragePressure = errors.New("spool sin espacio de reserva; se conserva para recuperación")
 
 // EnsureCapacity exige que quede el espacio de reserva más el espacio extra
@@ -98,6 +100,8 @@ type Collector struct {
 	cursor string
 }
 
+// NewCollector construye el recolector que retira spools terminales según la
+// retención y la presión de disco.
 func NewCollector(
 	stateDir string,
 	minFree int64,
@@ -114,6 +118,10 @@ func NewCollector(
 	}
 }
 
+// Collect revisa hasta limit spools, rotando desde el cursor, y borra los de
+// trabajos terminales que ya no tienen mensaje pendiente. Los fallidos se
+// conservan durante la retención salvo que haya presión de disco. Devuelve
+// cuántos spools eliminó.
 func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error) {
 	if c.retention < 0 {
 		return 0, fmt.Errorf("SCRAPER_FAILED_RETENTION_SECONDS no puede ser negativo")
