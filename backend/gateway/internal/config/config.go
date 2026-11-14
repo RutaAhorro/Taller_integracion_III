@@ -18,6 +18,7 @@ type Config struct {
 	Identidad             *url.URL
 	Scraping              *url.URL
 	Rutas                 *url.URL
+	IA                    *url.URL
 	RequestTimeout        time.Duration
 	DialTimeout           time.Duration
 	ResponseHeaderTimeout time.Duration
@@ -31,6 +32,7 @@ type Config struct {
 	IdentityPrefixes      []string
 	RoutesPrefixes        []string
 	ScrapingPrefixes      []string
+	IAPrefixes            []string
 }
 
 // Load reads configuration without credentials or database access.
@@ -84,6 +86,14 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
+	// SUP-278: IA conversacional, dueña de chat. Vacío deja /api/v1/chat sin enrutar.
+	if value := getenv("IA_URL"); value != "" {
+		c.IA, err = parseOrigin("IA_URL", value)
+		if err != nil {
+			return c, err
+		}
+	}
+
 	for _, item := range []struct {
 		name     string
 		value    *time.Duration
@@ -120,6 +130,7 @@ func Load(getenv func(string) string) (Config, error) {
 		{"GATEWAY_CATALOGO_PREFIXES", &c.CatalogPrefixes, []string{"/api/v1/productos", "/api/v1/admin/productos"}},
 		{"GATEWAY_RUTAS_PREFIXES", &c.RoutesPrefixes, []string{"/api/v1/listas"}},
 		{"GATEWAY_SCRAPING_PREFIXES", &c.ScrapingPrefixes, []string{"/api/v1/scraper", "/swagger"}},
+		{"GATEWAY_IA_PREFIXES", &c.IAPrefixes, []string{"/api/v1/chat"}},
 	} {
 		prefixes, err := parsePrefixList(item.name, getenv(item.name), item.fallback)
 		if err != nil {
