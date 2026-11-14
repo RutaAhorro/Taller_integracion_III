@@ -23,7 +23,8 @@ export function useLayoutContext() {
 export function MainLayout() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth > 1024);
+  // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeMarket, setActiveMarket] = useState<string | null>(null);
   const [availableMarkets, setAvailableMarkets] = useState<UiSupermarket[]>([]);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);

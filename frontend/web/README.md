@@ -172,6 +172,23 @@ Para revisar una entrega, comprobar búsqueda con/sin resultados, detalle,
 scroll y legibilidad en escritorio/móvil. Registrar versión, esperado y observado;
 no inventar resultados si no hay un entorno disponible.
 
+### Comprobar el cierre de sesión en local (SUP-361)
+
+Con frontend, Gateway e Identidad ejecutándose y la base API configurada:
+
+1. Iniciar sesión y abrir las herramientas del navegador, pestaña Red.
+2. Cerrar sesión desde el menú. Comprobar `POST /api/v1/auth/logout` con respuesta
+   `204`, sin cuerpo; la cookie `jwt` debe desaparecer y también `auth_user` en
+   el almacenamiento local. Recargar y abrir `/listas`: debe solicitar acceso.
+3. Con una cuenta admin de prueba, repetir desde el panel administrativo.
+4. Volver a iniciar sesión y bloquear solo `*/auth/logout` desde las herramientas
+   de red. Al salir, debe limpiarse la cuenta local, mostrarse la advertencia y
+   permitir la navegación. No esperar que desaparezca la cookie: el servidor
+   no pudo recibir esa petición.
+5. Retirar el bloqueo y volver a pulsar Cerrar Sesión, disponible en el menú del
+   catálogo incluso sin usuario local, para expirar la cookie que pudo quedar.
+6. Comprobar también «Continuar como invitado»: espera el cierre y abre el catálogo.
+
 ### Comprobar filtros móviles (SUP-372)
 
 En Chrome o Edge, abrir DevTools (`F12`) y activar la barra de dispositivos
@@ -184,7 +201,9 @@ En Chrome o Edge, abrir DevTools (`F12`) y activar la barra de dispositivos
 5. Cerrar con la X, pulsando fuera y con Escape. La búsqueda y navegación siguen accesibles.
 6. Con teclado, abrir el panel y recorrerlo con Tab/Shift+Tab: el foco permanece
    dentro. Al cerrar, vuelve al botón de apertura; el panel cerrado no recibe foco.
-7. Repetir en escritorio y verificar que no aparece desplazamiento horizontal.
+7. Repetir en escritorio: el panel empieza cerrado y el foco no salta a «Cerrar
+   filtros» al cargar. Abrirlo con el botón y comprobar el mismo recorrido de
+   teclado. Verificar que no aparece desplazamiento horizontal.
 
 La emulación permite comprobar tamaño e interacción, pero no sustituye una
 prueba en un teléfono real. Registrar el navegador, ancho y resultado observado.
