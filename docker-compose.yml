@@ -315,7 +315,7 @@ services:
       - SCRAPER_API_URL=http://gateway:8080/api/v1/scraper/productos
       - SCRAPING_SERVICE_TOKEN=${SCRAPING_SERVICE_TOKEN:?Define un token de servicio para worker y bot}
       - SCRAPER_STATE_DIR=/var/lib/scraper
-      - SCRAPER_CATEGORY_DIR=/app/categories
+      - SCRAPER_CATEGORY_DIR=/app/research
       - SCRAPER_LEASE_MS=60000
       - SCRAPER_STATE_MIN_FREE_BYTES=67108864
       - SCRAPER_FAILED_RETENTION_SECONDS=86400

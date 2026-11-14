@@ -5,8 +5,8 @@
 > Python fue retirada. Las secciones inferiores de marcha paralela/cutover y los
 > comandos `scraper_worker_go` describen la transición histórica y no se deben
 > ejecutar literalmente sobre el checkout actual. Para el arranque, consultar
-> el [README principal](../../README.md). Verificar también `SCRAPER_CATEGORY_DIR`:
-> Compose apunta a `/app/categories`, pero la imagen incluye `/app/research`.
+> el [README principal](../../README.md). El Compose principal fija
+> `SCRAPER_CATEGORY_DIR=/app/research`, igual que la imagen.
 
 Microservicio que reemplaza de forma gradual al worker de scraping de
 `backend/scraper` (Python/Scrapy). Mantiene el contrato HTTP con Control de
@@ -39,16 +39,25 @@ cmd/worker
   └── internal/worker          orquesta lease, spool, crawl, entrega y cierre
         ├── internal/queue     Redis Streams: receive, renew, ack, dead-letter
         ├── internal/spool     outbox SQLite por trabajo (items, batches, progress)
-        ├── internal/spiders   registro, baseSpider (ciclo común) y extracción por cadena
-        │     └── internal/crawler   HTTP, robots.txt, throttle, reintentos
+        ├── internal/spiders   registro y ciclo de vida (baseSpider, Run)
+        │     ├── internal/catalog    catálogo de sitios (spiders.json)
+        │     ├── internal/extract    parsers HTML por cadena
+        │     └── internal/crawler    HTTP, robots.txt, throttle, reintentos
         ├── internal/controlscraping contrato HTTP e idempotencia
         ├── internal/normalize paridad de precios, EAN y texto con Python
         ├── internal/storage   capacidad, limpieza y retención
+        ├── internal/input     URLs desde argumentos o archivo
         └── internal/config    variables de entorno y límites
 ```
 
 Un solo microservicio, con módulos internos. Los spiders dependen de las
-interfaces `Fetcher` y `Emitter`, no de Redis ni de SQLite.
+interfaces `Fetcher` y `Emitter`, no de Redis ni de SQLite. La configuración de
+cada tienda (URLs, hosts, selectores, tiempos y límites) vive en
+`internal/catalog/spiders.json`; el código sólo la valida y la consume.
+
+Las pruebas no conviven con el código: `tests/unit` cubre los paquetes,
+`tests/integration` usa Redis real para cola y worker, y `tests/performance`
+aloja el gate de RAM.
 
 ## Contrato
 
@@ -79,8 +88,8 @@ byte como `outbox.py`: claves ordenadas, floats con `.0` cuando son enteros,
 UTF-8 sin escapar en el producto y `ensure_ascii=True` en el arreglo
 `[market, data]` del hash. Esa igualdad es obligatoria para que un rollback a
 Python reutilice la restricción `UNIQUE` y no duplique
-`scraper.capturas_precios`. Las pruebas con hashes fijos viven en
-`internal/spool/pythonjson_test.go`.
+`scraper.capturas_precios`. Las pruebas de compatibilidad del spool viven en
+`tests/integration/spool`.
 
 Si una ficha no publica SKU, el worker lo deriva de la URL del producto: usa el
 ID numérico final (`...-1993238/p`) o, si no existe, el slug de la ficha
@@ -88,6 +97,9 @@ ID numérico final (`...-1993238/p`) o, si no existe, el slug de la ficha
 se rechazaba por un solo producto sin identificador.
 
 ## Configuración
+
+El archivo [`backend/scraper_go/.env.example`](.env.example) lista todas las
+variables con sus defaults. Las más relevantes:
 
 | Variable | Default | Uso |
 | --- | --- | --- |
@@ -103,11 +115,25 @@ se rechazaba por un solo producto sin identificador.
 | `SCRAPER_QUEUE_NAME` | `scraper:jobs:stream` | Stream |
 | `SCRAPER_GROUP` | `scraper-workers` | Grupo de consumo |
 | `SCRAPER_CATEGORY_DIR` | `/app/research` | Archivos de categorías |
+| `SCRAPER_SPIDERS_FILE` | vacío | Override del catálogo embebido |
 | `SCRAPER_DOWNLOAD_DELAY_MS` | `2000` | Throttle por dominio |
 | `SCRAPER_DOWNLOAD_TIMEOUT` | `30` | Timeout HTTP |
 | `SCRAPER_DOWNLOAD_MAXSIZE` | `5242880` | Tamaño máximo de respuesta |
 | `SCRAPER_RETRY_TIMES` | `3` | Reintentos HTTP |
+| `SCRAPER_MAX_PAGES` | `100` | Tope de páginas por categoría |
+| `SCRAPER_CRAWL_ATTEMPTS` | `3` | Intentos antes de derivar a revisión |
+| `SCRAPER_ROBOTS_CACHE_TTL_SECONDS` | `3600` | Cache de `robots.txt` |
+| `SCRAPER_ROBOTS_FAILURE_TTL_SECONDS` | `600` | Cache negativa de `robots.txt` |
+| `SCRAPER_BACKOFF_MIN_MS` | `10` | Backoff mínimo |
+| `SCRAPER_BACKOFF_MAX_SECONDS` | `120` | Backoff máximo |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+
+Las variables de bucle (`SCRAPER_REDIS_*`, `SCRAPER_QUEUE_BLOCK_MS`,
+`SCRAPER_JOB_CLOSED_TTL_SECONDS`, `SCRAPER_POLL_INTERVAL_MS`,
+`SCRAPER_RETRY_INTERVAL_SECONDS`, `SCRAPER_COLLECT_*`,
+`SCRAPER_GC_TIMEOUT_SECONDS`) también están documentadas en `.env.example`.
+`config.FromEnv()` valida los rangos al arrancar y falla rápido si alguno es
+inválido.
 
 `JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
 `ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
@@ -151,16 +177,20 @@ docker build -f backend/scraper_go/Dockerfile -t scraper-go:local .
 
 ### Extracción y paginación sin red
 
-Los tests de `internal/spiders` usan HTML de fixtures y validan JSON-LD, RSC,
-`__NEXT_DATA__`, paginación, modo producto y normalización. No consultan los
-sitios reales:
+Los tests de `tests/unit/spiders` y `tests/unit/extract` usan HTML de fixtures y
+validan JSON-LD, RSC, `__NEXT_DATA__`, paginación, modo producto y
+normalización. No consultan los sitios reales:
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
   -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
-  sh -c 'go test -v -count=1 ./internal/spiders'
+  sh -c 'go test -v -count=1 ./tests/unit/spiders ./tests/unit/extract'
 ```
+
+Los tests de `tests/integration/worker` y `tests/integration/queue` necesitan
+un Redis real. Sin `REDIS_TEST_URL` usan `redis://localhost:6379/15`; si la
+variable está definida y Redis no responde, la prueba falla en vez de saltarse.
 
 ### Extracción directa de URLs sin API
 
@@ -426,7 +456,7 @@ docker run --rm --network host --user "$(id -u):$(id -g)" \
   -e SCRAPER_MEMORY_RESULT=/out/scraper-go-memory.json \
   -v "$PWD/backend/scraper_go:/src" -v "$PWD/resultados:/out" -w /src \
   golang:1.26-alpine \
-  sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./internal/worker'
+  sh -c 'go test -run TestMemoryGate -count=1 -timeout 10m -v ./tests/performance/worker'
 ```
 
 La última medición local fue 29,9 MB de RSS pico y 16,3 MB de `RssAnon` para
@@ -441,26 +471,31 @@ suite normal para no mezclar la medición de RAM con `-race`; el workflow
 Los casos críticos del worker de Python tienen equivalentes Go, sin depender de
 los sitios reales:
 
-- `TestProcessJobDoesNotCrawlTerminalJob`: un trabajo ya `completado` no vuelve
-  a ejecutar el spider.
-- `TestProcessJobWithCrawlDoneFinalizesWithoutCrawling`: si el crawl alcanzó a
-  terminar, se reintenta la entrega y el cierre sin repetir el crawl.
-- `TestProcessJobStopsAfterThreeCrawlAttempts`: tres intentos agotados se
-  derivan a revisión (`ErrCrawlExhausted`) sin ejecutar el spider.
-- `TestReplayRetriesSamePayloadAndIdempotencyKey`: una respuesta perdida
-  reenvía el mismo lote, payload e `Idempotency-Key`.
-- `TestReplayDoesNotSendWithCancelledContext`: una lease perdida no envía
-  lotes pendientes.
-- `TestQueueAckOwnershipAndDeadLetter` y
-  `TestCleanupSpoolRespectsExecutionLock`: ACK, dead-letter y limpieza no
-  borran un spool bloqueado.
+- `TestDoesNotCrawlTerminalJob` (`tests/integration/worker`): un trabajo ya
+  `completado` no vuelve a ejecutar el spider ni abre el spool.
+- `TestResumesWithCrawlDoneWithoutCrawling` (`tests/integration/worker`): si el
+  crawl alcanzó a terminar, se reintenta la entrega y el cierre sin repetir el
+  crawl.
+- `TestStopsAfterCrawlAttempts` (`tests/integration/worker`): los intentos
+  agotados se derivan a revisión (`ErrCrawlExhausted`) sin ejecutar el spider y
+  conservan el spool.
+- `TestRespectsExecutionLock` (`tests/integration/worker`): un spool con
+  `execution.lock` tomado no se procesa ni se ACKea.
+- `TestReplayRetriesSamePayloadAndIdempotencyKey`
+  (`tests/integration/spool`): una respuesta perdida reenvía el mismo lote,
+  payload e `Idempotency-Key`.
+- `TestReplayDoesNotSendWithCancelledContext` (`tests/integration/spool`): una
+  lease perdida no envía lotes pendientes.
+- `TestAckOwnershipAndDeadLetter` (`tests/integration/queue`): sólo el
+  consumidor dueño renueva y hace ACK; el dead-letter conserva `reason`,
+  `payload` y `source_id`.
 
 ```bash
 docker run --rm --user "$(id -u):$(id -g)" \
   -e HOME=/tmp -e GOCACHE=/tmp/gocache -e GOMODCACHE=/tmp/gomodcache \
   -e REDIS_TEST_URL=redis://host.docker.internal:6379/15 \
   -v "$PWD/backend/scraper_go:/src" -w /src golang:1.26-alpine \
-  sh -c 'go test -v -run "TestProcessJob|TestReplay|TestQueueAck|TestCleanupSpool" ./internal/...'
+  sh -c 'go test -v -run "TestDoesNotCrawl|TestResumes|TestStops|TestReplay|TestAck|TestRespects" ./tests/...'
 ```
 
 ### Extracción real con Compose
