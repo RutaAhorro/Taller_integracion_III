@@ -6,19 +6,22 @@ Uso:
     python3 scripts/sync_db_init_configmap.py --check   # Valida sin modificar; sale con código 1 si difiere
 """
 
+# ===== Importaciones =====
 import argparse
 import difflib
-from pathlib import Path
 import re
 import sys
+from pathlib import Path
 
-# Ruta raíz del repositorio
+# ===== Rutas y constantes =====
 RUTA_RAIZ = Path(__file__).resolve().parent.parent
 RUTA_DB_DIR = RUTA_RAIZ / "infrastructure" / "db"
 RUTA_README = RUTA_DB_DIR / "README.md"
 RUTA_CONFIGMAP_DEFAULT = RUTA_RAIZ / "infrastructure" / "k8s" / "db" / "configmap.yaml"
+MAXIMO_LINEAS_DIFERENCIA = 50
 
 
+# ===== Lectura del README =====
 def extraer_archivos_desde_readme(ruta_documento: Path) -> list[str]:
     """Lee la tabla de orden de ejecución en el README y devuelve la lista de nombres de archivo."""
     contenido_texto = ruta_documento.read_text(encoding="utf-8")
@@ -41,11 +44,14 @@ def extraer_archivos_desde_readme(ruta_documento: Path) -> list[str]:
                 archivos_ordenados.append(nombre_archivo)
 
     if not archivos_ordenados:
-        raise ValueError(f"No se encontraron archivos en la tabla de orden de {ruta_documento}")
+        raise ValueError(
+            f"No se encontraron archivos en la tabla de orden de {ruta_documento}"
+        )
 
     return archivos_ordenados
 
 
+# ===== Generación del YAML =====
 def formatear_bloque_yaml(contenido_archivo: str, indentacion: str = "    ") -> str:
     """Formatea el contenido como un bloque literal de YAML (|)."""
     lineas_resultado: list[str] = []
@@ -58,7 +64,9 @@ def formatear_bloque_yaml(contenido_archivo: str, indentacion: str = "    ") -> 
     return "\n".join(lineas_resultado) + "\n"
 
 
-def generar_manifiesto_configmap(archivos_requeridos: list[str], ruta_directorio_db: Path) -> str:
+def generar_manifiesto_configmap(
+    archivos_requeridos: list[str], ruta_directorio_db: Path
+) -> str:
     """Genera el texto YAML completo para el ConfigMap db-init-scripts."""
     lineas_manifiesto: list[str] = [
         "# Código generado automáticamente por scripts/sync_db_init_configmap.py",
@@ -77,10 +85,14 @@ def generar_manifiesto_configmap(archivos_requeridos: list[str], ruta_directorio
     for nombre_archivo in archivos_requeridos:
         ruta_archivo = ruta_directorio_db / nombre_archivo
         if not ruta_archivo.is_file():
-            raise FileNotFoundError(f"El archivo {nombre_archivo} requerido en README no existe en {ruta_directorio_db}")
+            raise FileNotFoundError(
+                f"El archivo {nombre_archivo} requerido en README no existe en {ruta_directorio_db}"
+            )
 
         # Asegurar finales de línea LF estándar
-        contenido_limpio = ruta_archivo.read_text(encoding="utf-8").replace("\r\n", "\n")
+        contenido_limpio = ruta_archivo.read_text(encoding="utf-8").replace(
+            "\r\n", "\n"
+        )
         lineas_manifiesto.append(f"  {nombre_archivo}: |")
         bloque_indentado = formatear_bloque_yaml(contenido_limpio, indentacion="    ")
         lineas_manifiesto.append(bloque_indentado.rstrip("\n"))
@@ -88,7 +100,9 @@ def generar_manifiesto_configmap(archivos_requeridos: list[str], ruta_directorio
     return "\n".join(lineas_manifiesto) + "\n"
 
 
+# ===== Punto de entrada y CLI =====
 def main() -> int:
+    """Punto de entrada principal para sincronizar o verificar el ConfigMap db-init-scripts."""
     analizador = argparse.ArgumentParser(description=__doc__)
     analizador.add_argument(
         "--check",
@@ -126,7 +140,10 @@ def main() -> int:
 
         contenido_existente = ruta_destino.read_text(encoding="utf-8")
         if contenido_existente != manifiesto_generado:
-            print(f"Error: {ruta_destino} está desactualizado respecto a {RUTA_DB_DIR}.", file=sys.stderr)
+            print(
+                f"Error: {ruta_destino} está desactualizado respecto a {RUTA_DB_DIR}.",
+                file=sys.stderr,
+            )
             diferencias = list(
                 difflib.unified_diff(
                     contenido_existente.splitlines(),
@@ -136,10 +153,14 @@ def main() -> int:
                     lineterm="",
                 )
             )
-            for linea_diff in diferencias[:50]:
+            for linea_diff in diferencias[:MAXIMO_LINEAS_DIFERENCIA]:
                 print(linea_diff, file=sys.stderr)
-            if len(diferencias) > 50:
-                print(f"... y {len(diferencias) - 50} líneas de diferencia adicionales.", file=sys.stderr)
+            if len(diferencias) > MAXIMO_LINEAS_DIFERENCIA:
+                lineas_restantes = len(diferencias) - MAXIMO_LINEAS_DIFERENCIA
+                print(
+                    f"... y {lineas_restantes} líneas de diferencia adicionales.",
+                    file=sys.stderr,
+                )
             return 1
 
         if not argumentos.quiet:
