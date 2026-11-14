@@ -189,7 +189,7 @@ export function isAdminApiError(error: unknown): error is AdminApiError {
   return error instanceof AdminApiError;
 }
 
-type ErrorBackend = { mensaje?: string; detalle?: string };
+type ErrorBackend = { mensaje?: string; error?: string; detalle?: string };
 
 /** Envía la cookie de sesión y distingue errores de permisos de los errores de negocio o conexión. */
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -213,7 +213,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     let detail: string | undefined;
     try {
       const body = await response.json() as ErrorBackend;
-      if (body.mensaje) message = body.mensaje;
+      message = body.mensaje || body.error || message;
       detail = body.detalle;
     } catch {
       // Respuesta sin JSON: conservar el mensaje con el estado.
