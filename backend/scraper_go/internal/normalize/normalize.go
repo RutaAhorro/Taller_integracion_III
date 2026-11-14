@@ -169,11 +169,11 @@ func EAN(value any) *string {
 		}
 		text = strconv.FormatInt(int64(v), 10)
 	case float32:
-		f := float64(v)
-		if math.Trunc(f) != f {
+		number := float64(v)
+		if math.Trunc(number) != number {
 			return nil
 		}
-		text = strconv.FormatInt(int64(f), 10)
+		text = strconv.FormatInt(int64(number), 10)
 	case int:
 		text = strconv.Itoa(v)
 	case int8:
@@ -202,11 +202,11 @@ func EAN(value any) *string {
 		return nil
 	}
 	var digits strings.Builder
-	for _, r := range text {
+	for _, char := range text {
 		switch {
-		case unicode.IsDigit(r):
-			digits.WriteRune(r)
-		case unicode.IsSpace(r) || r == '-':
+		case unicode.IsDigit(char):
+			digits.WriteRune(char)
+		case unicode.IsSpace(char) || char == '-':
 			continue
 		default:
 			return nil
