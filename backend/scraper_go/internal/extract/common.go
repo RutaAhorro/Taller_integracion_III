@@ -396,8 +396,8 @@ func isDigits(value string) bool {
 	if value == "" {
 		return false
 	}
-	for _, r := range value {
-		if r < '0' || r > '9' {
+	for _, char := range value {
+		if char < '0' || char > '9' {
 			return false
 		}
 	}

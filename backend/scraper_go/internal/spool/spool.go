@@ -115,13 +115,13 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 }
 
 func productFingerprint(market *string, data []byte) string {
-	h := sha256.New()
+	hasher := sha256.New()
 	if market != nil {
-		h.Write([]byte(*market))
+		hasher.Write([]byte(*market))
 	}
-	h.Write([]byte{0})
-	h.Write(data)
-	return hex.EncodeToString(h.Sum(nil))
+	hasher.Write([]byte{0})
+	hasher.Write(data)
+	return hex.EncodeToString(hasher.Sum(nil))
 }
 
 // Count devuelve todos los productos persistidos, entregados o no. El worker
