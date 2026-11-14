@@ -6,7 +6,6 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
-  MoreHorizontal,
   Power,
   RefreshCw,
   Search,
@@ -237,7 +236,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
               </tbody>
             </table>
           </div>
-          {users.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos usuarios con esos filtros.</p>}
+          {!error && users.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos usuarios con esos filtros.</p>}
           {pagination.total > 0 && (
             <div className="flex flex-col gap-3 border-t border-[#edf0eb] px-5 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
               <p>Mostrando {inicio}–{fin} de {pagination.total} usuarios</p>
@@ -287,7 +286,7 @@ function SourcesTable() {
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-left text-sm">
-              <thead className="bg-[#fafbf9] text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Fuente</th><th className="px-5 py-3 font-bold">Estado</th><th className="px-5 py-3 font-bold">Última sincronización</th><th className="px-5 py-3 font-bold">Productos</th><th className="px-5 py-3 font-bold">Sucursales</th><th className="px-5 py-3 font-bold">Habilitada</th><th className="px-5 py-3" /></tr></thead>
+              <thead className="bg-[#fafbf9] text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Fuente</th><th className="px-5 py-3 font-bold">Estado</th><th className="px-5 py-3 font-bold">Última sincronización</th><th className="px-5 py-3 font-bold">Productos</th><th className="px-5 py-3 font-bold">Sucursales</th><th className="px-5 py-3 font-bold">Habilitada</th></tr></thead>
               <tbody className="divide-y divide-[#edf0eb]">
                 {filteredSources.map((source) => {
                   const busy = pendingId === source.id;
@@ -297,7 +296,7 @@ function SourcesTable() {
                       <td className="px-5 py-4"><StatusBadge status={source.status} /></td>
                       <td className="px-5 py-4 text-muted-foreground">{source.lastSync}</td>
                       <td className="px-5 py-4 font-mono text-xs">{source.products.toLocaleString('es-CL')}</td>
-                      <td className="px-5 py-4 text-muted-foreground">{source.branches || '—'}</td>
+                      <td className="px-5 py-4 text-muted-foreground">{source.branches}</td>
                       <td className="px-5 py-4">
                         <button
                           type="button"
@@ -310,14 +309,13 @@ function SourcesTable() {
                           <Power className="size-3.5" aria-hidden="true" />{busy ? 'Guardando…' : source.habilitada ? 'Deshabilitar' : 'Habilitar'}
                         </button>
                       </td>
-                      <td className="px-5 py-4 text-right"><button type="button" aria-label={`Más acciones para ${source.name}`} className="rounded-lg p-2 text-muted-foreground hover:bg-secondary hover:text-foreground"><MoreHorizontal className="size-5" /></button></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-          {filteredSources.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos fuentes con esa búsqueda.</p>}
+          {!error && filteredSources.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos fuentes con esa búsqueda.</p>}
         </>
       )}
     </section>

@@ -146,6 +146,34 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
 
 ## Comprobaciones
 
+Tras iniciar sesión por contraseña o Google, `/login` redirige a `/admin` si el
+usuario devuelto por Identidad tiene rol `admin`; las demás cuentas van al
+catálogo. No se asignan permisos por correo. Para probar una promoción de rol,
+cerrar sesión e iniciar nuevamente, y comprobar `rol` en la respuesta de login.
+La redirección no sustituye la autorización del backend.
+
+### Panel de usuarios y fuentes (SUP-255)
+
+Probar con el frontend actualizado y una cuenta administradora en la misma BD
+que utiliza la API. Usar otra cuenta de prueba para los cambios; no desactivar
+ni degradar al administrador con el que se realiza la comprobación.
+
+- En `/admin?section=users`, buscar la cuenta de prueba, cambiar su rol y su
+  estado activo, y recargar para verificar persistencia. Restaurar los valores
+  originales. El rol propio y la desactivación propia deben estar bloqueados.
+- En `/admin?section=sources`, deshabilitar una fuente local de prueba, recargar,
+  verificar el estado y habilitarla nuevamente. Durante el guardado se bloquean
+  los cambios simultáneos y se aplica la respuesta de Catálogo.
+- Con DevTools, ralentizar la red para ver la carga; bloquear la solicitud de
+  usuarios o fuentes para verificar el error y «Reintentar» al retirar el bloqueo.
+  Un fallo no debe presentarse como un listado vacío exitoso.
+- Con una cuenta registrada, abrir `/admin`: no debe mostrar el panel. Los
+  endpoints administrativos deben rechazar peticiones sin permisos (`401/403`).
+
+La redirección de admin ya fue confirmada manualmente por la autora. Las pruebas
+automatizadas cubren los clientes, los rechazos y las carreras de carga/guardado
+de fuentes; no reemplazan el recorrido anterior contra la BD local.
+
 Desde `frontend/web`:
 
 ```bash

@@ -180,7 +180,6 @@ export function AuthPanel() {
 
     if (await login({ correo: loginEmail, password: loginPassword })) {
       toast("Inicio de sesión exitoso", "success")
-      navigate("/dashboard")
     }
   }
 
