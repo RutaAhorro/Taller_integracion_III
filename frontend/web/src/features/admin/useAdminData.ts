@@ -61,8 +61,9 @@ function useExpireSession(): () => void {
   });
 
   return useCallback(() => {
-    sessionRef.current.logout();
-    sessionRef.current.navigate(ROUTES.LOGIN, { replace: true });
+    void sessionRef.current.logout().then(() => {
+      sessionRef.current.navigate(ROUTES.LOGIN, { replace: true });
+    });
   }, []);
 }
 

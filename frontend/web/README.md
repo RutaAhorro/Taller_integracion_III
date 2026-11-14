@@ -122,7 +122,7 @@ src/lib/roles.ts        Normalización de roles para la interfaz
 src/pages/              Páginas funcionales y avisos de integraciones pendientes
 src/layouts/            Estructura de navegación
 src/components/         Componentes compartidos y primitivas de UI
-tests/                  Pruebas críticas de listas, administración y errores del chat
+tests/                  Pruebas críticas de sesión, listas, administración y errores del chat
 ```
 
 El alias `@/` apunta a `src/`. Se usan React Context y hooks; no Redux/Zustand.
@@ -136,6 +136,10 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
   tokens internos de scraping en el navegador.
 - `AuthContext` conserva una representación del usuario en `localStorage` para
   la UI. Esto no acredita por sí solo una sesión válida en el servidor.
+- Cerrar sesión espera `POST /auth/logout` con la cookie, mediante `VITE_API_URL`
+  (que incluye `/api/v1`). El servidor responde `204` sin JSON y expira la cookie.
+  Siempre se limpia `auth_user`; si no se confirma el cierre remoto, se muestra
+  una advertencia porque la cookie podría seguir activa. No se revocan JWT copiados.
 - `ProtectedRoute` controla navegación; la autorización efectiva corresponde
   al backend. Roles: `registrado`, `colaborador`, `admin`; el plan `premium` es
   un concepto distinto del rol.

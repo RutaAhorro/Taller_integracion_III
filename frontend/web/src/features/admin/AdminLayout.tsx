@@ -22,7 +22,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const { search, pathname } = useLocation();
   const navigate = useNavigate();
-  const { logout } = useAuth();
+  const { logout, isLoggingOut } = useAuth();
   const rawSection = new URLSearchParams(search).get('section');
   // Acepta 'metricas' (es) como alias de 'metrics' (SUP-280: ruta /admin/metricas).
   const activeSection: AdminSection =
@@ -144,14 +144,15 @@ export function AdminLayout({ children }: AdminLayoutProps) {
             </div>
             <button
               type="button"
-              onClick={() => {
-                logout();
+              disabled={isLoggingOut}
+              onClick={async () => {
+                await logout();
                 navigate(ROUTES.LOGIN);
               }}
               className="flex items-center gap-2 text-sm font-bold text-destructive hover:underline"
             >
               <LogOut className="size-4" aria-hidden="true" />
-              Cerrar sesión
+              {isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
             </button>
           </header>
           <main className="flex-1 p-4 md:p-8">{children}</main>

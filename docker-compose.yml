@@ -188,18 +188,21 @@ services:
       SCRAPING_URL: http://control-scraping:8080
       CATALOGO_URL: http://catalogo:8080
       IDENTIDAD_URL: http://identidad-upstream:8080
-      # Vacío por defecto: el motor de rutas es opcional (perfil `rutas`) y los smokes
-      # exigen que /_gateway/dependencies esté sano. Con el perfil: http://motor-rutas:8001.
+      # SUP-240: opcional (perfil `rutas`); sin él /api/v1/listas responde 404 en el Gateway.
       RUTAS_URL: ${RUTAS_URL:-}
+      # SUP-278: IA conversacional opcional; en entorno integrado local definir IA_URL=http://ia-conversacional:8002
+      IA_URL: ${IA_URL:-}
       GATEWAY_LISTEN_ADDR: :8080
       GATEWAY_TRUSTED_PROXIES: ${GATEWAY_TRUSTED_PROXIES:-}
       GATEWAY_KEEPALIVE_TIMEOUT: ${GATEWAY_KEEPALIVE_TIMEOUT:-30s}
+      GATEWAY_RESPONSE_HEADER_TIMEOUT: ${GATEWAY_RESPONSE_HEADER_TIMEOUT:-20s}
       # Prefijos por dominio (mismos defaults que internal/config/config.go).
       # Un formato inválido impide arrancar; el "/" final se recorta.
       GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios}
       GATEWAY_CATALOGO_PREFIXES: ${GATEWAY_CATALOGO_PREFIXES:-/api/v1/productos,/api/v1/admin/productos}
       GATEWAY_RUTAS_PREFIXES: ${GATEWAY_RUTAS_PREFIXES:-/api/v1/listas}
       GATEWAY_SCRAPING_PREFIXES: ${GATEWAY_SCRAPING_PREFIXES:-/api/v1/scraper,/swagger}
+      GATEWAY_IA_PREFIXES: ${GATEWAY_IA_PREFIXES:-/api/v1/chat}
     depends_on:
       control_scraping:
         condition: service_healthy
@@ -356,8 +359,16 @@ services:
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
     networks:
-      - microservices_net
+      microservices_net:
+        aliases:
+          - ia-conversacional
     deploy:
       resources:
         limits:
