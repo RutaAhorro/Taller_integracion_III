@@ -1,4 +1,4 @@
-package worker
+package worker_test
 
 import (
 	"context"
@@ -20,15 +20,20 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spool"
 )
 
+func floatPtr(value float64) *float64 {
+	return &value
+}
+
 // TestMemoryGate atraviesa el pipeline real de spool, lotes y entrega con un
-// catálogo sintético. No se ejecuta en la suite normal porque mide RSS del
-// proceso; CI lo activa con SCRAPER_MEMORY_GATE=1.
+// catálogo sintético, usando sólo la API pública de los paquetes. No se
+// ejecuta en la suite normal porque mide RSS del proceso; CI lo activa con
+// SCRAPER_MEMORY_GATE=1.
 func TestMemoryGate(t *testing.T) {
 	if os.Getenv("SCRAPER_MEMORY_GATE") != "1" {
 		t.Skip("gate de RAM desactivado; usar SCRAPER_MEMORY_GATE=1")
@@ -37,12 +42,13 @@ func TestMemoryGate(t *testing.T) {
 		t.Skip("la medición de VmHWM requiere Linux")
 	}
 
-	items := envIntTest("SCRAPER_MEMORY_ITEMS", 200_000)
-	limitMB := envFloatTest("SCRAPER_MEMORY_LIMIT_MB", 150)
+	items := envInt("SCRAPER_MEMORY_ITEMS", 200_000)
+	limitMB := envFloat("SCRAPER_MEMORY_LIMIT_MB", 150)
 	compact := os.Getenv("SCRAPER_MEMORY_COMPACT") == "1"
 	if items < 1 {
 		t.Fatal("SCRAPER_MEMORY_ITEMS debe ser mayor que cero")
 	}
+	const batchSize = 1000
 
 	baseline := peakRSSMB(t)
 	anonSampler := startAnonSampler(10 * time.Millisecond)
@@ -62,7 +68,7 @@ func TestMemoryGate(t *testing.T) {
 				status = finalized
 			}
 			mu.Unlock()
-			writeJSON(w, map[string]any{"id": workID, "estado": status})
+			writeJSONResponse(w, map[string]any{"id": workID, "estado": status})
 		case r.Method == http.MethodPost && r.URL.Path == base+"/productos":
 			var payload struct {
 				Productos []domain.Product `json:"productos"`
@@ -74,7 +80,7 @@ func TestMemoryGate(t *testing.T) {
 			mu.Lock()
 			received += len(payload.Productos)
 			mu.Unlock()
-			writeJSON(w, map[string]any{
+			writeJSONResponse(w, map[string]any{
 				"total_recibidos":     len(payload.Productos),
 				"precios_registrados": len(payload.Productos),
 				"insertados":          len(payload.Productos),
@@ -91,43 +97,75 @@ func TestMemoryGate(t *testing.T) {
 			mu.Lock()
 			finalized = payload.Estado
 			mu.Unlock()
-			writeJSON(w, map[string]any{"id": workID, "estado": payload.Estado})
+			writeJSONResponse(w, map[string]any{"id": workID, "estado": payload.Estado})
 		default:
 			http.NotFound(w, r)
 		}
 	}))
 	defer server.Close()
 
-	cfg := config.Config{
-		APIURL:          server.URL + "/api/v1/scraper/productos",
-		Token:           "test",
-		StateDir:        t.TempDir(),
-		MinFreeBytes:    1 << 20,
-		FailedRetention: time.Hour,
-		APITimeout:      10 * time.Second,
-		BatchSize:       1000,
-		Lease:           10 * time.Second,
-	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	registry := spiders.NewRegistry(nil, t.TempDir(), 100, logger)
-	registry.Register(memorySpider{items: items, compact: compact})
-
-	scraperWorker := &Worker{
-		cfg:      cfg,
-		api:      controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout),
-		registry: registry,
-		logger:   logger,
+	stateDir := t.TempDir()
+	api := controlscraping.New(server.URL+"/api/v1/scraper/productos", "test", 10*time.Second)
+	store, err := spool.Open(workID, stateDir, 1<<20)
+	if err != nil {
+		t.Fatalf("spool.Open() error = %v", err)
 	}
-	state, err := scraperWorker.processJob(context.Background(), make(chan struct{}), domain.Job{
-		WorkID: workID,
-		Spider: memorySpiderName,
-	})
+
+	ctx := context.Background()
+	pending := 0
+	emit := func(item domain.Item) error {
+		item = spiders.CompleteItem(item)
+		market := item.Supermercado
+		if err := store.Add(item.Product, &market); err != nil {
+			return err
+		}
+		pending++
+		if pending >= batchSize {
+			if err := store.Seal(batchSize); err != nil {
+				return err
+			}
+			if err := store.Replay(ctx, api); err != nil {
+				return err
+			}
+			pending = 0
+		}
+		return nil
+	}
+	spider := memorySpider{items: items, compact: compact, logger: logger}
+	if err := spider.Run(ctx, domain.Job{WorkID: workID}, emit); err != nil {
+		_ = store.Close()
+		t.Fatalf("spider.Run() error = %v", err)
+	}
+	if err := store.SetProgress("crawl_done", 1); err != nil {
+		_ = store.Close()
+		t.Fatalf("SetProgress() error = %v", err)
+	}
+	if err := store.Seal(batchSize); err != nil {
+		_ = store.Close()
+		t.Fatalf("Seal() error = %v", err)
+	}
+	if err := store.Replay(ctx, api); err != nil {
+		_ = store.Close()
+		t.Fatalf("Replay() error = %v", err)
+	}
+	count, err := store.Count()
+	if err != nil {
+		_ = store.Close()
+		t.Fatalf("Count() error = %v", err)
+	}
+	if count != items {
+		_ = store.Close()
+		t.Fatalf("productos en spool = %d, want %d", count, items)
+	}
+	state, err := api.FinalizeWork(ctx, workID, "completado", nil, nil, "")
+	_ = store.Close()
 	anonPeak := anonSampler.Stop()
 	if err != nil {
-		t.Fatalf("processJob() error = %v", err)
+		t.Fatalf("FinalizeWork() error = %v", err)
 	}
-	if state != "completado" {
-		t.Errorf("estado = %q", state)
+	if state["estado"] != "completado" {
+		t.Errorf("estado = %v", state["estado"])
 	}
 	mu.Lock()
 	delivered := received
@@ -138,7 +176,7 @@ func TestMemoryGate(t *testing.T) {
 	}
 
 	peak := peakRSSMB(t)
-	cgroupLimit := envFloatTest("SCRAPER_MEMORY_CGROUP_LIMIT_MB", 0)
+	cgroupLimit := envFloat("SCRAPER_MEMORY_CGROUP_LIMIT_MB", 0)
 	cgroupPeak := 0.0
 	if cgroupLimit > 0 {
 		cgroupPeak = cgroupPeakMB()
@@ -282,6 +320,7 @@ const memorySpiderName = "memory_rsc"
 type memorySpider struct {
 	items   int
 	compact bool
+	logger  *slog.Logger
 }
 
 func (m memorySpider) Name() string {
@@ -344,7 +383,7 @@ func peakRSSMB(t *testing.T) float64 {
 	return 0
 }
 
-func envIntTest(name string, fallback int) int {
+func envInt(name string, fallback int) int {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
 		return fallback
@@ -356,7 +395,7 @@ func envIntTest(name string, fallback int) int {
 	return value
 }
 
-func envFloatTest(name string, fallback float64) float64 {
+func envFloat(name string, fallback float64) float64 {
 	raw := strings.TrimSpace(os.Getenv(name))
 	if raw == "" {
 		return fallback
@@ -368,7 +407,7 @@ func envFloatTest(name string, fallback float64) float64 {
 	return value
 }
 
-func writeJSON(w http.ResponseWriter, payload any) {
+func writeJSONResponse(w http.ResponseWriter, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(payload)
 }

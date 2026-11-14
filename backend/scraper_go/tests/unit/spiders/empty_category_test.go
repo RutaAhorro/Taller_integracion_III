@@ -1,4 +1,4 @@
-package spiders
+package spiders_test
 
 import (
 	"context"
@@ -9,16 +9,12 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
-type categoryRunner interface {
-	Name() string
-	Run(context.Context, domain.Job, Emitter) error
-}
-
-// TestEmptyCategoryDoesNotAbortChain cubre las cinco cadenas: una categoría
-// con respuesta 200 y cero productos debe terminar esa categoría y continuar
-// con la siguiente, no abortar el crawl completo.
+// TestEmptyCategoryDoesNotAbortChain cubre las cinco cadenas: una categoría con
+// respuesta 200 y cero productos cierra esa categoría y continúa con la
+// siguiente, sin abortar el crawl completo.
 func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -27,15 +23,15 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 		second     string
 		firstCall  string
 		secondCall string
-		factory    func(Fetcher, string, int, *slog.Logger) categoryRunner
+		factory    func(spiders.Fetcher, string, int, *slog.Logger) categoryRunner
 	}{
 		{
 			name:   "jumbo",
 			file:   "jumbo_categories.txt",
 			first:  "https://www.jumbo.cl/categoria-vacia",
 			second: "https://www.jumbo.cl/frutas",
-			factory: func(f Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return NewJumbo(f, dir, pages, logger)
+			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewJumbo(f, dir, pages, logger)
 			},
 		},
 		{
@@ -43,8 +39,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "santa_isabel_categories.txt",
 			first:  "https://www.santaisabel.cl/categoria-vacia",
 			second: "https://www.santaisabel.cl/frutas",
-			factory: func(f Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return NewSantaIsabel(f, dir, pages, logger)
+			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewSantaIsabel(f, dir, pages, logger)
 			},
 		},
 		{
@@ -52,8 +48,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "cugat_categories.txt",
 			first:  "https://cugat.cl/categoria-producto/vacia/",
 			second: "https://cugat.cl/categoria-producto/bebidas/",
-			factory: func(f Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return NewCugat(f, dir, pages, logger)
+			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewCugat(f, dir, pages, logger)
 			},
 		},
 		{
@@ -63,8 +59,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			second:     "https://www.acuenta.cl/ca/frutas/02",
 			firstCall:  "https://www.acuenta.cl/ca/vacia/01?currentPage=1",
 			secondCall: "https://www.acuenta.cl/ca/frutas/02?currentPage=1",
-			factory: func(f Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return NewAcuenta(f, dir, pages, logger)
+			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewAcuenta(f, dir, pages, logger)
 			},
 		},
 		{
@@ -72,8 +68,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "lider_categories.txt",
 			first:  "https://super.lider.cl/browse/vacia/12345678",
 			second: "https://super.lider.cl/browse/frutas/87654321",
-			factory: func(f Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return NewLider(f, dir, pages, logger)
+			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewLider(f, dir, pages, logger)
 			},
 		},
 	}

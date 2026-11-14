@@ -1,4 +1,4 @@
-package queue
+package queue_test
 
 import (
 	"context"
@@ -8,11 +8,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 )
 
-type queueFixture struct {
+type fixture struct {
 	client       *redis.Client
-	queue        *Queue
+	queue        *queue.Queue
 	stream       string
 	index        string
 	dead         string
@@ -28,7 +30,7 @@ func skipIfRedisUnavailable(t *testing.T, rawURL string, err error) {
 	t.Skipf("Redis no disponible en %s: %v", rawURL, err)
 }
 
-func newQueueFixture(t *testing.T, consumer string) *queueFixture {
+func newFixture(t *testing.T, consumer string) *fixture {
 	t.Helper()
 	rawURL := os.Getenv("REDIS_TEST_URL")
 	if rawURL == "" {
@@ -51,7 +53,7 @@ func newQueueFixture(t *testing.T, consumer string) *queueFixture {
 	}
 
 	prefix := "scraper:test:" + uuid.NewString()
-	fixture := &queueFixture{
+	f := &fixture{
 		client:       client,
 		stream:       prefix + ":stream",
 		index:        prefix + ":index",
@@ -59,36 +61,36 @@ func newQueueFixture(t *testing.T, consumer string) *queueFixture {
 		closedPrefix: prefix + ":closed:",
 		workID:       uuid.NewString(),
 	}
-	fixture.queue, err = New(client, Options{
-		Stream:       fixture.stream,
+	f.queue, err = queue.New(client, queue.Options{
+		Stream:       f.stream,
 		Group:        prefix + ":group",
 		Lease:        10 * time.Second,
 		Consumer:     consumer,
-		IndexKey:     fixture.index,
-		DeadLetter:   fixture.dead,
-		ClosedPrefix: fixture.closedPrefix,
+		IndexKey:     f.index,
+		DeadLetter:   f.dead,
+		ClosedPrefix: f.closedPrefix,
 	})
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("queue.New() error = %v", err)
 	}
-	if err := fixture.queue.EnsureGroup(context.Background()); err != nil {
+	if err := f.queue.EnsureGroup(context.Background()); err != nil {
 		t.Fatalf("EnsureGroup() error = %v", err)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cleanupCancel()
 		_ = client.Del(cleanupCtx,
-			fixture.stream,
-			fixture.index,
-			fixture.dead,
-			fixture.closedPrefix+fixture.workID,
+			f.stream,
+			f.index,
+			f.dead,
+			f.closedPrefix+f.workID,
 		).Err()
 		_ = client.Close()
 	})
-	return fixture
+	return f
 }
 
-func (f *queueFixture) addJob(t *testing.T, payload string) string {
+func (f *fixture) addJob(t *testing.T, payload string) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -105,64 +107,64 @@ func (f *queueFixture) addJob(t *testing.T, payload string) string {
 	return messageID
 }
 
-func TestQueueAckOwnershipAndDeadLetter(t *testing.T) {
-	fixture := newQueueFixture(t, "consumer-a")
+func TestAckOwnershipAndDeadLetter(t *testing.T) {
+	f := newFixture(t, "consumer-a")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	raw := `{"trabajo_id":"` + fixture.workID + `","spider":"jumbo_rsc"}`
-	messageID := fixture.addJob(t, raw)
+	raw := `{"trabajo_id":"` + f.workID + `","spider":"jumbo_rsc"}`
+	messageID := f.addJob(t, raw)
 
-	has, err := fixture.queue.HasMessage(ctx, fixture.workID)
+	has, err := f.queue.HasMessage(ctx, f.workID)
 	if err != nil || !has {
 		t.Fatalf("HasMessage() = %v, %v; want true", has, err)
 	}
-	message, err := fixture.queue.Receive(ctx)
+	message, err := f.queue.Receive(ctx)
 	if err != nil {
 		t.Fatalf("Receive() error = %v", err)
 	}
 	if message == nil || message.ID != messageID {
 		t.Fatalf("message = %+v, want %s", message, messageID)
 	}
-	renewed, err := fixture.queue.Renew(ctx, messageID)
+	renewed, err := f.queue.Renew(ctx, messageID)
 	if err != nil || !renewed {
 		t.Fatalf("Renew() = %v, %v; want true", renewed, err)
 	}
 
-	other, err := New(fixture.client, Options{
-		Stream:       fixture.stream,
-		Group:        fixture.queue.Group(),
+	other, err := queue.New(f.client, queue.Options{
+		Stream:       f.stream,
+		Group:        f.queue.Group(),
 		Lease:        10 * time.Second,
 		Consumer:     "consumer-b",
-		IndexKey:     fixture.index,
-		DeadLetter:   fixture.dead,
-		ClosedPrefix: fixture.closedPrefix,
+		IndexKey:     f.index,
+		DeadLetter:   f.dead,
+		ClosedPrefix: f.closedPrefix,
 	})
 	if err != nil {
-		t.Fatalf("New(other) error = %v", err)
+		t.Fatalf("queue.New(other) error = %v", err)
 	}
 	if ok, _ := other.Renew(ctx, messageID); ok {
 		t.Fatal("otro consumidor no debe poder renovar la lease")
 	}
-	if ok, _ := other.Ack(ctx, messageID, raw, fixture.workID, ""); ok {
+	if ok, _ := other.Ack(ctx, messageID, raw, f.workID, ""); ok {
 		t.Fatal("otro consumidor no debe poder hacer ACK")
 	}
 
-	acked, err := fixture.queue.Ack(ctx, messageID, raw, fixture.workID, "attempts_exhausted")
+	acked, err := f.queue.Ack(ctx, messageID, raw, f.workID, "attempts_exhausted")
 	if err != nil || !acked {
 		t.Fatalf("Ack() = %v, %v; want true", acked, err)
 	}
-	if has, _ := fixture.queue.HasMessage(ctx, fixture.workID); has {
+	if has, _ := f.queue.HasMessage(ctx, f.workID); has {
 		t.Fatal("el índice debe limpiarse después del ACK")
 	}
-	if exists, _ := fixture.client.Exists(ctx, fixture.closedPrefix+fixture.workID).Result(); exists != 1 {
+	if exists, _ := f.client.Exists(ctx, f.closedPrefix+f.workID).Result(); exists != 1 {
 		t.Errorf("marcador de cierre existe = %d, want 1", exists)
 	}
-	if length, _ := fixture.client.XLen(ctx, fixture.stream).Result(); length != 0 {
+	if length, _ := f.client.XLen(ctx, f.stream).Result(); length != 0 {
 		t.Errorf("stream length = %d, want 0", length)
 	}
 
-	dead, err := fixture.client.XRange(ctx, fixture.dead, "-", "+").Result()
+	dead, err := f.client.XRange(ctx, f.dead, "-", "+").Result()
 	if err != nil {
 		t.Fatalf("XRange(dead) error = %v", err)
 	}
@@ -180,32 +182,33 @@ func TestQueueAckOwnershipAndDeadLetter(t *testing.T) {
 	}
 }
 
-func TestQueueAckSuccessDoesNotCreateDeadLetter(t *testing.T) {
-	fixture := newQueueFixture(t, "consumer-a")
+func TestAckSuccessDoesNotCreateDeadLetter(t *testing.T) {
+	f := newFixture(t, "consumer-a")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	raw := `{"trabajo_id":"` + fixture.workID + `","spider":"jumbo_rsc"}`
-	messageID := fixture.addJob(t, raw)
-	if message, err := fixture.queue.Receive(ctx); err != nil || message == nil {
+	raw := `{"trabajo_id":"` + f.workID + `","spider":"jumbo_rsc"}`
+	messageID := f.addJob(t, raw)
+	message, err := f.queue.Receive(ctx)
+	if err != nil || message == nil {
 		t.Fatalf("Receive() = %+v, %v", message, err)
 	}
-	acked, err := fixture.queue.Ack(ctx, messageID, raw, fixture.workID, "")
+	acked, err := f.queue.Ack(ctx, messageID, raw, f.workID, "")
 	if err != nil || !acked {
 		t.Fatalf("Ack() = %v, %v; want true", acked, err)
 	}
-	if exists, _ := fixture.client.Exists(ctx, fixture.dead).Result(); exists != 0 {
+	if exists, _ := f.client.Exists(ctx, f.dead).Result(); exists != 0 {
 		t.Errorf("dead letter existe = %d, want 0", exists)
 	}
-	if exists, _ := fixture.client.Exists(ctx, fixture.closedPrefix+fixture.workID).Result(); exists != 1 {
+	if exists, _ := f.client.Exists(ctx, f.closedPrefix+f.workID).Result(); exists != 1 {
 		t.Errorf("marcador de cierre existe = %d, want 1", exists)
 	}
 }
 
-func TestQueueRejectsShortLease(t *testing.T) {
+func TestRejectsShortLease(t *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "localhost:0"})
 	defer client.Close()
-	if _, err := New(client, Options{Lease: time.Second}); err == nil {
+	if _, err := queue.New(client, queue.Options{Lease: time.Second}); err == nil {
 		t.Fatal("New() debió rechazar una lease menor a 10 s")
 	}
 }
