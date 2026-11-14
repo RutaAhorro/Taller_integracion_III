@@ -1,15 +1,16 @@
-package spiders
+package spiders_test
 
 import (
 	"strings"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
-func TestCompleteItemDerivesSKUFromProductURL(t *testing.T) {
+func TestCompleteItemDerivaSKUDesdeLaURL(t *testing.T) {
 	productURL := "https://www.santaisabel.cl/mas-limonada-frambuesa-con-gas-1600cc-1993238/p"
-	item := CompleteItem(domain.Item{
+	item := spiders.CompleteItem(domain.Item{
 		Product:      domain.Product{Producto: "Agua saborizada", URLProducto: &productURL},
 		Supermercado: "Santa Isabel",
 	})
@@ -18,10 +19,10 @@ func TestCompleteItemDerivesSKUFromProductURL(t *testing.T) {
 	}
 }
 
-func TestCompleteItemKeepsExistingSKU(t *testing.T) {
+func TestCompleteItemConservaElSKUExistente(t *testing.T) {
 	productURL := "https://cugat.cl/producto/leche-entera/"
 	sku := "SKU-1"
-	item := CompleteItem(domain.Item{
+	item := spiders.CompleteItem(domain.Item{
 		Product: domain.Product{Producto: "Leche", SKU: &sku, URLProducto: &productURL},
 	})
 	if item.SKU == nil || *item.SKU != "SKU-1" {
@@ -29,21 +30,10 @@ func TestCompleteItemKeepsExistingSKU(t *testing.T) {
 	}
 }
 
-func TestCompleteItemTruncatesSKU(t *testing.T) {
-	productURL := "https://cugat.cl/producto/leche-entera/"
-	sku := strings.Repeat("s", 120)
-	item := CompleteItem(domain.Item{
-		Product: domain.Product{Producto: "Leche", SKU: &sku, URLProducto: &productURL},
-	})
-	if item.SKU == nil || len(*item.SKU) != 100 {
-		t.Errorf("sku = %v", item.SKU)
-	}
-}
-
-func TestCompleteItemTruncatesAllCatalogFields(t *testing.T) {
-	productURL := "https://www.jumbo.cl/producto-con-descripcion-larga-1993238/p"
+func TestCompleteItemRecortaLasColumnasDelCatalogo(t *testing.T) {
 	long := func(size int) string { return strings.Repeat("á", size) }
-	item := CompleteItem(domain.Item{Product: domain.Product{
+	productURL := "https://www.jumbo.cl/producto-con-descripcion-larga-1993238/p"
+	item := spiders.CompleteItem(domain.Item{Product: domain.Product{
 		Producto:          long(300),
 		SKU:               domain.StringPtr(long(120)),
 		EanGtin:           domain.StringPtr(long(60)),
@@ -68,15 +58,15 @@ func TestCompleteItemTruncatesAllCatalogFields(t *testing.T) {
 		{"mecanica_promocion", *item.MecanicaPromocion, 255},
 	}
 	for _, check := range checks {
-		if len([]rune(check.value)) != check.limit {
-			t.Errorf("%s = %d runas, want %d", check.name, len([]rune(check.value)), check.limit)
+		if got := len([]rune(check.value)); got != check.limit {
+			t.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.limit)
 		}
 	}
 }
 
-func TestCompleteItemDerivesSKUBeforeTruncating(t *testing.T) {
+func TestCompleteItemDerivaElSKUAntesDeRecortar(t *testing.T) {
 	productURL := "https://www.santaisabel.cl/producto-sin-sku-1993238/p"
-	item := CompleteItem(domain.Item{Product: domain.Product{
+	item := spiders.CompleteItem(domain.Item{Product: domain.Product{
 		Producto:    "Producto sin SKU",
 		URLProducto: &productURL,
 	}})

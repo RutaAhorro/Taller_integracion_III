@@ -1,4 +1,4 @@
-package spool
+package spool_test
 
 import (
 	"context"
@@ -12,16 +12,25 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spool"
 )
 
 func floatPtr(value float64) *float64 {
 	return &value
 }
 
+func receipt(count int) map[string]any {
+	return map[string]any{
+		"total_recibidos":     count,
+		"precios_registrados": count,
+		"insertados":          count,
+		"actualizados":        0,
+	}
+}
+
 func TestSealAndReplay(t *testing.T) {
-	directory := t.TempDir()
 	workID := uuid.NewString()
-	store, err := Open(workID, directory, 1<<20)
+	store, err := spool.Open(workID, t.TempDir(), 1<<20)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -39,32 +48,14 @@ func TestSealAndReplay(t *testing.T) {
 	if err := store.Add(pan, &market); err != nil {
 		t.Fatalf("Add(pan) error = %v", err)
 	}
-
-	var unbatched int
-	if err := store.db.QueryRow("SELECT count(*) FROM items WHERE batch_id IS NULL").Scan(&unbatched); err != nil {
-		t.Fatalf("contar sin lote: %v", err)
-	}
-	if unbatched != 2 {
-		t.Fatalf("items sin lote = %d, want 2", unbatched)
-	}
-	if err := store.Seal(1); err != nil {
-		t.Fatalf("Seal() error = %v", err)
-	}
-	if err := store.db.QueryRow("SELECT count(*) FROM items WHERE batch_id IS NULL").Scan(&unbatched); err != nil {
-		t.Fatalf("contar sin lote después de Seal: %v", err)
-	}
-	if unbatched != 0 {
-		t.Fatalf("items sin lote después de Seal = %d", unbatched)
-	}
-	var batches int
-	if err := store.db.QueryRow("SELECT count(*) FROM batches").Scan(&batches); err != nil {
-		t.Fatalf("contar batches: %v", err)
-	}
-	if batches != 2 {
-		t.Fatalf("batches = %d, want 2", batches)
+	if count, err := store.Count(); err != nil || count != 2 {
+		t.Fatalf("Count() = %d, %v; want 2 (la huella evita duplicados)", count, err)
 	}
 	if err := store.Seal(0); err == nil {
 		t.Fatal("Seal(0) debió fallar")
+	}
+	if err := store.Seal(1); err != nil {
+		t.Fatalf("Seal() error = %v", err)
 	}
 
 	var calls int
@@ -81,12 +72,7 @@ func TestSealAndReplay(t *testing.T) {
 			t.Errorf("payload = %+v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"total_recibidos":     1,
-			"precios_registrados": 1,
-			"insertados":          1,
-			"actualizados":        0,
-		})
+		_ = json.NewEncoder(w).Encode(receipt(1))
 	}))
 	defer server.Close()
 
@@ -95,14 +81,13 @@ func TestSealAndReplay(t *testing.T) {
 		t.Fatalf("Replay() error = %v", err)
 	}
 	if calls != 2 {
-		t.Fatalf("calls = %d, want 2", calls)
+		t.Fatalf("calls = %d, want 2 (un lote por producto)", calls)
 	}
-	var delivered int
-	if err := store.db.QueryRow("SELECT count(*) FROM batches WHERE delivered = 0").Scan(&delivered); err != nil {
-		t.Fatalf("contar pendientes: %v", err)
+	if err := store.Replay(context.Background(), client); err != nil {
+		t.Fatalf("segundo Replay() error = %v", err)
 	}
-	if delivered != 0 {
-		t.Fatalf("lotes pendientes = %d", delivered)
+	if calls != 2 {
+		t.Fatalf("calls tras reenviar = %d, want 2 (los lotes ya se entregaron)", calls)
 	}
 
 	if err := store.SetProgress("crawl_attempts", 2); err != nil {
@@ -118,9 +103,8 @@ func TestSealAndReplay(t *testing.T) {
 }
 
 func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
-	directory := t.TempDir()
 	workID := uuid.NewString()
-	store, err := Open(workID, directory, 1<<20)
+	store, err := spool.Open(workID, t.TempDir(), 1<<20)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -153,12 +137,7 @@ func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"total_recibidos":     1,
-			"precios_registrados": 1,
-			"insertados":          1,
-			"actualizados":        0,
-		})
+		_ = json.NewEncoder(w).Encode(receipt(1))
 	}))
 	defer server.Close()
 
@@ -178,19 +157,17 @@ func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
 	if bodies[0] != bodies[1] {
 		t.Errorf("payload cambió entre reintentos:\n%s\n%s", bodies[0], bodies[1])
 	}
-	var delivered int
-	if err := store.db.QueryRow("SELECT count(*) FROM batches WHERE delivered = 1").Scan(&delivered); err != nil {
-		t.Fatalf("contar entregados: %v", err)
+	if err := store.Replay(context.Background(), client); err != nil {
+		t.Fatalf("tercer Replay() error = %v", err)
 	}
-	if delivered != 1 {
-		t.Errorf("lotes entregados = %d, want 1", delivered)
+	if calls != 2 {
+		t.Fatalf("calls tras el tercer Replay = %d, want 2 (lote ya entregado)", calls)
 	}
 }
 
 func TestReplayDoesNotSendWithCancelledContext(t *testing.T) {
-	directory := t.TempDir()
 	workID := uuid.NewString()
-	store, err := Open(workID, directory, 1<<20)
+	store, err := spool.Open(workID, t.TempDir(), 1<<20)
 	if err != nil {
 		t.Fatalf("Open() error = %v", err)
 	}
@@ -222,7 +199,7 @@ func TestReplayDoesNotSendWithCancelledContext(t *testing.T) {
 }
 
 func TestOpenRejectsInvalidWorkID(t *testing.T) {
-	if _, err := Open("no-es-uuid", t.TempDir(), 1<<20); err == nil {
+	if _, err := spool.Open("no-es-uuid", t.TempDir(), 1<<20); err == nil {
 		t.Fatal("Open() debió rechazar un trabajo_id inválido")
 	}
 }
