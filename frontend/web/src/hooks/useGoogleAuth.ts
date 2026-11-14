@@ -1,11 +1,9 @@
 import { useAuth } from './useAuth';
-import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 
-/** Envía la credencial de Google a Identidad y coordina carga, errores y navegación tras el acceso. */
+/** Envía la credencial de Google a Identidad; Login decide el destino con el usuario actualizado. */
 export function useGoogleAuth() {
   const { googleLogin, isLoading: isContextLoading, error: contextError } = useAuth();
-  const navigate = useNavigate();
   const [internalError, setInternalError] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
@@ -21,9 +19,7 @@ export function useGoogleAuth() {
       // El servidor valida la credencial; su presencia no acredita una sesión por sí sola.
       const success = await googleLogin(credentialResponse.credential);
       
-      if (success) {
-        navigate('/dashboard');
-      } else {
+      if (!success) {
         setInternalError("Fallo en la autenticación con el servidor.");
       }
     } catch (err: any) {

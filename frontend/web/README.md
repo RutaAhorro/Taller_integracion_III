@@ -146,6 +146,12 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
 
 ## Comprobaciones
 
+Tras iniciar sesión por contraseña o Google, `/login` redirige a `/admin` si el
+usuario devuelto por Identidad tiene rol `admin`; las demás cuentas van al
+catálogo. No se asignan permisos por correo. Para probar una promoción de rol,
+cerrar sesión e iniciar nuevamente, y comprobar `rol` en la respuesta de login.
+La redirección no sustituye la autorización del backend.
+
 Desde `frontend/web`:
 
 ```bash
