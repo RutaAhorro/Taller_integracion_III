@@ -148,7 +148,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar usuario..." className="pl-9 shadow-none" /></div>
           <select value={role} onChange={(event) => setRole(event.target.value)} aria-label="Filtrar por rol" className="h-10 rounded-md border-2 border-border bg-background px-3 text-sm font-medium shadow-none outline-none focus:ring-2 focus:ring-ring">
-            <option>Todos</option>{ADMIN_ROLES.map((r) => <option key={r}>{r}</option>)}
+            <option>Todos</option>{ADMIN_ROLES.map((rol) => <option key={rol}>{rol}</option>)}
           </select>
         </div>
       </div>
@@ -191,7 +191,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
                             {!roleEditable && <option value="">Desconocido</option>}
-                            {ADMIN_ROLES.map((r) => <option key={r}>{r}</option>)}
+                            {ADMIN_ROLES.map((rol) => <option key={rol}>{rol}</option>)}
                           </select>
                         ) : user.role}
                       </td>
@@ -206,7 +206,7 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
                             {!user.plan && <option value="">—</option>}
-                            {ADMIN_PLANS.map((p) => <option key={p}>{p}</option>)}
+                            {ADMIN_PLANS.map((plan) => <option key={plan}>{plan}</option>)}
                           </select>
                         ) : (
                           <span>{user.plan ?? '—'}</span>
@@ -322,7 +322,7 @@ function SourcesTable() {
   );
 }
 
-const fmt = (n: number) => n.toLocaleString('es-CL');
+const fmt = (numero: number) => numero.toLocaleString('es-CL');
 
 // SUP-280: tarjetas de conteo combinando los tres servicios en paralelo.
 // Si un servicio falla, su tarjeta muestra "Sin datos" sin romper la vista.
@@ -376,7 +376,7 @@ function MetricsCards({ metrics }: { metrics: AdminMetricsState }) {
 function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
   const { control } = metrics;
   const entries = Object.entries(control.data?.trabajosPorEstado ?? {});
-  const max = Math.max(1, ...entries.map(([, v]) => v));
+  const max = Math.max(1, ...entries.map(([, valor]) => valor));
   const chartBars = ['bg-[var(--chart-1)]', 'bg-[var(--chart-2)]', 'bg-[var(--chart-3)]', 'bg-[var(--chart-4)]', 'bg-[var(--chart-5)]'];
 
   return (
@@ -401,14 +401,14 @@ function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
       )}
       <div className="mt-6 space-y-3">
         {entries.length === 0 && !control.error && <p className="text-sm text-white/60">Sin trabajos registrados.</p>}
-        {entries.map(([estado, total], i) => (
+        {entries.map(([estado, total], indice) => (
           <div key={estado}>
             <div className="mb-1 flex justify-between text-xs">
               <span className="capitalize text-white/70">{estado.replace('_', ' ')}</span>
               <span className="font-bold">{fmt(total)}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full ${chartBars[i % chartBars.length]}`} style={{ width: `${(total / max) * 100}%` }} />
+              <div className={`h-full rounded-full ${chartBars[indice % chartBars.length]}`} style={{ width: `${(total / max) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -447,7 +447,7 @@ function Overview() {
       </div>
       {metrics.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
+          {Array.from({ length: 4 }).map((_, indice) => <div key={indice} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
         </div>
       ) : <MetricsCards metrics={metrics} />}
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
@@ -487,7 +487,7 @@ function MetricsSection() {
       </div>
       {metrics.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
+          {Array.from({ length: 4 }).map((_, indice) => <div key={indice} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
         </div>
       ) : <MetricsCards metrics={metrics} />}
       <div className="mt-6 grid gap-6 xl:grid-cols-2">

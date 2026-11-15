@@ -99,7 +99,7 @@ const MUTACION_EN_CURSO_FUENTE =
 export function useAdminUsers(params: AdminUsersParams = {}) {
   const page = Math.max(1, params.page ?? 1);
   const limit = params.limit ?? 20;
-  const q = (params.q ?? '').trim();
+  const busqueda = (params.q ?? '').trim();
   const rolFiltro = params.rol && params.rol !== 'Todos' ? adminRoleToBackend(params.rol) : '';
 
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -128,7 +128,7 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
     setIsLoading(true);
     setError(null);
     try {
-      const result = await fetchAdminUsers({ page, limit, q, rol: rolFiltro }, signal);
+      const result = await fetchAdminUsers({ page, limit, q: busqueda, rol: rolFiltro }, signal);
       if (seq.current === current) {
         setUsers(result.users);
         setPagination({ page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages });
@@ -151,7 +151,7 @@ export function useAdminUsers(params: AdminUsersParams = {}) {
     } finally {
       if (seq.current === current) setIsLoading(false);
     }
-  }, [expireSession, page, limit, q, rolFiltro]);
+  }, [expireSession, page, limit, busqueda, rolFiltro]);
 
   useEffect(() => {
     const controller = new AbortController();

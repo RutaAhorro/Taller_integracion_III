@@ -4,7 +4,7 @@ import { useNavigate, useLocation, Link } from "react-router-dom"
 import { ArrowRight, Eye, EyeOff, Lock, Mail, Loader2, ShoppingBasket } from "lucide-react"
 import { useToast } from "@/contexts/ToastContext"
 import { useAuth } from "@/hooks/useAuth"
-import { ROUTES } from "@/core/routes"
+import { ROUTES, rutaTrasAutenticacion } from "@/core/routes"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -53,7 +53,7 @@ function EmailField({ id, value, onChange, error }: EmailFieldProps) {
           id={id}
           type="email"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(evento) => onChange(evento.target.value)}
           placeholder="tu@correo.com"
           autoComplete="email"
           className={`h-11 rounded-xl pl-10 ${error ? 'border-destructive border-2' : ''}`}
@@ -90,14 +90,14 @@ function PasswordField({ id, value, onChange, error, placeholder, autoComplete, 
           id={id}
           type={visible ? "text" : "password"}
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(evento) => onChange(evento.target.value)}
           placeholder={placeholder}
           autoComplete={autoComplete}
           className={`h-11 rounded-xl pr-10 pl-10 ${error ? 'border-destructive border-2' : ''}`}
         />
         <button
           type="button"
-          onClick={() => setVisible((v) => !v)}
+          onClick={() => setVisible((visibleAnterior) => !visibleAnterior)}
           aria-label={visible ? "Ocultar contraseña" : "Mostrar contraseña"}
           className="cursor-pointer absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
         >
@@ -120,7 +120,7 @@ function CheckboxField({ id, checked, onChange, error, children }: CheckboxField
           type="checkbox"
           id={id}
           checked={checked}
-          onChange={(e) => onChange(e.target.checked)}
+          onChange={(evento) => onChange(evento.target.checked)}
           className={`mt-1 h-4 w-4 rounded bg-background focus:ring-primary focus:ring-offset-2 shrink-0 cursor-pointer ${error ? 'border-destructive border-2 text-destructive' : 'border-border text-primary'}`}
         />
         <label htmlFor={id} className={`text-sm leading-snug cursor-pointer select-none ${error ? 'text-destructive font-medium' : 'text-muted-foreground'}`}>
@@ -169,8 +169,8 @@ export function AuthPanel() {
   const { toast } = useToast()
 
   // Valida los campos antes de delegar la autenticación en Identidad.
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleLogin = async (evento: React.FormEvent) => {
+    evento.preventDefault()
 
     const newErrors: FormErrors = {}
     if (!loginEmail.includes("@")) newErrors.loginEmail = "Ingresa un correo electrónico válido"
@@ -178,14 +178,16 @@ export function AuthPanel() {
     setErrors(newErrors)
     if (Object.keys(newErrors).length > 0) return
 
-    if (await login({ correo: loginEmail, password: loginPassword })) {
+    const usuario = await login({ correo: loginEmail, password: loginPassword })
+    if (usuario) {
       toast("Inicio de sesión exitoso", "success")
+      navigate(rutaTrasAutenticacion(usuario.rol), { replace: true })
     }
   }
 
   // Registra la cuenta solo si se cumplen las validaciones locales y los consentimientos.
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSignup = async (evento: React.FormEvent) => {
+    evento.preventDefault()
 
     const newErrors: FormErrors = {}
     if (!signupEmail.includes("@")) newErrors.signupEmail = "Ingresa un correo electrónico válido"
@@ -229,7 +231,7 @@ export function AuthPanel() {
         </div>
 
         <div className="rounded-xl border-4 border-border bg-background p-6 shadow-[8px_8px_0px_var(--color-border)] sm:p-8">
-          <Tabs value={tab} onValueChange={(v: string) => setTab(v)}>
+          <Tabs value={tab} onValueChange={(valor: string) => setTab(valor)}>
             <TabsList className="mb-7 grid h-11 w-full grid-cols-2 rounded-xl bg-primary/20 p-1 border-2 border-border shadow-[4px_4px_0px_var(--color-border)]">
               <TabsTrigger value="login" className="rounded-lg text-sm hover:bg-primary/40">
                 Iniciar Sesión

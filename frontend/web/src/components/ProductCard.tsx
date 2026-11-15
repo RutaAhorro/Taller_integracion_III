@@ -52,7 +52,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
               src={marketLogo}
               alt={`Logo de ${displayMarketName}`}
               className="h-3 w-3 rounded-sm object-cover"
-              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              onError={(evento) => { evento.currentTarget.style.display = 'none'; }}
             />
           ) : (
              <Store className="h-3 w-3 text-muted-foreground shrink-0" />
@@ -64,7 +64,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
           src={product.image || '/placeholder.svg'}
           alt={product.name ? `Imagen de ${product.name}` : 'Imagen de producto'}
           loading="lazy"
-          onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }}
+          onError={(evento) => { evento.currentTarget.src = '/placeholder.svg'; }}
           className="h-full w-full object-contain p-6 transition-transform duration-300 group-hover:scale-105 mix-blend-multiply"
         />
       </div>
@@ -111,8 +111,8 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
           size="icon"
           className="h-9 w-9 shrink-0 rounded-full bg-brand text-white hover:bg-brand-dark"
           aria-label={`Añadir ${product.name} a la lista`}
-          onClick={(e) => {
-            e.preventDefault()
+          onClick={(evento) => {
+            evento.preventDefault()
             onAdd?.(product)
           }}
         >

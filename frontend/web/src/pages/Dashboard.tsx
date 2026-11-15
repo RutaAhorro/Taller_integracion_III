@@ -13,8 +13,8 @@ export default function Page() {
   const { addToCart } = useCart()
   const catalog = useCatalog(query, category, activeMarket)
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+  const handleScroll = (evento: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = evento.currentTarget;
     if (scrollHeight - scrollTop <= clientHeight + 50) {
       catalog.fetchMore();
     }
@@ -60,8 +60,8 @@ export default function Page() {
 
             {catalog.isLoading ? (
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 md:gap-4">
-                {Array.from({ length: 12 }).map((_, i) => (
-                  <ProductSkeleton key={i} />
+                {Array.from({ length: 12 }).map((_, indice) => (
+                  <ProductSkeleton key={indice} />
                 ))}
               </div>
             ) : catalog.error ? (
@@ -72,8 +72,8 @@ export default function Page() {
             ) : catalog.filtered.length > 0 ? (
               <div className="flex flex-col gap-6 pb-6">
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 md:gap-4">
-                  {catalog.filtered.map((p) => (
-                    <ProductCard key={p.id} product={p} onAdd={handleAdd} />
+                  {catalog.filtered.map((producto) => (
+                    <ProductCard key={producto.id} product={producto} onAdd={handleAdd} />
                   ))}
                 </div>
                 {catalog.isFetchingMore && (

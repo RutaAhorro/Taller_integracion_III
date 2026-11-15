@@ -152,6 +152,20 @@ catálogo. No se asignan permisos por correo. Para probar una promoción de rol,
 cerrar sesión e iniciar nuevamente, y comprobar `rol` en la respuesta de login.
 La redirección no sustituye la autorización del backend.
 
+Para comprobar que una sesión local antigua no bloquea el formulario:
+
+1. Iniciar sesión con una cuenta registrada y permanecer en `/dashboard`.
+2. En DevTools, eliminar solo la cookie `jwt`, conservando `auth_user` en Local
+   Storage. No pasar por una página protegida que pueda limpiar la sesión.
+3. Entrar directamente a `/login`: debe aparecer el formulario, sin redirección.
+4. Repetir el acceso con contraseña y, si está configurado, con Google. Solo
+   tras una autenticación exitosa debe navegar según el rol recién recibido.
+   Un rechazo debe mantener el formulario y mostrar el error.
+
+Las pruebas automatizadas cubren el usuario local antiguo, la identidad devuelta
+por ambos métodos y el destino por rol; no sustituyen esta comprobación de
+cookies en el navegador.
+
 ### Panel de usuarios y fuentes (SUP-255)
 
 Probar con el frontend actualizado y una cuenta administradora en la misma BD

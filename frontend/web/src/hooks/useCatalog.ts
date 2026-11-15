@@ -9,7 +9,7 @@ const PAGE_SIZE = 24;
 
 const isOfferFilter = (category: string | null) => category === 'ofertas' || category === 'descuentos';
 
-const savings = (p: Product) => p.originalPrice - p.price;
+const savings = (producto: Product) => producto.originalPrice - producto.price;
 
 export function useCatalog(query: string, category: string | null, activeMarket: string | null) {
   const { markets } = useLayoutContext();
@@ -22,7 +22,7 @@ export function useCatalog(query: string, category: string | null, activeMarket:
   // Descarta respuestas de peticiones que quedaron obsoletas al cambiar filtros.
   const requestId = useRef(0);
 
-  const marketName = markets.find((m) => m.id === activeMarket)?.name ?? null;
+  const marketName = markets.find((supermercado) => supermercado.id === activeMarket)?.name ?? null;
 
   // Construye una página con los filtros admitidos por Catálogo.
   const loadPage = (pageNum: number) => {
@@ -80,8 +80,8 @@ export function useCatalog(query: string, category: string | null, activeMarket:
       .then((result) => {
         if (requestId.current !== current) return;
         setProducts((prev) => {
-          const seen = new Set(prev.map((p) => p.id));
-          return [...prev, ...result.products.filter((p) => !seen.has(p.id))];
+          const seen = new Set(prev.map((producto) => producto.id));
+          return [...prev, ...result.products.filter((producto) => !seen.has(producto.id))];
         });
         setPage(result.page);
         setTotalPages(result.totalPages);
@@ -94,22 +94,22 @@ export function useCatalog(query: string, category: string | null, activeMarket:
 
   const filtered = useMemo(() => {
     // Búsquedas de 1-2 letras no viajan a la API; se filtran aquí.
-    const q = query.trim().toLowerCase();
-    const result = q
-      ? products.filter((p) => p.name.toLowerCase().includes(q) || p.brand.toLowerCase().includes(q))
+    const busqueda = query.trim().toLowerCase();
+    const result = busqueda
+      ? products.filter((producto) => producto.name.toLowerCase().includes(busqueda) || producto.brand.toLowerCase().includes(busqueda))
       : products;
 
     // "Mejores ofertas" ordena por ahorro en $; "Mayor descuento", por %.
-    if (category === 'ofertas') return [...result].sort((a, b) => savings(b) - savings(a));
+    if (category === 'ofertas') return [...result].sort((productoAnterior, productoSiguiente) => savings(productoSiguiente) - savings(productoAnterior));
     if (category === 'descuentos') {
       return [...result].sort(
-        (a, b) => calculateDiscountPct(b.originalPrice, b.price) - calculateDiscountPct(a.originalPrice, a.price),
+        (productoAnterior, productoSiguiente) => calculateDiscountPct(productoSiguiente.originalPrice, productoSiguiente.price) - calculateDiscountPct(productoAnterior.originalPrice, productoAnterior.price),
       );
     }
     return result;
   }, [products, query, category]);
 
-  const supermarketCount = useMemo(() => new Set(filtered.map((p) => p.supermarketId)).size, [filtered]);
+  const supermarketCount = useMemo(() => new Set(filtered.map((producto) => producto.supermarketId)).size, [filtered]);
 
   return { isLoading, error, filtered, supermarketCount, isFetchingMore, fetchMore };
 }

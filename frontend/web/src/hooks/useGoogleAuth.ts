@@ -1,9 +1,12 @@
 import { useAuth } from './useAuth';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { rutaTrasAutenticacion } from '@/core/routes';
 
-/** Envía la credencial de Google a Identidad; Login decide el destino con el usuario actualizado. */
+/** Redirige solo tras validar la credencial con Identidad, usando el rol recibido. */
 export function useGoogleAuth() {
   const { googleLogin, isLoading: isContextLoading, error: contextError } = useAuth();
+  const navigate = useNavigate();
   const [internalError, setInternalError] = useState<string | null>(null);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
@@ -17,9 +20,11 @@ export function useGoogleAuth() {
       }
 
       // El servidor valida la credencial; su presencia no acredita una sesión por sí sola.
-      const success = await googleLogin(credentialResponse.credential);
+      const usuario = await googleLogin(credentialResponse.credential);
       
-      if (!success) {
+      if (usuario) {
+        navigate(rutaTrasAutenticacion(usuario.rol), { replace: true });
+      } else {
         setInternalError("Fallo en la autenticación con el servidor.");
       }
     } catch (err: any) {

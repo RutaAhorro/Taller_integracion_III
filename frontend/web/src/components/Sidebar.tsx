@@ -160,8 +160,8 @@ export function SideBar({
   // Permite cerrar el panel con Escape.
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+    const onKey = (evento: KeyboardEvent) => {
+      if (evento.key === 'Escape') onClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -226,14 +226,14 @@ export function SideBar({
           <nav aria-label="Destacados">
             <SectionTitle>Destacados</SectionTitle>
             <ul className="flex flex-col gap-1">
-              {featured.map((c) => (
-                <li key={c.id}>
+              {featured.map((destacado) => (
+                <li key={destacado.id}>
                   <FilterButton
-                    icon={c.icon}
-                    label={c.id === 'marcas' ? `${c.label} (no disponible)` : c.label}
-                    disabled={c.id === 'marcas'}
-                    active={activeCategory === c.id}
-                    onClick={() => handleCategoryClick(activeCategory === c.id ? '' : c.id)}
+                    icon={destacado.icon}
+                    label={destacado.id === 'marcas' ? `${destacado.label} (no disponible)` : destacado.label}
+                    disabled={destacado.id === 'marcas'}
+                    active={activeCategory === destacado.id}
+                    onClick={() => handleCategoryClick(activeCategory === destacado.id ? '' : destacado.id)}
                   />
                 </li>
               ))}
