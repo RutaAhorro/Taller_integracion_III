@@ -10,6 +10,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// ===== Estructura y Constructor =====
+
 // Jumbo ejecuta el spider de Jumbo.
 type Jumbo struct {
 	baseSpider
@@ -33,6 +35,8 @@ func newJumbo(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages i
 	spider.baseSpider.materialize = spider.enrich
 	return spider
 }
+
+// ===== Enriquecimiento =====
 
 // enrich consulta la ficha del producto cuando el listado no publica EAN/GTIN.
 func (j *Jumbo) enrich(

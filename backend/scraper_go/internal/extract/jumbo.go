@@ -15,6 +15,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
+// ===== Extracción Principal =====
+
 // JumboProducts extrae las fichas schema.org/Product publicadas por Jumbo.
 func JumboProducts(site catalog.Site, body []byte) []domain.Product {
 	selector := site.Selector("json_ld")
@@ -115,6 +117,8 @@ func JumboProducts(site catalog.Site, body []byte) []domain.Product {
 	})
 	return products
 }
+
+// ===== Ficha Individual y SKU =====
 
 // JumboProduct elige la ficha solicitada dentro de los productos extraídos.
 func JumboProduct(site catalog.Site, body []byte, requested string, responseURL *url.URL) *domain.Product {

@@ -15,6 +15,8 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
+// ===== Constantes del Stream =====
+
 const (
 	DefaultStream     = "scraper:jobs:stream"
 	DefaultGroup      = "scraper-workers"
@@ -43,6 +45,8 @@ if ARGV[6] ~= '' then redis.call('SET', KEYS[4], '1', 'EX', ARGV[7]) end
 return 1
 `
 
+// ===== Opciones =====
+
 // Options configura el stream, el grupo, la lease y las claves auxiliares de
 // índice, dead-letter y cierre. New completa los valores vacíos.
 type Options struct {
@@ -56,6 +60,8 @@ type Options struct {
 	DeadLetter   string
 	ClosedPrefix string
 }
+
+// ===== Estructura de Cola =====
 
 // Queue consume el stream con lease exclusiva por consumidor: sólo el dueño
 // puede renovar o confirmar un mensaje.
@@ -74,6 +80,8 @@ type Queue struct {
 	renewScript  *redis.Script
 	ackScript    *redis.Script
 }
+
+// ===== Constructor =====
 
 // New valida la lease mínima de 10 s y completa los nombres y claves que no
 // vengan en Options.
@@ -123,6 +131,8 @@ func New(client *redis.Client, opts Options) (*Queue, error) {
 	}, nil
 }
 
+// ===== Accesores =====
+
 // Consumer devuelve el nombre con el que este proceso figura en el grupo.
 func (q *Queue) Consumer() string {
 	return q.consumer
@@ -137,6 +147,8 @@ func (q *Queue) Stream() string {
 func (q *Queue) Group() string {
 	return q.group
 }
+
+// ===== Recepción y Lease =====
 
 // EnsureGroup crea el grupo de consumo si no existe. Es seguro llamarlo en
 // cada arranque.
@@ -206,6 +218,8 @@ func (q *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
 	}
 	return result == 1, nil
 }
+
+// ===== Confirmación y Heartbeat =====
 
 // Ack confirma el mensaje. Si reason no está vacío, primero copia el payload
 // al dead-letter; en ambos casos limpia el índice y marca el trabajo cerrado.
@@ -285,6 +299,8 @@ func (q *Queue) Heartbeat(parent context.Context, messageID string) (
 
 	return ctx, cancel, lost, nil
 }
+
+// ===== Utilidades =====
 
 // IsLost informa si el canal de pérdida de lease ya se cerró.
 func IsLost(lost <-chan struct{}) bool {

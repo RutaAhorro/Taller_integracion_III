@@ -6,6 +6,8 @@ import (
 	"strings"
 )
 
+// ===== Carga de Categorías =====
+
 // readCategoryURLs lee las URLs de categorías desde un archivo en disco.
 func readCategoryURLs(file string) []string {
 	body, err := os.ReadFile(file)

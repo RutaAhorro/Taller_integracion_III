@@ -12,6 +12,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
+// ===== Extracción Principal =====
+
 // CugatProducts extrae las tarjetas del listado de WooCommerce.
 func CugatProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	cardSelector := site.Selector("product_card")
@@ -96,10 +98,14 @@ func CugatProducts(site catalog.Site, body []byte, responseURL *url.URL) []domai
 	return products
 }
 
+// ===== Ficha Individual =====
+
 // CugatProduct lee la ficha individual desde JSON-LD.
 func CugatProduct(site catalog.Site, body []byte, responseURL *url.URL) *domain.Product {
 	return ExtractJSONLDProduct(site, body, responseURL)
 }
+
+// ===== Utilidades =====
 
 // cugatPriceFrom analiza y extrae el precio numérico en pesos desde Cugat.
 func cugatPriceFrom(card *goquery.Selection, site catalog.Site, selector string) *float64 {

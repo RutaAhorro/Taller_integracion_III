@@ -21,6 +21,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/storage"
 )
 
+// ===== Estructura del Spool =====
+
 // Spool es el outbox durable de un trabajo: productos, lotes y progreso de
 // recuperación. Cada trabajo tiene su propio archivo SQLite.
 type Spool struct {
@@ -29,6 +31,8 @@ type Spool struct {
 	minFree   int64
 	db        *sql.DB
 }
+
+// ===== Apertura =====
 
 // Open abre o crea el spool de un trabajo. La comprobación de capacidad se
 // hace antes de SQLite para no llenar el volumen con un archivo nuevo.
@@ -70,6 +74,8 @@ func Open(workID, stateDir string, minFree int64) (*Spool, error) {
 	return result, nil
 }
 
+// ===== Inicialización =====
+
 // initialize prepara el esquema de tablas e índices del almacén SQLite local.
 func (s *Spool) initialize() error {
 	if _, err := s.db.Exec(`
@@ -85,6 +91,8 @@ func (s *Spool) initialize() error {
 	return os.Chmod(filepath.Join(s.directory, "outbox.sqlite"), 0o600)
 }
 
+// ===== Ciclo de Vida =====
+
 // Directory devuelve el directorio donde vive el spool.
 func (s *Spool) Directory() string {
 	return s.directory
@@ -94,6 +102,8 @@ func (s *Spool) Directory() string {
 func (s *Spool) Close() error {
 	return s.db.Close()
 }
+
+// ===== Productos =====
 
 // Add guarda un producto antes de enviarlo. Si el mismo producto ya está en
 // el spool, la huella UNIQUE evita duplicarlo.
@@ -119,6 +129,8 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 	return err
 }
 
+// ===== Huellas de Producto =====
+
 // productFingerprint genera un hash SHA-256 para garantizar idempotencia en productos.
 func productFingerprint(market *string, data []byte) string {
 	hasher := sha256.New()
@@ -130,6 +142,8 @@ func productFingerprint(market *string, data []byte) string {
 	return hex.EncodeToString(hasher.Sum(nil))
 }
 
+// ===== Conteo =====
+
 // Count devuelve todos los productos persistidos, entregados o no. El worker
 // lo usa para no declarar completado un trabajo que terminó con cero
 // elementos, incluso si el crawl no devolvió un error explícito.
@@ -138,6 +152,8 @@ func (s *Spool) Count() (int, error) {
 	err := s.db.QueryRow("SELECT count(*) FROM items").Scan(&count)
 	return count, err
 }
+
+// ===== Sellado de Lotes =====
 
 // Seal agrupa los items pendientes por supermercado. Nunca mezcla mercados en
 // un mismo lote y conserva el payload exacto que se enviará.
@@ -165,6 +181,8 @@ func (s *Spool) Seal(batchSize int) error {
 		}
 	}
 }
+
+// ===== Consultas de Lotes =====
 
 // itemRow representa una fila de producto leída directamente desde SQLite local.
 type itemRow struct {
@@ -220,6 +238,8 @@ func (s *Spool) unbatchedRows(market sql.NullString, batchSize int) ([]itemRow, 
 	return result, rows.Err()
 }
 
+// ===== Persistencia de Lotes =====
+
 // batchPayload agrupa el conjunto de productos que se despachan a la API de control.
 type batchPayload struct {
 	Products    []json.RawMessage `json:"products"`
@@ -266,6 +286,8 @@ func (s *Spool) persistBatch(market sql.NullString, rows []itemRow) error {
 	return tx.Commit()
 }
 
+// ===== Reenvío de Lotes =====
+
 // Replay envía los lotes pendientes en orden. Se consulta un lote por vez
 // para no cargar en memoria todo el catálogo si la API estuvo caída.
 func (s *Spool) Replay(ctx context.Context, client *controlscraping.Client) error {
@@ -307,6 +329,8 @@ func (s *Spool) Replay(ctx context.Context, client *controlscraping.Client) erro
 		}
 	}
 }
+
+// ===== Progreso =====
 
 // Progress lee una clave de progreso; devuelve 0 si todavía no existe.
 func (s *Spool) Progress(key string) (int, error) {

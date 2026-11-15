@@ -39,11 +39,10 @@ var (
 	acuentaTrailingDigits = regexp.MustCompile(`-\d+$`)
 )
 
-// AcuentaProducts usa el payload RSC y completa precios visibles; si no hay
-// RSC, parsea las tarjetas del HTML.
-
 // ===== Extracción Principal =====
 
+// AcuentaProducts usa el payload RSC y completa precios visibles; si no hay
+// RSC, parsea las tarjetas del HTML.
 func AcuentaProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	rscProducts := acuentaRSCProducts(site, body, responseURL)
 	if len(rscProducts) > 0 {
@@ -57,10 +56,9 @@ func AcuentaProduct(site catalog.Site, body []byte, requested string, responseUR
 	return SelectProductByURL(AcuentaProducts(site, body, responseURL), requested, responseURL)
 }
 
-// acuentaCards extrae productos a partir de las tarjetas del catálogo HTML de Acuenta.
-
 // ===== Extracción HTML DOM =====
 
+// acuentaCards extrae productos a partir de las tarjetas del catálogo HTML de Acuenta.
 func acuentaCards(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	linkSelector := site.Selector("card_link")
 	if linkSelector == "" {
@@ -191,10 +189,9 @@ func acuentaCardFromLink(link *goquery.Selection) *goquery.Selection {
 	return card
 }
 
-// acuentaRSCProducts procesa el flujo React Server Components (RSC) de Acuenta.
-
 // ===== Extracción React Server Components (RSC) =====
 
+// acuentaRSCProducts procesa el flujo React Server Components (RSC) de Acuenta.
 func acuentaRSCProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	text := string(body)
 	promotionPrices := acuentaPromotionPrices(text)
@@ -362,10 +359,9 @@ func acuentaPromotionPrices(text string) map[string]*float64 {
 	return promotionPrices
 }
 
-// acuentaImageFromRSC localiza la imagen del producto en el payload RSC.
-
 // ===== Extracción de Imágenes =====
 
+// acuentaImageFromRSC localiza la imagen del producto en el payload RSC.
 func acuentaImageFromRSC(site catalog.Site, text, sku string) string {
 	pattern := regexp.MustCompile(
 		`(?i)` + regexp.QuoteMeta(site.Setting("image_base")) +
@@ -419,10 +415,9 @@ func acuentaCanonicalImageURL(value string) *string {
 	return &result
 }
 
-// acuentaNameMatchesSlug verifica concordancia entre el nombre y el slug de la URL.
-
 // ===== Normalización y Slugs =====
 
+// acuentaNameMatchesSlug verifica concordancia entre el nombre y el slug de la URL.
 func acuentaNameMatchesSlug(site catalog.Site, name, slug string) bool {
 	nameTokens := acuentaTokens(site, name)
 	slugTokens := acuentaTokens(site, slug)
@@ -453,10 +448,9 @@ func acuentaNameFromSlug(slug string) *string {
 	return normalize.Texto(TitleCase(strings.ReplaceAll(readable, "-", " ")))
 }
 
-// acuentaPricesFromText extrae valores de precio normal y oferta desde un texto.
-
 // ===== Extracción de Precios y Marca =====
 
+// acuentaPricesFromText extrae valores de precio normal y oferta desde un texto.
 func acuentaPricesFromText(text string) (*float64, *float64, *string) {
 	if multi := acuentaMultiPrice.FindStringSubmatchIndex(text); multi != nil {
 		var prefixAmounts []float64

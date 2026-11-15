@@ -9,6 +9,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// ===== Estructura y Constructor =====
+
 // Cugat ejecuta el spider de Cugat.
 type Cugat struct {
 	baseSpider

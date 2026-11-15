@@ -25,6 +25,8 @@ var (
 	oneHalf          = big.NewRat(1, 2)
 )
 
+// ===== Conversión de Precios =====
+
 // PrecioCLP convierte un importe en texto o número a un float con dos decimales.
 func PrecioCLP(value any) *float64 {
 	text, ok := priceText(value)
@@ -153,6 +155,8 @@ func usesThousandsGroups(parts []string) bool {
 	return true
 }
 
+// ===== Normalización de EAN =====
+
 // EAN conserva ceros iniciales y descarta cualquier carácter que no sea
 // dígito, espacio o guion, igual que normalizar_ean_gtin.
 func EAN(value any) *string {
@@ -222,6 +226,8 @@ func EAN(value any) *string {
 	return &result
 }
 
+// ===== Recorte de Texto =====
+
 // Truncar limita una cadena al número de caracteres (runas) que acepta el
 // esquema PostgreSQL. No corta bytes de una secuencia UTF-8.
 func Truncar(value string, max int) string {
@@ -243,6 +249,8 @@ func TruncarPtr(value *string, max int) *string {
 	truncated := Truncar(*value, max)
 	return &truncated
 }
+
+// ===== Productos y SKU =====
 
 // LimitarProducto recorta los campos que Catálogo persiste en columnas
 // VARCHAR de scraper.productos_crudos y deriva el SKU si falta. Se aplica antes
@@ -315,6 +323,8 @@ func isDigits(value string) bool {
 	}
 	return true
 }
+
+// ===== Normalización de Texto =====
 
 // Texto colapsa espacios y devuelve nil para cadenas vacías.
 func Texto(value any) *string {

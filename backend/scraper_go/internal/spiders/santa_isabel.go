@@ -9,6 +9,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// ===== Estructura y Constructor =====
+
 // SantaIsabel ejecuta el spider de Santa Isabel.
 type SantaIsabel struct {
 	baseSpider

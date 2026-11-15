@@ -12,6 +12,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
+// ===== Construcción y Catálogo =====
+
 const (
 	JumboName       = "jumbo_rsc"
 	SantaIsabelName = "santa_isabel_rsc"
@@ -49,6 +51,8 @@ func Names() []string {
 	return catalog.Default().Names()
 }
 
+// ===== Contratos =====
+
 // Emitter recibe cada producto ya normalizado. El worker lo conecta con el
 // spool y la entrega por lotes.
 type Emitter func(domain.Item) error
@@ -64,6 +68,8 @@ type Spider interface {
 	Name() string
 	Run(ctx context.Context, job domain.Job, emit Emitter) error
 }
+
+// ===== Registro =====
 
 // Registry contiene los spiders disponibles indexados por nombre.
 type Registry struct {

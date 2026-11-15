@@ -14,10 +14,9 @@ import (
 // SCRAPER_MAX_PAGES.
 const DefaultMaxPages = 100
 
-// Config concentra las variables de entorno del worker.
-
 // ===== Estructura de Configuración =====
 
+// Config concentra las variables de entorno del worker.
 type Config struct {
 	RedisURL        string
 	APIURL          string
@@ -57,10 +56,9 @@ type Config struct {
 	BackoffMax       time.Duration
 }
 
-// Default devuelve los valores por defecto documentados en .env.example.
-
 // ===== Valores por Defecto =====
 
+// Default devuelve los valores por defecto documentados en .env.example.
 func Default() Config {
 	return Config{
 		RedisURL:        "redis://localhost:6379/0",
@@ -101,10 +99,9 @@ func Default() Config {
 	}
 }
 
-// FromEnv construye y valida la configuración del scraper a partir de variables de entorno.
-
 // ===== Carga desde Entorno =====
 
+// FromEnv construye y valida la configuración del scraper a partir de variables de entorno.
 func FromEnv() (Config, error) {
 	cfg := Default()
 	cfg.RedisURL = env("REDIS_URL", cfg.RedisURL)
@@ -150,10 +147,9 @@ func FromEnv() (Config, error) {
 	return cfg, nil
 }
 
-// Validate comprueba los rangos admitidos por el worker.
-
 // ===== Validación Operativa =====
 
+// Validate comprueba los rangos admitidos por el worker.
 func (cfg Config) Validate() error {
 	switch {
 	case cfg.Lease < 10*time.Second:

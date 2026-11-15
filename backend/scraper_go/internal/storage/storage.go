@@ -19,6 +19,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 )
 
+// ===== Capacidad del Volumen =====
+
 // ErrStoragePressure indica que el volumen no conserva la reserva mínima
 // configurada.
 var ErrStoragePressure = errors.New("spool sin espacio de reserva; se conserva para recuperación")
@@ -45,6 +47,8 @@ func FreeBytes(directory string) (int64, error) {
 	}
 	return int64(stat.Bavail) * int64(stat.Bsize), nil
 }
+
+// ===== Limpieza de Spools =====
 
 // CleanupSpool borra un spool sólo si ningún proceso mantiene el flock de
 // ejecución. Devuelve false si está bloqueado o ya no existe.
@@ -85,6 +89,8 @@ func CleanupSpool(stateDir, workID string) (bool, error) {
 	}
 	return true, nil
 }
+
+// ===== Recolector =====
 
 // Collector retira spools terminales. Ante una dependencia caída devuelve el
 // error y conserva todos los archivos.

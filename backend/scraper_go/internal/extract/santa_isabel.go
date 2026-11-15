@@ -17,10 +17,9 @@ import (
 
 var renderDataPattern = regexp.MustCompile(`window\.__renderData\s*=\s*("(?:\\.|[^"\\])*")`)
 
-// SantaIsabelProducts usa window.__renderData y, si no existe, JSON-LD.
-
 // ===== Extracción Principal =====
 
+// SantaIsabelProducts usa window.__renderData y, si no existe, JSON-LD.
 func SantaIsabelProducts(site catalog.Site, body []byte, baseURL *url.URL) []domain.Product {
 	if products := SantaIsabelRenderData(site, body, baseURL); len(products) > 0 {
 		return products
@@ -253,10 +252,9 @@ func SantaIsabelJSONLD(site catalog.Site, body []byte, baseURL *url.URL) []domai
 	return products
 }
 
-// santaIsabelSeller recupera los datos del vendedor predeterminado en Santa Isabel.
-
 // ===== Vendedores y Precios =====
 
+// santaIsabelSeller recupera los datos del vendedor predeterminado en Santa Isabel.
 func santaIsabelSeller(value any, sellerName string) map[string]any {
 	sellers, _ := value.([]any)
 	for _, rawSeller := range sellers {
@@ -272,10 +270,9 @@ func santaIsabelSeller(value any, sellerName string) map[string]any {
 	return nil
 }
 
-// firstMap retorna el primer submapa válido encontrado en una lista heterogénea.
-
 // ===== Utilidades y Tipos Dinámicos =====
 
+// firstMap retorna el primer submapa válido encontrado en una lista heterogénea.
 func firstMap(value any) map[string]any {
 	values, _ := value.([]any)
 	for _, raw := range values {

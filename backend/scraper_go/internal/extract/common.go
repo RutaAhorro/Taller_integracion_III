@@ -232,12 +232,9 @@ func TitleCase(value string) string {
 	return builder.String()
 }
 
-// ===== Paginación =====
-
-// pagePathURL construye una URL de paginación incorporando el número de página a la ruta.
-
 // ===== Paginación y Rutas =====
 
+// pagePathURL construye una URL de paginación incorporando el número de página a la ruta.
 func pagePathURL(rawURL, segment string, page int) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -310,12 +307,9 @@ func queryPairs(rawQuery string) []string {
 	return strings.Split(rawQuery, "&")
 }
 
-// ===== Canónicos de URL =====
-
-// canonicalProductURL normaliza la URL de un producto removiendo parámetros de rastreo.
-
 // ===== Normalización de URLs =====
 
+// canonicalProductURL normaliza la URL de un producto removiendo parámetros de rastreo.
 func canonicalProductURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -324,10 +318,9 @@ func canonicalProductURL(rawURL string) string {
 	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
 }
 
-// firstText retorna el texto del primer selector que coincida en la selección.
-
 // ===== Extracción de Texto y Atributos =====
 
+// firstText retorna el texto del primer selector que coincida en la selección.
 func firstText(selection *goquery.Selection, selector string) string {
 	return selection.Find(selector).First().Text()
 }
@@ -459,10 +452,9 @@ func urlString(value *url.URL) string {
 	return value.String()
 }
 
-// schemaOffer extrae el nodo de oferta Schema.org de un producto.
-
 // ===== Microdatos Schema.org =====
 
+// schemaOffer extrae el nodo de oferta Schema.org de un producto.
 func schemaOffer(entry map[string]any) map[string]any {
 	switch raw := entry["offers"].(type) {
 	case map[string]any:
@@ -554,10 +546,9 @@ func stockValue(availability any) *bool {
 	return &inStock
 }
 
-// walkJSON visita recursivamente cada objeto JSON invocando la función callback.
-
 // ===== Recorrido y Utilidades JSON =====
 
+// walkJSON visita recursivamente cada objeto JSON invocando la función callback.
 func walkJSON(value any) []any {
 	var result []any
 	var walk func(any)

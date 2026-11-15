@@ -17,6 +17,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
+// ===== Errores del Contrato =====
+
 // Error representa un rechazo de la API. Permanent indica que reintentar el
 // mismo lote no va a cambiar el resultado.
 type Error struct {
@@ -52,6 +54,8 @@ func (e *Error) Permanent() bool {
 	return false
 }
 
+// ===== Estructura del Cliente =====
+
 // Client entrega lotes y consulta trabajos en Control de Scraping. No sigue
 // redirecciones y es seguro para uso concurrente.
 type Client struct {
@@ -59,6 +63,8 @@ type Client struct {
 	token    string
 	http     *http.Client
 }
+
+// ===== Constructor =====
 
 // New construye el cliente con el endpoint de ingesta, el token Bearer y el
 // timeout de cada llamada.
@@ -74,6 +80,8 @@ func New(endpoint, token string, timeout time.Duration) *Client {
 		},
 	}
 }
+
+// ===== Ingesta de Lotes =====
 
 // ingestPayload define el cuerpo de la petición de ingesta hacia control de scraping.
 type ingestPayload struct {
@@ -155,6 +163,8 @@ func (c *Client) IngestBatch(
 	return result, nil
 }
 
+// ===== Cierre y Consulta de Trabajos =====
+
 // FinalizeWork cierra un trabajo y exige que la API confirme id y estado.
 func (c *Client) FinalizeWork(
 	ctx context.Context,
@@ -233,6 +243,8 @@ func (c *Client) GetWork(ctx context.Context, workID string) (map[string]any, er
 	}
 }
 
+// ===== Transporte HTTP =====
+
 // do realiza peticiones HTTP seguras hacia la API de control de scraping.
 func (c *Client) do(request *http.Request) ([]byte, error) {
 	response, err := c.http.Do(request)
@@ -262,6 +274,8 @@ func (c *Client) do(request *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+// ===== Rutas del Contrato =====
+
 // base retorna la URL base limpia de la API de control de scraping.
 func (c *Client) base() string {
 	return strings.TrimSuffix(c.endpoint, "/productos")
@@ -277,6 +291,8 @@ func (c *Client) ingestionEndpoint(workID string) string {
 	}
 	return c.endpoint + "/productos"
 }
+
+// ===== Utilidades =====
 
 // limitProducts ajusta los campos a los límites de scraper.productos_crudos.
 // CompleteItem ya los recorta antes de guardarlos en el spool; este paso queda

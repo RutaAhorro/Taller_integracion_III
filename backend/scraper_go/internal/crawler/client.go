@@ -91,11 +91,10 @@ type Options struct {
 	Logger           *slog.Logger
 }
 
-// Client descarga páginas respetando robots.txt, throttle por dominio,
-// tamaño máximo y reintentos con backoff.
-
 // ===== Estructura de Cliente y Opciones =====
 
+// Client descarga páginas respetando robots.txt, throttle por dominio,
+// tamaño máximo y reintentos con backoff.
 type Client struct {
 	http       *http.Client
 	userAgent  string
@@ -109,11 +108,10 @@ type Client struct {
 	throttle   *throttle
 }
 
-// New construye el cliente y aplica valores seguros a los campos de Options
-// que lleguen en cero.
-
 // ===== Constructor =====
 
+// New construye el cliente y aplica valores seguros a los campos de Options
+// que lleguen en cero.
 func New(opts Options) *Client {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 30 * time.Second
@@ -194,12 +192,11 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 	}
 }
 
+// ===== Método Público Fetch =====
+
 // Fetch aplica robots, throttle y reintentos. Un 404 se devuelve como
 // respuesta para que el spider decida si termina la paginación; un bloqueo
 // persistente se devuelve como BlockedError.
-
-// ===== Método Público Fetch =====
-
 func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -279,10 +276,9 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 	return nil, fmt.Errorf("no se pudo obtener %s", rawURL)
 }
 
-// doRequest ejecuta la solicitud HTTP GET incorporando cabeceras de navegación.
-
 // ===== Petición HTTP y Transporte =====
 
+// doRequest ejecuta la solicitud HTTP GET incorporando cabeceras de navegación.
 func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -312,10 +308,9 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error
 	}, nil
 }
 
-// backoff calcula el tiempo de espera exponencial con variación aleatoria para reintentos.
-
 // ===== Reintentos y Espera =====
 
+// backoff calcula el tiempo de espera exponencial con variación aleatoria para reintentos.
 func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
 	wait := retryAfter
 	if wait <= 0 {
@@ -390,10 +385,9 @@ var (
 	)
 )
 
-// detectBlock analiza la respuesta para detectar patrones de bloqueo o desafíos antibot.
-
 // ===== Detección de Bloqueos =====
 
+// detectBlock analiza la respuesta para detectar patrones de bloqueo o desafíos antibot.
 func detectBlock(status int, body []byte) string {
 	switch status {
 	case http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
@@ -418,17 +412,15 @@ func detectBlock(status int, body []byte) string {
 	return ""
 }
 
-// throttle gestiona la cadencia de peticiones por host para evitar saturaciones.
-
 // ===== Regulación de Tasa (Throttle) =====
 
+// throttle gestiona la cadencia de peticiones por host para evitar saturaciones.
 type throttle struct {
 	mu   sync.Mutex
 	next map[string]time.Time
 }
 
 // newThrottle instancia un regulador de frecuencia de peticiones por intervalo.
-
 func newThrottle() *throttle {
 	return &throttle{next: make(map[string]time.Time)}
 }
@@ -462,10 +454,9 @@ func (t *throttle) Wait(ctx context.Context, host string, delay time.Duration) e
 	}
 }
 
-// robotsEntry almacena las reglas y tiempos de crawl-delay para un dominio.
-
 // ===== Gestión de Robots.txt =====
 
+// robotsEntry almacena las reglas y tiempos de crawl-delay para un dominio.
 type robotsEntry struct {
 	data       *robotstxt.RobotsData
 	crawlDelay time.Duration
@@ -486,7 +477,6 @@ type robotsCache struct {
 }
 
 // newRobotsCache inicializa el caché de directivas de robots.txt.
-
 func newRobotsCache(
 	client *http.Client,
 	userAgent string,

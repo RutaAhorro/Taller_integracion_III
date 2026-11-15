@@ -8,6 +8,8 @@ import (
 	"strings"
 )
 
+// ===== Carga de URLs =====
+
 // Collect combina las URLs recibidas por argumento con las de un archivo, una
 // por línea. Ignora líneas vacías y comentarios.
 func Collect(values []string, file string) ([]string, error) {

@@ -18,10 +18,9 @@ var embedded []byte
 // FileEnv permite reemplazar el catálogo embebido sin recompilar el servicio.
 const FileEnv = "SCRAPER_SPIDERS_FILE"
 
-// Catalog agrupa todos los sitios configurados.
-
 // ===== Modelos de Catálogo =====
 
+// Catalog agrupa todos los sitios configurados.
 type Catalog struct {
 	Sites []Site `json:"sites"`
 }
@@ -79,10 +78,9 @@ type CategoryFrom struct {
 	Fallback    string `json:"fallback,omitempty"`
 }
 
-// Default devuelve el catálogo embebido. Un fallo aquí es un error de build.
-
 // ===== Carga de Spiders Embebidos =====
 
+// Default devuelve el catálogo embebido. Un fallo aquí es un error de build.
 func Default() Catalog {
 	catalog, err := parse(embedded)
 	if err != nil {
@@ -109,10 +107,9 @@ func FromEnv() (Catalog, error) {
 	return catalog, nil
 }
 
-// Get busca un sitio por nombre.
-
 // ===== Búsqueda y Accesores =====
 
+// Get busca un sitio por nombre.
 func (catalogo Catalog) Get(name string) (Site, bool) {
 	for _, site := range catalogo.Sites {
 		if site.Name == name {

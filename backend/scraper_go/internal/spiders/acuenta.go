@@ -9,6 +9,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
+// ===== Estructura y Constructor =====
+
 // Acuenta ejecuta el spider de A Cuenta.
 type Acuenta struct {
 	baseSpider

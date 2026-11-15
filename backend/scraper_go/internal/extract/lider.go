@@ -16,10 +16,9 @@ import (
 
 var liderFormatPattern = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|g|ml|lt|l|un(?:idades?)?)\b`)
 
-// LiderProducts intenta __NEXT_DATA__ y cae a las tarjetas del HTML.
-
 // ===== Extracción Principal =====
 
+// LiderProducts intenta __NEXT_DATA__ y cae a las tarjetas del HTML.
 func LiderProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
@@ -66,10 +65,9 @@ func LiderProduct(site catalog.Site, body []byte, requested string, responseURL 
 	return SelectProductByURL(liderCards(site, document, responseURL), requested, responseURL)
 }
 
-// liderNextDataProducts extrae productos desde el bloque __NEXT_DATA__ en Lider.
-
 // ===== Extracción __NEXT_DATA__ =====
 
+// liderNextDataProducts extrae productos desde el bloque __NEXT_DATA__ en Lider.
 func liderNextDataProducts(site catalog.Site, document *goquery.Document, responseURL *url.URL) ([]domain.Product, bool) {
 	payload, ok := liderNextDataPayload(site, document)
 	if !ok {
@@ -193,10 +191,9 @@ func liderProductFromItem(site catalog.Site, item map[string]any, responseURL *u
 	}, true
 }
 
-// liderCards extrae productos a partir de las tarjetas del catálogo HTML de Lider.
-
 // ===== Extracción Tarjetas HTML =====
 
+// liderCards extrae productos a partir de las tarjetas del catálogo HTML de Lider.
 func liderCards(site catalog.Site, document *goquery.Document, responseURL *url.URL) []domain.Product {
 	cards := document.Find(site.Selector("product_card"))
 	if cards.Length() == 0 {
@@ -278,10 +275,9 @@ func liderCards(site catalog.Site, document *goquery.Document, responseURL *url.
 	return products
 }
 
-// containsAny determina si una cadena contiene alguna de las subcadenas indicadas.
-
 // ===== Utilidades =====
 
+// containsAny determina si una cadena contiene alguna de las subcadenas indicadas.
 func containsAny(text string, values []string) bool {
 	for _, value := range values {
 		if value != "" && strings.Contains(text, value) {
