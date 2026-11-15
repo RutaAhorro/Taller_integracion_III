@@ -56,12 +56,19 @@ Todas las URLs de servicio deben ser **orígenes HTTP(S) limpios**: deben inclui
 | `IDENTIDAD_URL` | Identidad | Gateway | Origen HTTP de Identidad para enrutar `/api/v1/auth/*` a través de la red aislada `identidad_edge`. Formato origen sin path. | `http://identidad-upstream:8080` (en Compose) / `http://127.0.0.1:8084` (local). |
 | `SCRAPING_URL` | Control de scraping | Gateway | Origen HTTP de Control de scraping para enrutar `/api/v1/scraper/*`. Formato origen sin path. | `http://control-scraping:8080` (en Compose) / `http://127.0.0.1:8080` (local). |
 | `RUTAS_URL` | Motor de rutas | Gateway | Origen HTTP del motor de rutas para enrutar `/api/v1/listas*`. Si está vacío, Gateway devuelve 404 (servicio opcional bajo perfil `rutas`). Formato origen sin path. | Vacío por defecto (`${RUTAS_URL:-}`). Con perfil `rutas`: `http://motor-rutas:8001`. |
-| `IA_URL` | IA conversacional | Gateway / Frontend (`VITE_IA_URL`) | [Convención objetivo / Pendiente SUP-278] Origen HTTP del microservicio de IA conversacional (`/api/v1/chat*`, `/api/v1/explicacion*`). Gateway actualmente NO la consume ni la enruta (el chat hoy se conecta directo o mediante frontend). Formato origen sin path. | `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
+| `IA_URL` | IA conversacional | Gateway / Frontend (`VITE_IA_URL`) | Origen HTTP del microservicio de IA conversacional para enrutar `/api/v1/chat*` (SUP-278). Si está vacío, Gateway devuelve 404 (`route_not_found`) manteniendo el entorno desacoplado en CI. Formato origen sin path. | Vacío por defecto (`${IA_URL:-}`). En entorno integrado con IA: `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
 
 #### Excepciones a la regla de URLs sin path
 
 - `SCRAPER_API_URL`: consumida por Scraper Go (`scraper_worker`), requiere el path completo (en Compose: `http://gateway:8080/api/v1/scraper/productos`).
 - `SCRAPER_API_BASE_URL`: consumida por Bot de Discord (`bot_discord`), requiere el path base (en Compose: `http://api:8080/api/v1/scraper/trabajos`).
+
+#### Prefijos de enrutamiento y timeouts del Gateway
+
+Variables opcionales del Gateway (`backend/gateway`) para personalizar prefijos y límites de espera en Compose:
+
+- `GATEWAY_IA_PREFIXES`: lista de prefijos para IA conversacional separada por comas. Valor por defecto: `/api/v1/chat`.
+- `GATEWAY_RESPONSE_HEADER_TIMEOUT`: espera máxima de cabeceras de respuesta del upstream. En Compose se amplía por defecto a `20s` (frente a `10s` del binario) para tolerar la latencia de inferencia de LLM en IA conversacional. *Nota sobre presupuesto de timeouts:* El flujo conversacional de la IA encadena extracción, consulta a Catálogo y explicación; ante saturación extrema de LLMs externos puede superar el timeout del Gateway devolviendo 504 `ia_timeout` mientras la IA finaliza su ciclo en segundo plano.
 
 ### 5. Base de datos PostgreSQL
 

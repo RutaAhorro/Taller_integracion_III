@@ -15,6 +15,8 @@ const reactUrl = moduleUrl(`
     }];
   }
   export const useEffect = () => {};
+  export const useRef = inicial => ({ current: inicial });
+  export const useCallback = callback => callback;
   export const createContext = () => ({ Provider: 'proveedor' });
 `);
 const entornoUrl = moduleUrl(`
@@ -27,6 +29,7 @@ const entornoUrl = moduleUrl(`
     removeItem: () => {},
   };
   export const useAuth = () => sesion.contexto;
+  export const useToast = () => ({ toast: () => {} });
   export const useNavigate = () => (destino, opciones) => navegaciones.push({ destino, opciones });
 `);
 
@@ -47,6 +50,7 @@ const rolesUrl = await cargar('../src/lib/roles.ts');
 const rutasUrl = await cargar('../src/core/routes.ts', [["'@/lib/roles'", JSON.stringify(rolesUrl)]]);
 const contextoUrl = await cargar('../src/contexts/AuthContext.tsx', [
   ["'react'", JSON.stringify(reactUrl)],
+  ["'@/contexts/ToastContext'", JSON.stringify(entornoUrl)],
   ["const AUTH_USER_KEY = 'auth_user';", `import { almacenamiento } from '${entornoUrl}'; const AUTH_USER_KEY = 'auth_user';`],
   ['localStorage.', 'almacenamiento.'],
   ['import.meta.env.VITE_API_URL', '"/api/v1"'],

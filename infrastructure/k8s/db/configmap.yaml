@@ -1,0 +1,1092 @@
+# Código generado automáticamente por scripts/sync_db_init_configmap.py
+# NO EDITAR ESTE ARCHIVO MANUALMENTE.
+# Para actualizar, modifica los scripts en infrastructure/db/ y ejecuta:
+#   python3 scripts/sync_db_init_configmap.py
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init-scripts
+  labels:
+    app: db
+data:
+  01_schema_api.sql: |
+    -- =======================================================
+    -- ESQUEMA api: DOMINIO 1 (Identidad/Usuarios) y DOMINIO 4 (Catálogo Maestro/IA)
+    -- =======================================================
+
+    CREATE SCHEMA IF NOT EXISTS api;
+
+    -- 1. Tabla Usuarios (Dominio 1)
+    CREATE TABLE IF NOT EXISTS api.usuarios (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        google_id VARCHAR(255) UNIQUE,
+        correo VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255),
+        nombre_completo VARCHAR(255) NOT NULL,
+        telefono VARCHAR(50),
+        direccion VARCHAR(255),
+        url_avatar VARCHAR(500),
+        rol VARCHAR(30) NOT NULL DEFAULT 'registrado',
+        cuota_tokens_ia INTEGER NOT NULL DEFAULT 1000,
+        esta_activo BOOLEAN NOT NULL DEFAULT true,
+        token_verificacion UUID,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        actualizado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 2. Categorías (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.categorias (
+        id SERIAL PRIMARY KEY,
+        padre_id INTEGER REFERENCES api.categorias(id) ON DELETE SET NULL,
+        nombre VARCHAR(100) NOT NULL,
+        slug VARCHAR(100) UNIQUE NOT NULL
+    );
+
+    -- 3. Marcas (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.marcas (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) UNIQUE NOT NULL
+    );
+
+    -- 4. Productos Normalizados (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.productos_normalizados (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        categoria_id INTEGER REFERENCES api.categorias(id) ON DELETE SET NULL,
+        marca_id INTEGER REFERENCES api.marcas(id) ON DELETE SET NULL,
+        codigo_barras_ean VARCHAR(50) UNIQUE,
+        nombre_estandar VARCHAR(255) NOT NULL,
+        contenido_neto DECIMAL(8,2),
+        unidad_medida VARCHAR(20),
+        es_sin_gluten BOOLEAN DEFAULT false,
+        es_vegano BOOLEAN DEFAULT false,
+        es_sin_lactosa BOOLEAN DEFAULT false,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 5. Preferencias Dietéticas de Usuario (Dominio 1)
+    CREATE TABLE IF NOT EXISTS api.preferencias_dieteticas_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        etiqueta_dietetica VARCHAR(50) NOT NULL,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_usuario_etiqueta UNIQUE (usuario_id, etiqueta_dietetica)
+    );
+
+    -- 6. Direcciones de Usuario (Dominio 1)
+    CREATE TABLE IF NOT EXISTS api.direcciones_usuario (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        etiqueta VARCHAR(100),
+        texto_direccion VARCHAR(255) NOT NULL,
+        lat DECIMAL(10,8) NOT NULL,
+        lon DECIMAL(11,8) NOT NULL,
+        es_principal BOOLEAN DEFAULT false
+    );
+
+    -- 7. Perfiles de Transporte de Usuario (Dominio 1)
+    CREATE TABLE IF NOT EXISTS api.perfiles_transporte_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        modo_transporte VARCHAR(50) NOT NULL,
+        tipo_combustible VARCHAR(50),
+        rendimiento_combustible_km_l DECIMAL(5,2),
+        tarifa_transporte_publico DECIMAL(10,2),
+        radio_maximo_km DECIMAL(5,2) DEFAULT 10.0,
+        es_principal BOOLEAN DEFAULT true
+    );
+
+    -- 8. Tarjetas de Fidelidad de Usuario (Dominio 1)
+    CREATE TABLE IF NOT EXISTS api.tarjetas_fidelidad_usuario (
+        id SERIAL PRIMARY KEY,
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        cadena_id INTEGER NOT NULL, -- Referencia diferida a scraper.cadenas_supermercado
+        tipo_tarjeta VARCHAR(100) NOT NULL,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 9. Misiones de Validación de Colaborador (Dominio 1 - Colaboradores)
+    CREATE TABLE IF NOT EXISTS api.misiones_validacion (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        sucursal_id INTEGER NOT NULL,
+        producto_id UUID REFERENCES api.productos_normalizados(id) ON DELETE SET NULL,
+        precio_reportado DECIMAL(12,2),
+        stock_disponible BOOLEAN DEFAULT true,
+        gasto_transporte_reportado DECIMAL(12,2),
+        url_evidencia_foto VARCHAR(500),
+        tokens_otorgados INTEGER DEFAULT 500,
+        estado VARCHAR(30) DEFAULT 'aprobado',
+        completada_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 10. Equivalencias de Productos (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.equivalencias_productos (
+        id BIGSERIAL PRIMARY KEY,
+        producto_master_id UUID NOT NULL REFERENCES api.productos_normalizados(id) ON DELETE CASCADE,
+        producto_alias_id UUID NOT NULL REFERENCES api.productos_normalizados(id) ON DELETE CASCADE,
+        definido_por_admin_id UUID REFERENCES api.usuarios(id) ON DELETE SET NULL,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_producto_equivalencia UNIQUE (producto_master_id, producto_alias_id)
+    );
+
+    -- 11. Recetas (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.recetas (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        creado_por_usuario UUID REFERENCES api.usuarios(id) ON DELETE SET NULL,
+        titulo VARCHAR(200) NOT NULL,
+        descripcion TEXT,
+        porciones INTEGER DEFAULT 4,
+        instrucciones TEXT,
+        es_comunidad BOOLEAN DEFAULT false,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 12. Ingredientes de Receta (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.ingredientes_receta (
+        id SERIAL PRIMARY KEY,
+        receta_id UUID NOT NULL REFERENCES api.recetas(id) ON DELETE CASCADE,
+        producto_normalizado_id UUID REFERENCES api.productos_normalizados(id) ON DELETE SET NULL,
+        texto_ingrediente_crudo VARCHAR(255) NOT NULL,
+        cantidad_requerida DECIMAL(8,2),
+        unidad VARCHAR(30)
+    );
+
+    -- 13. Mapeos de Productos por IA (Dominio 4)
+    CREATE TABLE IF NOT EXISTS api.mapeos_productos_ia (
+        id BIGSERIAL PRIMARY KEY,
+        producto_crudo_id UUID UNIQUE NOT NULL, -- Referencia diferida a scraper.productos_crudos
+        producto_normalizado_id UUID NOT NULL REFERENCES api.productos_normalizados(id) ON DELETE CASCADE,
+        nivel_confianza DECIMAL(4,3),
+        version_modelo VARCHAR(50),
+        estado VARCHAR(30) DEFAULT 'mapeado',
+        procesado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- Restricciones de Integridad Referencial Cruzadas (Cross-Schema Foreign Keys)
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='scraper' AND table_name='cadenas_supermercado') THEN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_tarjetas_cadena') THEN
+                ALTER TABLE api.tarjetas_fidelidad_usuario
+                    ADD CONSTRAINT fk_tarjetas_cadena
+                    FOREIGN KEY (cadena_id) REFERENCES scraper.cadenas_supermercado(id) ON DELETE CASCADE;
+            END IF;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='scraper' AND table_name='sucursales_supermercado') THEN
+            IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_misiones_sucursal') THEN
+                ALTER TABLE api.misiones_validacion
+                    ADD CONSTRAINT fk_misiones_sucursal
+                    FOREIGN KEY (sucursal_id) REFERENCES scraper.sucursales_supermercado(id) ON DELETE CASCADE;
+            END IF;
+        END IF;
+    END $$;
+  02_schema_scraper.sql: |
+    -- =======================================================
+    -- ESQUEMA scraper: DOMINIO 2 (Cadenas y Sucursales) y DOMINIO 3 (Extracción Raw y Precios)
+    -- =======================================================
+
+    CREATE SCHEMA IF NOT EXISTS scraper;
+
+    -- 1. Cadenas de Supermercado (Dominio 2)
+    CREATE TABLE IF NOT EXISTS scraper.cadenas_supermercado (
+        id SERIAL PRIMARY KEY,
+        nombre VARCHAR(100) UNIQUE NOT NULL,
+        url_sitio_web VARCHAR(255),
+        url_logo VARCHAR(255),
+        config_scraper_json JSONB,
+        esta_activa BOOLEAN DEFAULT true,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 2. Sucursales de Supermercado (Dominio 2)
+    CREATE TABLE IF NOT EXISTS scraper.sucursales_supermercado (
+        id SERIAL PRIMARY KEY,
+        cadena_id INTEGER NOT NULL REFERENCES scraper.cadenas_supermercado(id) ON DELETE CASCADE,
+        codigo_sucursal VARCHAR(50),
+        nombre VARCHAR(150) NOT NULL,
+        direccion VARCHAR(255) NOT NULL,
+        comuna VARCHAR(100),
+        ciudad VARCHAR(100),
+        lat DECIMAL(10,8) NOT NULL,
+        lon DECIMAL(11,8) NOT NULL,
+        hora_apertura TIME,
+        hora_cierre TIME,
+        esta_activa BOOLEAN DEFAULT true
+    );
+
+    -- Index geoespacial para consultas de ubicación de sucursales
+    CREATE INDEX IF NOT EXISTS idx_sucursales_coords ON scraper.sucursales_supermercado (lat, lon);
+
+    -- 3. Trabajos de Scraper (Dominio 3)
+    CREATE TABLE IF NOT EXISTS scraper.trabajos_scraper (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        cadena_id INTEGER NOT NULL REFERENCES scraper.cadenas_supermercado(id) ON DELETE CASCADE,
+        disparado_por_usuario_id UUID REFERENCES api.usuarios(id) ON DELETE SET NULL,
+        estado VARCHAR(30) NOT NULL DEFAULT 'pendiente',
+        iniciado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        finalizado_el TIMESTAMP,
+        elementos_extraidos INTEGER DEFAULT 0,
+        respuestas_bloqueadas INTEGER DEFAULT 0,
+        registro_errores TEXT
+    );
+
+    -- 4. Productos Crudos (Dominio 3)
+    CREATE TABLE IF NOT EXISTS scraper.productos_crudos (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        sucursal_id INTEGER NOT NULL REFERENCES scraper.sucursales_supermercado(id) ON DELETE CASCADE,
+        sku VARCHAR(100) NOT NULL,
+        ean_gtin VARCHAR(50),
+        titulo_crudo VARCHAR(255) NOT NULL,
+        marca_cruda VARCHAR(100),
+        categoria_cruda VARCHAR(100),
+        formato_crudo VARCHAR(100),
+        url_producto TEXT,
+        url_imagen TEXT,
+        en_stock BOOLEAN DEFAULT true,
+        ultima_extraccion_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        CONSTRAINT uq_sucursal_sku UNIQUE (sucursal_id, sku)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_productos_crudos_ean ON scraper.productos_crudos (ean_gtin);
+
+    -- 5. Capturas de Precios (Dominio 3 - Serie de tiempo)
+    CREATE TABLE IF NOT EXISTS scraper.capturas_precios (
+        id BIGSERIAL PRIMARY KEY,
+        producto_crudo_id UUID NOT NULL REFERENCES scraper.productos_crudos(id) ON DELETE CASCADE,
+        precio_normal DECIMAL(12,2) NOT NULL,
+        precio_oferta DECIMAL(12,2),
+        precio_tarjeta DECIMAL(12,2),
+        precio_por_unidad DECIMAL(12,2),
+        metrica_unidad VARCHAR(20),
+        mecanica_promocion VARCHAR(255),
+        esta_disponible BOOLEAN DEFAULT true,
+        capturado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- Índice para acelerar búsquedas en la serie de tiempo de precios
+    CREATE INDEX IF NOT EXISTS idx_capturas_prod_fecha ON scraper.capturas_precios (producto_crudo_id, capturado_el DESC);
+  03_indices_optimizacion.sql: |
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+    CREATE INDEX IF NOT EXISTS idx_productos_titulo_trgm ON scraper.productos_crudos USING gin (titulo_crudo gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_productos_marca_trgm ON scraper.productos_crudos USING gin (marca_cruda gin_trgm_ops);
+    CREATE INDEX IF NOT EXISTS idx_productos_categoria_trgm ON scraper.productos_crudos USING gin (categoria_cruda gin_trgm_ops);
+  03_schema_rutas.sql: |
+    -- =======================================================
+    -- ESQUEMA rutas: DOMINIO 5 (Listas de Compras, Optimización Espacial y Rutas TSP)
+    -- =======================================================
+
+    CREATE SCHEMA IF NOT EXISTS rutas;
+
+    -- 1. Listas de Compras (Dominio 5)
+    CREATE TABLE IF NOT EXISTS rutas.listas_compras (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        nombre VARCHAR(150) NOT NULL,
+        estado VARCHAR(30) DEFAULT 'activa',
+        creada_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        actualizada_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 2. Artículos de Lista de Compras (Dominio 5)
+    CREATE TABLE IF NOT EXISTS rutas.articulos_lista_compras (
+        id SERIAL PRIMARY KEY,
+        lista_id UUID NOT NULL REFERENCES rutas.listas_compras(id) ON DELETE CASCADE,
+        producto_normalizado_id UUID NOT NULL REFERENCES api.productos_normalizados(id) ON DELETE CASCADE,
+        cantidad INTEGER NOT NULL DEFAULT 1,
+        esta_comprado BOOLEAN DEFAULT false
+    );
+
+    -- 3. Ejecuciones de Optimización (Dominio 5)
+    CREATE TABLE IF NOT EXISTS rutas.ejecuciones_optimizacion (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        lista_id UUID NOT NULL REFERENCES rutas.listas_compras(id) ON DELETE CASCADE,
+        transporte_usuario_id INTEGER REFERENCES api.perfiles_transporte_usuario(id) ON DELETE SET NULL,
+        lat_inicio DECIMAL(10,8) NOT NULL,
+        lon_inicio DECIMAL(11,8) NOT NULL,
+        costo_total_productos DECIMAL(12,2) NOT NULL,
+        costo_estimado_viaje DECIMAL(12,2) NOT NULL,
+        ahorro_neto_estimado DECIMAL(12,2) NOT NULL,
+        distancia_total_metros INTEGER,
+        duracion_total_segundos INTEGER,
+        calculado_el TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
+    -- 4. Paradas de Optimización (Dominio 5)
+    CREATE TABLE IF NOT EXISTS rutas.paradas_optimizacion (
+        id SERIAL PRIMARY KEY,
+        optimizacion_id UUID NOT NULL REFERENCES rutas.ejecuciones_optimizacion(id) ON DELETE CASCADE,
+        sucursal_id INTEGER NOT NULL REFERENCES scraper.sucursales_supermercado(id) ON DELETE CASCADE,
+        orden_visita INTEGER NOT NULL,
+        costo_subtotal DECIMAL(12,2) NOT NULL
+    );
+
+    -- 5. Detalle de Artículos por Parada (Dominio 5)
+    CREATE TABLE IF NOT EXISTS rutas.detalle_articulos_parada (
+        id SERIAL PRIMARY KEY,
+        parada_id INTEGER NOT NULL REFERENCES rutas.paradas_optimizacion(id) ON DELETE CASCADE,
+        producto_crudo_id UUID NOT NULL REFERENCES scraper.productos_crudos(id) ON DELETE CASCADE,
+        captura_precio_id BIGINT NOT NULL REFERENCES scraper.capturas_precios(id) ON DELETE CASCADE,
+        cantidad INTEGER NOT NULL DEFAULT 1,
+        precio_unitario_aplicado DECIMAL(12,2) NOT NULL
+    );
+  04_migracion_nuevas_cadenas.sql: |
+    -- =======================================================
+    -- MIGRACIÓN: Agregar cadenas A Cuenta y Cugat
+    -- Fecha: 2024-10-04
+    -- Descripción: Agrega las cadenas de supermercado A Cuenta y Cugat
+    --              con sus sucursales por defecto para la ingesta de scraping.
+    --              Seguro para ejecutar múltiples veces (idempotente).
+    -- Uso: psql -U <usuario> -d <base_datos> -f 04_migracion_nuevas_cadenas.sql
+    -- =======================================================
+
+    BEGIN;
+
+    -- 1. Insertar cadenas nuevas (no toca las existentes)
+    INSERT INTO scraper.cadenas_supermercado (id, nombre, url_sitio_web, url_logo, esta_activa, creado_el)
+    VALUES
+        (5, 'A Cuenta', 'https://www.acuenta.cl', '/logos/acuenta.png', true, NOW()),
+        (6, 'Cugat',    'https://cugat.cl',       '/logos/cugat.png',   true, NOW())
+    ON CONFLICT (id) DO UPDATE SET
+        url_sitio_web = EXCLUDED.url_sitio_web,
+        url_logo      = EXCLUDED.url_logo,
+        esta_activa   = EXCLUDED.esta_activa;
+
+    -- 2. Actualizar la secuencia para evitar colisiones en auto-creates del Go
+    SELECT setval(
+        'scraper.cadenas_supermercado_id_seq',
+        (SELECT MAX(id) FROM scraper.cadenas_supermercado)
+    );
+
+    -- 3. Insertar sucursales por defecto para las cadenas nuevas
+    --    (punto de referencia online en Temuco para la ingesta del scraper)
+    INSERT INTO scraper.sucursales_supermercado
+        (id, cadena_id, codigo_sucursal, nombre, direccion, comuna, ciudad, lat, lon, esta_activa)
+    VALUES
+        (5, 5, 'ACUENTA-CENTRAL', 'A Cuenta Online', 'Casa Matriz / Online', 'Temuco', 'Temuco', -38.73590000, -72.59040000, true),
+        (6, 6, 'CUGAT-CENTRAL',   'Cugat Online',    'Casa Matriz / Online', 'Temuco', 'Temuco', -38.73590000, -72.59040000, true)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 4. Actualizar la secuencia de sucursales
+    SELECT setval(
+        'scraper.sucursales_supermercado_id_seq',
+        (SELECT MAX(id) FROM scraper.sucursales_supermercado)
+    );
+
+    -- 5. Verificación: mostrar las cadenas y sucursales registradas
+    DO $$
+    BEGIN
+        RAISE NOTICE '=== Cadenas de supermercado registradas ===';
+    END $$;
+
+    SELECT id, nombre, url_sitio_web, esta_activa
+    FROM scraper.cadenas_supermercado
+    ORDER BY id;
+
+    SELECT s.id, c.nombre AS cadena, s.codigo_sucursal, s.nombre AS sucursal, s.esta_activa
+    FROM scraper.sucursales_supermercado s
+    JOIN scraper.cadenas_supermercado c ON c.id = s.cadena_id
+    ORDER BY s.id;
+
+    COMMIT;
+  05_recuperacion_scraping.sql: |
+    -- SUP-270. Aplicar antes de desplegar API/Catálogo/worker nuevos.
+    -- Tablas aditivas; no alteran ni eliminan los datos existentes.
+    BEGIN;
+    -- Propiedad exclusiva de Catálogo. Sin referencias a trabajos ni usuarios.
+    CREATE TABLE IF NOT EXISTS scraper.lotes_catalogo (
+        id UUID PRIMARY KEY,
+        payload_hash CHAR(64) NOT NULL,
+        resultado JSONB NOT NULL,
+        confirmado_el TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    -- Propiedad de coordinación. La entrega y su contador se confirman juntos.
+    CREATE TABLE IF NOT EXISTS scraper.entregas_ingesta (
+        id UUID PRIMARY KEY,
+        trabajo_id UUID REFERENCES scraper.trabajos_scraper(id),
+        cadena_id INTEGER NOT NULL DEFAULT 0,
+        sucursal_id INTEGER,
+        payload_hash CHAR(64) NOT NULL,
+        payload JSONB NOT NULL,
+        estado TEXT NOT NULL DEFAULT 'pendiente' CHECK (estado IN ('pendiente','confirmada','fallida')),
+        intentos INTEGER NOT NULL DEFAULT 0,
+        proximo_intento TIMESTAMPTZ NOT NULL DEFAULT now(),
+        lease_token UUID,
+        lease_hasta TIMESTAMPTZ,
+        ultimo_error TEXT,
+        resultado JSONB,
+        creado_el TIMESTAMPTZ NOT NULL DEFAULT now(),
+        confirmado_el TIMESTAMPTZ
+    );
+    CREATE INDEX IF NOT EXISTS idx_entregas_ingesta_pendientes
+        ON scraper.entregas_ingesta(proximo_intento) WHERE estado = 'pendiente';
+    CREATE INDEX IF NOT EXISTS idx_entregas_ingesta_trabajo ON scraper.entregas_ingesta(trabajo_id);
+
+    -- Outbox de ejecuciones: permite reconstruir Redis sin perder trabajos.
+    CREATE TABLE IF NOT EXISTS scraper.entregas_trabajos (
+        trabajo_id UUID PRIMARY KEY REFERENCES scraper.trabajos_scraper(id),
+        payload_hash CHAR(64) NOT NULL,
+        payload JSONB NOT NULL,
+        proxima_publicacion TIMESTAMPTZ NOT NULL DEFAULT now(),
+        creado_el TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_entregas_trabajos_publicacion
+        ON scraper.entregas_trabajos(proxima_publicacion);
+    COMMIT;
+  05_tokens_recuperacion.sql: |
+    -- SUP-184. Ejecutar como operador ANTES de re-ejecutar 06_propiedad_permisos.sql,
+    -- que concede los permisos de esta tabla a app_identity. Idempotente.
+    -- Tokens de un solo uso para restablecer contraseña: se guarda sólo el SHA-256;
+    -- el token en claro viaja únicamente en el correo.
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    CREATE TABLE IF NOT EXISTS api.tokens_recuperacion (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        usuario_id UUID NOT NULL REFERENCES api.usuarios(id) ON DELETE CASCADE,
+        token_hash BYTEA NOT NULL UNIQUE CHECK (octet_length(token_hash) = 32),
+        expira_el TIMESTAMPTZ NOT NULL,
+        usado_el TIMESTAMPTZ,
+        creado_el TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_tokens_recuperacion_usuario
+        ON api.tokens_recuperacion (usuario_id, creado_el DESC);
+
+    COMMENT ON TABLE api.tokens_recuperacion IS 'SUP-184: tokens de restablecimiento de contraseña; dueño Identidad (app_identity)';
+    COMMENT ON COLUMN api.tokens_recuperacion.token_hash IS 'SHA-256 del token enviado por correo; el token en claro nunca se guarda';
+    COMMENT ON COLUMN api.tokens_recuperacion.usado_el IS 'Consumido (SUP-185) o reemplazado por una solicitud más nueva; con valor, el token ya no sirve';
+    COMMIT;
+  06_propiedad_permisos.sql: |
+    -- SUP-271. Ejecutar como operador de migraciones, nunca desde un servicio.
+    -- No mueve tablas ni borra filas. Los roles quedan sin LOGIN hasta provisionar
+    -- sus contraseñas por separado (07_runtime_credentials.sh o \password en psql).
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    ALTER TABLE scraper.trabajos_scraper
+        ADD COLUMN IF NOT EXISTS cadena_nombre VARCHAR(100) NOT NULL DEFAULT '';
+    UPDATE scraper.trabajos_scraper AS t SET cadena_nombre = c.nombre
+        FROM scraper.cadenas_supermercado AS c
+        WHERE t.cadena_id = c.id AND t.cadena_nombre = '';
+
+    -- Las referencias entre propietarios son valores de auditoría. Su validación
+    -- de cadena ocurre por HTTP; ninguna eliminación externa debe borrar trabajos.
+    DO $$
+    DECLARE fk RECORD;
+    BEGIN
+        FOR fk IN SELECT conname FROM pg_constraint
+            WHERE contype = 'f' AND conrelid = 'scraper.trabajos_scraper'::regclass
+            AND confrelid IN ('scraper.cadenas_supermercado'::regclass, 'api.usuarios'::regclass)
+        LOOP
+            EXECUTE format('ALTER TABLE scraper.trabajos_scraper DROP CONSTRAINT %I', fk.conname);
+        END LOOP;
+    END $$;
+    COMMENT ON COLUMN scraper.trabajos_scraper.cadena_id IS 'ID externo de Catálogo, validado por HTTP al crear el trabajo; sin cascada entre dominios';
+    COMMENT ON COLUMN scraper.trabajos_scraper.cadena_nombre IS 'Snapshot de Catálogo al crear el trabajo; conserva la auditoría sin consultas cruzadas';
+    COMMENT ON COLUMN scraper.trabajos_scraper.disparado_por_usuario_id IS 'UUID externo de auditoría; no acredita identidad ni autorización y no tiene FK entre dominios';
+
+    -- SUP-240: el motor de rutas es dueño de rutas.*. El dueño de una lista es el
+    -- user_id del JWT de Identidad: sin FK hacia api.usuarios ni cascada entre dominios.
+    DO $$
+    DECLARE fk RECORD;
+    BEGIN
+        FOR fk IN SELECT conname FROM pg_constraint
+            WHERE contype = 'f' AND conrelid = 'rutas.listas_compras'::regclass
+            AND confrelid = 'api.usuarios'::regclass
+        LOOP
+            EXECUTE format('ALTER TABLE rutas.listas_compras DROP CONSTRAINT %I', fk.conname);
+        END LOOP;
+    END $$;
+    COMMENT ON COLUMN rutas.listas_compras.usuario_id IS 'UUID externo de Identidad (claim user_id del JWT); sin FK ni cascada entre dominios';
+    CREATE INDEX IF NOT EXISTS idx_listas_compras_usuario ON rutas.listas_compras (usuario_id, actualizada_el DESC);
+    CREATE INDEX IF NOT EXISTS idx_articulos_lista_compras_lista ON rutas.articulos_lista_compras (lista_id);
+
+    -- Estos nombres son exclusivos del runtime. No se reutilizan administradores,
+    -- propietarios de objetos o roles con membresías que permitan SET ROLE.
+    DO $$
+    DECLARE role_name TEXT; role_id OID;
+    BEGIN
+        FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
+            SELECT oid INTO role_id FROM pg_roles WHERE rolname = role_name;
+            IF role_id IS NULL THEN
+                EXECUTE format('CREATE ROLE %I NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS', role_name);
+                SELECT oid INTO role_id FROM pg_roles WHERE rolname = role_name;
+            END IF;
+            IF EXISTS (SELECT 1 FROM pg_roles WHERE oid = role_id AND
+                (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit))
+                OR EXISTS (SELECT 1 FROM pg_auth_members WHERE member = role_id)
+                OR EXISTS (SELECT 1 FROM pg_class WHERE relowner = role_id)
+                OR EXISTS (SELECT 1 FROM pg_proc WHERE proowner = role_id)
+                OR EXISTS (SELECT 1 FROM pg_namespace WHERE nspowner = role_id)
+                OR EXISTS (SELECT 1 FROM pg_database WHERE datdba = role_id) THEN
+                RAISE EXCEPTION 'El rol % no es un rol runtime aislado; revisar con el operador', role_name;
+            END IF;
+            EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), role_name);
+            EXECUTE format('REVOKE CREATE ON DATABASE %I FROM %I', current_database(), role_name);
+            EXECUTE format('ALTER ROLE %I SET search_path = pg_catalog', role_name);
+        END LOOP;
+    END $$;
+
+    REVOKE ALL PRIVILEGES ON SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+    REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+    REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA api, scraper, rutas FROM app_identity, app_scraping, app_catalogo, app_rutas;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON TABLES FROM app_identity, app_scraping, app_catalogo, app_rutas;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA api, scraper, rutas REVOKE ALL ON SEQUENCES FROM app_identity, app_scraping, app_catalogo, app_rutas;
+
+    GRANT USAGE ON SCHEMA api TO app_identity;
+    GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
+    -- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
+    GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
+    -- SUP-242: 08 crea api.auditoria_admin_usuarios después de este script. Si ya
+    -- existe (re-ejecución de 06 en una base migrada), se restauran sus grants para
+    -- que la auditoría administrativa siga operativa. Sin DELETE ni UPDATE.
+    DO $$
+    BEGIN
+        IF to_regclass('api.auditoria_admin_usuarios') IS NOT NULL THEN
+            EXECUTE 'GRANT SELECT, INSERT ON api.auditoria_admin_usuarios TO app_identity';
+            EXECUTE 'GRANT USAGE, SELECT ON SEQUENCE api.auditoria_admin_usuarios_id_seq TO app_identity';
+        END IF;
+    END $$;
+
+    GRANT USAGE ON SCHEMA scraper TO app_scraping;
+    GRANT SELECT, INSERT, UPDATE ON scraper.trabajos_scraper,
+        scraper.entregas_ingesta, scraper.entregas_trabajos TO app_scraping;
+    -- SUP-270 purga sólo ejecuciones de trabajos terminales, no el ledger de ingesta.
+    GRANT DELETE ON scraper.entregas_trabajos TO app_scraping;
+
+    GRANT USAGE ON SCHEMA scraper TO app_catalogo;
+    GRANT SELECT, INSERT, UPDATE ON scraper.productos_crudos TO app_catalogo;
+    GRANT SELECT, INSERT ON scraper.cadenas_supermercado TO app_catalogo;
+    -- SUP-243: la administración de fuentes sólo modifica el flag de activación.
+    GRANT UPDATE (esta_activa) ON scraper.cadenas_supermercado TO app_catalogo;
+    GRANT SELECT, INSERT ON scraper.sucursales_supermercado, scraper.capturas_precios,
+        scraper.lotes_catalogo TO app_catalogo;
+    GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
+        scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
+
+    -- SUP-240: CRUD de listas. Los artículos sólo se leen para el detalle; agregarlos
+    -- y quitarlos llega con SUP-241. Borrar una lista elimina sus artículos por la FK
+    -- interna, que PostgreSQL ejecuta como dueño de la tabla, no como app_rutas.
+    GRANT USAGE ON SCHEMA rutas TO app_rutas;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
+    GRANT SELECT ON rutas.articulos_lista_compras TO app_rutas;
+
+    -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
+    -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
+    DO $$
+    DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
+    BEGIN
+        FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
+            permitted := CASE role_name
+                WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
+                WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
+                WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
+                ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
+            FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname IN ('api','scraper','rutas') AND c.relkind IN ('r','p','v','m','f')
+            LOOP
+                FOREACH privilege_name IN ARRAY ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER'] LOOP
+                    IF (has_table_privilege(role_name, relation.oid, privilege_name)
+                        OR (privilege_name IN ('SELECT','INSERT','UPDATE','REFERENCES')
+                            AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
+                        AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
+                            OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
+                                OR (role_name = 'app_rutas' AND relation.name = 'rutas.listas_compras')))
+                            OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
+                            OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
+                                AND relation.name = 'scraper.cadenas_supermercado'
+                                AND has_table_privilege(role_name, relation.oid, 'UPDATE'))
+                            OR (role_name = 'app_rutas' AND privilege_name <> 'SELECT' AND relation.name = 'rutas.articulos_lista_compras')) THEN
+                        RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
+                    END IF;
+                END LOOP;
+            END LOOP;
+            FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
+                FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname IN ('api','scraper','rutas') AND c.relkind = 'S'
+            LOOP
+                FOREACH privilege_name IN ARRAY ARRAY['USAGE','SELECT','UPDATE'] LOOP
+                    IF has_sequence_privilege(role_name, relation.oid, privilege_name)
+                        AND NOT (
+                            (role_name = 'app_catalogo' AND privilege_name = 'USAGE'
+                                AND relation.name IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq'))
+                            OR (role_name = 'app_identity' AND privilege_name IN ('USAGE','SELECT')
+                                AND relation.name = 'api.auditoria_admin_usuarios_id_seq')
+                        ) THEN
+                        RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar secuencias', role_name, privilege_name, relation.name;
+                    END IF;
+                END LOOP;
+            END LOOP;
+            IF has_schema_privilege(role_name, 'api', 'CREATE') OR has_schema_privilege(role_name, 'scraper', 'CREATE')
+                OR has_schema_privilege(role_name, 'rutas', 'CREATE') OR has_schema_privilege(role_name, 'public', 'CREATE')
+                OR has_database_privilege(role_name, current_database(), 'CREATE') THEN
+                RAISE EXCEPTION 'El rol % puede crear objetos; revisar privilegios públicos', role_name;
+            END IF;
+        END LOOP;
+        IF EXISTS (SELECT 1 FROM pg_default_acl d, LATERAL aclexplode(d.defaclacl) a
+            WHERE d.defaclobjtype IN ('r','S') AND (a.grantee = 0 OR a.grantee IN
+                (SELECT oid FROM pg_roles WHERE rolname IN ('app_identity','app_scraping','app_catalogo','app_rutas')))) THEN
+            RAISE EXCEPTION 'Hay defaults de tablas/secuencias para PUBLIC o roles runtime; revisar con el operador';
+        END IF;
+    END $$;
+    COMMIT;
+  07_respuestas_bloqueadas.sql: |
+    -- Migración aditiva para trabajos que ya existen en volúmenes PostgreSQL.
+    -- En una instalación nueva la columna ya la crea 02_schema_scraper.sql.
+    ALTER TABLE scraper.trabajos_scraper
+        ADD COLUMN IF NOT EXISTS respuestas_bloqueadas INTEGER DEFAULT 0;
+  07_runtime_credentials.sh: |
+    #!/usr/bin/env bash
+    # Sólo inicialización de un volumen nuevo. Para uno existente, ejecutar
+    # expresamente tras 06_propiedad_permisos.sql con el operador PostgreSQL.
+    # El entrypoint puede ejecutar o sourcear este archivo (ConfigMap 0755).
+    # El subshell evita modificar sus opciones/variables cuando se sourcea.
+    (
+    set -euo pipefail
+    for credential in IDENTITY_DB_PASSWORD SCRAPING_DB_PASSWORD CATALOGO_DB_PASSWORD; do
+      credential_value=${!credential:-}
+      if (( ${#credential_value} < 32 )); then
+        echo "$credential debe contener al menos 32 caracteres." >&2
+        exit 1
+      fi
+    done
+    unset credential_value
+    if [[ "$IDENTITY_DB_PASSWORD" == "$SCRAPING_DB_PASSWORD" || "$IDENTITY_DB_PASSWORD" == "$CATALOGO_DB_PASSWORD" ||
+          "$SCRAPING_DB_PASSWORD" == "$CATALOGO_DB_PASSWORD" || "$IDENTITY_DB_PASSWORD" == "${POSTGRES_PASSWORD:-}" ||
+          "$SCRAPING_DB_PASSWORD" == "${POSTGRES_PASSWORD:-}" || "$CATALOGO_DB_PASSWORD" == "${POSTGRES_PASSWORD:-}" ]]; then
+      echo 'Las tres contraseñas runtime deben ser distintas entre sí y del administrador.' >&2
+      exit 1
+    fi
+    # SUP-240: el motor de rutas es opcional; sin RUTAS_DB_PASSWORD, app_rutas queda sin LOGIN.
+    rutas_password=${RUTAS_DB_PASSWORD:-}
+    if [[ -n "$rutas_password" ]]; then
+      if (( ${#rutas_password} < 32 )); then
+        echo "RUTAS_DB_PASSWORD debe contener al menos 32 caracteres." >&2
+        exit 1
+      fi
+      for other in "$IDENTITY_DB_PASSWORD" "$SCRAPING_DB_PASSWORD" "$CATALOGO_DB_PASSWORD" "${POSTGRES_PASSWORD:-}"; do
+        if [[ "$rutas_password" == "$other" ]]; then
+          echo 'RUTAS_DB_PASSWORD debe ser distinta de las demás contraseñas.' >&2
+          exit 1
+        fi
+      done
+    fi
+    unset rutas_password other
+    psql -X --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" --set ON_ERROR_STOP=1 <<'SQL'
+    \getenv identity_password IDENTITY_DB_PASSWORD
+    \getenv scraping_password SCRAPING_DB_PASSWORD
+    \getenv catalogo_password CATALOGO_DB_PASSWORD
+    \set rutas_password ''
+    \getenv rutas_password RUTAS_DB_PASSWORD
+    BEGIN;
+    SET LOCAL password_encryption = 'scram-sha-256';
+    SELECT format('ALTER ROLE app_identity LOGIN PASSWORD %L', :'identity_password') \gexec
+    SELECT format('ALTER ROLE app_scraping LOGIN PASSWORD %L', :'scraping_password') \gexec
+    SELECT format('ALTER ROLE app_catalogo LOGIN PASSWORD %L', :'catalogo_password') \gexec
+    SELECT format('ALTER ROLE app_rutas LOGIN PASSWORD %L', :'rutas_password') WHERE :'rutas_password' <> '' \gexec
+    COMMIT;
+    SQL
+    )
+  08_grants_catalogo_fuentes.sql: |
+    -- ============================================================================
+    -- SUP-243: Concesión de UPDATE acotado a app_catalogo en cadenas de scraping
+    -- Permite que Catálogo gestione únicamente el flag esta_activa de las fuentes.
+    -- El 06 vigente ya incluye este GRANT; este script lo reaplica de forma
+    -- idempotente en bases que aplicaron una versión anterior de la migración.
+    -- ============================================================================
+
+    BEGIN;
+    SET LOCAL statement_timeout = '30s';
+
+    -- Retirar un grant de tabla completa de versiones anteriores antes de acotarlo.
+    REVOKE UPDATE ON scraper.cadenas_supermercado FROM app_catalogo;
+    GRANT UPDATE (esta_activa) ON scraper.cadenas_supermercado TO app_catalogo;
+
+    COMMIT;
+  08_normalizar_rol_admin_y_auditoria.sql: |
+    -- SUP-242: normalizar el alias histórico de rol y habilitar auditoría administrativa.
+    -- Aplicar después de 06_propiedad_permisos.sql. Es idempotente.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    -- El alias "administrador" deja de existir como valor de negocio: se persiste
+    -- siempre como "admin". El código también lo normaliza al leer datos históricos.
+    UPDATE api.usuarios
+    SET rol = 'admin'
+    WHERE LOWER(TRIM(rol)) = 'administrador'
+      AND rol <> 'admin';
+
+    CREATE TABLE IF NOT EXISTS api.auditoria_admin_usuarios (
+        id          BIGSERIAL PRIMARY KEY,
+        actor_id    UUID NOT NULL,
+        objetivo_id UUID NOT NULL,
+        cambios     JSONB NOT NULL,
+        creado_el   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auditoria_admin_usuarios_objetivo
+        ON api.auditoria_admin_usuarios (objetivo_id, creado_el DESC);
+
+    GRANT SELECT, INSERT ON api.auditoria_admin_usuarios TO app_identity;
+    GRANT USAGE, SELECT ON SEQUENCE api.auditoria_admin_usuarios_id_seq TO app_identity;
+
+    COMMIT;
+  09_plan_y_ultimo_acceso.sql: |
+    -- SUP-242: plan comercial y último acceso en api.usuarios.
+    -- Aplicar después de 08_normalizar_rol_admin_y_auditoria.sql. Es idempotente.
+    --
+    -- Se ejecuta en dos pasos transaccionales separados a propósito: el
+    -- AccessExclusiveLock que toman ALTER TABLE ADD COLUMN / DROP-ADD CONSTRAINT
+    -- se libera al hacer COMMIT. La validación del CHECK (escaneo secuencial) se
+    -- hace después, en su propia transacción implícita, con
+    -- ShareUpdateExclusiveLock, que permite SELECT/INSERT/UPDATE/DELETE.
+
+    -- Paso 1/2: DDL de metadatos. Sólo bloqueos breves.
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    -- En una base nueva ambas columnas se agregan en una operación de metadatos
+    -- (PG 11+), sin reescribir la tabla. Si `plan` ya existía nullable, se rellena
+    -- una sola vez y luego se fija NOT NULL.
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'api' AND table_name = 'usuarios' AND column_name = 'plan'
+        ) THEN
+            ALTER TABLE api.usuarios ADD COLUMN plan VARCHAR(20) NOT NULL DEFAULT 'basico';
+        ELSE
+            ALTER TABLE api.usuarios ALTER COLUMN plan SET DEFAULT 'basico';
+            UPDATE api.usuarios SET plan = 'basico' WHERE plan IS NULL OR BTRIM(plan) = '';
+            ALTER TABLE api.usuarios ALTER COLUMN plan SET NOT NULL;
+        END IF;
+    END $$;
+
+    ALTER TABLE api.usuarios
+        ADD COLUMN IF NOT EXISTS ultimo_acceso TIMESTAMPTZ;
+
+    -- NOT VALID evita validar toda la tabla bajo AccessExclusiveLock. La
+    -- validación real ocurre en el paso 2, ya sin ese lock retenido.
+    ALTER TABLE api.usuarios
+        DROP CONSTRAINT IF EXISTS usuarios_plan_check;
+    ALTER TABLE api.usuarios
+        ADD CONSTRAINT usuarios_plan_check CHECK (plan IN ('basico', 'premium')) NOT VALID;
+
+    COMMIT;
+
+    -- Paso 2/2: validación fuera de la transacción anterior. Toma
+    -- ShareUpdateExclusiveLock y permite seguir operando durante el escaneo.
+    -- Re-ejecutar sobre una constraint ya validada es un no-op rápido.
+    SET lock_timeout = '5s';
+    SET statement_timeout = '0';
+
+    ALTER TABLE api.usuarios VALIDATE CONSTRAINT usuarios_plan_check;
+  init.sql: |
+    -- Script de inicialización automatizada para el servidor PostgreSQL + PostGIS
+    -- Creado con 100% DATOS REALES extraídos mediante scraping directo a Jumbo.cl
+
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+    CREATE EXTENSION IF NOT EXISTS "postgis";
+
+    CREATE SCHEMA IF NOT EXISTS api;
+    CREATE SCHEMA IF NOT EXISTS scraper;
+    CREATE SCHEMA IF NOT EXISTS rutas;
+
+    COMMENT ON SCHEMA api IS 'Dominio 1 (Identidad, Usuarios) y Dominio 4 (Catálogo Maestro y Recetas)';
+    COMMENT ON SCHEMA scraper IS 'Dominio 2 (Cadenas y Sucursales) y Dominio 3 (Extracción y Capturas de Precios)';
+    COMMENT ON SCHEMA rutas IS 'Dominio 5 (Listas de Compras, Rutas Geoespaciales y Optimización TSP)';
+
+    -- =======================================================
+    -- DATOS REALES DE SCRAPING EN VIVO (JUMBO.CL)
+    -- =======================================================
+
+    -- 1. Categorías (api.categorias)
+    INSERT INTO api.categorias (id, padre_id, nombre, slug) VALUES
+    (1, NULL, 'Frutas y Verduras', 'frutas-verduras'),
+    (2, NULL, 'Lácteos y Huevos', 'lacteos-huevos'),
+    (3, NULL, 'Panadería y Pastelería', 'panaderia-pasteleria'),
+    (4, NULL, 'Despensa y Abarrotes', 'despensa-abarrotes'),
+    (5, NULL, 'Carnes y Pescados', 'carnes-pescados'),
+    (6, NULL, 'Bebidas y Aguas', 'bebidas-aguas'),
+    (7, NULL, 'Limpieza del Hogar', 'limpieza-hogar'),
+    (8, NULL, 'Cuidado Personal', 'cuidado-personal')
+    ON CONFLICT (id) DO NOTHING;
+
+    SELECT setval('api.categorias_id_seq', (SELECT MAX(id) FROM api.categorias));
+
+    -- 2. Marcas Reales (api.marcas)
+    INSERT INTO api.marcas (id, nombre) VALUES
+    (1, 'A Punto'),
+    (2, 'Artisan'),
+    (3, 'Banquete'),
+    (4, 'Carnicería Propia'),
+    (5, 'Carozzi'),
+    (6, 'Cintazul'),
+    (7, 'Coliumo'),
+    (8, 'Colun'),
+    (9, 'Cuisine & Co'),
+    (10, 'Danone'),
+    (11, 'Don Guillermo'),
+    (12, 'Ecoterra'),
+    (13, 'Ellebi'),
+    (14, 'Farmers'),
+    (15, 'Frutas y Verduras Propias'),
+    (16, 'Gallina Feliz'),
+    (17, 'Gourmet'),
+    (18, 'Huertos del Ranco'),
+    (19, 'Huevos del Granero'),
+    (20, 'La Granja'),
+    (21, 'La Molisana'),
+    (22, 'Loncoleche'),
+    (23, 'Manare'),
+    (24, 'Mi Tierra'),
+    (25, 'Miraflores'),
+    (26, 'Máxima'),
+    (27, 'Nestlé'),
+    (28, 'Nido'),
+    (29, 'Omega 3'),
+    (30, 'Oso'),
+    (31, 'Proverde'),
+    (32, 'Pura Hoja'),
+    (33, 'Quillayes'),
+    (34, 'Santa Marta'),
+    (35, 'Sofruco'),
+    (36, 'Soprole'),
+    (37, 'Surlat'),
+    (38, 'Taj Mahal'),
+    (39, 'Tucapel'),
+    (40, 'Vivo'),
+    (41, 'Yang''s Brand'),
+    (42, 'Yemita')
+    ON CONFLICT (id) DO NOTHING;
+
+    SELECT setval('api.marcas_id_seq', (SELECT MAX(id) FROM api.marcas));
+
+    -- 3. Productos Normalizados Reales (api.productos_normalizados)
+    INSERT INTO api.productos_normalizados (id, categoria_id, marca_id, codigo_barras_ean, nombre_estandar, contenido_neto, unidad_medida, es_sin_gluten, es_vegano, es_sin_lactosa) VALUES
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000001', 1, 17, '780990000001', 'Aliño César Gourmet Envase 250 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000002', 1, 17, '780990000002', 'Aliño Ajo Ciboulette Gourmet Envase 250 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000003', 1, 15, '780990000003', 'Palta Hass Extra Chilena (2 un. Aprox)', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000004', 1, 15, '780990000004', 'Limón Malla 1 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000005', 1, 15, '780990000005', 'Papa Malla 2 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000006', 1, 15, '780990000006', 'Tomate Larga Vida Granel (1 a 2 un. Aprox)', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000007', 1, 15, '780990000007', 'Zanahoria Bolsa 1 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000008', 1, 15, '780990000008', 'Cilantro Paquete 120 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000009', 1, 15, '780990000009', 'Pepino Ensalada 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000010', 1, 15, '780990000010', 'Pimiento Rojo Extra', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000011', 1, 15, '780990000011', 'Cebolla Malla 3 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000012', 1, 15, '780990000012', 'Brócoli Films 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000013', 1, 15, '780990000013', 'Lechuga Escarola 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000014', 1, 15, '780990000014', 'Champiñón Bandeja 200 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000015', 1, 15, '780990000015', 'Zapallo Italiano 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000016', 1, 32, '780990000016', 'Lechuga Hidropónica Española 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000017', 1, 15, '780990000017', 'Ají Verde Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000018', 1, 15, '780990000018', 'Palta Hass Malla 1 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000019', 1, 15, '780990000019', 'Tomate Larga Vida Malla 1 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000020', 1, 15, '780990000020', 'Lechuga Costina 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000021', 1, 15, '780990000021', 'Pimiento Verde 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000022', 1, 15, '780990000022', 'Cebollín Paquete 6 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000023', 1, 31, '780990000023', 'Zapallo en Trozo 700 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000024', 1, 15, '780990000024', 'Apio Mata 1 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000025', 1, 15, '780990000025', 'Papa Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000026', 1, 15, '780990000026', 'Ajo 3 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000027', 1, 15, '780990000027', 'Cebolla Malla 1 kg', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000028', 1, 15, '780990000028', 'Lechuga Escarola Bandeja 2 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000029', 1, 15, '780990000029', 'Cebolla Morada Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000030', 1, 15, '780990000030', 'Camote Peruano Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000031', 1, 15, '780990000031', 'Ciboulette Display 20 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000032', 1, 15, '780990000032', 'Tomate Beef Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000033', 1, 15, '780990000033', 'Cebolla Granel (1 a 2 un. Aprox)', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000034', 1, 18, '780990000034', 'Bolsa de Papas Mixtas 650 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000035', 1, 15, '780990000035', 'Cebollín Feria 3 un.', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000036', 1, 15, '780990000036', 'Tomate Cóctel Variedades Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000037', 1, 15, '780990000037', 'Tomate Salad Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000038', 1, 15, '780990000038', 'Tomate Cherry Clamshell 500 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000039', 1, 15, '780990000039', 'Zanahoria Granel (3 a 4 un. Aprox)', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000040', 1, 15, '780990000040', 'Espinaca Bolsa 280 g', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000041', 1, 15, '780990000041', 'Manzana Cosmic Crisp Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000042', 1, 15, '780990000042', 'Uva Verde Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000043', 1, 15, '780990000043', 'Plátano Extra Granel (1 a 2 un. Aprox)', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000044', 1, 15, '780990000044', 'Ciruela Importada Granel', 1.00, 'unid', true, true, true),
+    ('a0eebc99-9c0b-4ef8-bb6d-000000000045', 1, 15, '780990000045', 'Frutilla Pote 300 g', 1.00, 'unid', true, true, true)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 4. Cadenas de Supermercado (scraper.cadenas_supermercado)
+    INSERT INTO scraper.cadenas_supermercado (id, nombre, url_sitio_web, url_logo, esta_activa) VALUES
+    (1, 'Jumbo', 'https://www.jumbo.cl', '/logos/verdemart.png', true),
+    (2, 'Lider', 'https://www.lider.cl', '/logos/superahorro.png', true),
+    (3, 'Unimarc', 'https://www.unimarc.cl', '/logos/mercadia.png', true),
+    (4, 'Santa Isabel', 'https://www.santaisabel.cl', '/logos/colmadoplus.png', true),
+    (5, 'A Cuenta', 'https://www.acuenta.cl', '/logos/acuenta.png', true),
+    (6, 'Cugat', 'https://cugat.cl', '/logos/cugat.png', true)
+    ON CONFLICT (id) DO NOTHING;
+
+    SELECT setval('scraper.cadenas_supermercado_id_seq', (SELECT MAX(id) FROM scraper.cadenas_supermercado));
+
+    -- 5. Sucursales de Supermercado (scraper.sucursales_supermercado)
+    INSERT INTO scraper.sucursales_supermercado (id, cadena_id, codigo_sucursal, nombre, direccion, comuna, ciudad, lat, lon, hora_apertura, hora_cierre, esta_activa) VALUES
+    (1, 1, 'JUMBO-LOS-PABLOS', 'Jumbo Los Pablos', 'Av. Los Pablos 01860', 'Temuco', 'Temuco', -38.74100000, -72.60000000, '08:30:00', '21:00:00', true),
+    (2, 2, 'LIDER-PRIETO-NORTE', 'Lider Prieto Norte', 'Av. Caupolicán 0450', 'Temuco', 'Temuco', -38.73500000, -72.59000000, '08:00:00', '21:30:00', true),
+    (3, 3, 'UNIMARC-ALEMANIA', 'Unimarc Av. Alemania', 'Av. Alemania 0655', 'Temuco', 'Temuco', -38.74500000, -72.61000000, '08:30:00', '21:00:00', true),
+    (4, 4, 'SANTA-ISABEL-SAN-MARTIN', 'Santa Isabel San Martín', 'San Martín 0890', 'Temuco', 'Temuco', -38.73000000, -72.60500000, '08:30:00', '21:00:00', true),
+    (5, 5, 'ACUENTA-CENTRAL', 'A Cuenta Online', 'Casa Matriz / Online', 'Temuco', 'Temuco', -38.73590000, -72.59040000, NULL, NULL, true),
+    (6, 6, 'CUGAT-CENTRAL', 'Cugat Online', 'Casa Matriz / Online', 'Temuco', 'Temuco', -38.73590000, -72.59040000, NULL, NULL, true)
+    ON CONFLICT (id) DO NOTHING;
+
+    SELECT setval('scraper.sucursales_supermercado_id_seq', (SELECT MAX(id) FROM scraper.sucursales_supermercado));
+
+    -- 6. Productos Crudos Scrapeados en Vivo desde Jumbo.cl (scraper.productos_crudos)
+    INSERT INTO scraper.productos_crudos (id, sucursal_id, sku, titulo_crudo, marca_cruda, categoria_cruda, formato_crudo, url_producto, url_imagen, en_stock) VALUES
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000001', 1, 'SKU-JUMBO-001', 'Aliño César Gourmet Envase 250 g', 'Gourmet', 'Scraped Category', 'Format', 'https://www.jumbo.cl/alino-cesar-gourmet-envase-250-g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/299876-250-250/Ali%C3%B1o-Cesar-Gourmet-Envase-250-g.jpg?v=638776371296530000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000002', 1, 'SKU-JUMBO-002', 'Aliño Ajo Ciboulette Gourmet Envase 250 g', 'Gourmet', 'Scraped Category', 'Format', 'https://www.jumbo.cl/alino-ajo-ciboulette-gourmet-envase-250-g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/299866-250-250/Ali%C3%B1o-Ajo-Ciboulette-Gourmet-Envase-250-g.jpg?v=639064271425000000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000003', 1, 'SKU-JUMBO-003', 'Palta Hass Extra Chilena (2 un. Aprox)', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/palta-hass-jumbo-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348021-250-250/Palta-Hass-Extra-Chilena-granel.jpg?v=638784526059170000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000004', 1, 'SKU-JUMBO-004', 'Limón Malla 1 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/limon-jumbo-malla-1-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348018-250-250/Limon-malla-1-kg.jpg?v=638776479219900000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000005', 1, 'SKU-JUMBO-005', 'Papa Malla 2 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/papas-jumbo-malla-2-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348025-250-250/Papa-malla-2-kg.jpg?v=638776479317000000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000006', 1, 'SKU-JUMBO-006', 'Tomate Larga Vida Granel (1 a 2 un. Aprox)', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-larga-vida-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/297810-250-250/Tomate-granel.jpg?v=638775743642170000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000007', 1, 'SKU-JUMBO-007', 'Zanahoria Bolsa 1 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/zanahoria-jumbo-1-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348051-250-250/Zanahoria-bolsa-1-kg.jpg?v=638776479671400000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000008', 1, 'SKU-JUMBO-008', 'Cilantro Paquete 120 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cilantro-120-g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/508710-250-250/Cilantro-Paquete-120-g.jpg?v=638935566848530000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000009', 1, 'SKU-JUMBO-009', 'Pepino Ensalada 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/pepino-ensalada-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348029-250-250/Pepino-ensalada-un.jpg?v=638776479365130000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000010', 1, 'SKU-JUMBO-010', 'Pimiento Rojo Extra', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/pimiento-rojo-extra/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/368596-250-250/Pimiento-rojo-extra.jpg?v=638776773409300000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000011', 1, 'SKU-JUMBO-011', 'Cebolla Malla 3 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebolla-3-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/196761-250-250/Cebolla-3-unid.jpg?v=638682284728400000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000012', 1, 'SKU-JUMBO-012', 'Brócoli Films 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/brocoli-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347994-250-250/Brocoli-films-un.jpg?v=638776478878200000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000013', 1, 'SKU-JUMBO-013', 'Lechuga Escarola 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/lechuga-escarola-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347982-250-250/Lechuga-escarola-un.jpg?v=638776478720700000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000014', 1, 'SKU-JUMBO-014', 'Champiñón Bandeja 200 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/champinon-200g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/355100-250-250/Champi%C3%B1on-bandeja-200-g.jpg?v=638776705195000000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000015', 1, 'SKU-JUMBO-015', 'Zapallo Italiano 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/zapallo-italiano-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348057-250-250/Zapallo-italiano-un.jpg?v=638776479756130000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000016', 1, 'SKU-JUMBO-016', 'Lechuga Hidropónica Española 1 un.', 'Pura Hoja', 'Scraped Category', 'Format', 'https://www.jumbo.cl/lechuga-espanola-hidroponica-unid-2/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/501318-250-250/Lechuga-Hidroponica-Espa%C3%B1ola-1-un.jpg?v=638920188566030000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000017', 1, 'SKU-JUMBO-017', 'Ají Verde Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/aji-verde-jumbo-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347985-250-250/540734-KG-01_5574.jpg?v=638776478755200000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000018', 1, 'SKU-JUMBO-018', 'Palta Hass Malla 1 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/palta-hass-jumbo-malla-1-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348022-250-250/Palta-hass-malla-1-kg.jpg?v=638776479276530000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000019', 1, 'SKU-JUMBO-019', 'Tomate Larga Vida Malla 1 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-malla-1-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348043-250-250/261296-01_5641.jpg?v=638776479537200000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000020', 1, 'SKU-JUMBO-020', 'Lechuga Costina 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/lechuga-costina-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/196778-250-250/Lechuga-costina-un.jpg?v=638682284941230000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000021', 1, 'SKU-JUMBO-021', 'Pimiento Verde 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/pimiento-verde-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348032-250-250/Pimiento-verde-un.jpg?v=638776479402300000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000022', 1, 'SKU-JUMBO-022', 'Cebollín Paquete 6 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebollin-jumbo-6-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/495050-250-250/260579-02_5597.jpg?v=638907790347000000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000023', 1, 'SKU-JUMBO-023', 'Zapallo en Trozo 700 g', 'Proverde', 'Scraped Category', 'Format', 'https://www.jumbo.cl/zapallo-camote-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/502750-250-250/Zapallo-Camote-1-un.jpg?v=638924450982570000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000024', 1, 'SKU-JUMBO-024', 'Apio Mata 1 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/apio-jumbo-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347990-250-250/260497-01_5585.jpg?v=638776478829670000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000025', 1, 'SKU-JUMBO-025', 'Papa Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/papas-jumbo-1-kg-6-unidad-aprox-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/450388-250-250/Papa-granel.jpg?v=638847369679500000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000026', 1, 'SKU-JUMBO-026', 'Ajo 3 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/ajo-jumbo-3-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347986-250-250/Ajo-3-unid.jpg?v=638776478772070000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000027', 1, 'SKU-JUMBO-027', 'Cebolla Malla 1 kg', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebolla-feria-jumbo-malla-1-kg-8-unidad-aprox/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347996-250-250/Cebolla-malla-1-kg.jpg?v=638776478908130000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000028', 1, 'SKU-JUMBO-028', 'Lechuga Escarola Bandeja 2 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/lechuga-escarola-jumbo-2-unid/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348016-250-250/Lechuga-escarola-bandeja-2-un.jpg?v=638776479191200000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000029', 1, 'SKU-JUMBO-029', 'Cebolla Morada Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebolla-morada-jumbo-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347997-250-250/Cebolla-morada-granel.jpg?v=638776478923630000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000030', 1, 'SKU-JUMBO-030', 'Camote Peruano Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/camote-peruano-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/352997-250-250/Camote-Peruano-granel.jpg?v=638776695574730000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000031', 1, 'SKU-JUMBO-031', 'Ciboulette Display 20 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/ciboullette-20-g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/353023-250-250/260619-01_17771.jpg?v=638776695678100000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000032', 1, 'SKU-JUMBO-032', 'Tomate Beef Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-jumbo-granel-beef-2/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348045-250-250/1520953-KG.jpg?v=638776479562900000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000033', 1, 'SKU-JUMBO-033', 'Cebolla Granel (1 a 2 un. Aprox)', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebolla-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348059-250-250/Cebolla-granel.jpg?v=638776479779400000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000034', 1, 'SKU-JUMBO-034', 'Bolsa de Papas Mixtas 650 g', 'Huertos del Ranco', 'Scraped Category', 'Format', 'https://www.jumbo.cl/bolsa-de-papas-mixtas-650-g/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/363388-250-250/Bolsa-de-papas-mixtas-650-g-1-95674865.jpg?v=638776748026230000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000035', 1, 'SKU-JUMBO-035', 'Cebollín Feria 3 un.', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/cebollin-feria-3un/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/361208-250-250/1555311.jpg?v=638776736082200000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000036', 1, 'SKU-JUMBO-036', 'Tomate Cóctel Variedades Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-cocktail-frutas-y-verduras-jumbo-variedades/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/361954-250-250/261255-01.png?v=638776740227400000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000037', 1, 'SKU-JUMBO-037', 'Tomate Salad Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-salad-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348049-250-250/Principal-9264.jpg?v=638776479634970000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000038', 1, 'SKU-JUMBO-038', 'Tomate Cherry Clamshell 500 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/tomate-cherry-jumbo-500-g-clamshell/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348037-250-250/Tomate-cherry-clamshell-500-g.jpg?v=638776479470800000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000039', 1, 'SKU-JUMBO-039', 'Zanahoria Granel (3 a 4 un. Aprox)', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/zanahoria-jumbo-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/348052-250-250/1027562-KG.jpg?v=638776479685000000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000040', 1, 'SKU-JUMBO-040', 'Espinaca Bolsa 280 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/espinaca-bolsa-280-gr-2049304/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/520083-250-250/Espinaca-en-Bolsa-280-g.jpg?v=638950957344570000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000041', 1, 'SKU-JUMBO-041', 'Manzana Cosmic Crisp Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/manzana-cosmic-crisp-1991054-kg/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/676291-250-250/1991054-KG-02_672881.jpg?v=639243901576770000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000042', 1, 'SKU-JUMBO-042', 'Uva Verde Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/uva-verde/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/352966-250-250/1580859-01.png?v=638776695361270000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000043', 1, 'SKU-JUMBO-043', 'Plátano Extra Granel (1 a 2 un. Aprox)', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/platano-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/350892-250-250/Platano-granel.jpg?v=638776683161100000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000044', 1, 'SKU-JUMBO-044', 'Ciruela Importada Granel', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/ciruela-granel/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/352999-250-250/Ciruela-exportacion-granel.jpg?v=638776695578670000', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000045', 1, 'SKU-JUMBO-045', 'Frutilla Pote 300 g', 'Frutas y Verduras Propias', 'Scraped Category', 'Format', 'https://www.jumbo.cl/frutilla-hortifrut-pote-300-g-2/p', 'https://jumbocl.vteximg.com.br/arquivos/ids/347934-250-250/Frutillas-pote-300-g.jpg?v=638776478088100000', true)
+    ON CONFLICT (id) DO NOTHING;
+
+    -- 7. Capturas de Precios Reales en CLP (scraper.capturas_precios)
+    INSERT INTO scraper.capturas_precios (producto_crudo_id, precio_normal, precio_oferta, precio_tarjeta, precio_por_unidad, metrica_unidad, mecanica_promocion, esta_disponible) VALUES
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000001', 1890.00, 1701.00, 1701.00, 1890.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000002', 1890.00, 1701.00, 1701.00, 1890.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000003', 3245.00, 2920.50, 2920.50, 3245.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000004', 1190.00, 1071.00, 1071.00, 1190.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000005', 2990.00, 2691.00, 2691.00, 2990.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000006', 995.00, 895.50, 895.50, 995.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000007', 1490.00, 1341.00, 1341.00, 1490.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000008', 950.00, 855.00, 855.00, 950.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000009', 720.00, 648.00, 648.00, 720.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000010', 1790.00, 1611.00, 1611.00, 1790.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000011', 1590.00, 1431.00, 1431.00, 1590.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000012', 1590.00, 1431.00, 1431.00, 1590.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000013', 1460.00, 1314.00, 1314.00, 1460.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000014', 1590.00, 1431.00, 1431.00, 1590.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000015', 790.00, 711.00, 711.00, 790.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000016', 1790.00, 1611.00, 1611.00, 1790.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000017', 599.00, 539.10, 539.10, 599.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000018', 3490.00, 3141.00, 3141.00, 3490.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000019', 1990.00, 1791.00, 1791.00, 1990.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000020', 1420.00, 1278.00, 1278.00, 1420.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000021', 990.00, 891.00, 891.00, 990.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000022', 1670.00, 1503.00, 1503.00, 1670.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000023', 2390.00, 2151.00, 2151.00, 2390.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000024', 1490.00, 1341.00, 1341.00, 1490.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000025', 895.00, 805.50, 805.50, 895.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000026', 1190.00, 1071.00, 1071.00, 1190.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000027', 1870.00, 1683.00, 1683.00, 1870.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000028', 2720.00, 2448.00, 2448.00, 2720.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000029', 995.00, 895.50, 895.50, 995.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000030', 1625.00, 1462.50, 1462.50, 1625.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000031', 790.00, 711.00, 711.00, 790.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000032', 1315.00, 1183.50, 1183.50, 1315.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000033', 885.00, 796.50, 796.50, 885.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000034', 1990.00, 1791.00, 1791.00, 1990.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000035', 850.00, 765.00, 765.00, 850.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000036', 1358.00, 1222.20, 1222.20, 1358.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000037', 1245.00, 1120.50, 1120.50, 1245.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000038', 3390.00, 3051.00, 3051.00, 3390.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000039', 595.00, 535.50, 535.50, 595.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000040', 1060.00, 954.00, 954.00, 1060.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000041', 1245.00, 1120.50, 1120.50, 1245.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000042', 7990.00, 7191.00, 7191.00, 7990.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000043', 795.00, 715.50, 715.50, 795.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000044', 3995.00, 3595.50, 3595.50, 3995.00, 'unid', 'Precio Scraped Jumbo.cl', true),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000045', 3390.00, 3051.00, 3051.00, 3390.00, 'unid', 'Precio Scraped Jumbo.cl', true)
+    ;
+
+    -- 8. Mapeos por IA (api.mapeos_productos_ia)
+    INSERT INTO api.mapeos_productos_ia (producto_crudo_id, producto_normalizado_id, nivel_confianza, version_modelo, estado) VALUES
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000001', 'a0eebc99-9c0b-4ef8-bb6d-000000000001', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000002', 'a0eebc99-9c0b-4ef8-bb6d-000000000002', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000003', 'a0eebc99-9c0b-4ef8-bb6d-000000000003', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000004', 'a0eebc99-9c0b-4ef8-bb6d-000000000004', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000005', 'a0eebc99-9c0b-4ef8-bb6d-000000000005', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000006', 'a0eebc99-9c0b-4ef8-bb6d-000000000006', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000007', 'a0eebc99-9c0b-4ef8-bb6d-000000000007', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000008', 'a0eebc99-9c0b-4ef8-bb6d-000000000008', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000009', 'a0eebc99-9c0b-4ef8-bb6d-000000000009', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000010', 'a0eebc99-9c0b-4ef8-bb6d-000000000010', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000011', 'a0eebc99-9c0b-4ef8-bb6d-000000000011', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000012', 'a0eebc99-9c0b-4ef8-bb6d-000000000012', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000013', 'a0eebc99-9c0b-4ef8-bb6d-000000000013', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000014', 'a0eebc99-9c0b-4ef8-bb6d-000000000014', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000015', 'a0eebc99-9c0b-4ef8-bb6d-000000000015', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000016', 'a0eebc99-9c0b-4ef8-bb6d-000000000016', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000017', 'a0eebc99-9c0b-4ef8-bb6d-000000000017', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000018', 'a0eebc99-9c0b-4ef8-bb6d-000000000018', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000019', 'a0eebc99-9c0b-4ef8-bb6d-000000000019', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000020', 'a0eebc99-9c0b-4ef8-bb6d-000000000020', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000021', 'a0eebc99-9c0b-4ef8-bb6d-000000000021', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000022', 'a0eebc99-9c0b-4ef8-bb6d-000000000022', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000023', 'a0eebc99-9c0b-4ef8-bb6d-000000000023', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000024', 'a0eebc99-9c0b-4ef8-bb6d-000000000024', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000025', 'a0eebc99-9c0b-4ef8-bb6d-000000000025', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000026', 'a0eebc99-9c0b-4ef8-bb6d-000000000026', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000027', 'a0eebc99-9c0b-4ef8-bb6d-000000000027', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000028', 'a0eebc99-9c0b-4ef8-bb6d-000000000028', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000029', 'a0eebc99-9c0b-4ef8-bb6d-000000000029', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000030', 'a0eebc99-9c0b-4ef8-bb6d-000000000030', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000031', 'a0eebc99-9c0b-4ef8-bb6d-000000000031', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000032', 'a0eebc99-9c0b-4ef8-bb6d-000000000032', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000033', 'a0eebc99-9c0b-4ef8-bb6d-000000000033', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000034', 'a0eebc99-9c0b-4ef8-bb6d-000000000034', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000035', 'a0eebc99-9c0b-4ef8-bb6d-000000000035', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000036', 'a0eebc99-9c0b-4ef8-bb6d-000000000036', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000037', 'a0eebc99-9c0b-4ef8-bb6d-000000000037', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000038', 'a0eebc99-9c0b-4ef8-bb6d-000000000038', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000039', 'a0eebc99-9c0b-4ef8-bb6d-000000000039', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000040', 'a0eebc99-9c0b-4ef8-bb6d-000000000040', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000041', 'a0eebc99-9c0b-4ef8-bb6d-000000000041', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000042', 'a0eebc99-9c0b-4ef8-bb6d-000000000042', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000043', 'a0eebc99-9c0b-4ef8-bb6d-000000000043', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000044', 'a0eebc99-9c0b-4ef8-bb6d-000000000044', 0.985, 'v1.0.0-scraped-live', 'mapeado'),
+    ('b0eebc99-9c0b-4ef8-bb6d-000000000045', 'a0eebc99-9c0b-4ef8-bb6d-000000000045', 0.985, 'v1.0.0-scraped-live', 'mapeado')
+    ON CONFLICT (producto_crudo_id) DO NOTHING;

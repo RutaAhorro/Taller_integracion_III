@@ -10,14 +10,15 @@ type TopNavProps = {
     query: string
     onQueryChange: (value: string) => void
     onMenuClick: () => void
+    sidebarOpen: boolean
     onResetFilters: () => void
 }
 
-export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: TopNavProps) {
+export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters }: TopNavProps) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [localQuery, setLocalQuery] = useState(query || '');
     const navigate = useNavigate();
-    const { logout } = useAuth();
+    const { logout, isLoggingOut } = useAuth();
     
     // Ciudad de referencia de la interfaz; aún no representa una ubicación obtenida del perfil.
     const activeCity = "Temuco";
@@ -38,9 +39,13 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="hidden md:flex h-10 w-10 shrink-0 rounded-full"
+                    className="flex h-10 w-10 shrink-0 rounded-full"
                     onClick={onMenuClick}
-                    aria-label="Abrir menú principal"
+                    aria-label="Abrir filtros"
+                    aria-controls="catalog-filters"
+                    aria-expanded={sidebarOpen}
+                    aria-haspopup="dialog"
+                    title="Abrir filtros"
                 >
                     <Menu className="h-5 w-5" aria-hidden="true" />
                 </Button>
@@ -61,7 +66,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
 
                 <form
                     role="search"
-                    className="relative flex-1"
+                    className="relative min-w-0 flex-1"
                     onSubmit={handleSearch}
                 >
                     <label htmlFor="product-search" className="sr-only">
@@ -143,15 +148,16 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                                         Mis listas
                                     </Link>
                                     <button
-                                        onClick={() => {
+                                        disabled={isLoggingOut}
+                                        onClick={async () => {
                                             setIsDropdownOpen(false);
-                                            logout();
+                                            await logout();
                                             navigate('/login');
                                         }}
                                         className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
                                     >
                                         <LogOut className="h-4 w-4" />
-                                        Cerrar Sesión
+                                        {isLoggingOut ? 'Cerrando sesión…' : 'Cerrar Sesión'}
                                     </button>
                                 </div>
                             </>

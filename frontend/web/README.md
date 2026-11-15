@@ -122,7 +122,7 @@ src/lib/roles.ts        Normalización de roles para la interfaz
 src/pages/              Páginas funcionales y avisos de integraciones pendientes
 src/layouts/            Estructura de navegación
 src/components/         Componentes compartidos y primitivas de UI
-tests/                  Pruebas críticas de listas, administración y errores del chat
+tests/                  Pruebas críticas de sesión, listas, administración y errores del chat
 ```
 
 El alias `@/` apunta a `src/`. Se usan React Context y hooks; no Redux/Zustand.
@@ -136,6 +136,10 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
   tokens internos de scraping en el navegador.
 - `AuthContext` conserva una representación del usuario en `localStorage` para
   la UI. Esto no acredita por sí solo una sesión válida en el servidor.
+- Cerrar sesión espera `POST /auth/logout` con la cookie, mediante `VITE_API_URL`
+  (que incluye `/api/v1`). El servidor responde `204` sin JSON y expira la cookie.
+  Siempre se limpia `auth_user`; si no se confirma el cierre remoto, se muestra
+  una advertencia porque la cookie podría seguir activa. No se revocan JWT copiados.
 - `ProtectedRoute` controla navegación; la autorización efectiva corresponde
   al backend. Roles: `registrado`, `colaborador`, `admin`; el plan `premium` es
   un concepto distinto del rol.
@@ -209,6 +213,42 @@ estar configurada para ese entorno y su origen permitido en CORS.
 Para revisar una entrega, comprobar búsqueda con/sin resultados, detalle,
 scroll y legibilidad en escritorio/móvil. Registrar versión, esperado y observado;
 no inventar resultados si no hay un entorno disponible.
+
+### Comprobar el cierre de sesión en local (SUP-361)
+
+Con frontend, Gateway e Identidad ejecutándose y la base API configurada:
+
+1. Iniciar sesión y abrir las herramientas del navegador, pestaña Red.
+2. Cerrar sesión desde el menú. Comprobar `POST /api/v1/auth/logout` con respuesta
+   `204`, sin cuerpo; la cookie `jwt` debe desaparecer y también `auth_user` en
+   el almacenamiento local. Recargar y abrir `/listas`: debe solicitar acceso.
+3. Con una cuenta admin de prueba, repetir desde el panel administrativo.
+4. Volver a iniciar sesión y bloquear solo `*/auth/logout` desde las herramientas
+   de red. Al salir, debe limpiarse la cuenta local, mostrarse la advertencia y
+   permitir la navegación. No esperar que desaparezca la cookie: el servidor
+   no pudo recibir esa petición.
+5. Retirar el bloqueo y volver a pulsar Cerrar Sesión, disponible en el menú del
+   catálogo incluso sin usuario local, para expirar la cookie que pudo quedar.
+6. Comprobar también «Continuar como invitado»: espera el cierre y abre el catálogo.
+
+### Comprobar filtros móviles (SUP-372)
+
+En Chrome o Edge, abrir DevTools (`F12`) y activar la barra de dispositivos
+(`Ctrl+Shift+M`). Elegir «Responsive» y probar anchos de 360 y 390 px:
+
+1. Entrar a `/dashboard`: el botón «Abrir filtros» debe estar visible.
+2. Abrir el panel, elegir una categoría y volver a abrirlo: la selección se conserva.
+3. Elegir un supermercado disponible y comprobar que se conserva al reabrir.
+4. Pulsar «Limpiar filtros»: se restablecen búsqueda, categoría y supermercado.
+5. Cerrar con la X, pulsando fuera y con Escape. La búsqueda y navegación siguen accesibles.
+6. Con teclado, abrir el panel y recorrerlo con Tab/Shift+Tab: el foco permanece
+   dentro. Al cerrar, vuelve al botón de apertura; el panel cerrado no recibe foco.
+7. Repetir en escritorio: el panel empieza cerrado y el foco no salta a «Cerrar
+   filtros» al cargar. Abrirlo con el botón y comprobar el mismo recorrido de
+   teclado. Verificar que no aparece desplazamiento horizontal.
+
+La emulación permite comprobar tamaño e interacción, pero no sustituye una
+prueba en un teléfono real. Registrar el navegador, ancho y resultado observado.
 
 ## Referencias
 

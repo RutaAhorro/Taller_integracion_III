@@ -22,7 +22,7 @@ func TestLoadDefaults(prueba *testing.T) {
 	if configuracion.ListenAddr != ":8082" || configuracion.RequestTimeout != 30*time.Second || configuracion.ReadinessTimeout != 2*time.Second || configuracion.KeepAliveTimeout != 30*time.Second || len(configuracion.TrustedProxies) != 0 {
 		prueba.Fatalf("unexpected defaults: %+v", configuracion)
 	}
-	if len(configuracion.CatalogPrefixes) != 2 || len(configuracion.IdentityPrefixes) != 2 || len(configuracion.RoutesPrefixes) != 1 || len(configuracion.ScrapingPrefixes) != 2 {
+	if len(configuracion.CatalogPrefixes) != 2 || len(configuracion.IdentityPrefixes) != 2 || len(configuracion.RoutesPrefixes) != 1 || len(configuracion.ScrapingPrefixes) != 2 || len(configuracion.IAPrefixes) != 1 {
 		prueba.Fatalf("unexpected default route prefixes: %+v", configuracion)
 	}
 }
@@ -56,6 +56,11 @@ func TestLoadRejectsInvalidConfiguration(prueba *testing.T) {
 		{"RUTAS_URL", "http://user:password@motor-rutas:8001"},
 		{"RUTAS_URL", "http://motor-rutas:8001/api/v1/listas"},
 		{"RUTAS_URL", "http://motor-rutas:8001?token=private"},
+		{"IA_URL", "ftp://ia-conversacional:8002"},
+		{"IA_URL", "http://user:password@ia-conversacional:8002"},
+		{"IA_URL", "http://ia-conversacional:8002/api"},
+		{"IA_URL", "http://ia-conversacional:8002?token=private"},
+		{"IA_URL", "http://ia-conversacional:70000"},
 		{"GATEWAY_LISTEN_ADDR", "8082"},
 		{"GATEWAY_LISTEN_ADDR", ":0"},
 		{"GATEWAY_REQUEST_TIMEOUT", "-1s"},
@@ -86,9 +91,15 @@ func TestLoadRejectsInvalidConfiguration(prueba *testing.T) {
 }
 
 func TestFinalTopologyDoesNotRequireLegacyBackend(prueba *testing.T) {
-	env := map[string]string{"SCRAPING_URL": "http://control-scraping:8080", "IDENTIDAD_URL": "http://identidad:8080", "CATALOGO_URL": "http://catalogo:8080", "RUTAS_URL": "http://motor-rutas:8001"}
+	env := map[string]string{
+		"SCRAPING_URL":  "http://control-scraping:8080",
+		"IDENTIDAD_URL": "http://identidad:8080",
+		"CATALOGO_URL":  "http://catalogo:8080",
+		"RUTAS_URL":     "http://motor-rutas:8001",
+		"IA_URL":        "http://ia-conversacional:8002",
+	}
 	configuracion, err := config.Load(func(key string) string { return env[key] })
-	if err != nil || configuracion.Backend != nil || configuracion.Scraping == nil || configuracion.Identidad == nil || configuracion.Catalogo == nil || configuracion.Rutas == nil {
+	if err != nil || configuracion.Backend != nil || configuracion.Scraping == nil || configuracion.Identidad == nil || configuracion.Catalogo == nil || configuracion.Rutas == nil || configuracion.IA == nil {
 		prueba.Fatalf("topología final inválida: %v %v", configuracion, err)
 	}
 }
@@ -177,7 +188,7 @@ func TestRoutePrefixValidation(prueba *testing.T) {
 // TestEveryPrefixVariableIsValidated comprueba que las cuatro variables pasan
 // por la misma validación.
 func TestEveryPrefixVariableIsValidated(prueba *testing.T) {
-	for _, variable := range []string{"GATEWAY_CATALOGO_PREFIXES", "GATEWAY_IDENTIDAD_PREFIXES", "GATEWAY_RUTAS_PREFIXES", "GATEWAY_SCRAPING_PREFIXES"} {
+	for _, variable := range []string{"GATEWAY_CATALOGO_PREFIXES", "GATEWAY_IDENTIDAD_PREFIXES", "GATEWAY_RUTAS_PREFIXES", "GATEWAY_SCRAPING_PREFIXES", "GATEWAY_IA_PREFIXES"} {
 		prueba.Run(variable, func(subprueba *testing.T) {
 			_, errorCarga := config.Load(func(clave string) string {
 				switch clave {
