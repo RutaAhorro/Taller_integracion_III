@@ -30,15 +30,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeToast = useCallback((id: string) => {
-    setToasts((prev) => prev.filter((t) => t.id !== id));
+    setToasts((prev) => prev.filter((aviso) => aviso.id !== id));
   }, []);
 
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
       <div className="fixed top-4 right-0 left-0 sm:left-auto sm:right-4 z-[10000] flex flex-col gap-2 w-full sm:w-80 pointer-events-none px-4 sm:px-0">
-        {toasts.map((t) => (
-          <ToastItem key={t.id} toast={t} onClose={() => removeToast(t.id)} />
+        {toasts.map((aviso) => (
+          <ToastItem key={aviso.id} toast={aviso} onClose={() => removeToast(aviso.id)} />
         ))}
       </div>
     </ToastContext.Provider>

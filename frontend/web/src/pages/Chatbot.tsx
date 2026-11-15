@@ -150,8 +150,8 @@ export default function Chatbot() {
 
                 {msg.type === 'processing' && (
                   <div className="space-y-3 py-1">
-                    {PROCESSING_STEPS.map((label, i) => (
-                      <ProcessingStep key={label} label={label} step={i + 1} current={msg.step ?? 1} />
+                    {PROCESSING_STEPS.map((label, indice) => (
+                      <ProcessingStep key={label} label={label} step={indice + 1} current={msg.step ?? 1} />
                     ))}
                     <TypingIndicator className="mt-2" />
                   </div>
@@ -179,15 +179,15 @@ export default function Chatbot() {
       <div className="flex-none bg-card border-t border-border p-4">
         <div className="max-w-3xl mx-auto">
           <form 
-            onSubmit={(e) => { e.preventDefault(); handleSend(inputValue); }}
+            onSubmit={(evento) => { evento.preventDefault(); handleSend(inputValue); }}
             className="relative flex items-end gap-2 bg-background border border-border rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-border transition-all"
           >
             <textarea 
               value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
+              onChange={(evento) => setInputValue(evento.target.value)}
+              onKeyDown={(evento) => {
+                if (evento.key === 'Enter' && !evento.shiftKey) {
+                  evento.preventDefault();
                   handleSend(inputValue);
                 }
               }}

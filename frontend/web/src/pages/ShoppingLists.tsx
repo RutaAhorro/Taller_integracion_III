@@ -69,7 +69,7 @@ function ListsContent() {
       <form onSubmit={crear} className="space-y-2">
         <label htmlFor="new-list-name" className="text-sm font-medium">Nombre de la nueva lista</label>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Input id="new-list-name" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={150} required disabled={saving || loading || detailBusy} placeholder="Por ejemplo: compras de la semana" />
+          <Input id="new-list-name" value={nombre} onChange={evento => setNombre(evento.target.value)} maxLength={150} required disabled={saving || loading || detailBusy} placeholder="Por ejemplo: compras de la semana" />
           <Button type="submit" disabled={saving || loading || detailBusy || !nombre.trim()}>{saving ? 'Creando…' : 'Crear lista'}</Button>
         </div>
       </form>
@@ -155,9 +155,9 @@ function ListDetail({ id, onUpdated, onDeleted, onBusy }: { id: string; onUpdate
     {loading ? <p role="status">Cargando detalle…</p> : lista ? <>
       <form onSubmit={guardar} className="space-y-3">
         <label htmlFor="list-name" className="block text-sm font-medium">Nombre</label>
-        <Input id="list-name" value={nombre} onChange={e => setNombre(e.target.value)} maxLength={150} required disabled={saving} />
+        <Input id="list-name" value={nombre} onChange={evento => setNombre(evento.target.value)} maxLength={150} required disabled={saving} />
         <label htmlFor="list-state" className="block text-sm font-medium">Estado</label>
-        <select id="list-state" value={estado} onChange={e => setEstado(e.target.value as EstadoLista)} disabled={saving} className="w-full rounded-md border border-input bg-background p-2">
+        <select id="list-state" value={estado} onChange={evento => setEstado(evento.target.value as EstadoLista)} disabled={saving} className="w-full rounded-md border border-input bg-background p-2">
           {Object.entries(estados).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
         </select>
         <div className="flex flex-wrap gap-2">
