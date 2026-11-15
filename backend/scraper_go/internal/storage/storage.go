@@ -128,18 +128,18 @@ func NewCollector(
 // trabajos terminales que ya no tienen mensaje pendiente. Los fallidos se
 // conservan durante la retención salvo que haya presión de disco. Devuelve
 // cuántos spools eliminó.
-func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error) {
-	if c.retention < 0 {
+func (recolector *Collector) Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error) {
+	if recolector.retention < 0 {
 		return 0, fmt.Errorf("SCRAPER_FAILED_RETENTION_SECONDS no puede ser negativo")
 	}
 	if limit <= 0 {
 		limit = 20
 	}
-	entries, err := os.ReadDir(c.stateDir)
+	entries, err := os.ReadDir(recolector.stateDir)
 	if err != nil {
 		return 0, err
 	}
-	pressure, err := c.isPressure()
+	pressure, err := recolector.isPressure()
 	if err != nil {
 		return 0, err
 	}
@@ -161,13 +161,13 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 	}
 	start := 0
 	for index, name := range names {
-		if name > c.cursor {
+		if name > recolector.cursor {
 			start = index
 			break
 		}
 	}
 
-	deadline := time.Now().Add(c.timeout)
+	deadline := time.Now().Add(recolector.timeout)
 	removed := 0
 	processed := 0
 	for offset := 0; offset < len(names) && processed < limit; offset++ {
@@ -175,7 +175,7 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 			break
 		}
 		workID := names[(start+offset)%len(names)]
-		c.cursor = workID
+		recolector.cursor = workID
 		processed++
 
 		status, err := api.GetWork(ctx, workID)
@@ -202,11 +202,11 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 			if err != nil {
 				continue
 			}
-			if time.Since(finishedAt) < c.retention {
+			if time.Since(finishedAt) < recolector.retention {
 				continue
 			}
 		}
-		wasRemoved, err := CleanupSpool(c.stateDir, workID)
+		wasRemoved, err := CleanupSpool(recolector.stateDir, workID)
 		if err != nil {
 			return removed, err
 		}
@@ -215,12 +215,12 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 		}
 		removed++
 		if state == "fallido" {
-			c.logger.Warn("worker_failed_spool_removed",
+			recolector.logger.Warn("worker_failed_spool_removed",
 				"trabajo_id", workID,
 				"storage_pressure", pressure,
 			)
 		}
-		pressure, err = c.isPressure()
+		pressure, err = recolector.isPressure()
 		if err != nil {
 			return removed, err
 		}
@@ -229,12 +229,12 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 }
 
 // isPressure comprueba si el espacio libre en disco es menor al umbral de seguridad.
-func (c *Collector) isPressure() (bool, error) {
-	free, err := FreeBytes(c.stateDir)
+func (recolector *Collector) isPressure() (bool, error) {
+	free, err := FreeBytes(recolector.stateDir)
 	if err != nil {
 		return false, err
 	}
-	return free < c.minFree, nil
+	return free < recolector.minFree, nil
 }
 
 // parseTimestamp convierte la marca de tiempo de un nombre de archivo a time.Time.

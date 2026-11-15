@@ -39,7 +39,7 @@ func newJumbo(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages i
 // ===== Enriquecimiento =====
 
 // enrich consulta la ficha del producto cuando el listado no publica EAN/GTIN.
-func (j *Jumbo) enrich(
+func (jumbo *Jumbo) enrich(
 	ctx context.Context,
 	product domain.Product,
 	category string,
@@ -48,25 +48,25 @@ func (j *Jumbo) enrich(
 ) (domain.Item, error) {
 	pageURL := urlString(responseURL)
 	if !enrichEAN || product.EanGtin != nil || product.URLProducto == nil || *product.URLProducto == "" {
-		return j.toItem(product, category, pageURL), nil
+		return jumbo.toItem(product, category, pageURL), nil
 	}
 
 	detailURL := extract.ResolveURL(responseURL, *product.URLProducto)
-	if err := j.site.ValidateProductURL(detailURL); err != nil {
-		j.logger.Warn("jumbo_ean_url_invalid", "url", detailURL, "error", err)
-		return j.toItem(product, category, pageURL), nil
+	if err := jumbo.site.ValidateProductURL(detailURL); err != nil {
+		jumbo.logger.Warn("jumbo_ean_url_invalid", "url", detailURL, "error", err)
+		return jumbo.toItem(product, category, pageURL), nil
 	}
-	response, err := j.fetcher.Fetch(ctx, detailURL)
+	response, err := jumbo.fetcher.Fetch(ctx, detailURL)
 	if err != nil {
-		j.logger.Warn("jumbo_ean_fetch_failed", "url", detailURL, "error", err)
-		return j.toItem(product, category, pageURL), nil
+		jumbo.logger.Warn("jumbo_ean_fetch_failed", "url", detailURL, "error", err)
+		return jumbo.toItem(product, category, pageURL), nil
 	}
 	if response.Status == 404 {
-		return j.toItem(product, category, pageURL), nil
+		return jumbo.toItem(product, category, pageURL), nil
 	}
 
 	enriched := product
-	if detail := extract.JumboProduct(j.site, response.Body, detailURL, response.URL); detail != nil {
+	if detail := extract.JumboProduct(jumbo.site, response.Body, detailURL, response.URL); detail != nil {
 		if detail.EanGtin != nil && *detail.EanGtin != "" {
 			enriched.EanGtin = detail.EanGtin
 		}
@@ -75,7 +75,7 @@ func (j *Jumbo) enrich(
 		}
 	}
 	if enriched.EanGtin == nil {
-		j.logger.Info("jumbo_ean_missing", "url", detailURL)
+		jumbo.logger.Info("jumbo_ean_missing", "url", detailURL)
 	}
-	return j.toItem(enriched, category, pageURL), nil
+	return jumbo.toItem(enriched, category, pageURL), nil
 }

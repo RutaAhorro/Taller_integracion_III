@@ -52,46 +52,46 @@ func PrecioCLP(value any) *float64 {
 
 // priceText aísla los caracteres correspondientes al precio en una cadena de texto.
 func priceText(value any) (string, bool) {
-	switch v := value.(type) {
+	switch valor := value.(type) {
 	case nil:
 		return "", false
 	case bool:
 		return "", false
 	case string:
-		text := strings.TrimSpace(moneyCleanup.ReplaceAllString(v, ""))
+		text := strings.TrimSpace(moneyCleanup.ReplaceAllString(valor, ""))
 		if text == "" || !priceChars.MatchString(text) {
 			return "", false
 		}
 		return text, true
 	case json.Number:
-		return v.String(), true
+		return valor.String(), true
 	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) {
+		if math.IsNaN(valor) || math.IsInf(valor, 0) {
 			return "", false
 		}
-		return strconv.FormatFloat(v, 'f', -1, 64), true
+		return strconv.FormatFloat(valor, 'f', -1, 64), true
 	case float32:
-		return strconv.FormatFloat(float64(v), 'f', -1, 32), true
+		return strconv.FormatFloat(float64(valor), 'f', -1, 32), true
 	case int:
-		return strconv.Itoa(v), true
+		return strconv.Itoa(valor), true
 	case int8:
-		return strconv.FormatInt(int64(v), 10), true
+		return strconv.FormatInt(int64(valor), 10), true
 	case int16:
-		return strconv.FormatInt(int64(v), 10), true
+		return strconv.FormatInt(int64(valor), 10), true
 	case int32:
-		return strconv.FormatInt(int64(v), 10), true
+		return strconv.FormatInt(int64(valor), 10), true
 	case int64:
-		return strconv.FormatInt(v, 10), true
+		return strconv.FormatInt(valor, 10), true
 	case uint:
-		return strconv.FormatUint(uint64(v), 10), true
+		return strconv.FormatUint(uint64(valor), 10), true
 	case uint8:
-		return strconv.FormatUint(uint64(v), 10), true
+		return strconv.FormatUint(uint64(valor), 10), true
 	case uint16:
-		return strconv.FormatUint(uint64(v), 10), true
+		return strconv.FormatUint(uint64(valor), 10), true
 	case uint32:
-		return strconv.FormatUint(uint64(v), 10), true
+		return strconv.FormatUint(uint64(valor), 10), true
 	case uint64:
-		return strconv.FormatUint(v, 10), true
+		return strconv.FormatUint(valor, 10), true
 	default:
 		return "", false
 	}
@@ -161,46 +161,46 @@ func usesThousandsGroups(parts []string) bool {
 // dígito, espacio o guion, igual que normalizar_ean_gtin.
 func EAN(value any) *string {
 	var text string
-	switch v := value.(type) {
+	switch valor := value.(type) {
 	case nil:
 		return nil
 	case bool:
 		return nil
 	case string:
-		text = strings.TrimSpace(v)
+		text = strings.TrimSpace(valor)
 	case json.Number:
-		text = v.String()
+		text = valor.String()
 	case float64:
-		if math.IsNaN(v) || math.IsInf(v, 0) || math.Trunc(v) != v {
+		if math.IsNaN(valor) || math.IsInf(valor, 0) || math.Trunc(valor) != valor {
 			return nil
 		}
-		text = strconv.FormatInt(int64(v), 10)
+		text = strconv.FormatInt(int64(valor), 10)
 	case float32:
-		number := float64(v)
+		number := float64(valor)
 		if math.Trunc(number) != number {
 			return nil
 		}
 		text = strconv.FormatInt(int64(number), 10)
 	case int:
-		text = strconv.Itoa(v)
+		text = strconv.Itoa(valor)
 	case int8:
-		text = strconv.FormatInt(int64(v), 10)
+		text = strconv.FormatInt(int64(valor), 10)
 	case int16:
-		text = strconv.FormatInt(int64(v), 10)
+		text = strconv.FormatInt(int64(valor), 10)
 	case int32:
-		text = strconv.FormatInt(int64(v), 10)
+		text = strconv.FormatInt(int64(valor), 10)
 	case int64:
-		text = strconv.FormatInt(v, 10)
+		text = strconv.FormatInt(valor, 10)
 	case uint:
-		text = strconv.FormatUint(uint64(v), 10)
+		text = strconv.FormatUint(uint64(valor), 10)
 	case uint8:
-		text = strconv.FormatUint(uint64(v), 10)
+		text = strconv.FormatUint(uint64(valor), 10)
 	case uint16:
-		text = strconv.FormatUint(uint64(v), 10)
+		text = strconv.FormatUint(uint64(valor), 10)
 	case uint32:
-		text = strconv.FormatUint(uint64(v), 10)
+		text = strconv.FormatUint(uint64(valor), 10)
 	case uint64:
-		text = strconv.FormatUint(v, 10)
+		text = strconv.FormatUint(valor, 10)
 	default:
 		return nil
 	}
@@ -340,20 +340,20 @@ func Texto(value any) *string {
 
 // formatString limpia espacios redundantes y caracteres de control en cadenas.
 func formatString(value any) string {
-	switch v := value.(type) {
+	switch valor := value.(type) {
 	case bool:
-		if v {
+		if valor {
 			return "True"
 		}
 		return "False"
 	case float64:
-		text := strconv.FormatFloat(v, 'f', -1, 64)
+		text := strconv.FormatFloat(valor, 'f', -1, 64)
 		if !strings.ContainsAny(text, ".eE") {
 			text += ".0"
 		}
 		return text
 	case float32:
-		text := strconv.FormatFloat(float64(v), 'f', -1, 32)
+		text := strconv.FormatFloat(float64(valor), 'f', -1, 32)
 		if !strings.ContainsAny(text, ".eE") {
 			text += ".0"
 		}

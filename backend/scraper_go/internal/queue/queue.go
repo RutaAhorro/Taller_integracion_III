@@ -134,26 +134,26 @@ func New(client *redis.Client, opts Options) (*Queue, error) {
 // ===== Accesores =====
 
 // Consumer devuelve el nombre con el que este proceso figura en el grupo.
-func (q *Queue) Consumer() string {
-	return q.consumer
+func (cola *Queue) Consumer() string {
+	return cola.consumer
 }
 
 // Stream devuelve el nombre del stream de trabajos.
-func (q *Queue) Stream() string {
-	return q.stream
+func (cola *Queue) Stream() string {
+	return cola.stream
 }
 
 // Group devuelve el nombre del grupo de consumo.
-func (q *Queue) Group() string {
-	return q.group
+func (cola *Queue) Group() string {
+	return cola.group
 }
 
 // ===== Recepción y Lease =====
 
 // EnsureGroup crea el grupo de consumo si no existe. Es seguro llamarlo en
 // cada arranque.
-func (q *Queue) EnsureGroup(ctx context.Context) error {
-	err := q.client.XGroupCreateMkStream(ctx, q.stream, q.group, "0").Err()
+func (cola *Queue) EnsureGroup(ctx context.Context) error {
+	err := cola.client.XGroupCreateMkStream(ctx, cola.stream, cola.group, "0").Err()
 	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
 		return err
 	}
@@ -163,26 +163,26 @@ func (q *Queue) EnsureGroup(ctx context.Context) error {
 // Receive reclama primero una lease vencida; si hay mensajes pendientes pero
 // todavía no vencidos, espera para no adelantar trabajo ajeno. Recién después
 // toma un mensaje nuevo.
-func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
-	messages, next, err := q.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
-		Stream:   q.stream,
-		Group:    q.group,
-		Consumer: q.consumer,
-		MinIdle:  q.lease,
-		Start:    q.cursor,
+func (cola *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
+	messages, next, err := cola.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   cola.stream,
+		Group:    cola.group,
+		Consumer: cola.consumer,
+		MinIdle:  cola.lease,
+		Start:    cola.cursor,
 		Count:    1,
 	}).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
 	if next != "" {
-		q.cursor = next
+		cola.cursor = next
 	}
 	if len(messages) > 0 {
 		return &messages[0], nil
 	}
 
-	pending, err := q.client.XPending(ctx, q.stream, q.group).Result()
+	pending, err := cola.client.XPending(ctx, cola.stream, cola.group).Result()
 	if err != nil && !errors.Is(err, redis.Nil) {
 		return nil, err
 	}
@@ -190,12 +190,12 @@ func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 		return nil, nil
 	}
 
-	streams, err := q.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group:    q.group,
-		Consumer: q.consumer,
-		Streams:  []string{q.stream, ">"},
+	streams, err := cola.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+		Group:    cola.group,
+		Consumer: cola.consumer,
+		Streams:  []string{cola.stream, ">"},
 		Count:    1,
-		Block:    q.block,
+		Block:    cola.block,
 	}).Result()
 	if errors.Is(err, redis.Nil) {
 		return nil, nil
@@ -211,8 +211,8 @@ func (q *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 
 // Renew extiende la lease sólo si este consumidor sigue siendo el dueño del
 // mensaje. Devuelve false cuando otro consumidor ya lo reclamó.
-func (q *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
-	result, err := q.renewScript.Run(ctx, q.client, []string{q.stream}, q.group, messageID, q.consumer).Int64()
+func (cola *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
+	result, err := cola.renewScript.Run(ctx, cola.client, []string{cola.stream}, cola.group, messageID, cola.consumer).Int64()
 	if err != nil {
 		return false, err
 	}
@@ -223,12 +223,12 @@ func (q *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
 
 // Ack confirma el mensaje. Si reason no está vacío, primero copia el payload
 // al dead-letter; en ambos casos limpia el índice y marca el trabajo cerrado.
-func (q *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason string) (bool, error) {
-	keys := []string{q.stream, q.indexKey, q.deadLetter, q.closedPrefix + workID}
-	result, err := q.ackScript.Run(
-		ctx, q.client, keys,
-		q.group, messageID, q.consumer, rawJob, reason, workID,
-		int64(q.closedTTL/time.Second),
+func (cola *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason string) (bool, error) {
+	keys := []string{cola.stream, cola.indexKey, cola.deadLetter, cola.closedPrefix + workID}
+	result, err := cola.ackScript.Run(
+		ctx, cola.client, keys,
+		cola.group, messageID, cola.consumer, rawJob, reason, workID,
+		int64(cola.closedTTL/time.Second),
 	).Int64()
 	if err != nil {
 		return false, err
@@ -238,15 +238,15 @@ func (q *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason strin
 
 // HasMessage indica si el trabajo todavía tiene un mensaje pendiente en el
 // stream. El recolector lo usa para no borrar un spool con entrega en curso.
-func (q *Queue) HasMessage(ctx context.Context, workID string) (bool, error) {
-	messageID, err := q.client.HGet(ctx, q.indexKey, workID).Result()
+func (cola *Queue) HasMessage(ctx context.Context, workID string) (bool, error) {
+	messageID, err := cola.client.HGet(ctx, cola.indexKey, workID).Result()
 	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	messages, err := q.client.XRange(ctx, q.stream, messageID, messageID).Result()
+	messages, err := cola.client.XRange(ctx, cola.stream, messageID, messageID).Result()
 	if err != nil {
 		return false, err
 	}
@@ -256,7 +256,7 @@ func (q *Queue) HasMessage(ctx context.Context, workID string) (bool, error) {
 // Heartbeat renueva la lease mientras el trabajo está en curso. El canal lost
 // se cierra si otro consumidor tomó el mensaje; el worker debe abandonar el
 // trabajo sin hacer ACK.
-func (q *Queue) Heartbeat(parent context.Context, messageID string) (
+func (cola *Queue) Heartbeat(parent context.Context, messageID string) (
 	context.Context,
 	context.CancelFunc,
 	<-chan struct{},
@@ -270,7 +270,7 @@ func (q *Queue) Heartbeat(parent context.Context, messageID string) (
 		cancel()
 	}
 
-	ok, err := q.Renew(ctx, messageID)
+	ok, err := cola.Renew(ctx, messageID)
 	if err != nil {
 		cancel()
 		return ctx, cancel, lost, err
@@ -281,14 +281,14 @@ func (q *Queue) Heartbeat(parent context.Context, messageID string) (
 	}
 
 	go func() {
-		ticker := time.NewTicker(q.lease / 3)
+		ticker := time.NewTicker(cola.lease / 3)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				ok, err := q.Renew(ctx, messageID)
+				ok, err := cola.Renew(ctx, messageID)
 				if err != nil || !ok {
 					markLost()
 					return

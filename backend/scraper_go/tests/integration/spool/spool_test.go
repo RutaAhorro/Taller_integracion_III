@@ -28,11 +28,11 @@ func receipt(count int) map[string]any {
 	}
 }
 
-func TestSealAndReplay(t *testing.T) {
+func TestSealAndReplay(prueba *testing.T) {
 	workID := uuid.NewString()
-	store, err := spool.Open(workID, t.TempDir(), 1<<20)
+	store, err := spool.Open(workID, prueba.TempDir(), 1<<20)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		prueba.Fatalf("Open() error = %v", err)
 	}
 	defer store.Close()
 
@@ -40,81 +40,81 @@ func TestSealAndReplay(t *testing.T) {
 	leche := domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}
 	pan := domain.Product{Producto: "Pan", Categoria: "panaderia"}
 	if err := store.Add(leche, &market); err != nil {
-		t.Fatalf("Add(leche) error = %v", err)
+		prueba.Fatalf("Add(leche) error = %v", err)
 	}
 	if err := store.Add(leche, &market); err != nil {
-		t.Fatalf("Add(leche duplicado) error = %v", err)
+		prueba.Fatalf("Add(leche duplicado) error = %v", err)
 	}
 	if err := store.Add(pan, &market); err != nil {
-		t.Fatalf("Add(pan) error = %v", err)
+		prueba.Fatalf("Add(pan) error = %v", err)
 	}
 	if count, err := store.Count(); err != nil || count != 2 {
-		t.Fatalf("Count() = %d, %v; want 2 (la huella evita duplicados)", count, err)
+		prueba.Fatalf("Count() = %d, %v; want 2 (la huella evita duplicados)", count, err)
 	}
 	if err := store.Seal(0); err == nil {
-		t.Fatal("Seal(0) debió fallar")
+		prueba.Fatal("Seal(0) debió fallar")
 	}
 	if err := store.Seal(1); err != nil {
-		t.Fatalf("Seal() error = %v", err)
+		prueba.Fatalf("Seal() error = %v", err)
 	}
 
 	var calls int
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
 		calls++
 		var payload struct {
 			Productos    []domain.Product `json:"productos"`
 			Supermercado string           `json:"supermercado"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode payload: %v", err)
+		if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
+			prueba.Errorf("decode payload: %v", err)
 		}
 		if payload.Supermercado != "Jumbo" || len(payload.Productos) != 1 {
-			t.Errorf("payload = %+v", payload)
+			prueba.Errorf("payload = %+v", payload)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(receipt(1))
+		respuesta.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(respuesta).Encode(receipt(1))
 	}))
 	defer server.Close()
 
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	if err := store.Replay(context.Background(), client); err != nil {
-		t.Fatalf("Replay() error = %v", err)
+		prueba.Fatalf("Replay() error = %v", err)
 	}
 	if calls != 2 {
-		t.Fatalf("calls = %d, want 2 (un lote por producto)", calls)
+		prueba.Fatalf("calls = %d, want 2 (un lote por producto)", calls)
 	}
 	if err := store.Replay(context.Background(), client); err != nil {
-		t.Fatalf("segundo Replay() error = %v", err)
+		prueba.Fatalf("segundo Replay() error = %v", err)
 	}
 	if calls != 2 {
-		t.Fatalf("calls tras reenviar = %d, want 2 (los lotes ya se entregaron)", calls)
+		prueba.Fatalf("calls tras reenviar = %d, want 2 (los lotes ya se entregaron)", calls)
 	}
 
 	if err := store.SetProgress("crawl_attempts", 2); err != nil {
-		t.Fatalf("SetProgress() error = %v", err)
+		prueba.Fatalf("SetProgress() error = %v", err)
 	}
 	attempts, err := store.Progress("crawl_attempts")
 	if err != nil || attempts != 2 {
-		t.Fatalf("Progress() = %d, %v", attempts, err)
+		prueba.Fatalf("Progress() = %d, %v", attempts, err)
 	}
 	if missing, _ := store.Progress("crawl_done"); missing != 0 {
-		t.Fatalf("crawl_done = %d, want 0", missing)
+		prueba.Fatalf("crawl_done = %d, want 0", missing)
 	}
 }
 
-func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
+func TestReplayRetriesSamePayloadAndIdempotencyKey(prueba *testing.T) {
 	workID := uuid.NewString()
-	store, err := spool.Open(workID, t.TempDir(), 1<<20)
+	store, err := spool.Open(workID, prueba.TempDir(), 1<<20)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		prueba.Fatalf("Open() error = %v", err)
 	}
 	defer store.Close()
 	market := "Jumbo"
 	if err := store.Add(domain.Product{Producto: "Leche", Precio: floatPtr(1290)}, &market); err != nil {
-		t.Fatalf("Add() error = %v", err)
+		prueba.Fatalf("Add() error = %v", err)
 	}
 	if err := store.Seal(100); err != nil {
-		t.Fatalf("Seal() error = %v", err)
+		prueba.Fatalf("Seal() error = %v", err)
 	}
 
 	var (
@@ -122,68 +122,68 @@ func TestReplayRetriesSamePayloadAndIdempotencyKey(t *testing.T) {
 		keys   []string
 		bodies []string
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
 		calls++
-		keys = append(keys, r.Header.Get("Idempotency-Key"))
+		keys = append(keys, peticion.Header.Get("Idempotency-Key"))
 		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Errorf("decode payload: %v", err)
+		if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
+			prueba.Errorf("decode payload: %v", err)
 		}
 		encoded, _ := json.Marshal(payload)
 		bodies = append(bodies, string(encoded))
 		if calls == 1 {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			_, _ = w.Write([]byte(`{"codigo":"catalogo_no_disponible"}`))
+			respuesta.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = respuesta.Write([]byte(`{"codigo":"catalogo_no_disponible"}`))
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(receipt(1))
+		respuesta.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(respuesta).Encode(receipt(1))
 	}))
 	defer server.Close()
 
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	if err := store.Replay(context.Background(), client); err == nil {
-		t.Fatal("el primer Replay debió fallar con 503")
+		prueba.Fatal("el primer Replay debió fallar con 503")
 	}
 	if err := store.Replay(context.Background(), client); err != nil {
-		t.Fatalf("el segundo Replay debe recuperar: %v", err)
+		prueba.Fatalf("el segundo Replay debe recuperar: %v", err)
 	}
 	if calls != 2 {
-		t.Fatalf("calls = %d, want 2", calls)
+		prueba.Fatalf("calls = %d, want 2", calls)
 	}
 	if keys[0] == "" || keys[0] != keys[1] {
-		t.Errorf("Idempotency-Key cambió entre reintentos: %q vs %q", keys[0], keys[1])
+		prueba.Errorf("Idempotency-Key cambió entre reintentos: %q vs %q", keys[0], keys[1])
 	}
 	if bodies[0] != bodies[1] {
-		t.Errorf("payload cambió entre reintentos:\n%s\n%s", bodies[0], bodies[1])
+		prueba.Errorf("payload cambió entre reintentos:\n%s\n%s", bodies[0], bodies[1])
 	}
 	if err := store.Replay(context.Background(), client); err != nil {
-		t.Fatalf("tercer Replay() error = %v", err)
+		prueba.Fatalf("tercer Replay() error = %v", err)
 	}
 	if calls != 2 {
-		t.Fatalf("calls tras el tercer Replay = %d, want 2 (lote ya entregado)", calls)
+		prueba.Fatalf("calls tras el tercer Replay = %d, want 2 (lote ya entregado)", calls)
 	}
 }
 
-func TestReplayDoesNotSendWithCancelledContext(t *testing.T) {
+func TestReplayDoesNotSendWithCancelledContext(prueba *testing.T) {
 	workID := uuid.NewString()
-	store, err := spool.Open(workID, t.TempDir(), 1<<20)
+	store, err := spool.Open(workID, prueba.TempDir(), 1<<20)
 	if err != nil {
-		t.Fatalf("Open() error = %v", err)
+		prueba.Fatalf("Open() error = %v", err)
 	}
 	defer store.Close()
 	market := "Jumbo"
 	if err := store.Add(domain.Product{Producto: "Leche"}, &market); err != nil {
-		t.Fatalf("Add() error = %v", err)
+		prueba.Fatalf("Add() error = %v", err)
 	}
 	if err := store.Seal(100); err != nil {
-		t.Fatalf("Seal() error = %v", err)
+		prueba.Fatalf("Seal() error = %v", err)
 	}
 
 	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
 		called = true
-		http.Error(w, "no debe llamarse", http.StatusInternalServerError)
+		http.Error(respuesta, "no debe llamarse", http.StatusInternalServerError)
 	}))
 	defer server.Close()
 
@@ -191,15 +191,15 @@ func TestReplayDoesNotSendWithCancelledContext(t *testing.T) {
 	cancel()
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	if err := store.Replay(ctx, client); err == nil {
-		t.Fatal("Replay() debió respetar el contexto cancelado")
+		prueba.Fatal("Replay() debió respetar el contexto cancelado")
 	}
 	if called {
-		t.Fatal("Replay() envió un lote con la lease cancelada")
+		prueba.Fatal("Replay() envió un lote con la lease cancelada")
 	}
 }
 
-func TestOpenRejectsInvalidWorkID(t *testing.T) {
-	if _, err := spool.Open("no-es-uuid", t.TempDir(), 1<<20); err == nil {
-		t.Fatal("Open() debió rechazar un trabajo_id inválido")
+func TestOpenRejectsInvalidWorkID(prueba *testing.T) {
+	if _, err := spool.Open("no-es-uuid", prueba.TempDir(), 1<<20); err == nil {
+		prueba.Fatal("Open() debió rechazar un trabajo_id inválido")
 	}
 }

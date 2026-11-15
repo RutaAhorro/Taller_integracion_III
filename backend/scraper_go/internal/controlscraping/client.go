@@ -29,25 +29,25 @@ type Error struct {
 }
 
 // Error implementa error y muestra el código del contrato cuando existe.
-func (e *Error) Error() string {
-	if e.Code != "" {
-		return fmt.Sprintf("%s (status=%d, codigo=%s)", e.Message, e.Status, e.Code)
+func (errorEstado *Error) Error() string {
+	if errorEstado.Code != "" {
+		return fmt.Sprintf("%s (status=%d, codigo=%s)", errorEstado.Message, errorEstado.Status, errorEstado.Code)
 	}
-	return fmt.Sprintf("%s (status=%d)", e.Message, e.Status)
+	return fmt.Sprintf("%s (status=%d)", errorEstado.Message, errorEstado.Status)
 }
 
 // Unwrap devuelve el error de red subyacente, si lo hay.
-func (e *Error) Unwrap() error {
-	return e.Err
+func (errorEstado *Error) Unwrap() error {
+	return errorEstado.Err
 }
 
 // Permanent indica si reintentar el mismo lote no cambiará el resultado.
-func (e *Error) Permanent() bool {
-	switch e.Status {
+func (errorEstado *Error) Permanent() bool {
+	switch errorEstado.Status {
 	case http.StatusBadRequest, http.StatusNotFound, http.StatusRequestEntityTooLarge:
 		return true
 	}
-	switch e.Code {
+	switch errorEstado.Code {
 	case "idempotency_conflict", "entrega_fallida", "entregas_fallidas", "lote_rechazado":
 		return true
 	}
@@ -93,7 +93,7 @@ type ingestPayload struct {
 
 // IngestBatch envía un lote y valida el recibo cuando se usa una clave de
 // idempotencia, igual que ScraperAPIClient.ingest_batch.
-func (c *Client) IngestBatch(
+func (cliente *Client) IngestBatch(
 	ctx context.Context,
 	products []domain.Product,
 	supermarket *string,
@@ -113,20 +113,20 @@ func (c *Client) IngestBatch(
 		return nil, fmt.Errorf("serializar lote: %w", err)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, c.ingestionEndpoint(workID), bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cliente.ingestionEndpoint(workID), bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
+	if cliente.token != "" {
+		request.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
 	if batchID != "" {
 		request.Header.Set("Idempotency-Key", batchID)
 	}
 
-	responseBody, err := c.do(request)
+	responseBody, err := cliente.do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -166,7 +166,7 @@ func (c *Client) IngestBatch(
 // ===== Cierre y Consulta de Trabajos =====
 
 // FinalizeWork cierra un trabajo y exige que la API confirme id y estado.
-func (c *Client) FinalizeWork(
+func (cliente *Client) FinalizeWork(
 	ctx context.Context,
 	workID string,
 	status string,
@@ -189,17 +189,17 @@ func (c *Client) FinalizeWork(
 		return nil, err
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, c.base()+"/trabajos/"+workID+"/finalizar", bytes.NewReader(body))
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, cliente.base()+"/trabajos/"+workID+"/finalizar", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Content-Type", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
+	if cliente.token != "" {
+		request.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
 
-	responseBody, err := c.do(request)
+	responseBody, err := cliente.do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -214,17 +214,17 @@ func (c *Client) FinalizeWork(
 }
 
 // GetWork consulta el estado de un trabajo y valida su consistencia.
-func (c *Client) GetWork(ctx context.Context, workID string) (map[string]any, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, c.base()+"/trabajos/"+workID, nil)
+func (cliente *Client) GetWork(ctx context.Context, workID string) (map[string]any, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cliente.base()+"/trabajos/"+workID, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Accept", "application/json")
-	if c.token != "" {
-		request.Header.Set("Authorization", "Bearer "+c.token)
+	if cliente.token != "" {
+		request.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
 
-	body, err := c.do(request)
+	body, err := cliente.do(request)
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +246,8 @@ func (c *Client) GetWork(ctx context.Context, workID string) (map[string]any, er
 // ===== Transporte HTTP =====
 
 // do realiza peticiones HTTP seguras hacia la API de control de scraping.
-func (c *Client) do(request *http.Request) ([]byte, error) {
-	response, err := c.http.Do(request)
+func (cliente *Client) do(request *http.Request) ([]byte, error) {
+	response, err := cliente.http.Do(request)
 	if err != nil {
 		return nil, &Error{Message: "No se pudo conectar con la API", Err: err}
 	}
@@ -277,19 +277,19 @@ func (c *Client) do(request *http.Request) ([]byte, error) {
 // ===== Rutas del Contrato =====
 
 // base retorna la URL base limpia de la API de control de scraping.
-func (c *Client) base() string {
-	return strings.TrimSuffix(c.endpoint, "/productos")
+func (cliente *Client) base() string {
+	return strings.TrimSuffix(cliente.endpoint, "/productos")
 }
 
 // ingestionEndpoint resuelve el endpoint completo para el envío de lotes.
-func (c *Client) ingestionEndpoint(workID string) string {
+func (cliente *Client) ingestionEndpoint(workID string) string {
 	if workID != "" {
-		return c.base() + "/trabajos/" + workID + "/productos"
+		return cliente.base() + "/trabajos/" + workID + "/productos"
 	}
-	if strings.HasSuffix(c.endpoint, "/productos") {
-		return c.endpoint
+	if strings.HasSuffix(cliente.endpoint, "/productos") {
+		return cliente.endpoint
 	}
-	return c.endpoint + "/productos"
+	return cliente.endpoint + "/productos"
 }
 
 // ===== Utilidades =====

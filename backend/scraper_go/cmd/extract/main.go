@@ -27,17 +27,17 @@ type stringList []string
 // ===== Argumentos CLI =====
 
 // String implementa flag.Value formateando la lista de cadenas.
-func (s *stringList) String() string {
-	return strings.Join(*s, ",")
+func (lista *stringList) String() string {
+	return strings.Join(*lista, ",")
 }
 
 // Set implementa flag.Value acumulando valores pasados por línea de comandos.
-func (s *stringList) Set(value string) error {
+func (lista *stringList) Set(value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
 		return fmt.Errorf("la URL no puede estar vacía")
 	}
-	*s = append(*s, value)
+	*lista = append(*lista, value)
 	return nil
 }
 

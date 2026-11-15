@@ -59,8 +59,8 @@ type BlockedError struct {
 }
 
 // Error implementa error con URL, status y motivo del bloqueo.
-func (e *BlockedError) Error() string {
-	return fmt.Sprintf("bloqueo detectado en %s (status=%d, motivo=%s)", e.URL, e.Status, e.Reason)
+func (errorEstado *BlockedError) Error() string {
+	return fmt.Sprintf("bloqueo detectado en %s (status=%d, motivo=%s)", errorEstado.URL, errorEstado.Status, errorEstado.Reason)
 }
 
 // HTTPStatusError representa un estado HTTP que el crawler no puede
@@ -71,8 +71,8 @@ type HTTPStatusError struct {
 }
 
 // Error implementa error con el estado y la URL.
-func (e *HTTPStatusError) Error() string {
-	return fmt.Sprintf("HTTP %d en %s", e.Status, e.URL)
+func (errorEstado *HTTPStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d en %s", errorEstado.Status, errorEstado.URL)
 }
 
 // Options agrupa la configuración del crawler: identidad, tiempos, tamaño
@@ -197,7 +197,7 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 // Fetch aplica robots, throttle y reintentos. Un 404 se devuelve como
 // respuesta para que el spider decida si termina la paginación; un bloqueo
 // persistente se devuelve como BlockedError.
-func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
+func (cliente *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return nil, err
@@ -206,30 +206,30 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 		return nil, fmt.Errorf("URL no soportada: %s", rawURL)
 	}
 
-	allowed, crawlDelay, err := c.robots.Allowed(ctx, parsed)
+	allowed, crawlDelay, err := cliente.robots.Allowed(ctx, parsed)
 	if err != nil {
-		c.logger.Warn("scraper_robots_unavailable", "url", rawURL, "error", err)
+		cliente.logger.Warn("scraper_robots_unavailable", "url", rawURL, "error", err)
 	}
 	if !allowed {
 		return nil, fmt.Errorf("%w: %s", ErrRobotsDisallowed, rawURL)
 	}
-	delay := c.delay
+	delay := cliente.delay
 	if crawlDelay > delay {
 		delay = crawlDelay
 	}
 
 	blockedResponses := 0
-	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		if err := c.throttle.Wait(ctx, parsed.Hostname(), delay); err != nil {
+	for attempt := 0; attempt <= cliente.maxRetries; attempt++ {
+		if err := cliente.throttle.Wait(ctx, parsed.Hostname(), delay); err != nil {
 			return nil, err
 		}
-		response, err := c.doRequest(ctx, rawURL)
+		response, err := cliente.doRequest(ctx, rawURL)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, 0); err != nil {
+			if attempt < cliente.maxRetries {
+				if err := cliente.backoff(ctx, attempt, 0); err != nil {
 					return nil, err
 				}
 				continue
@@ -239,14 +239,14 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 
 		if reason := detectBlock(response.Status, response.Body); reason != "" {
 			blockedResponses++
-			c.logger.Warn("scraper_blocked",
+			cliente.logger.Warn("scraper_blocked",
 				"url", rawURL,
 				"status", response.Status,
 				"reason", reason,
 				"attempt", attempt+1,
 			)
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
+			if attempt < cliente.maxRetries {
+				if err := cliente.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
 					return nil, err
 				}
 				continue
@@ -260,8 +260,8 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 		}
 
 		if response.Status >= 500 {
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
+			if attempt < cliente.maxRetries {
+				if err := cliente.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
 					return nil, err
 				}
 				continue
@@ -279,25 +279,25 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 // ===== Petición HTTP y Transporte =====
 
 // doRequest ejecuta la solicitud HTTP GET incorporando cabeceras de navegación.
-func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error) {
+func (cliente *Client) doRequest(ctx context.Context, rawURL string) (*Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", c.userAgent)
+	request.Header.Set("User-Agent", cliente.userAgent)
 	request.Header.Set("Accept", "text/html,application/xhtml+xml")
 
-	response, err := c.http.Do(request)
+	response, err := cliente.http.Do(request)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, c.maxSize+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, cliente.maxSize+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(body)) > c.maxSize {
+	if int64(len(body)) > cliente.maxSize {
 		return nil, ErrResponseTooLarge
 	}
 	return &Response{
@@ -311,12 +311,12 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error
 // ===== Reintentos y Espera =====
 
 // backoff calcula el tiempo de espera exponencial con variación aleatoria para reintentos.
-func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
+func (cliente *Client) backoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
 	wait := retryAfter
 	if wait <= 0 {
-		base := c.delay
-		if base < c.backoffMin {
-			base = c.backoffMin
+		base := cliente.delay
+		if base < cliente.backoffMin {
+			base = cliente.backoffMin
 		}
 		exponential := base * time.Duration(1<<min(attempt, 7))
 		// Jitter completo sobre la mitad superior: conserva el crecimiento
@@ -326,8 +326,8 @@ func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Durat
 	}
 	// Retry-After es una instrucción del servidor: se respeta incluso si es
 	// mayor que el techo del backoff propio. El techo sólo aplica al jitter.
-	if retryAfter <= 0 && wait > c.backoffMax {
-		wait = c.backoffMax
+	if retryAfter <= 0 && wait > cliente.backoffMax {
+		wait = cliente.backoffMax
 	}
 	timer := time.NewTimer(wait)
 	defer timer.Stop()
@@ -427,18 +427,18 @@ func newThrottle() *throttle {
 
 // Wait reserva el siguiente turno del dominio. La reserva se hace bajo lock
 // para que dos goroutines no calculen el mismo instante.
-func (t *throttle) Wait(ctx context.Context, host string, delay time.Duration) error {
+func (regulador *throttle) Wait(ctx context.Context, host string, delay time.Duration) error {
 	if delay <= 0 {
 		return nil
 	}
-	t.mu.Lock()
+	regulador.mu.Lock()
 	now := time.Now()
-	next := t.next[host]
+	next := regulador.next[host]
 	if next.Before(now) {
 		next = now
 	}
-	t.next[host] = next.Add(delay)
-	t.mu.Unlock()
+	regulador.next[host] = next.Add(delay)
+	regulador.mu.Unlock()
 
 	wait := time.Until(next)
 	if wait <= 0 {
@@ -498,57 +498,57 @@ func newRobotsCache(
 }
 
 // Allowed determina si una URL cumple las reglas de exclusión de robots.txt.
-func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.Duration, error) {
+func (cacheRobots *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.Duration, error) {
 	base := target.Scheme + "://" + target.Host
-	r.mu.Lock()
-	entry := r.entries[base]
-	failedAt, failed := r.failures[base]
-	r.mu.Unlock()
+	cacheRobots.mu.Lock()
+	entry := cacheRobots.entries[base]
+	failedAt, failed := cacheRobots.failures[base]
+	cacheRobots.mu.Unlock()
 
-	if entry == nil || time.Since(entry.fetched) > r.cacheTTL {
-		if failed && time.Since(failedAt) < r.failureTTL {
+	if entry == nil || time.Since(entry.fetched) > cacheRobots.cacheTTL {
+		if failed && time.Since(failedAt) < cacheRobots.failureTTL {
 			// Fail-open sin repetir el aviso en cada pagina. Cugat, por
 			// ejemplo, redirige robots.txt en bucle; sin esta cache el
 			// worker registraria un warning por cada categoria.
 			return true, 0, nil
 		}
-		fetched, err := r.fetch(ctx, base)
+		fetched, err := cacheRobots.fetch(ctx, base)
 		if err != nil {
 			if ctx.Err() == nil {
-				r.mu.Lock()
-				r.failures[base] = time.Now()
-				r.mu.Unlock()
+				cacheRobots.mu.Lock()
+				cacheRobots.failures[base] = time.Now()
+				cacheRobots.mu.Unlock()
 			}
 			return true, 0, err
 		}
 		entry = fetched
-		r.mu.Lock()
-		r.entries[base] = entry
-		delete(r.failures, base)
-		r.mu.Unlock()
+		cacheRobots.mu.Lock()
+		cacheRobots.entries[base] = entry
+		delete(cacheRobots.failures, base)
+		cacheRobots.mu.Unlock()
 	}
 
 	path := target.RequestURI()
 	if path == "" {
 		path = "/"
 	}
-	return entry.data.TestAgent(path, r.userAgent), entry.crawlDelay, nil
+	return entry.data.TestAgent(path, cacheRobots.userAgent), entry.crawlDelay, nil
 }
 
 // fetch descarga y procesa el archivo robots.txt correspondiente a un host.
-func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, error) {
+func (cacheRobots *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/robots.txt", nil)
 	if err != nil {
 		return nil, err
 	}
-	request.Header.Set("User-Agent", r.userAgent)
-	response, err := r.http.Do(request)
+	request.Header.Set("User-Agent", cacheRobots.userAgent)
+	response, err := cacheRobots.http.Do(request)
 	if err != nil {
 		return nil, err
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, r.maxBytes))
+	body, err := io.ReadAll(io.LimitReader(response.Body, cacheRobots.maxBytes))
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +563,7 @@ func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, err
 	}
 	return &robotsEntry{
 		data:       data,
-		crawlDelay: parseCrawlDelay(body, r.userAgent),
+		crawlDelay: parseCrawlDelay(body, cacheRobots.userAgent),
 		fetched:    time.Now(),
 	}, nil
 }

@@ -15,7 +15,7 @@ import (
 // TestEmptyCategoryDoesNotAbortChain cubre las cinco cadenas: una categoría con
 // respuesta 200 y cero productos cierra esa categoría y continúa con la
 // siguiente, sin abortar el crawl completo.
-func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
+func TestEmptyCategoryDoesNotAbortChain(prueba *testing.T) {
 	cases := []struct {
 		name       string
 		file       string
@@ -75,11 +75,11 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
+		prueba.Run(tc.name, func(prueba *testing.T) {
+			dir := prueba.TempDir()
 			categories := tc.first + "\n" + tc.second + "\n"
 			if err := os.WriteFile(filepath.Join(dir, tc.file), []byte(categories), 0o600); err != nil {
-				t.Fatal(err)
+				prueba.Fatal(err)
 			}
 			firstCall := tc.firstCall
 			if firstCall == "" {
@@ -95,10 +95,10 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			}}
 			spider := tc.factory(fetcher, dir, 100, quietLogger())
 			if err := spider.Run(context.Background(), domain.Job{}, func(domain.Item) error { return nil }); err != nil {
-				t.Fatalf("%s abortó el crawl por una categoría vacía: %v", spider.Name(), err)
+				prueba.Fatalf("%s abortó el crawl por una categoría vacía: %v", spider.Name(), err)
 			}
 			if len(fetcher.calls) < 2 || fetcher.calls[0] != firstCall || fetcher.calls[1] != secondCall {
-				t.Errorf("%s calls = %v, want la categoría vacía y luego la siguiente", spider.Name(), fetcher.calls)
+				prueba.Errorf("%s calls = %v, want la categoría vacía y luego la siguiente", spider.Name(), fetcher.calls)
 			}
 		})
 	}

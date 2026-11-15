@@ -110,12 +110,12 @@ func NewRegistryFromCatalog(sites catalog.Catalog, fetcher Fetcher, categoryDir 
 }
 
 // Register añade o reemplaza un spider en el registro.
-func (r *Registry) Register(spider Spider) {
-	r.spiders[spider.Name()] = spider
+func (registro *Registry) Register(spider Spider) {
+	registro.spiders[spider.Name()] = spider
 }
 
 // Get devuelve el spider con ese nombre y si existe.
-func (r *Registry) Get(name string) (Spider, bool) {
-	spider, ok := r.spiders[name]
+func (registro *Registry) Get(name string) (Spider, bool) {
+	spider, ok := registro.spiders[name]
 	return spider, ok
 }
