@@ -16,43 +16,43 @@ func init() {
 }
 
 func setupTestRouter() *gin.Engine {
-	router := gin.New()
-	router.Use(middleware.ErrorHandler())
-	router.HandleMethodNotAllowed = true
+	enrutador := gin.New()
+	enrutador.Use(middleware.ErrorHandler())
+	enrutador.HandleMethodNotAllowed = true
 
-	router.NoRoute(middleware.NotFoundHandler())
-	router.NoMethod(middleware.MethodNotAllowedHandler())
+	enrutador.NoRoute(middleware.NotFoundHandler())
+	enrutador.NoMethod(middleware.MethodNotAllowedHandler())
 
-	router.GET("/ping", func(contexto *gin.Context) {
+	enrutador.GET("/ping", func(contexto *gin.Context) {
 		contexto.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	router.GET("/panic", func(contexto *gin.Context) {
+	enrutador.GET("/panic", func(contexto *gin.Context) {
 		panic("error crítico de prueba simulado")
 	})
 
-	router.GET("/bad-request", func(contexto *gin.Context) {
+	enrutador.GET("/bad-request", func(contexto *gin.Context) {
 		middleware.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos", errors.New("campo 'nombre' es requerido"))
 	})
 
-	return router
+	return enrutador
 }
 
 func TestNotFoundHandler(prueba *testing.T) {
-	router := setupTestRouter()
+	enrutador := setupTestRouter()
 	respuestaHTTP := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/ruta-inexistente", nil)
+	peticion, _ := http.NewRequest("GET", "/ruta-inexistente", nil)
 
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusNotFound {
 		prueba.Fatalf("Esperaba código 404, pero obtuve %d", respuestaHTTP.Code)
 	}
 
 	var respuesta middleware.RespuestaError
-	err := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
-	if err != nil {
-		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", err)
+	errorObtenido := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
+	if errorObtenido != nil {
+		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", errorObtenido)
 	}
 
 	if respuesta.Estado != 404 {
@@ -64,20 +64,20 @@ func TestNotFoundHandler(prueba *testing.T) {
 }
 
 func TestMethodNotAllowedHandler(prueba *testing.T) {
-	router := setupTestRouter()
+	enrutador := setupTestRouter()
 	respuestaHTTP := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/ping", nil)
+	peticion, _ := http.NewRequest("POST", "/ping", nil)
 
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusMethodNotAllowed {
 		prueba.Fatalf("Esperaba código 405, pero obtuve %d", respuestaHTTP.Code)
 	}
 
 	var respuesta middleware.RespuestaError
-	err := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
-	if err != nil {
-		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", err)
+	errorObtenido := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
+	if errorObtenido != nil {
+		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", errorObtenido)
 	}
 
 	if respuesta.Estado != 405 {
@@ -86,20 +86,20 @@ func TestMethodNotAllowedHandler(prueba *testing.T) {
 }
 
 func TestPanicRecoveryHandler(prueba *testing.T) {
-	router := setupTestRouter()
+	enrutador := setupTestRouter()
 	respuestaHTTP := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/panic", nil)
+	peticion, _ := http.NewRequest("GET", "/panic", nil)
 
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusInternalServerError {
 		prueba.Fatalf("Esperaba código 500 tras panic, pero obtuve %d", respuestaHTTP.Code)
 	}
 
 	var respuesta middleware.RespuestaError
-	err := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
-	if err != nil {
-		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", err)
+	errorObtenido := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
+	if errorObtenido != nil {
+		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", errorObtenido)
 	}
 
 	if respuesta.Estado != 500 {
@@ -111,20 +111,20 @@ func TestPanicRecoveryHandler(prueba *testing.T) {
 }
 
 func TestResponderError(prueba *testing.T) {
-	router := setupTestRouter()
+	enrutador := setupTestRouter()
 	respuestaHTTP := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/bad-request", nil)
+	peticion, _ := http.NewRequest("GET", "/bad-request", nil)
 
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusBadRequest {
 		prueba.Fatalf("Esperaba código 400, pero obtuve %d", respuestaHTTP.Code)
 	}
 
 	var respuesta middleware.RespuestaError
-	err := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
-	if err != nil {
-		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", err)
+	errorObtenido := json.Unmarshal(respuestaHTTP.Body.Bytes(), &respuesta)
+	if errorObtenido != nil {
+		prueba.Fatalf("Error al decodificar JSON de respuesta: %v", errorObtenido)
 	}
 
 	if respuesta.Estado != 400 {

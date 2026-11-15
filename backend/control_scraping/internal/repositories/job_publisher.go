@@ -13,7 +13,7 @@ const JobStream = "scraper:jobs:stream"
 const JobIndex = "scraper:jobs:index"
 const JobClosedPrefix = "scraper:jobs:closed:"
 
-var publishJob = redis.NewScript(`
+var publicarTrabajo = redis.NewScript(`
 if redis.call('EXISTS', KEYS[3]) == 1 then return false end
 local previous = redis.call('HGET', KEYS[2], ARGV[1])
 if previous and #redis.call('XRANGE', KEYS[1], previous, previous) > 0 then return previous end
@@ -23,50 +23,50 @@ return id
 `)
 
 type jobPublisher struct {
-	rdb *redis.Client
-	db  *gorm.DB
+	clienteRedis *redis.Client
+	baseDatos    *gorm.DB
 }
 
-func NewJobPublisher(rdb *redis.Client, db *gorm.DB) *jobPublisher {
-	var client *redis.Client
-	if rdb != nil {
-		options := *rdb.Options()
-		options.MaxRetries = -1
-		options.ContextTimeoutEnabled = true
-		options.DialTimeout = time.Second
-		options.ReadTimeout = time.Second
-		options.WriteTimeout = time.Second
-		client = redis.NewClient(&options)
+func NewJobPublisher(clienteRedis *redis.Client, baseDatos *gorm.DB) *jobPublisher {
+	var cliente *redis.Client
+	if clienteRedis != nil {
+		opciones := *clienteRedis.Options()
+		opciones.MaxRetries = -1
+		opciones.ContextTimeoutEnabled = true
+		opciones.DialTimeout = time.Second
+		opciones.ReadTimeout = time.Second
+		opciones.WriteTimeout = time.Second
+		cliente = redis.NewClient(&opciones)
 	}
-	return &jobPublisher{client, db}
+	return &jobPublisher{clienteRedis: cliente, baseDatos: baseDatos}
 }
 
 func (publicador *jobPublisher) Close() error {
-	if publicador.rdb != nil {
-		return publicador.rdb.Close()
+	if publicador.clienteRedis != nil {
+		return publicador.clienteRedis.Close()
 	}
 	return nil
 }
-func (publicador *jobPublisher) Publicar(ctx context.Context, ejecucion domain.Ejecucion) error {
-	if publicador.rdb == nil {
+func (publicador *jobPublisher) Publicar(contexto context.Context, ejecucion domain.Ejecucion) error {
+	if publicador.clienteRedis == nil {
 		return errors.New("Redis no está disponible")
 	}
 	// Leer SQL sin transacción ni FOR UPDATE; nunca retener locks durante Redis.
 	// El ACK instala una marca de cierre en Redis atómicamente. Esa marca evita
 	// republicar si el trabajo termina entre esta lectura y la publicación.
-	attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
-	defer cancel()
-	var job domain.TrabajoScraper
-	found := publicador.db.WithContext(attempt).Select("id").Where("id=? AND estado='en_progreso'", ejecucion.TrabajoID).Limit(1).Find(&job)
-	if found.Error != nil {
-		return found.Error
+	intento, cancelar := context.WithTimeout(contexto, 3*time.Second)
+	defer cancelar()
+	var trabajo domain.TrabajoScraper
+	encontrado := publicador.baseDatos.WithContext(intento).Select("id").Where("id=? AND estado='en_progreso'", ejecucion.TrabajoID).Limit(1).Find(&trabajo)
+	if encontrado.Error != nil {
+		return encontrado.Error
 	}
-	if found.RowsAffected == 0 {
+	if encontrado.RowsAffected == 0 {
 		return nil
 	}
-	err := publishJob.Run(attempt, publicador.rdb, []string{JobStream, JobIndex, JobClosedPrefix + ejecucion.TrabajoID.String()}, ejecucion.TrabajoID.String(), ejecucion.Payload).Err()
-	if errors.Is(err, redis.Nil) { // trabajo ya cerrado por el worker
+	errorObtenido := publicarTrabajo.Run(intento, publicador.clienteRedis, []string{JobStream, JobIndex, JobClosedPrefix + ejecucion.TrabajoID.String()}, ejecucion.TrabajoID.String(), ejecucion.Payload).Err()
+	if errors.Is(errorObtenido, redis.Nil) { // trabajo ya cerrado por el worker
 		return nil
 	}
-	return err
+	return errorObtenido
 }

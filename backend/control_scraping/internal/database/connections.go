@@ -19,48 +19,48 @@ type Config struct {
 
 // No hay fallback a DB_URL ni al administrador de PostgreSQL.
 func Load() (Config, error) {
-	cfg := Config{ScrapingURL: os.Getenv("SCRAPING_DB_URL")}
-	for _, entry := range []struct{ name, dsn, role string }{
-		{"SCRAPING_DB_URL", cfg.ScrapingURL, "app_scraping"},
+	configuracion := Config{ScrapingURL: os.Getenv("SCRAPING_DB_URL")}
+	for _, entrada := range []struct{ nombre, cadenaConexion, rol string }{
+		{"SCRAPING_DB_URL", configuracion.ScrapingURL, "app_scraping"},
 	} {
-		if entry.dsn == "" {
-			return Config{}, errors.New(entry.name + " es obligatorio")
+		if entrada.cadenaConexion == "" {
+			return Config{}, errors.New(entrada.nombre + " es obligatorio")
 		}
-		parsed, err := pgx.ParseConfig(entry.dsn)
-		if err != nil || parsed.User != entry.role || parsed.Database == "" || parsed.Password == "" {
+		analizado, errorObtenido := pgx.ParseConfig(entrada.cadenaConexion)
+		if errorObtenido != nil || analizado.User != entrada.rol || analizado.Database == "" || analizado.Password == "" {
 			// No devolver el DSN ni el error del parser: pueden contener secretos.
-			return Config{}, errors.New(entry.name + " debe usar el rol " + entry.role + ", una base y una contraseña explícitos")
+			return Config{}, errors.New(entrada.nombre + " debe usar el rol " + entrada.rol + ", una base y una contraseña explícitos")
 		}
 	}
-	return cfg, nil
+	return configuracion, nil
 }
 
-func Open(ctx context.Context, dsn string) (*gorm.DB, error) {
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
+func Open(contexto context.Context, cadenaConexion string) (*gorm.DB, error) {
+	baseDatos, errorObtenido := gorm.Open(postgres.Open(cadenaConexion), &gorm.Config{
 		DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent),
 	})
-	if err != nil {
+	if errorObtenido != nil {
 		return nil, errors.New("no se pudo configurar PostgreSQL")
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
+	baseDatosSQL, errorObtenido := baseDatos.DB()
+	if errorObtenido != nil {
 		return nil, errors.New("no se pudo obtener la conexión PostgreSQL")
 	}
 	// Un pool por API de coordinación; Identidad mantiene su pool independiente.
-	sqlDB.SetMaxOpenConns(5)
-	sqlDB.SetMaxIdleConns(2)
-	sqlDB.SetConnMaxLifetime(30 * time.Minute)
-	if err := sqlDB.PingContext(ctx); err != nil {
-		sqlDB.Close()
+	baseDatosSQL.SetMaxOpenConns(5)
+	baseDatosSQL.SetMaxIdleConns(2)
+	baseDatosSQL.SetConnMaxLifetime(30 * time.Minute)
+	if errorObtenido := baseDatosSQL.PingContext(contexto); errorObtenido != nil {
+		baseDatosSQL.Close()
 		return nil, errors.New("no se pudo conectar a PostgreSQL con el rol configurado")
 	}
-	return db, nil
+	return baseDatos, nil
 }
 
-func Close(db *gorm.DB) {
-	if db != nil {
-		if sqlDB, err := db.DB(); err == nil {
-			sqlDB.Close()
+func Close(baseDatos *gorm.DB) {
+	if baseDatos != nil {
+		if baseDatosSQL, errorObtenido := baseDatos.DB(); errorObtenido == nil {
+			baseDatosSQL.Close()
 		}
 	}
 }

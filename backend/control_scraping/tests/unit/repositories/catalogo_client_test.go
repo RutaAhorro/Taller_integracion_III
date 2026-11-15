@@ -22,15 +22,15 @@ import (
 // TestCatalogoClientContract verifica rutas, headers y respuestas válidas del cliente.
 func TestCatalogoClientContract(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
-	id := uuid.New()
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
-		calls.Add(1)
+	identificador := uuid.New()
+	var llamadas atomic.Int32
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
+		llamadas.Add(1)
 		if peticion.Method != "POST" || peticion.Header.Get("Authorization") != "Bearer "+token || peticion.Header.Get("X-Request-ID") != "sup269-test" {
 			prueba.Error("contrato o credenciales internas incorrectos")
 		}
-		body, _ := io.ReadAll(peticion.Body)
-		if strings.Contains(string(body), id.String()) || peticion.Header.Get("Cookie") != "" {
+		cuerpo, _ := io.ReadAll(peticion.Body)
+		if strings.Contains(string(cuerpo), identificador.String()) || peticion.Header.Get("Cookie") != "" {
 			prueba.Error("se envió un trabajo o cookie de usuario a Catálogo")
 		}
 		switch peticion.URL.Path {
@@ -45,30 +45,30 @@ func TestCatalogoClientContract(prueba *testing.T) {
 			respuestaHTTP.WriteHeader(404)
 		}
 	}))
-	defer srv.Close()
-	repo, err := repositories.NewCatalogoClient(srv.URL, token, time.Second)
-	if err != nil {
-		prueba.Fatal(err)
+	defer servidor.Close()
+	repositorio, errorObtenido := repositories.NewCatalogoClient(servidor.URL, token, time.Second)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	contexto := repositories.WithRequestID(context.Background(), "sup269-test")
-	cadena, err := repo.ObtenerCadena(contexto, 1, "")
-	if err != nil || cadena.ID != 1 {
-		prueba.Fatalf("cadena: %v", err)
+	cadena, errorObtenido := repositorio.ObtenerCadena(contexto, 1, "")
+	if errorObtenido != nil || cadena.ID != 1 {
+		prueba.Fatalf("cadena: %v", errorObtenido)
 	}
-	sucursal, err := repo.ObtenerSucursal(contexto, 1, nil, nil)
-	if err != nil || sucursal.ID != 2 {
-		prueba.Fatalf("sucursal: %v", err)
+	sucursal, errorObtenido := repositorio.ObtenerSucursal(contexto, 1, nil, nil)
+	if errorObtenido != nil || sucursal.ID != 2 {
+		prueba.Fatalf("sucursal: %v", errorObtenido)
 	}
-	lote, err := repo.IngestarLote(contexto, &id, 2, []domain.ProductoScrapeadoDTO{{SKU: "SKU", Producto: "Producto", PrecioNormal: 1000}})
-	if err != nil || lote.TrabajoID == nil || *lote.TrabajoID != id.String() || calls.Load() != 3 {
-		prueba.Fatalf("lote: %+v %v", lote, err)
+	lote, errorObtenido := repositorio.IngestarLote(contexto, &identificador, 2, []domain.ProductoScrapeadoDTO{{SKU: "SKU", Producto: "Producto", PrecioNormal: 1000}})
+	if errorObtenido != nil || lote.TrabajoID == nil || *lote.TrabajoID != identificador.String() || llamadas.Load() != 3 {
+		prueba.Fatalf("lote: %+v %v", lote, errorObtenido)
 	}
 }
 
 // TestCatalogoClientObtenerCadenaPropagaEstado conserva el estado de activación recibido.
 func TestCatalogoClientObtenerCadenaPropagaEstado(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
-	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
 		if peticion.URL.Path != "/internal/v1/cadenas/resolver" {
 			prueba.Errorf("ruta inesperada: %s", peticion.URL.Path)
 			respuestaHTTP.WriteHeader(404)
@@ -76,15 +76,15 @@ func TestCatalogoClientObtenerCadenaPropagaEstado(prueba *testing.T) {
 		}
 		io.WriteString(respuestaHTTP, `{"id":1,"nombre":"Jumbo","esta_activa":false}`)
 	}))
-	defer srv.Close()
+	defer servidor.Close()
 
-	repo, err := repositories.NewCatalogoClient(srv.URL, token, time.Second)
-	if err != nil {
-		prueba.Fatal(err)
+	repositorio, errorObtenido := repositories.NewCatalogoClient(servidor.URL, token, time.Second)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	cadena, err := repo.ObtenerCadena(context.Background(), 1, "")
-	if err != nil {
-		prueba.Fatal(err)
+	cadena, errorObtenido := repositorio.ObtenerCadena(context.Background(), 1, "")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	if cadena == nil || cadena.EstaActiva {
 		prueba.Fatalf("el flag HTTP no se propagó: %+v", cadena)
@@ -95,10 +95,10 @@ func TestCatalogoClientObtenerCadenaPropagaEstado(prueba *testing.T) {
 
 // TestCatalogoClientFailuresAndNoRetry comprueba que los errores no filtren datos ni reintenten.
 func TestCatalogoClientFailuresAndNoRetry(prueba *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		status int
-		body   string
+	for _, casoPrueba := range []struct {
+		nombre       string
+		codigoEstado int
+		cuerpo       string
 	}{
 		{"SQL no expuesto", 500, `secret postgres table`}, {"token inválido", 401, `secret`},
 		{"redirect no seguido", 307, `secret`}, {"JSON inválido", 200, `invalid`},
@@ -106,22 +106,22 @@ func TestCatalogoClientFailuresAndNoRetry(prueba *testing.T) {
 		{"resultado inconsistente", 200, `{"sucursal_id":1,"total_recibidos":1,"insertados":1,"precios_registrados":0}`},
 		{"lote no encontrado", 404, `{}`},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			var calls atomic.Int32
-			srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
-				calls.Add(1)
+		prueba.Run(casoPrueba.nombre, func(prueba *testing.T) {
+			var llamadas atomic.Int32
+			servidor := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
+				llamadas.Add(1)
 				respuestaHTTP.Header().Set("Location", "/retry")
-				respuestaHTTP.WriteHeader(tc.status)
-				io.WriteString(respuestaHTTP, tc.body)
+				respuestaHTTP.WriteHeader(casoPrueba.codigoEstado)
+				io.WriteString(respuestaHTTP, casoPrueba.cuerpo)
 			}))
-			defer srv.Close()
-			repo, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
-			if err != nil {
-				prueba.Fatal(err)
+			defer servidor.Close()
+			repositorio, errorObtenido := repositories.NewCatalogoClient(servidor.URL, strings.Repeat("t", 32), time.Second)
+			if errorObtenido != nil {
+				prueba.Fatal(errorObtenido)
 			}
-			_, err = repo.IngestarLote(context.Background(), nil, 1, []domain.ProductoScrapeadoDTO{{SKU: "SKU"}})
-			if !errors.Is(err, services.ErrCatalogoNoDisponible) || calls.Load() != 1 {
-				prueba.Fatalf("se reintentó o filtró error: %v llamadas=%d", err, calls.Load())
+			_, errorObtenido = repositorio.IngestarLote(context.Background(), nil, 1, []domain.ProductoScrapeadoDTO{{SKU: "SKU"}})
+			if !errors.Is(errorObtenido, services.ErrCatalogoNoDisponible) || llamadas.Load() != 1 {
+				prueba.Fatalf("se reintentó o filtró error: %v llamadas=%d", errorObtenido, llamadas.Load())
 			}
 		})
 	}
@@ -129,36 +129,36 @@ func TestCatalogoClientFailuresAndNoRetry(prueba *testing.T) {
 
 // TestCatalogoClientTimeoutAndCancellation distingue timeout y cancelación del contexto.
 func TestCatalogoClientTimeoutAndCancellation(prueba *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
 		io.Copy(io.Discard, peticion.Body)
 		<-peticion.Context().Done()
 	}))
-	defer srv.Close()
-	repo, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), 25*time.Millisecond)
-	if err != nil {
-		prueba.Fatal(err)
+	defer servidor.Close()
+	repositorio, errorObtenido := repositories.NewCatalogoClient(servidor.URL, strings.Repeat("t", 32), 25*time.Millisecond)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	if _, err = repo.ObtenerCadena(context.Background(), 1, ""); !errors.Is(err, services.ErrCatalogoTimeout) {
-		prueba.Fatalf("timeout: %v", err)
+	if _, errorObtenido = repositorio.ObtenerCadena(context.Background(), 1, ""); !errors.Is(errorObtenido, services.ErrCatalogoTimeout) {
+		prueba.Fatalf("timeout: %v", errorObtenido)
 	}
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	if _, err = repo.ObtenerCadena(ctx, 1, ""); !errors.Is(err, context.Canceled) {
-		prueba.Fatalf("cancelación: %v", err)
+	contexto, cancelar := context.WithCancel(context.Background())
+	cancelar()
+	if _, errorObtenido = repositorio.ObtenerCadena(contexto, 1, ""); !errors.Is(errorObtenido, context.Canceled) {
+		prueba.Fatalf("cancelación: %v", errorObtenido)
 	}
 }
 
 // TestCatalogoClientInvalidConfiguration rechaza orígenes, tokens y timeouts inválidos.
 func TestCatalogoClientInvalidConfiguration(prueba *testing.T) {
-	for _, origin := range []string{"", "ftp://catalogo", "http://user:secret@catalogo", "http://catalogo/path", "http://catalogo?token=secret", "http://catalogo#fragment"} {
-		if _, err := repositories.NewCatalogoClient(origin, strings.Repeat("t", 32), time.Second); err == nil {
-			prueba.Errorf("aceptó %q", origin)
+	for _, origen := range []string{"", "ftp://catalogo", "http://user:secret@catalogo", "http://catalogo/path", "http://catalogo?token=secret", "http://catalogo#fragment"} {
+		if _, errorObtenido := repositories.NewCatalogoClient(origen, strings.Repeat("t", 32), time.Second); errorObtenido == nil {
+			prueba.Errorf("aceptó %q", origen)
 		}
 	}
-	if _, err := repositories.NewCatalogoClient("http://catalogo", "short", time.Second); err == nil {
+	if _, errorObtenido := repositories.NewCatalogoClient("http://catalogo", "short", time.Second); errorObtenido == nil {
 		prueba.Error("aceptó secreto débil")
 	}
-	if _, err := repositories.NewCatalogoClient("http://catalogo", strings.Repeat("t", 32), 30*time.Second); err == nil {
+	if _, errorObtenido := repositories.NewCatalogoClient("http://catalogo", strings.Repeat("t", 32), 30*time.Second); errorObtenido == nil {
 		prueba.Error("aceptó timeout mayor al límite")
 	}
 }

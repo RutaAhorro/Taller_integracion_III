@@ -13,15 +13,15 @@ import (
 // llega al handler, aunque el cuerpo sea válido o el origen esté permitido.
 func TestScraperRequiresServiceToken(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
-	catalogoToken := strings.Repeat("t", 32)
+	tokenCatalogo := strings.Repeat("t", 32)
 	prueba.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
-	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", tokenCatalogo)
 	prueba.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
-	router, _, err := app.NewApplication(nil, nil)
-	if err != nil {
-		prueba.Fatal(err)
+	enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	routes := []struct{ method, path string }{
+	rutas := []struct{ metodo, ruta string }{
 		{"POST", "/api/v1/scraper/trabajos"},
 		{"GET", "/api/v1/scraper/trabajos/00000000-0000-0000-0000-000000000000"},
 		{"PUT", "/api/v1/scraper/trabajos/00000000-0000-0000-0000-000000000000/finalizar"},
@@ -29,56 +29,56 @@ func TestScraperRequiresServiceToken(prueba *testing.T) {
 		{"POST", "/api/v1/scraper/trabajos/00000000-0000-0000-0000-000000000000/productos"},
 		{"POST", "/api/v1/scraper/productos"},
 	}
-	headers := map[string]string{
+	cabeceras := map[string]string{
 		"sin header":         "",
 		"token incorrecto":   "Bearer " + strings.Repeat("x", 32),
-		"token de Catálogo":  "Bearer " + catalogoToken,
+		"token de Catálogo":  "Bearer " + tokenCatalogo,
 		"sin esquema Bearer": testServiceToken,
 		"espacio extra":      "Bearer  " + testServiceToken,
 	}
-	for _, route := range routes {
-		for name, value := range headers {
-			prueba.Run(route.method+" "+route.path+" "+name, func(prueba *testing.T) {
-				req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`))
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("Origin", "https://frontend.example")
-				if value != "" {
-					req.Header.Set("Authorization", value)
+	for _, ruta := range rutas {
+		for nombre, valor := range cabeceras {
+			prueba.Run(ruta.metodo+" "+ruta.ruta+" "+nombre, func(prueba *testing.T) {
+				peticion := httptest.NewRequest(ruta.metodo, ruta.ruta, strings.NewReader(`{}`))
+				peticion.Header.Set("Content-Type", "application/json")
+				peticion.Header.Set("Origin", "https://frontend.example")
+				if valor != "" {
+					peticion.Header.Set("Authorization", valor)
 				}
-				response := httptest.NewRecorder()
-				router.ServeHTTP(response, req)
-				if response.Code != 401 {
-					prueba.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
+				respuesta := httptest.NewRecorder()
+				enrutador.ServeHTTP(respuesta, peticion)
+				if respuesta.Code != 401 {
+					prueba.Fatalf("HTTP %d; esperado 401: %s", respuesta.Code, respuesta.Body)
 				}
-				if response.Header().Get("WWW-Authenticate") == "" {
+				if respuesta.Header().Get("WWW-Authenticate") == "" {
 					prueba.Fatal("falta WWW-Authenticate")
 				}
 			})
 		}
 	}
 	// Probes y Swagger no exigen token.
-	for _, path := range []string{"/_scraping/live", "/swagger/doc.json"} {
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
-		if response.Code == 401 {
-			prueba.Fatalf("%s no debe exigir token de servicio", path)
+	for _, ruta := range []string{"/_scraping/live", "/swagger/doc.json"} {
+		respuesta := httptest.NewRecorder()
+		enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", ruta, nil))
+		if respuesta.Code == 401 {
+			prueba.Fatalf("%s no debe exigir token de servicio", ruta)
 		}
 	}
 }
 
 func TestServiceTokenConfigurationFailsClosed(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
-	catalogoToken := strings.Repeat("t", 32)
-	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
-	for name, value := range map[string]string{
+	tokenCatalogo := strings.Repeat("t", 32)
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", tokenCatalogo)
+	for nombre, valor := range map[string]string{
 		"vacío":                "",
 		"corto":                strings.Repeat("s", 31),
 		"con espacios":         strings.Repeat("s", 20) + " " + strings.Repeat("s", 20),
-		"igual al de Catálogo": catalogoToken,
+		"igual al de Catálogo": tokenCatalogo,
 	} {
-		prueba.Run(name, func(prueba *testing.T) {
-			prueba.Setenv("SCRAPING_SERVICE_TOKEN", value)
-			if _, _, err := app.NewApplication(nil, nil); err == nil {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			prueba.Setenv("SCRAPING_SERVICE_TOKEN", valor)
+			if _, _, errorObtenido := app.NewApplication(nil, nil); errorObtenido == nil {
 				prueba.Fatal("la configuración insegura debe impedir el arranque")
 			}
 		})

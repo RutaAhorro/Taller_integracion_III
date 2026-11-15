@@ -13,126 +13,126 @@ import (
 	"time"
 )
 
-func (servicio *scraperService) ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
-	if len(input.Productos) == 0 {
+func (servicio *scraperService) ingestarDurable(contexto context.Context, trabajoID *string, entrada domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
+	if len(entrada.Productos) == 0 {
 		return nil, ErrLoteVacio
 	}
-	if len(input.Productos) > 1000 {
+	if len(entrada.Productos) > 1000 {
 		return nil, ErrLoteExcedeMaximo
 	}
-	id, err := uuid.Parse(input.LoteID)
-	if err != nil {
+	identificador, errorObtenido := uuid.Parse(entrada.LoteID)
+	if errorObtenido != nil {
 		return nil, ErrUUIDInvalido
 	}
-	var jobID *uuid.UUID
+	var trabajoUUID *uuid.UUID
 	if trabajoID != nil {
-		parsed, err := uuid.Parse(strings.TrimSpace(*trabajoID))
-		if err != nil {
+		analizado, errorObtenido := uuid.Parse(strings.TrimSpace(*trabajoID))
+		if errorObtenido != nil {
 			return nil, ErrUUIDInvalido
 		}
-		jobID = &parsed
+		trabajoUUID = &analizado
 	}
-	data, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
+	datos, errorObtenido := json.Marshal(entrada)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	hashData, err := json.Marshal(struct {
+	hashDatos, errorObtenido := json.Marshal(struct {
 		TrabajoID *uuid.UUID
 		Input     domain.IngestaLoteDTO
-	}{jobID, input})
-	if err != nil {
-		return nil, err
+	}{trabajoUUID, entrada})
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	hash := sha256.Sum256(hashData)
-	entrega, err := servicio.entregas.Registrar(ctx, &domain.Entrega{ID: id, TrabajoID: jobID, Payload: string(data), PayloadHash: hex.EncodeToString(hash[:])})
-	if err != nil {
-		return nil, err
+	huella := sha256.Sum256(hashDatos)
+	entrega, errorObtenido := servicio.entregas.Registrar(contexto, &domain.Entrega{ID: identificador, TrabajoID: trabajoUUID, Payload: string(datos), PayloadHash: hex.EncodeToString(huella[:])})
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
 	if entrega.Estado == "confirmada" {
-		var result domain.IngestaResultadoDTO
-		err = json.Unmarshal([]byte(*entrega.Resultado), &result)
-		return &result, err
+		var resultado domain.IngestaResultadoDTO
+		errorObtenido = json.Unmarshal([]byte(*entrega.Resultado), &resultado)
+		return &resultado, errorObtenido
 	}
 	if entrega.Estado == "fallida" {
 		return nil, ErrEntregaFallida
 	}
-	entrega, err = servicio.entregas.Adquirir(ctx, &id)
-	if err != nil {
-		return nil, err
+	entrega, errorObtenido = servicio.entregas.Adquirir(contexto, &identificador)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
 	if entrega == nil {
 		return nil, ErrEntregaPendiente
 	}
-	return servicio.entregar(ctx, entrega)
+	return servicio.entregar(contexto, entrega)
 }
 
-func (servicio *scraperService) entregar(ctx context.Context, entrega *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
-	ctx = domain.ConLoteID(ctx, entrega.ID.String())
-	var input domain.IngestaLoteDTO
-	var result *domain.IngestaResultadoDTO
-	err := json.Unmarshal([]byte(entrega.Payload), &input)
-	if err == nil && entrega.SucursalID == nil {
-		chain := entrega.CadenaID
-		if chain == 0 && input.Supermercado != nil {
+func (servicio *scraperService) entregar(contexto context.Context, entrega *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
+	contexto = domain.ConLoteID(contexto, entrega.ID.String())
+	var entrada domain.IngestaLoteDTO
+	var resultado *domain.IngestaResultadoDTO
+	errorObtenido := json.Unmarshal([]byte(entrega.Payload), &entrada)
+	if errorObtenido == nil && entrega.SucursalID == nil {
+		cadenaObtenida := entrega.CadenaID
+		if cadenaObtenida == 0 && entrada.Supermercado != nil {
 			var cadena *domain.CadenaSupermercado
-			cadena, err = servicio.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
-			if err == nil && cadena != nil {
-				chain = cadena.ID
+			cadena, errorObtenido = servicio.ingesta.ObtenerCadena(contexto, 0, *entrada.Supermercado)
+			if errorObtenido == nil && cadena != nil {
+				cadenaObtenida = cadena.ID
 			}
 		}
-		if err == nil {
-			var branch *domain.SucursalSupermercado
-			branch, err = servicio.ingesta.ObtenerSucursal(ctx, chain, input.SucursalID, input.CodigoSucursal)
-			if err == nil && branch == nil {
-				err = ErrSucursalNoEncontrada
+		if errorObtenido == nil {
+			var sucursal *domain.SucursalSupermercado
+			sucursal, errorObtenido = servicio.ingesta.ObtenerSucursal(contexto, cadenaObtenida, entrada.SucursalID, entrada.CodigoSucursal)
+			if errorObtenido == nil && sucursal == nil {
+				errorObtenido = ErrSucursalNoEncontrada
 			}
-			if err == nil {
-				var id int
-				id, err = servicio.entregas.FijarSucursal(ctx, entrega.ID, branch.ID)
-				entrega.SucursalID = &id
+			if errorObtenido == nil {
+				var identificador int
+				identificador, errorObtenido = servicio.entregas.FijarSucursal(contexto, entrega.ID, sucursal.ID)
+				entrega.SucursalID = &identificador
 			}
 		}
 	}
-	if err == nil {
-		result, err = servicio.ingesta.IngestarLote(ctx, entrega.TrabajoID, *entrega.SucursalID, input.Productos)
+	if errorObtenido == nil {
+		resultado, errorObtenido = servicio.ingesta.IngestarLote(contexto, entrega.TrabajoID, *entrega.SucursalID, entrada.Productos)
 	}
-	confirmed := err == nil
-	if confirmed {
-		err = servicio.entregas.Confirmar(ctx, entrega, *result)
-		if err == nil {
-			return result, nil
+	confirmado := errorObtenido == nil
+	if confirmado {
+		errorObtenido = servicio.entregas.Confirmar(contexto, entrega, *resultado)
+		if errorObtenido == nil {
+			return resultado, nil
 		}
-		err = ErrContadorPendiente
+		errorObtenido = ErrContadorPendiente
 	}
-	permanent := errors.Is(err, ErrSucursalNoEncontrada) || errors.Is(err, ErrIdempotencia) || errors.Is(err, ErrCatalogoRechazo)
-	code := "catalogo_unavailable"
-	if confirmed {
-		code = "contador_pendiente"
+	permanente := errors.Is(errorObtenido, ErrSucursalNoEncontrada) || errors.Is(errorObtenido, ErrIdempotencia) || errors.Is(errorObtenido, ErrCatalogoRechazo)
+	codigo := "catalogo_unavailable"
+	if confirmado {
+		codigo = "contador_pendiente"
 	}
-	if permanent {
-		code = "lote_rechazado"
+	if permanente {
+		codigo = "lote_rechazado"
 	}
 	// No usar el contexto cancelado de una petición para liberar/reprogramar.
-	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	defer cancel()
-	if failure := servicio.entregas.Reprogramar(retryCtx, entrega, code, permanent); failure != nil {
-		slog.Error("ingesta_reprogramar_error", "lote_id", entrega.ID, "error", failure)
+	contextoReintento, cancelar := context.WithTimeout(context.WithoutCancel(contexto), 2*time.Second)
+	defer cancelar()
+	if fallo := servicio.entregas.Reprogramar(contextoReintento, entrega, codigo, permanente); fallo != nil {
+		slog.Error("ingesta_reprogramar_error", "lote_id", entrega.ID, "error", fallo)
 	}
-	slog.Warn("ingesta_pendiente", "lote_id", entrega.ID, "trabajo_id", entrega.TrabajoID, "intento", entrega.Intentos, "codigo", code)
-	return nil, err
+	slog.Warn("ingesta_pendiente", "lote_id", entrega.ID, "trabajo_id", entrega.TrabajoID, "intento", entrega.Intentos, "codigo", codigo)
+	return nil, errorObtenido
 }
 
 // Recuperar entrega una entrada por tick; las leases permiten varias API.
-func (servicio *scraperService) Recuperar(ctx context.Context) {
+func (servicio *scraperService) Recuperar(contexto context.Context) {
 	if servicio.entregas == nil {
 		return
 	}
-	entrega, err := servicio.entregas.Adquirir(ctx, nil)
-	if err != nil {
-		slog.Error("ingesta_recuperacion_error", "error", err)
+	entrega, errorObtenido := servicio.entregas.Adquirir(contexto, nil)
+	if errorObtenido != nil {
+		slog.Error("ingesta_recuperacion_error", "error", errorObtenido)
 		return
 	}
 	if entrega != nil {
-		_, _ = servicio.entregar(ctx, entrega)
+		_, _ = servicio.entregar(contexto, entrega)
 	}
 }

@@ -12,15 +12,15 @@ import (
 // Comprueba la composición real y que la API ya no aloje Identidad ni Catálogo.
 func TestModuleCompositionHTTP(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
-	router, _, err := app.NewApplication(nil, nil)
-	if err != nil {
-		prueba.Fatal(err)
+	enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	token := "cookie-que-control-no-interpreta"
 
-	cases := []struct {
-		name, method, path, body, cookie string
-		status                           int
+	casos := []struct {
+		nombre, metodo, ruta, cuerpo, cookieSesion string
+		codigoEstado                               int
 	}{
 		{"liveness sin dependencias", "GET", "/_api/live", "", "", 200},
 		{"readiness sin bases", "GET", "/health", "", "", 503},
@@ -44,18 +44,18 @@ func TestModuleCompositionHTTP(prueba *testing.T) {
 		{"ingesta directa inválida", "POST", "/api/v1/scraper/productos", "{}", "", 400},
 		{"ejecución con ID inválido sin Redis", "POST", "/api/v1/scraper/trabajos/invalid/ejecutar", "{}", "", 400},
 	}
-	for _, tc := range cases {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+testServiceToken)
-			if tc.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "jwt", Value: tc.cookie})
+	for _, casoPrueba := range casos {
+		prueba.Run(casoPrueba.nombre, func(prueba *testing.T) {
+			peticion := httptest.NewRequest(casoPrueba.metodo, casoPrueba.ruta, strings.NewReader(casoPrueba.cuerpo))
+			peticion.Header.Set("Content-Type", "application/json")
+			peticion.Header.Set("Authorization", "Bearer "+testServiceToken)
+			if casoPrueba.cookieSesion != "" {
+				peticion.AddCookie(&http.Cookie{Name: "jwt", Value: casoPrueba.cookieSesion})
 			}
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, req)
-			if response.Code != tc.status {
-				prueba.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
+			respuesta := httptest.NewRecorder()
+			enrutador.ServeHTTP(respuesta, peticion)
+			if respuesta.Code != casoPrueba.codigoEstado {
+				prueba.Fatalf("HTTP %d; esperado %d: %s", respuesta.Code, casoPrueba.codigoEstado, respuesta.Body)
 			}
 
 		})

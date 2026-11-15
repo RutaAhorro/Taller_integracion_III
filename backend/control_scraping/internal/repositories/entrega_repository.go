@@ -12,120 +12,122 @@ import (
 	"time"
 )
 
-type entregaRepository struct{ db *gorm.DB }
+type entregaRepository struct{ baseDatos *gorm.DB }
 
-func NewEntregaRepository(db *gorm.DB) domain.EntregaRepository { return &entregaRepository{db} }
+func NewEntregaRepository(baseDatos *gorm.DB) domain.EntregaRepository {
+	return &entregaRepository{baseDatos}
+}
 
-func (repositorio *entregaRepository) Obtener(ctx context.Context, id uuid.UUID) (*domain.Entrega, error) {
+func (repositorio *entregaRepository) Obtener(contexto context.Context, identificador uuid.UUID) (*domain.Entrega, error) {
 	var entrega domain.Entrega
-	err := repositorio.db.WithContext(ctx).First(&entrega, "id = ?", id).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).First(&entrega, "id = ?", identificador).Error
+	if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
-	return &entrega, err
+	return &entrega, errorObtenido
 }
-func (repositorio *entregaRepository) Registrar(ctx context.Context, entrega *domain.Entrega) (*domain.Entrega, error) {
-	var result domain.Entrega
-	err := repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (repositorio *entregaRepository) Registrar(contexto context.Context, entrega *domain.Entrega) (*domain.Entrega, error) {
+	var resultado domain.Entrega
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		// Orden global: trabajo antes de entrega, igual que FinalizarTrabajo.
 		if entrega.TrabajoID != nil {
-			var job domain.TrabajoScraper
-			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&job, "id = ?", entrega.TrabajoID).Error; err != nil {
-				if errors.Is(err, gorm.ErrRecordNotFound) {
+			var trabajo domain.TrabajoScraper
+			if errorObtenido := transaccion.Clauses(clause.Locking{Strength: "UPDATE"}).First(&trabajo, "id = ?", entrega.TrabajoID).Error; errorObtenido != nil {
+				if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 					return services.ErrTrabajoNoEncontrado
 				}
-				return err
+				return errorObtenido
 			}
-			entrega.CadenaID = job.CadenaID
-			if job.Estado != "en_progreso" {
-				if err := tx.First(&result, "id = ?", entrega.ID).Error; err != nil {
+			entrega.CadenaID = trabajo.CadenaID
+			if trabajo.Estado != "en_progreso" {
+				if errorObtenido := transaccion.First(&resultado, "id = ?", entrega.ID).Error; errorObtenido != nil {
 					return services.ErrTrabajoYaFinalizado
 				}
-				if result.PayloadHash != entrega.PayloadHash {
+				if resultado.PayloadHash != entrega.PayloadHash {
 					return services.ErrIdempotencia
 				}
 				return nil
 			}
 		}
-		if err := tx.Exec(`INSERT INTO scraper.entregas_ingesta (id,trabajo_id,cadena_id,payload_hash,payload)
- VALUES (?,?,?,?,?::jsonb) ON CONFLICT (id) DO NOTHING`, entrega.ID, entrega.TrabajoID, entrega.CadenaID, entrega.PayloadHash, entrega.Payload).Error; err != nil {
-			return err
+		if errorObtenido := transaccion.Exec(`INSERT INTO scraper.entregas_ingesta (id,trabajo_id,cadena_id,payload_hash,payload)
+ VALUES (?,?,?,?,?::jsonb) ON CONFLICT (id) DO NOTHING`, entrega.ID, entrega.TrabajoID, entrega.CadenaID, entrega.PayloadHash, entrega.Payload).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		if err := tx.First(&result, "id = ?", entrega.ID).Error; err != nil {
-			return err
+		if errorObtenido := transaccion.First(&resultado, "id = ?", entrega.ID).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		if result.PayloadHash != entrega.PayloadHash {
+		if resultado.PayloadHash != entrega.PayloadHash {
 			return services.ErrIdempotencia
 		}
 		return nil
 	})
-	return &result, err
+	return &resultado, errorObtenido
 }
 
 // La lease dura más que los tres HTTP internos (máximo 20s cada uno).
 // Confirmar es idempotente incluso si un proceso muere y otro toma la lease.
-func (repositorio *entregaRepository) Adquirir(ctx context.Context, id *uuid.UUID) (*domain.Entrega, error) {
+func (repositorio *entregaRepository) Adquirir(contexto context.Context, identificador *uuid.UUID) (*domain.Entrega, error) {
 	var entrega domain.Entrega
-	err := repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		query := tx.Where("estado = 'pendiente' AND proximo_intento <= now() AND (lease_hasta IS NULL OR lease_hasta < now())")
-		if id != nil {
-			query = query.Where("id = ?", id)
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
+		consulta := transaccion.Where("estado = 'pendiente' AND proximo_intento <= now() AND (lease_hasta IS NULL OR lease_hasta < now())")
+		if identificador != nil {
+			consulta = consulta.Where("id = ?", identificador)
 		}
-		found := query.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Order("proximo_intento").Limit(1).Find(&entrega)
-		if found.Error != nil {
-			return found.Error
+		encontrado := consulta.Clauses(clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}).Order("proximo_intento").Limit(1).Find(&entrega)
+		if encontrado.Error != nil {
+			return encontrado.Error
 		}
-		if found.RowsAffected == 0 {
+		if encontrado.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
 		token := uuid.New()
 		entrega.LeaseToken = &token
 		entrega.Intentos++
-		return tx.Model(&domain.Entrega{}).Where("id = ?", entrega.ID).Updates(map[string]any{"lease_token": token, "lease_hasta": time.Now().Add(90 * time.Second), "intentos": entrega.Intentos}).Error
+		return transaccion.Model(&domain.Entrega{}).Where("id = ?", entrega.ID).Updates(map[string]any{"lease_token": token, "lease_hasta": time.Now().Add(90 * time.Second), "intentos": entrega.Intentos}).Error
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
-	return &entrega, err
+	return &entrega, errorObtenido
 }
-func (repositorio *entregaRepository) FijarSucursal(ctx context.Context, id uuid.UUID, branch int) (int, error) {
-	var row struct{ SucursalID int }
-	err := repositorio.db.WithContext(ctx).Raw(`UPDATE scraper.entregas_ingesta SET sucursal_id = COALESCE(sucursal_id,?) WHERE id = ? RETURNING sucursal_id`, branch, id).Scan(&row).Error
-	return row.SucursalID, err
+func (repositorio *entregaRepository) FijarSucursal(contexto context.Context, identificador uuid.UUID, sucursal int) (int, error) {
+	var fila struct{ SucursalID int }
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).Raw(`UPDATE scraper.entregas_ingesta SET sucursal_id = COALESCE(sucursal_id,?) WHERE id = ? RETURNING sucursal_id`, sucursal, identificador).Scan(&fila).Error
+	return fila.SucursalID, errorObtenido
 }
-func (repositorio *entregaRepository) Confirmar(ctx context.Context, entrega *domain.Entrega, result domain.IngestaResultadoDTO) error {
-	encoded, err := json.Marshal(result)
-	if err != nil {
-		return err
+func (repositorio *entregaRepository) Confirmar(contexto context.Context, entrega *domain.Entrega, resultado domain.IngestaResultadoDTO) error {
+	codificado, errorObtenido := json.Marshal(resultado)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	return repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		if entrega.TrabajoID != nil {
-			if err := tx.Exec(`SELECT id FROM scraper.trabajos_scraper WHERE id = ? FOR UPDATE`, entrega.TrabajoID).Error; err != nil {
-				return err
+			if errorObtenido := transaccion.Exec(`SELECT id FROM scraper.trabajos_scraper WHERE id = ? FOR UPDATE`, entrega.TrabajoID).Error; errorObtenido != nil {
+				return errorObtenido
 			}
 		}
-		var current domain.Entrega
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&current, "id = ?", entrega.ID).Error; err != nil {
-			return err
+		var actual domain.Entrega
+		if errorObtenido := transaccion.Clauses(clause.Locking{Strength: "UPDATE"}).First(&actual, "id = ?", entrega.ID).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		if current.Estado == "confirmada" {
+		if actual.Estado == "confirmada" {
 			return nil
 		}
 		if entrega.TrabajoID != nil {
-			if err := tx.Exec(`UPDATE scraper.trabajos_scraper SET elementos_extraidos = elementos_extraidos + ? WHERE id = ?`, result.Insertados+result.Actualizados, entrega.TrabajoID).Error; err != nil {
-				return err
+			if errorObtenido := transaccion.Exec(`UPDATE scraper.trabajos_scraper SET elementos_extraidos = elementos_extraidos + ? WHERE id = ?`, resultado.Insertados+resultado.Actualizados, entrega.TrabajoID).Error; errorObtenido != nil {
+				return errorObtenido
 			}
 		}
-		return tx.Exec(`UPDATE scraper.entregas_ingesta SET estado='confirmada', resultado=?::jsonb,
- confirmado_el=now(), lease_hasta=NULL, lease_token=NULL, ultimo_error=NULL WHERE id=?`, string(encoded), entrega.ID).Error
+		return transaccion.Exec(`UPDATE scraper.entregas_ingesta SET estado='confirmada', resultado=?::jsonb,
+ confirmado_el=now(), lease_hasta=NULL, lease_token=NULL, ultimo_error=NULL WHERE id=?`, string(codificado), entrega.ID).Error
 	})
 }
-func (repositorio *entregaRepository) Reprogramar(ctx context.Context, entrega *domain.Entrega, code string, permanent bool) error {
-	state := "pendiente"
-	if permanent || entrega.Intentos >= 10 {
-		state = "fallida"
+func (repositorio *entregaRepository) Reprogramar(contexto context.Context, entrega *domain.Entrega, codigo string, permanente bool) error {
+	estado := "pendiente"
+	if permanente || entrega.Intentos >= 10 {
+		estado = "fallida"
 	}
-	delay := time.Duration(1<<min(entrega.Intentos, 8)) * time.Second
-	return repositorio.db.WithContext(ctx).Model(&domain.Entrega{}).Where("id = ? AND estado='pendiente' AND lease_token = ?", entrega.ID, entrega.LeaseToken).
-		Updates(map[string]any{"estado": state, "ultimo_error": code, "proximo_intento": time.Now().Add(delay), "lease_hasta": nil, "lease_token": nil}).Error
+	retraso := time.Duration(1<<min(entrega.Intentos, 8)) * time.Second
+	return repositorio.baseDatos.WithContext(contexto).Model(&domain.Entrega{}).Where("id = ? AND estado='pendiente' AND lease_token = ?", entrega.ID, entrega.LeaseToken).
+		Updates(map[string]any{"estado": estado, "ultimo_error": codigo, "proximo_intento": time.Now().Add(retraso), "lease_hasta": nil, "lease_token": nil}).Error
 }

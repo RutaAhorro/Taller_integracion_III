@@ -14,30 +14,30 @@ import (
 // Mismo máximo que Catálogo; no corta lotes válidos ni permite requests infinitos.
 func BoundedRequest() gin.HandlerFunc {
 	return func(contextoHTTP *gin.Context) {
-		ctx, cancel := context.WithTimeout(contextoHTTP.Request.Context(), 65*time.Second)
-		defer cancel()
-		contextoHTTP.Request = contextoHTTP.Request.WithContext(ctx)
+		contexto, cancelar := context.WithTimeout(contextoHTTP.Request.Context(), 65*time.Second)
+		defer cancelar()
+		contextoHTTP.Request = contextoHTTP.Request.WithContext(contexto)
 		contextoHTTP.Request.Body = http.MaxBytesReader(contextoHTTP.Writer, contextoHTTP.Request.Body, 8<<20)
 		contextoHTTP.Next()
 	}
 }
 
-func CORS(origins []string) gin.HandlerFunc {
-	allowed := map[string]bool{}
-	for _, origin := range origins {
-		if origin != "" && origin != "*" && origin != "null" {
-			allowed[origin] = true
+func CORS(origenes []string) gin.HandlerFunc {
+	permitido := map[string]bool{}
+	for _, origen := range origenes {
+		if origen != "" && origen != "*" && origen != "null" {
+			permitido[origen] = true
 		}
 	}
 	return func(contextoHTTP *gin.Context) {
 		contextoHTTP.Writer.Header().Add("Vary", "Origin")
-		origin := contextoHTTP.GetHeader("Origin")
-		if origin != "" {
-			if !allowed[origin] {
+		origen := contextoHTTP.GetHeader("Origin")
+		if origen != "" {
+			if !permitido[origen] {
 				ResponderError(contextoHTTP, 403, "Origen no permitido.", nil)
 				return
 			}
-			contextoHTTP.Header("Access-Control-Allow-Origin", origin)
+			contextoHTTP.Header("Access-Control-Allow-Origin", origen)
 			contextoHTTP.Header("Access-Control-Allow-Credentials", "true")
 			contextoHTTP.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-CSRF-Token, Idempotency-Key")
 			contextoHTTP.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
@@ -50,27 +50,27 @@ func CORS(origins []string) gin.HandlerFunc {
 	}
 }
 
-var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+var patronIDPeticion = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
-func Observe(log *slog.Logger) gin.HandlerFunc {
-	if log == nil {
-		log = slog.Default()
+func Observe(registrador *slog.Logger) gin.HandlerFunc {
+	if registrador == nil {
+		registrador = slog.Default()
 	}
 	return func(contextoHTTP *gin.Context) {
-		id := contextoHTTP.GetHeader("X-Request-ID")
-		if !requestIDPattern.MatchString(id) {
+		identificador := contextoHTTP.GetHeader("X-Request-ID")
+		if !patronIDPeticion.MatchString(identificador) {
 			var token [16]byte
 			_, _ = rand.Read(token[:])
-			id = hex.EncodeToString(token[:])
+			identificador = hex.EncodeToString(token[:])
 		}
-		contextoHTTP.Header("X-Request-ID", id)
-		contextoHTTP.Set("request_id", id)
-		start := time.Now()
+		contextoHTTP.Header("X-Request-ID", identificador)
+		contextoHTTP.Set("request_id", identificador)
+		inicio := time.Now()
 		contextoHTTP.Next()
-		path := contextoHTTP.FullPath()
-		if path == "" {
-			path = "unmatched"
+		ruta := contextoHTTP.FullPath()
+		if ruta == "" {
+			ruta = "unmatched"
 		}
-		log.Info("http_request", "request_id", id, "method", contextoHTTP.Request.Method, "path", path, "status", contextoHTTP.Writer.Status(), "duration_ms", time.Since(start).Milliseconds())
+		registrador.Info("http_request", "request_id", identificador, "method", contextoHTTP.Request.Method, "path", ruta, "status", contextoHTTP.Writer.Status(), "duration_ms", time.Since(inicio).Milliseconds())
 	}
 }

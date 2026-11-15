@@ -12,13 +12,13 @@ import (
 func TestScrapingCORSRejectsBeforeBusinessHandler(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
 	prueba.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
-	router, _, err := app.NewApplication(nil, nil)
-	if err != nil {
-		prueba.Fatal(err)
+	enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	for _, caso := range []struct {
-		origen string
-		status int
+		origen       string
+		codigoEstado int
 	}{
 		{"https://evil.example", 403},
 		{"null", 403},
@@ -32,11 +32,11 @@ func TestScrapingCORSRejectsBeforeBusinessHandler(prueba *testing.T) {
 			peticion.Header.Set("Content-Type", "application/json")
 			peticion.Header.Set("Authorization", "Bearer "+testServiceToken)
 			respuesta := httptest.NewRecorder()
-			router.ServeHTTP(respuesta, peticion)
-			if respuesta.Code != caso.status {
+			enrutador.ServeHTTP(respuesta, peticion)
+			if respuesta.Code != caso.codigoEstado {
 				prueba.Fatal(respuesta.Code, respuesta.Body)
 			}
-			if caso.status == 403 && respuesta.Header().Get("Access-Control-Allow-Origin") != "" {
+			if caso.codigoEstado == 403 && respuesta.Header().Get("Access-Control-Allow-Origin") != "" {
 				prueba.Fatal("origen ajeno reflejado")
 			}
 		})
@@ -47,13 +47,13 @@ func TestRedisConfigurationNeverFallsBack(prueba *testing.T) {
 	for _, direccion := range []string{"", "not-a-url", "ftp://redis:6379"} {
 		prueba.Run(direccion, func(prueba *testing.T) {
 			prueba.Setenv("REDIS_URL", direccion)
-			clienteRedis, err := app.NewRedisClientFromEnvironment()
+			clienteRedis, errorObtenido := app.NewRedisClientFromEnvironment()
 			if clienteRedis != nil {
 				if errorCierre := clienteRedis.Close(); errorCierre != nil {
 					prueba.Fatal(errorCierre)
 				}
 			}
-			if err == nil {
+			if errorObtenido == nil {
 				prueba.Fatal("una configuración inválida de Redis fue aceptada")
 			}
 		})

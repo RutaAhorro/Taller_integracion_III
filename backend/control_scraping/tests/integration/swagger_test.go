@@ -16,37 +16,37 @@ import (
 func TestSwaggerOnlyDocumentsRegisteredRoutes(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
 	prueba.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
-	router, _, err := app.NewApplication(nil, nil)
-	if err != nil {
-		prueba.Fatal(err)
+	enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest("GET", "/swagger/doc.json", nil))
-	if response.Code != 200 {
-		prueba.Fatal(response.Code, response.Body)
+	respuesta := httptest.NewRecorder()
+	enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", "/swagger/doc.json", nil))
+	if respuesta.Code != 200 {
+		prueba.Fatal(respuesta.Code, respuesta.Body)
 	}
 	var doc struct {
 		Paths map[string]map[string]json.RawMessage `json:"paths"`
 	}
-	if err := json.Unmarshal(response.Body.Bytes(), &doc); err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := json.Unmarshal(respuesta.Body.Bytes(), &doc); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	if len(doc.Paths) == 0 || doc.Paths["/api/v1/scraper/trabajos"] == nil {
 		prueba.Fatal("missing coordination contract")
 	}
-	routes := make(map[string]bool)
-	for _, route := range router.Routes() {
-		routes[route.Method+" "+route.Path] = true
+	rutas := make(map[string]bool)
+	for _, ruta := range enrutador.Routes() {
+		rutas[ruta.Method+" "+ruta.Path] = true
 	}
-	parameter := regexp.MustCompile(`\{([^}]+)\}`)
-	for path, methods := range doc.Paths {
-		if strings.HasPrefix(path, "/_") {
-			prueba.Errorf("Swagger público incluye probe privado: %s", path)
+	parametro := regexp.MustCompile(`\{([^}]+)\}`)
+	for ruta, metodos := range doc.Paths {
+		if strings.HasPrefix(ruta, "/_") {
+			prueba.Errorf("Swagger público incluye probe privado: %s", ruta)
 		}
-		for method := range methods {
-			key := strings.ToUpper(method) + " " + parameter.ReplaceAllString(path, ":$1")
-			if !routes[key] {
-				prueba.Errorf("Swagger advertises an unregistered operation: %s", key)
+		for metodo := range metodos {
+			clave := strings.ToUpper(metodo) + " " + parametro.ReplaceAllString(ruta, ":$1")
+			if !rutas[clave] {
+				prueba.Errorf("Swagger advertises an unregistered operation: %s", clave)
 			}
 		}
 	}
@@ -55,25 +55,25 @@ func TestSwaggerOnlyDocumentsRegisteredRoutes(prueba *testing.T) {
 // SUP-274: sin habilitarlo explícitamente, el contrato no se publica.
 func TestSwaggerDisabledByDefault(prueba *testing.T) {
 	prepareApplicationEnvironment(prueba)
-	for _, value := range []string{"", "false"} {
-		prueba.Run("valor "+value, func(prueba *testing.T) {
-			prueba.Setenv("SCRAPING_SWAGGER_ENABLED", value)
-			router, _, err := app.NewApplication(nil, nil)
-			if err != nil {
-				prueba.Fatal(err)
+	for _, valor := range []string{"", "false"} {
+		prueba.Run("valor "+valor, func(prueba *testing.T) {
+			prueba.Setenv("SCRAPING_SWAGGER_ENABLED", valor)
+			enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+			if errorObtenido != nil {
+				prueba.Fatal(errorObtenido)
 			}
-			for _, path := range []string{"/swagger/doc.json", "/swagger/index.html"} {
-				response := httptest.NewRecorder()
-				router.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
-				if response.Code != 404 {
-					prueba.Fatalf("%s publicado sin habilitar: %d", path, response.Code)
+			for _, ruta := range []string{"/swagger/doc.json", "/swagger/index.html"} {
+				respuesta := httptest.NewRecorder()
+				enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", ruta, nil))
+				if respuesta.Code != 404 {
+					prueba.Fatalf("%s publicado sin habilitar: %d", ruta, respuesta.Code)
 				}
 			}
 		})
 	}
 	prueba.Run("valor inválido", func(prueba *testing.T) {
 		prueba.Setenv("SCRAPING_SWAGGER_ENABLED", "yes")
-		if _, _, err := app.NewApplication(nil, nil); err == nil {
+		if _, _, errorObtenido := app.NewApplication(nil, nil); errorObtenido == nil {
 			prueba.Fatal("un valor ambiguo debe impedir el arranque")
 		}
 	})

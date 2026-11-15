@@ -18,82 +18,82 @@ import (
 )
 
 type catalogoClient struct {
-	origin string
-	token  string
-	client *http.Client
+	origen  string
+	token   string
+	cliente *http.Client
 }
 
-func NewCatalogoClient(origin, token string, timeout time.Duration) (domain.IngestaRepository, error) {
-	direccion, err := url.Parse(origin)
-	if err != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") || direccion.Hostname() == "" ||
-		direccion.User != nil || (direccion.Path != "" && direccion.Path != "/") || direccion.RawQuery != "" || direccion.ForceQuery || direccion.Fragment != "" || strings.ContainsAny(origin, "?#\\ \t\r\n") {
+func NewCatalogoClient(origen, token string, tiempoEspera time.Duration) (domain.IngestaRepository, error) {
+	direccion, errorObtenido := url.Parse(origen)
+	if errorObtenido != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") || direccion.Hostname() == "" ||
+		direccion.User != nil || (direccion.Path != "" && direccion.Path != "/") || direccion.RawQuery != "" || direccion.ForceQuery || direccion.Fragment != "" || strings.ContainsAny(origen, "?#\\ \t\r\n") {
 		return nil, errors.New("CATALOGO_INTERNAL_URL debe ser un origen HTTP(S), sin credenciales, rutas ni parámetros")
 	}
 	if len(token) < 32 || strings.ContainsAny(token, " \t\r\n") {
 		return nil, errors.New("CATALOGO_INTERNAL_TOKEN debe tener al menos 32 caracteres y no contener espacios")
 	}
-	if timeout <= 0 || timeout > 20*time.Second {
+	if tiempoEspera <= 0 || tiempoEspera > 20*time.Second {
 		return nil, errors.New("CATALOGO_INGEST_TIMEOUT debe ser positivo y no superar 20s")
 	}
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	transport.DialContext = (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext
-	transport.TLSHandshakeTimeout = 2 * time.Second
-	transport.ResponseHeaderTimeout = timeout
+	transporte := http.DefaultTransport.(*http.Transport).Clone()
+	transporte.Proxy = nil
+	transporte.DialContext = (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+	transporte.TLSHandshakeTimeout = 2 * time.Second
+	transporte.ResponseHeaderTimeout = tiempoEspera
 	// Las tres operaciones son POST; ningún lote se reenvía automáticamente.
-	transport.DisableKeepAlives = true
-	transport.Protocols = new(http.Protocols)
-	transport.Protocols.SetHTTP1(true)
-	return &catalogoClient{origin: strings.TrimSuffix(origin, "/"), token: token, client: &http.Client{
-		Transport: transport, Timeout: timeout,
+	transporte.DisableKeepAlives = true
+	transporte.Protocols = new(http.Protocols)
+	transporte.Protocols.SetHTTP1(true)
+	return &catalogoClient{origen: strings.TrimSuffix(origen, "/"), token: token, cliente: &http.Client{
+		Transport: transporte, Timeout: tiempoEspera,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
 
-func (clienteCatalogo *catalogoClient) call(ctx context.Context, path string, payload, result any) (bool, error) {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return false, err
+func (clienteCatalogo *catalogoClient) call(contexto context.Context, ruta string, carga, resultado any) (bool, error) {
+	datos, errorObtenido := json.Marshal(carga)
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, clienteCatalogo.origin+"/internal/v1/"+path, bytes.NewReader(data))
-	if err != nil {
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodPost, clienteCatalogo.origen+"/internal/v1/"+ruta, bytes.NewReader(datos))
+	if errorObtenido != nil {
 		return false, services.ErrCatalogoNoDisponible
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+clienteCatalogo.token)
-	if id, ok := ctx.Value(requestIDKey{}).(string); ok {
-		req.Header.Set("X-Request-ID", id)
+	peticion.Header.Set("Content-Type", "application/json")
+	peticion.Header.Set("Authorization", "Bearer "+clienteCatalogo.token)
+	if identificador, esValido := contexto.Value(requestIDKey{}).(string); esValido {
+		peticion.Header.Set("X-Request-ID", identificador)
 	}
-	if req.Header.Get("X-Request-ID") == "" {
-		req.Header.Set("X-Request-ID", domain.LoteID(ctx))
+	if peticion.Header.Get("X-Request-ID") == "" {
+		peticion.Header.Set("X-Request-ID", domain.LoteID(contexto))
 	}
-	response, err := clienteCatalogo.client.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return false, ctx.Err()
+	respuesta, errorObtenido := clienteCatalogo.cliente.Do(peticion)
+	if errorObtenido != nil {
+		if contexto.Err() != nil {
+			return false, contexto.Err()
 		}
-		var timeout net.Error
-		if errors.As(err, &timeout) && timeout.Timeout() {
+		var tiempoEspera net.Error
+		if errors.As(errorObtenido, &tiempoEspera) && tiempoEspera.Timeout() {
 			return false, services.ErrCatalogoTimeout
 		}
 		return false, services.ErrCatalogoNoDisponible
 	}
-	defer response.Body.Close()
-	if response.StatusCode == 404 {
+	defer respuesta.Body.Close()
+	if respuesta.StatusCode == 404 {
 		return false, nil
 	}
-	if response.StatusCode == 409 {
+	if respuesta.StatusCode == 409 {
 		return false, services.ErrIdempotencia
 	}
-	if response.StatusCode == 400 || response.StatusCode == 413 {
+	if respuesta.StatusCode == 400 || respuesta.StatusCode == 413 {
 		return false, services.ErrCatalogoRechazo
 	}
-	if response.StatusCode != http.StatusOK {
+	if respuesta.StatusCode != http.StatusOK {
 		return false, services.ErrCatalogoNoDisponible
 	}
 	// No se propagan errores HTTP/SQL ni secretos del upstream al cliente público.
-	body, err := io.ReadAll(io.LimitReader(response.Body, 1<<20+1))
-	if err != nil || len(body) > 1<<20 || json.Unmarshal(body, result) != nil {
+	cuerpo, errorObtenido := io.ReadAll(io.LimitReader(respuesta.Body, 1<<20+1))
+	if errorObtenido != nil || len(cuerpo) > 1<<20 || json.Unmarshal(cuerpo, resultado) != nil {
 		return false, services.ErrCatalogoNoDisponible
 	}
 	return true, nil
@@ -101,44 +101,44 @@ func (clienteCatalogo *catalogoClient) call(ctx context.Context, path string, pa
 
 type requestIDKey struct{}
 
-func WithRequestID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, requestIDKey{}, id)
+func WithRequestID(contexto context.Context, identificador string) context.Context {
+	return context.WithValue(contexto, requestIDKey{}, identificador)
 }
 
-func (clienteCatalogo *catalogoClient) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
-	var result domain.CadenaSupermercado
-	found, err := clienteCatalogo.call(ctx, "cadenas/resolver", map[string]any{"cadena_id": cadenaID, "nombre": nombre}, &result)
-	if err != nil || !found {
-		return nil, err
+func (clienteCatalogo *catalogoClient) ObtenerCadena(contexto context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
+	var resultado domain.CadenaSupermercado
+	encontrado, errorObtenido := clienteCatalogo.call(contexto, "cadenas/resolver", map[string]any{"cadena_id": cadenaID, "nombre": nombre}, &resultado)
+	if errorObtenido != nil || !encontrado {
+		return nil, errorObtenido
 	}
-	return &result, nil
+	return &resultado, nil
 }
-func (clienteCatalogo *catalogoClient) ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error) {
-	var result domain.SucursalSupermercado
-	found, err := clienteCatalogo.call(ctx, "sucursales/resolver", map[string]any{"cadena_id": cadenaID, "sucursal_id": sucursalID, "codigo_sucursal": codigo}, &result)
-	if err != nil || !found {
-		return nil, err
+func (clienteCatalogo *catalogoClient) ObtenerSucursal(contexto context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error) {
+	var resultado domain.SucursalSupermercado
+	encontrado, errorObtenido := clienteCatalogo.call(contexto, "sucursales/resolver", map[string]any{"cadena_id": cadenaID, "sucursal_id": sucursalID, "codigo_sucursal": codigo}, &resultado)
+	if errorObtenido != nil || !encontrado {
+		return nil, errorObtenido
 	}
-	return &result, nil
+	return &resultado, nil
 }
-func (clienteCatalogo *catalogoClient) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
-	var result domain.IngestaResultadoDTO
-	payload := map[string]any{"sucursal_id": sucursalID, "productos": productos}
-	if id := domain.LoteID(ctx); id != "" {
-		payload["lote_id"] = id
+func (clienteCatalogo *catalogoClient) IngestarLote(contexto context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
+	var resultado domain.IngestaResultadoDTO
+	carga := map[string]any{"sucursal_id": sucursalID, "productos": productos}
+	if identificador := domain.LoteID(contexto); identificador != "" {
+		carga["lote_id"] = identificador
 	}
-	found, err := clienteCatalogo.call(ctx, "ingestas", payload, &result)
-	if err != nil {
-		return nil, err
+	encontrado, errorObtenido := clienteCatalogo.call(contexto, "ingestas", carga, &resultado)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if !found || result.SucursalID != sucursalID || result.TotalRecibidos != len(productos) ||
-		result.Insertados < 0 || result.Actualizados < 0 || result.PreciosRegistrados != result.Insertados+result.Actualizados ||
-		result.Insertados+result.Actualizados > len(productos) {
+	if !encontrado || resultado.SucursalID != sucursalID || resultado.TotalRecibidos != len(productos) ||
+		resultado.Insertados < 0 || resultado.Actualizados < 0 || resultado.PreciosRegistrados != resultado.Insertados+resultado.Actualizados ||
+		resultado.Insertados+resultado.Actualizados > len(productos) {
 		return nil, services.ErrCatalogoNoDisponible
 	}
 	if trabajoID != nil {
-		id := trabajoID.String()
-		result.TrabajoID = &id
+		identificador := trabajoID.String()
+		resultado.TrabajoID = &identificador
 	}
-	return &result, nil
+	return &resultado, nil
 }

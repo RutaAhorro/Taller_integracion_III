@@ -12,44 +12,44 @@ import (
 
 type failingCounter struct {
 	*mockScraperRepository
-	increments int
-	errCounter error
+	incrementos   int
+	errorContador error
 }
 
-func (contador *failingCounter) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
-	contador.increments++
-	if contador.errCounter != nil {
-		return contador.errCounter
+func (contador *failingCounter) IncrementarElementos(contexto context.Context, identificador uuid.UUID, cantidad int) error {
+	contador.incrementos++
+	if contador.errorContador != nil {
+		return contador.errorContador
 	}
-	return contador.mockScraperRepository.IncrementarElementos(ctx, id, cantidad)
+	return contador.mockScraperRepository.IncrementarElementos(contexto, identificador, cantidad)
 }
 
 func TestCatalogFailureDoesNotIncrementJob(prueba *testing.T) {
-	for _, catalogErr := range []error{services.ErrCatalogoNoDisponible, services.ErrCatalogoTimeout} {
-		repo := newMockScraperRepository()
-		id := uuid.New()
-		repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
-		remote := newMockScraperRepository()
-		remote.err = catalogErr
-		jobs := &failingCounter{mockScraperRepository: repo}
-		service := services.NewScraperService(jobs, remote)
-		str := id.String()
-		_, err := service.IngestarProductos(context.Background(), &str, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
-		if !errors.Is(err, catalogErr) || jobs.increments != 0 || repo.trabajos[id].ElementosExtraidos != 0 {
-			prueba.Fatalf("error=%v increments=%d", err, jobs.increments)
+	for _, errorCatalogo := range []error{services.ErrCatalogoNoDisponible, services.ErrCatalogoTimeout} {
+		repositorio := newMockScraperRepository()
+		identificador := uuid.New()
+		repositorio.trabajos[identificador] = &domain.TrabajoScraper{ID: identificador, CadenaID: 1, Estado: "en_progreso"}
+		clienteRemoto := newMockScraperRepository()
+		clienteRemoto.errorSimulado = errorCatalogo
+		trabajos := &failingCounter{mockScraperRepository: repositorio}
+		servicio := services.NewScraperService(trabajos, clienteRemoto)
+		cadena := identificador.String()
+		_, errorObtenido := servicio.IngestarProductos(context.Background(), &cadena, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
+		if !errors.Is(errorObtenido, errorCatalogo) || trabajos.incrementos != 0 || repositorio.trabajos[identificador].ElementosExtraidos != 0 {
+			prueba.Fatalf("error=%v incrementos=%d", errorObtenido, trabajos.incrementos)
 		}
 	}
 }
 
 func TestCommittedCatalogBatchAndFailedCounterIsExplicit(prueba *testing.T) {
-	repo := newMockScraperRepository()
-	id := uuid.New()
-	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
-	jobs := &failingCounter{mockScraperRepository: repo, errCounter: errors.New("SQL error")}
-	service := services.NewScraperService(jobs, repo)
-	str := id.String()
-	_, err := service.IngestarProductos(context.Background(), &str, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
-	if !errors.Is(err, services.ErrContadorPendiente) || jobs.increments != 1 {
-		prueba.Fatal(err, jobs.increments)
+	repositorio := newMockScraperRepository()
+	identificador := uuid.New()
+	repositorio.trabajos[identificador] = &domain.TrabajoScraper{ID: identificador, CadenaID: 1, Estado: "en_progreso"}
+	trabajos := &failingCounter{mockScraperRepository: repositorio, errorContador: errors.New("SQL error")}
+	servicio := services.NewScraperService(trabajos, repositorio)
+	cadena := identificador.String()
+	_, errorObtenido := servicio.IngestarProductos(context.Background(), &cadena, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
+	if !errors.Is(errorObtenido, services.ErrContadorPendiente) || trabajos.incrementos != 1 {
+		prueba.Fatal(errorObtenido, trabajos.incrementos)
 	}
 }

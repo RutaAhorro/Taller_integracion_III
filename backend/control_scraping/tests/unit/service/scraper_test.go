@@ -23,10 +23,10 @@ import (
 
 // mockScraperRepository implementa la interfaz ScraperRepository para pruebas unitarias
 type mockScraperRepository struct {
-	trabajos   map[uuid.UUID]*domain.TrabajoScraper
-	cadenas    map[string]*domain.CadenaSupermercado
-	sucursales map[int]*domain.SucursalSupermercado
-	err        error
+	trabajos      map[uuid.UUID]*domain.TrabajoScraper
+	cadenas       map[string]*domain.CadenaSupermercado
+	sucursales    map[int]*domain.SucursalSupermercado
+	errorSimulado error
 }
 
 // newMockScraperRepository crea los mapas vacíos requeridos por el servicio simulado.
@@ -39,33 +39,33 @@ func newMockScraperRepository() *mockScraperRepository {
 }
 
 // CrearTrabajo conserva el trabajo recibido para que las pruebas consulten su estado.
-func (repositorioSimulado *mockScraperRepository) CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error {
-	if repositorioSimulado.err != nil {
-		return repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) CrearTrabajo(contexto context.Context, trabajo *domain.TrabajoScraper) error {
+	if repositorioSimulado.errorSimulado != nil {
+		return repositorioSimulado.errorSimulado
 	}
 	repositorioSimulado.trabajos[trabajo.ID] = trabajo
 	return nil
 }
 
 // ObtenerTrabajoPorID recupera un trabajo guardado o informa que no existe.
-func (repositorioSimulado *mockScraperRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
-	if repositorioSimulado.err != nil {
-		return nil, repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) ObtenerTrabajoPorID(contexto context.Context, identificador uuid.UUID) (*domain.TrabajoScraper, error) {
+	if repositorioSimulado.errorSimulado != nil {
+		return nil, repositorioSimulado.errorSimulado
 	}
-	trabajo, ok := repositorioSimulado.trabajos[id]
-	if !ok {
+	trabajo, esValido := repositorioSimulado.trabajos[identificador]
+	if !esValido {
 		return nil, nil
 	}
 	return trabajo, nil
 }
 
 // FinalizarTrabajo actualiza los campos de cierre del trabajo simulado.
-func (repositorioSimulado *mockScraperRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
-	if repositorioSimulado.err != nil {
-		return nil, repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) FinalizarTrabajo(contexto context.Context, identificador uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
+	if repositorioSimulado.errorSimulado != nil {
+		return nil, repositorioSimulado.errorSimulado
 	}
-	trabajo, ok := repositorioSimulado.trabajos[id]
-	if !ok {
+	trabajo, esValido := repositorioSimulado.trabajos[identificador]
+	if !esValido {
 		return nil, nil
 	}
 	ahora := time.Now()
@@ -82,9 +82,9 @@ func (repositorioSimulado *mockScraperRepository) FinalizarTrabajo(ctx context.C
 }
 
 // ObtenerCadena busca por ID o nombre y crea una cadena simulada si hace falta.
-func (repositorioSimulado *mockScraperRepository) ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error) {
-	if repositorioSimulado.err != nil {
-		return nil, repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) ObtenerCadena(contexto context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error) {
+	if repositorioSimulado.errorSimulado != nil {
+		return nil, repositorioSimulado.errorSimulado
 	}
 	if cadenaID > 0 {
 		for _, cadena := range repositorioSimulado.cadenas {
@@ -94,7 +94,7 @@ func (repositorioSimulado *mockScraperRepository) ObtenerCadena(ctx context.Cont
 		}
 	}
 	if nombreCadena != "" {
-		if cadena, ok := repositorioSimulado.cadenas[strings.ToLower(nombreCadena)]; ok {
+		if cadena, esValido := repositorioSimulado.cadenas[strings.ToLower(nombreCadena)]; esValido {
 			return cadena, nil
 		}
 		// Simula la creación automática en mock
@@ -111,12 +111,12 @@ func (repositorioSimulado *mockScraperRepository) ObtenerCadena(ctx context.Cont
 }
 
 // ObtenerSucursal recupera o crea la sucursal usada por las pruebas de ingesta.
-func (repositorioSimulado *mockScraperRepository) ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error) {
-	if repositorioSimulado.err != nil {
-		return nil, repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) ObtenerSucursal(contexto context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error) {
+	if repositorioSimulado.errorSimulado != nil {
+		return nil, repositorioSimulado.errorSimulado
 	}
 	if sucursalID != nil && *sucursalID > 0 {
-		if sucursal, ok := repositorioSimulado.sucursales[*sucursalID]; ok {
+		if sucursal, esValido := repositorioSimulado.sucursales[*sucursalID]; esValido {
 			return sucursal, nil
 		}
 	}
@@ -134,15 +134,15 @@ func (repositorioSimulado *mockScraperRepository) ObtenerSucursal(ctx context.Co
 }
 
 // IngestarLote simula una ingesta exitosa con contadores coherentes.
-func (repositorioSimulado *mockScraperRepository) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
-	if repositorioSimulado.err != nil {
-		return nil, repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) IngestarLote(contexto context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
+	if repositorioSimulado.errorSimulado != nil {
+		return nil, repositorioSimulado.errorSimulado
 	}
 
 	var trabajoIDStr *string
 	if trabajoID != nil {
-		str := trabajoID.String()
-		trabajoIDStr = &str
+		cadena := trabajoID.String()
+		trabajoIDStr = &cadena
 	}
 
 	return &domain.IngestaResultadoDTO{
@@ -157,11 +157,11 @@ func (repositorioSimulado *mockScraperRepository) IngestarLote(ctx context.Conte
 }
 
 // IncrementarElementos actualiza el contador del trabajo simulado.
-func (repositorioSimulado *mockScraperRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
-	if repositorioSimulado.err != nil {
-		return repositorioSimulado.err
+func (repositorioSimulado *mockScraperRepository) IncrementarElementos(contexto context.Context, identificador uuid.UUID, cantidad int) error {
+	if repositorioSimulado.errorSimulado != nil {
+		return repositorioSimulado.errorSimulado
 	}
-	if prueba, ok := repositorioSimulado.trabajos[id]; ok {
+	if prueba, esValido := repositorioSimulado.trabajos[identificador]; esValido {
 		prueba.ElementosExtraidos += cantidad
 	}
 	return nil
@@ -171,23 +171,23 @@ func (repositorioSimulado *mockScraperRepository) IncrementarElementos(ctx conte
 
 // TestScraperService_IniciarTrabajo_Exitoso comprueba la creación de un trabajo válido.
 func TestScraperService_IniciarTrabajo_Exitoso(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: true,
 	}
 
-	service := services.NewScraperService(mockRepo, mockRepo)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
-	input := domain.IniciarTrabajoDTO{
+	entrada := domain.IniciarTrabajoDTO{
 		CadenaID:     1,
 		Supermercado: "Jumbo",
 	}
 
-	trabajo, err := service.IniciarTrabajo(context.Background(), input)
-	if err != nil {
-		prueba.Fatalf("se esperaba nil error al iniciar trabajo, se obtuvo: %v", err)
+	trabajo, errorObtenido := servicio.IniciarTrabajo(context.Background(), entrada)
+	if errorObtenido != nil {
+		prueba.Fatalf("se esperaba nil error al iniciar trabajo, se obtuvo: %v", errorObtenido)
 	}
 
 	if trabajo.Estado != "en_progreso" {
@@ -200,11 +200,11 @@ func TestScraperService_IniciarTrabajo_Exitoso(prueba *testing.T) {
 
 // TestScraperService_FinalizarTrabajo_Validaciones comprueba estados válidos e inválidos.
 func TestScraperService_FinalizarTrabajo_Validaciones(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	service := services.NewScraperService(mockRepo, mockRepo)
+	repositorioSimulado := newMockScraperRepository()
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
 	trabajoID := uuid.New()
-	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{
+	repositorioSimulado.trabajos[trabajoID] = &domain.TrabajoScraper{
 		ID:         trabajoID,
 		CadenaID:   1,
 		Estado:     "en_progreso",
@@ -212,23 +212,23 @@ func TestScraperService_FinalizarTrabajo_Validaciones(prueba *testing.T) {
 	}
 
 	// 1. Estado inválido
-	_, err := service.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
+	_, errorObtenido := servicio.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
 		Estado: "pausado",
 	})
-	if !errors.Is(err, services.ErrEstadoTrabajoInvalido) {
-		prueba.Errorf("se esperaba ErrEstadoTrabajoInvalido, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrEstadoTrabajoInvalido) {
+		prueba.Errorf("se esperaba ErrEstadoTrabajoInvalido, se obtuvo: %v", errorObtenido)
 	}
 
 	// 2. Finalización exitosa
-	items := 150
-	blocked := 2
-	trabajoFin, err := service.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
+	elementos := 150
+	bloqueados := 2
+	trabajoFin, errorObtenido := servicio.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
 		Estado:               "completado",
-		ElementosExtraidos:   &items,
-		RespuestasBloqueadas: &blocked,
+		ElementosExtraidos:   &elementos,
+		RespuestasBloqueadas: &bloqueados,
 	})
-	if err != nil {
-		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+	if errorObtenido != nil {
+		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", errorObtenido)
 	}
 	if trabajoFin.Estado != "completado" {
 		prueba.Errorf("se esperaba 'completado', se obtuvo: %s", trabajoFin.Estado)
@@ -244,30 +244,30 @@ func TestScraperService_FinalizarTrabajo_Validaciones(prueba *testing.T) {
 	}
 
 	// 3. Intento de re-finalizar un trabajo ya completado
-	_, err = service.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
+	_, errorObtenido = servicio.FinalizarTrabajo(context.Background(), trabajoID.String(), domain.FinalizarTrabajoDTO{
 		Estado: "completado",
 	})
-	if !errors.Is(err, services.ErrTrabajoYaFinalizado) {
-		prueba.Errorf("se esperaba ErrTrabajoYaFinalizado, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrTrabajoYaFinalizado) {
+		prueba.Errorf("se esperaba ErrTrabajoYaFinalizado, se obtuvo: %v", errorObtenido)
 	}
 }
 
 // TestScraperService_IngestarProductos_LimitesYValidaciones comprueba lotes vacíos y válidos.
 func TestScraperService_IngestarProductos_LimitesYValidaciones(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	service := services.NewScraperService(mockRepo, mockRepo)
+	repositorioSimulado := newMockScraperRepository()
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
 	// 1. Lote vacío
-	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+	_, errorObtenido := servicio.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
 		Productos: []domain.ProductoScrapeadoDTO{},
 	})
-	if !errors.Is(err, services.ErrLoteVacio) {
-		prueba.Errorf("se esperaba ErrLoteVacio, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrLoteVacio) {
+		prueba.Errorf("se esperaba ErrLoteVacio, se obtuvo: %v", errorObtenido)
 	}
 
 	// 2. Lote exitoso
 	ean := "7802900001234"
-	resultado, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+	resultado, errorObtenido := servicio.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
 		Supermercado: stringPtr("Jumbo"),
 		Productos: []domain.ProductoScrapeadoDTO{
 			{
@@ -278,8 +278,8 @@ func TestScraperService_IngestarProductos_LimitesYValidaciones(prueba *testing.T
 			},
 		},
 	})
-	if err != nil {
-		prueba.Fatalf("se esperaba ingesta exitosa, se obtuvo error: %v", err)
+	if errorObtenido != nil {
+		prueba.Fatalf("se esperaba ingesta exitosa, se obtuvo error: %v", errorObtenido)
 	}
 	if resultado.TotalRecibidos != 1 || resultado.Insertados != 1 {
 		prueba.Errorf("conteo incorrecto en resultado: %+v", resultado)
@@ -288,49 +288,49 @@ func TestScraperService_IngestarProductos_LimitesYValidaciones(prueba *testing.T
 
 // TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada rechaza fuentes apagadas.
 func TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: false,
 	}
-	mockRepo.sucursales[1] = &domain.SucursalSupermercado{
+	repositorioSimulado.sucursales[1] = &domain.SucursalSupermercado{
 		ID:         1,
 		CadenaID:   1,
 		EstaActiva: true,
 	}
-	service := services.NewScraperService(mockRepo, mockRepo)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 	sucursalID := 1
 
-	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+	_, errorObtenido := servicio.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
 		SucursalID: &sucursalID,
 		Productos: []domain.ProductoScrapeadoDTO{
 			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
 		},
 	})
-	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
-		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrFuenteDeshabilitada) {
+		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", errorObtenido)
 	}
 }
 
 // TestScraperService_IngestaDirectaFuenteDeshabilitada rechaza ingesta de una fuente apagada.
 func TestScraperService_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: false,
 	}
-	service := services.NewScraperService(mockRepo, mockRepo)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
-	_, err := service.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
+	_, errorObtenido := servicio.IngestarProductos(context.Background(), nil, domain.IngestaLoteDTO{
 		Supermercado: stringPtr("Jumbo"),
 		Productos: []domain.ProductoScrapeadoDTO{
 			{SKU: "SKU-1", Producto: "Leche", PrecioNormal: 1290},
 		},
 	})
-	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
-		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrFuenteDeshabilitada) {
+		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", errorObtenido)
 	}
 }
 
@@ -340,44 +340,44 @@ func TestScraperService_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 func TestScraperHandler_EndpointsHTTP(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: true,
 	}
 
-	service := services.NewScraperService(mockRepo, mockRepo)
-	handler := handlers.NewScraperHandler(service)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
+	manejador := handlers.NewScraperHandler(servicio)
 
-	router := gin.New()
-	v1 := router.Group("/api/v1/scraper")
+	enrutador := gin.New()
+	v1 := enrutador.Group("/api/v1/scraper")
 	{
-		v1.POST("/trabajos", handler.IniciarTrabajo)
-		v1.GET("/trabajos/:id", handler.ObtenerTrabajo)
-		v1.PUT("/trabajos/:id/finalizar", handler.FinalizarTrabajo)
-		v1.POST("/trabajos/:id/productos", handler.IngestarProductosConTrabajo)
-		v1.POST("/productos", handler.IngestarProductosDirecto)
+		v1.POST("/trabajos", manejador.IniciarTrabajo)
+		v1.GET("/trabajos/:id", manejador.ObtenerTrabajo)
+		v1.PUT("/trabajos/:id/finalizar", manejador.FinalizarTrabajo)
+		v1.POST("/trabajos/:id/productos", manejador.IngestarProductosConTrabajo)
+		v1.POST("/productos", manejador.IngestarProductosDirecto)
 	}
 
 	// 1. Iniciar trabajo
-	bodyIniciar := domain.IniciarTrabajoDTO{
+	cuerpoInicio := domain.IniciarTrabajoDTO{
 		CadenaID:     1,
 		Supermercado: "Jumbo",
 	}
-	jsonBody, _ := json.Marshal(bodyIniciar)
-	req, _ := http.NewRequest(http.MethodPost, "/api/v1/scraper/trabajos", bytes.NewBuffer(jsonBody))
-	req.Header.Set("Content-Type", "application/json")
+	cuerpoJSON, _ := json.Marshal(cuerpoInicio)
+	peticion, _ := http.NewRequest(http.MethodPost, "/api/v1/scraper/trabajos", bytes.NewBuffer(cuerpoJSON))
+	peticion.Header.Set("Content-Type", "application/json")
 	respuestaHTTP := httptest.NewRecorder()
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusCreated {
 		prueba.Fatalf("se esperaba código 201, se obtuvo: %d. Body: %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
 	}
 
 	var trabajoCreado domain.TrabajoScraperDTO
-	if err := json.Unmarshal(respuestaHTTP.Body.Bytes(), &trabajoCreado); err != nil {
-		prueba.Fatalf("error decodificando json: %v", err)
+	if errorObtenido := json.Unmarshal(respuestaHTTP.Body.Bytes(), &trabajoCreado); errorObtenido != nil {
+		prueba.Fatalf("error decodificando json: %v", errorObtenido)
 	}
 	if trabajoCreado.ID == "" {
 		prueba.Fatalf("se esperaba ID generado para el trabajo")
@@ -395,37 +395,37 @@ func TestScraperHandler_EndpointsHTTP(prueba *testing.T) {
 			},
 		},
 	}
-	jsonLote, _ := json.Marshal(lote)
-	reqLote, _ := http.NewRequest(http.MethodPost, "/api/v1/scraper/trabajos/"+trabajoCreado.ID+"/productos", bytes.NewBuffer(jsonLote))
-	reqLote.Header.Set("Content-Type", "application/json")
-	wLote := httptest.NewRecorder()
-	router.ServeHTTP(wLote, reqLote)
+	JSONLote, _ := json.Marshal(lote)
+	peticionLote, _ := http.NewRequest(http.MethodPost, "/api/v1/scraper/trabajos/"+trabajoCreado.ID+"/productos", bytes.NewBuffer(JSONLote))
+	peticionLote.Header.Set("Content-Type", "application/json")
+	escritorLote := httptest.NewRecorder()
+	enrutador.ServeHTTP(escritorLote, peticionLote)
 
-	if wLote.Code != http.StatusOK {
-		prueba.Fatalf("se esperaba código 200 en ingesta, se obtuvo: %d. Body: %s", wLote.Code, wLote.Body.String())
+	if escritorLote.Code != http.StatusOK {
+		prueba.Fatalf("se esperaba código 200 en ingesta, se obtuvo: %d. Body: %s", escritorLote.Code, escritorLote.Body.String())
 	}
 
 	// 3. Consultar trabajo por ID
-	reqConsultar, _ := http.NewRequest(http.MethodGet, "/api/v1/scraper/trabajos/"+trabajoCreado.ID, nil)
-	wConsultar := httptest.NewRecorder()
-	router.ServeHTTP(wConsultar, reqConsultar)
+	peticionConsulta, _ := http.NewRequest(http.MethodGet, "/api/v1/scraper/trabajos/"+trabajoCreado.ID, nil)
+	escritorConsulta := httptest.NewRecorder()
+	enrutador.ServeHTTP(escritorConsulta, peticionConsulta)
 
-	if wConsultar.Code != http.StatusOK {
-		prueba.Fatalf("se esperaba código 200 al consultar trabajo, se obtuvo: %d", wConsultar.Code)
+	if escritorConsulta.Code != http.StatusOK {
+		prueba.Fatalf("se esperaba código 200 al consultar trabajo, se obtuvo: %d", escritorConsulta.Code)
 	}
 
 	// 4. Finalizar trabajo
-	bodyFin := domain.FinalizarTrabajoDTO{
+	cuerpoFinal := domain.FinalizarTrabajoDTO{
 		Estado: "completado",
 	}
-	jsonFin, _ := json.Marshal(bodyFin)
-	reqFin, _ := http.NewRequest(http.MethodPut, "/api/v1/scraper/trabajos/"+trabajoCreado.ID+"/finalizar", bytes.NewBuffer(jsonFin))
-	reqFin.Header.Set("Content-Type", "application/json")
-	wFin := httptest.NewRecorder()
-	router.ServeHTTP(wFin, reqFin)
+	JSONFinal, _ := json.Marshal(cuerpoFinal)
+	peticionFinalizacion, _ := http.NewRequest(http.MethodPut, "/api/v1/scraper/trabajos/"+trabajoCreado.ID+"/finalizar", bytes.NewBuffer(JSONFinal))
+	peticionFinalizacion.Header.Set("Content-Type", "application/json")
+	escritorFinalizacion := httptest.NewRecorder()
+	enrutador.ServeHTTP(escritorFinalizacion, peticionFinalizacion)
 
-	if wFin.Code != http.StatusOK {
-		prueba.Fatalf("se esperaba código 200 al finalizar trabajo, se obtuvo: %d", wFin.Code)
+	if escritorFinalizacion.Code != http.StatusOK {
+		prueba.Fatalf("se esperaba código 200 al finalizar trabajo, se obtuvo: %d", escritorFinalizacion.Code)
 	}
 }
 
@@ -438,38 +438,38 @@ func stringPtr(valor string) *string {
 
 // TestScraperService_IniciarTrabajo_FuenteDeshabilitada impide iniciar una fuente apagada.
 func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: false,
 	}
 
-	service := services.NewScraperService(mockRepo, mockRepo)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
-	_, err := service.IniciarTrabajo(context.Background(), domain.IniciarTrabajoDTO{
+	_, errorObtenido := servicio.IniciarTrabajo(context.Background(), domain.IniciarTrabajoDTO{
 		CadenaID:     1,
 		Supermercado: "Jumbo",
 	})
-	if !errors.Is(err, services.ErrFuenteDeshabilitada) {
-		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", err)
+	if !errors.Is(errorObtenido, services.ErrFuenteDeshabilitada) {
+		prueba.Fatalf("se esperaba ErrFuenteDeshabilitada, se obtuvo: %v", errorObtenido)
 	}
 }
 
 // TestScraperService_ObtenerCadena devuelve la cadena activa resuelta por ID.
 func TestScraperService_ObtenerCadena(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: true,
 	}
 
-	service := services.NewScraperService(mockRepo, mockRepo)
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
-	cadena, err := service.ObtenerCadena(context.Background(), 1, "")
-	if err != nil {
-		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", err)
+	cadena, errorObtenido := servicio.ObtenerCadena(context.Background(), 1, "")
+	if errorObtenido != nil {
+		prueba.Fatalf("se esperaba nil error, se obtuvo: %v", errorObtenido)
 	}
 	if cadena == nil || !cadena.EstaActiva {
 		prueba.Fatalf("se esperaba la cadena habilitada, se obtuvo: %+v", cadena)
@@ -478,11 +478,11 @@ func TestScraperService_ObtenerCadena(prueba *testing.T) {
 
 // TestScraperService_ObtenerCadena_NoEncontrada traduce la ausencia a error de dominio.
 func TestScraperService_ObtenerCadena_NoEncontrada(prueba *testing.T) {
-	mockRepo := newMockScraperRepository()
-	service := services.NewScraperService(mockRepo, mockRepo)
+	repositorioSimulado := newMockScraperRepository()
+	servicio := services.NewScraperService(repositorioSimulado, repositorioSimulado)
 
-	if _, err := service.ObtenerCadena(context.Background(), 99, ""); !errors.Is(err, services.ErrCadenaNoEncontrada) {
-		prueba.Fatalf("se esperaba ErrCadenaNoEncontrada, se obtuvo: %v", err)
+	if _, errorObtenido := servicio.ObtenerCadena(context.Background(), 99, ""); !errors.Is(errorObtenido, services.ErrCadenaNoEncontrada) {
+		prueba.Fatalf("se esperaba ErrCadenaNoEncontrada, se obtuvo: %v", errorObtenido)
 	}
 }
 
@@ -490,17 +490,17 @@ func TestScraperService_ObtenerCadena_NoEncontrada(prueba *testing.T) {
 func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
-	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
-	router := gin.New()
-	router.POST("/productos", handler.IngestarProductosDirecto)
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorioSimulado, repositorioSimulado))
+	enrutador := gin.New()
+	enrutador.POST("/productos", manejador.IngestarProductosDirecto)
 
-	body := `{"supermercado":"Jumbo","productos":[{"sku":"SKU-1","producto":"Leche","precio_normal":1290}]}`
-	req, _ := http.NewRequest(http.MethodPost, "/productos", bytes.NewBufferString(body))
-	req.Header.Set("Content-Type", "application/json")
+	cuerpo := `{"supermercado":"Jumbo","productos":[{"sku":"SKU-1","producto":"Leche","precio_normal":1290}]}`
+	peticion, _ := http.NewRequest(http.MethodPost, "/productos", bytes.NewBufferString(cuerpo))
+	peticion.Header.Set("Content-Type", "application/json")
 	respuestaHTTP := httptest.NewRecorder()
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusConflict || !strings.Contains(respuestaHTTP.Body.String(), "fuente_deshabilitada") {
 		prueba.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
@@ -511,20 +511,20 @@ func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: false}
 	trabajoID := uuid.New()
-	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 1, CadenaNombre: "Jumbo", Estado: "en_progreso"}
+	repositorioSimulado.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 1, CadenaNombre: "Jumbo", Estado: "en_progreso"}
 
-	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
-	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
-	router := gin.New()
-	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorioSimulado, repositorioSimulado))
+	manejador.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
 
-	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
-	req.Header.Set("Content-Type", "application/json")
+	peticion, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	peticion.Header.Set("Content-Type", "application/json")
 	respuestaHTTP := httptest.NewRecorder()
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusConflict || !strings.Contains(respuestaHTTP.Body.String(), "fuente_deshabilitada") {
 		prueba.Fatalf("se esperaba 409 fuente_deshabilitada, se obtuvo: %d. Body: %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
@@ -535,19 +535,19 @@ func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mockRepo := newMockScraperRepository()
+	repositorioSimulado := newMockScraperRepository()
 	trabajoID := uuid.New()
-	mockRepo.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 99, Estado: "en_progreso"}
+	repositorioSimulado.trabajos[trabajoID] = &domain.TrabajoScraper{ID: trabajoID, CadenaID: 99, Estado: "en_progreso"}
 
-	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
-	handler.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
-	router := gin.New()
-	router.POST("/trabajos/:id/ejecutar", handler.EjecutarTrabajo)
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorioSimulado, repositorioSimulado))
+	manejador.SetQueue(services.NewQueueService(&sqlQueue{}, nil))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
 
-	req, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
-	req.Header.Set("Content-Type", "application/json")
+	peticion, _ := http.NewRequest(http.MethodPost, "/trabajos/"+trabajoID.String()+"/ejecutar", bytes.NewBufferString(`{"spider":"jumbo_rsc"}`))
+	peticion.Header.Set("Content-Type", "application/json")
 	respuestaHTTP := httptest.NewRecorder()
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusNotFound {
 		prueba.Fatalf("se esperaba 404 para cadena inexistente, se obtuvo: %d. Body: %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
@@ -558,22 +558,22 @@ func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(prueba *testing.T) {
 func TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	mockRepo := newMockScraperRepository()
-	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
+	repositorioSimulado := newMockScraperRepository()
+	repositorioSimulado.cadenas["jumbo"] = &domain.CadenaSupermercado{
 		ID:         1,
 		Nombre:     "Jumbo",
 		EstaActiva: false,
 	}
 
-	handler := handlers.NewScraperHandler(services.NewScraperService(mockRepo, mockRepo))
-	router := gin.New()
-	router.POST("/trabajos", handler.IniciarTrabajo)
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorioSimulado, repositorioSimulado))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos", manejador.IniciarTrabajo)
 
-	body, _ := json.Marshal(domain.IniciarTrabajoDTO{CadenaID: 1, Supermercado: "Jumbo"})
-	req, _ := http.NewRequest(http.MethodPost, "/trabajos", bytes.NewBuffer(body))
-	req.Header.Set("Content-Type", "application/json")
+	cuerpo, _ := json.Marshal(domain.IniciarTrabajoDTO{CadenaID: 1, Supermercado: "Jumbo"})
+	peticion, _ := http.NewRequest(http.MethodPost, "/trabajos", bytes.NewBuffer(cuerpo))
+	peticion.Header.Set("Content-Type", "application/json")
 	respuestaHTTP := httptest.NewRecorder()
-	router.ServeHTTP(respuestaHTTP, req)
+	enrutador.ServeHTTP(respuestaHTTP, peticion)
 
 	if respuestaHTTP.Code != http.StatusConflict {
 		prueba.Fatalf("se esperaba 409 para fuente deshabilitada, se obtuvo: %d. Body: %s", respuestaHTTP.Code, respuestaHTTP.Body.String())

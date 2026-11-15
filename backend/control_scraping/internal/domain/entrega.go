@@ -32,10 +32,13 @@ type EntregaRepository interface {
 
 type loteIDKey struct{}
 
-func ConLoteID(ctx context.Context, id string) context.Context {
-	return context.WithValue(ctx, loteIDKey{}, id)
+func ConLoteID(contexto context.Context, identificador string) context.Context {
+	return context.WithValue(contexto, loteIDKey{}, identificador)
 }
-func LoteID(ctx context.Context) string { id, _ := ctx.Value(loteIDKey{}).(string); return id }
+func LoteID(contexto context.Context) string {
+	identificador, _ := contexto.Value(loteIDKey{}).(string)
+	return identificador
+}
 
 type Ejecucion struct {
 	TrabajoID   uuid.UUID

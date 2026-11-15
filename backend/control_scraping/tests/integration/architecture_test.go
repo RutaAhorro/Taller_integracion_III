@@ -16,50 +16,50 @@ import (
 // global o que su negocio importe sus adaptadores de persistencia/HTTP.
 func TestModuleDependencies(prueba *testing.T) {
 	const api = "github.com/danirc2024/Taller_integracion_III/backend/control_scraping/"
-	for _, module := range []string{"control-scraping"} {
-		prueba.Run(module, func(prueba *testing.T) {
-			root := filepath.Join("..", "..", "internal")
-			own := api + "internal/"
-			err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-				if err != nil {
-					return err
+	for _, modulo := range []string{"control-scraping"} {
+		prueba.Run(modulo, func(prueba *testing.T) {
+			raiz := filepath.Join("..", "..", "internal")
+			propio := api + "internal/"
+			errorObtenido := filepath.WalkDir(raiz, func(ruta string, entrada fs.DirEntry, errorObtenido error) error {
+				if errorObtenido != nil {
+					return errorObtenido
 				}
-				if entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				if entrada.IsDir() || !strings.HasSuffix(ruta, ".go") || strings.HasSuffix(ruta, "_test.go") {
 					return nil
 				}
-				file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-				if err != nil {
-					return err
+				archivo, errorObtenido := parser.ParseFile(token.NewFileSet(), ruta, nil, parser.ImportsOnly)
+				if errorObtenido != nil {
+					return errorObtenido
 				}
-				layer := filepath.Base(filepath.Dir(path))
-				for _, spec := range file.Imports {
-					dependency, err := strconv.Unquote(spec.Path.Value)
-					if err != nil {
-						return err
+				capa := filepath.Base(filepath.Dir(ruta))
+				for _, especificacion := range archivo.Imports {
+					dependencia, errorObtenido := strconv.Unquote(especificacion.Path.Value)
+					if errorObtenido != nil {
+						return errorObtenido
 					}
-					if strings.HasPrefix(dependency, "github.com/danirc2024/Taller_integracion_III/backend/") && !strings.HasPrefix(dependency, api) {
-						prueba.Errorf("%s importa otro servicio: %s", path, dependency)
+					if strings.HasPrefix(dependencia, "github.com/danirc2024/Taller_integracion_III/backend/") && !strings.HasPrefix(dependencia, api) {
+						prueba.Errorf("%s importa otro servicio: %s", ruta, dependencia)
 					}
-					if strings.HasPrefix(dependency, api) {
-						allowed := strings.HasPrefix(dependency, own) || dependency == api+"internal/middleware" || dependency == api+"docs"
-						if !allowed {
-							prueba.Errorf("%s depende de código de otro dominio: %s", path, dependency)
+					if strings.HasPrefix(dependencia, api) {
+						permitido := strings.HasPrefix(dependencia, propio) || dependencia == api+"internal/middleware" || dependencia == api+"docs"
+						if !permitido {
+							prueba.Errorf("%s depende de código de otro dominio: %s", ruta, dependencia)
 						}
 					}
-					if layer == "services" && strings.HasPrefix(dependency, own) && dependency != own+"domain" && dependency != own+"security" {
-						prueba.Errorf("%s: el servicio depende de un adaptador: %s", path, dependency)
+					if capa == "services" && strings.HasPrefix(dependencia, propio) && dependencia != propio+"domain" && dependencia != propio+"security" {
+						prueba.Errorf("%s: el servicio depende de un adaptador: %s", ruta, dependencia)
 					}
-					if layer == "domain" && dependency != "context" && dependency != "time" && dependency != "github.com/google/uuid" {
-						prueba.Errorf("%s: el contrato de dominio depende de infraestructura: %s", path, dependency)
+					if capa == "domain" && dependencia != "context" && dependencia != "time" && dependencia != "github.com/google/uuid" {
+						prueba.Errorf("%s: el contrato de dominio depende de infraestructura: %s", ruta, dependencia)
 					}
-					if layer == "services" && (strings.HasPrefix(dependency, "gorm.io/") || strings.HasPrefix(dependency, "github.com/gin-gonic/") || strings.HasPrefix(dependency, "github.com/redis/")) {
-						prueba.Errorf("%s: el servicio importa directamente infraestructura: %s", path, dependency)
+					if capa == "services" && (strings.HasPrefix(dependencia, "gorm.io/") || strings.HasPrefix(dependencia, "github.com/gin-gonic/") || strings.HasPrefix(dependencia, "github.com/redis/")) {
+						prueba.Errorf("%s: el servicio importa directamente infraestructura: %s", ruta, dependencia)
 					}
 				}
 				return nil
 			})
-			if err != nil {
-				prueba.Fatal(err)
+			if errorObtenido != nil {
+				prueba.Fatal(errorObtenido)
 			}
 		})
 	}

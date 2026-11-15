@@ -18,117 +18,117 @@ import (
 )
 
 type Module struct {
-	db      *gorm.DB
-	handler *handlers.ScraperHandler
-	auth    gin.HandlerFunc
-	recover func(context.Context)
-	queue   *services.QueueService
-	close   func() error
-	wg      sync.WaitGroup
+	baseDatos     *gorm.DB
+	manejador     *handlers.ScraperHandler
+	autenticacion gin.HandlerFunc
+	recuperar     func(context.Context)
+	cola          *services.QueueService
+	cerrar        func() error
+	grupoEspera   sync.WaitGroup
 }
 
-func New(db *gorm.DB, rdb *redis.Client) (*Module, error) {
+func New(baseDatos *gorm.DB, clienteRedis *redis.Client) (*Module, error) {
 	token := os.Getenv("CATALOGO_INTERNAL_TOKEN")
-	serviceToken := os.Getenv("SCRAPING_SERVICE_TOKEN")
-	if err := middleware.ValidarTokenServicio(serviceToken, token); err != nil {
-		return nil, err
+	tokenServicio := os.Getenv("SCRAPING_SERVICE_TOKEN")
+	if errorObtenido := middleware.ValidarTokenServicio(tokenServicio, token); errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	timeout := 10 * time.Second
-	if raw := os.Getenv("CATALOGO_INGEST_TIMEOUT"); raw != "" {
-		var err error
-		timeout, err = time.ParseDuration(raw)
-		if err != nil {
+	tiempoEspera := 10 * time.Second
+	if crudo := os.Getenv("CATALOGO_INGEST_TIMEOUT"); crudo != "" {
+		var errorObtenido error
+		tiempoEspera, errorObtenido = time.ParseDuration(crudo)
+		if errorObtenido != nil {
 			return nil, errors.New("CATALOGO_INGEST_TIMEOUT debe ser una duración válida")
 		}
 	}
-	trabajos := repositories.NewTrabajoRepository(db)
-	ingesta, err := repositories.NewCatalogoClient(os.Getenv("CATALOGO_INTERNAL_URL"), token, timeout)
-	if err != nil {
-		return nil, err
+	trabajos := repositories.NewTrabajoRepository(baseDatos)
+	ingesta, errorObtenido := repositories.NewCatalogoClient(os.Getenv("CATALOGO_INTERNAL_URL"), token, tiempoEspera)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	service := services.NewScraperService(trabajos, ingesta, repositories.NewEntregaRepository(db))
-	publisher := repositories.NewJobPublisher(rdb, db)
-	queue := services.NewQueueService(repositories.NewEjecucionRepository(db), publisher)
-	handler := handlers.NewScraperHandler(service, rdb)
-	handler.SetQueue(queue)
-	return &Module{db: db, handler: handler, auth: middleware.RequireServiceToken(serviceToken), queue: queue, close: publisher.Close, recover: service.(interface{ Recuperar(context.Context) }).Recuperar}, nil
+	servicio := services.NewScraperService(trabajos, ingesta, repositories.NewEntregaRepository(baseDatos))
+	publicador := repositories.NewJobPublisher(clienteRedis, baseDatos)
+	cola := services.NewQueueService(repositories.NewEjecucionRepository(baseDatos), publicador)
+	manejador := handlers.NewScraperHandler(servicio, clienteRedis)
+	manejador.SetQueue(cola)
+	return &Module{baseDatos: baseDatos, manejador: manejador, autenticacion: middleware.RequireServiceToken(tokenServicio), cola: cola, cerrar: publicador.Close, recuperar: servicio.(interface{ Recuperar(context.Context) }).Recuperar}, nil
 }
 
-func (modulo *Module) VerifyStorage(ctx context.Context) error {
-	rows, err := modulo.db.WithContext(ctx).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
-	if err != nil {
+func (modulo *Module) VerifyStorage(contexto context.Context) error {
+	filas, errorObtenido := modulo.baseDatos.WithContext(contexto).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
+	if errorObtenido != nil {
 		return errors.New("aplicar 06_propiedad_permisos.sql y permisos de coordinación antes de iniciar la API")
 	}
-	rows.Close()
-	for _, table := range []string{"scraper.trabajos_scraper", "scraper.entregas_ingesta", "scraper.entregas_trabajos"} {
-		rows, err := modulo.db.WithContext(ctx).Raw("SELECT * FROM " + table + " LIMIT 0").Rows()
-		if err != nil {
+	filas.Close()
+	for _, tabla := range []string{"scraper.trabajos_scraper", "scraper.entregas_ingesta", "scraper.entregas_trabajos"} {
+		filas, errorObtenido := modulo.baseDatos.WithContext(contexto).Raw("SELECT * FROM " + tabla + " LIMIT 0").Rows()
+		if errorObtenido != nil {
 			return errors.New("aplicar 05_recuperacion_scraping.sql y permisos de coordinación antes de iniciar la API")
 		}
-		rows.Close()
-		var permitted bool
-		if err := modulo.db.WithContext(ctx).Raw(`SELECT
+		filas.Close()
+		var permitido bool
+		if errorObtenido := modulo.baseDatos.WithContext(contexto).Raw(`SELECT
             has_table_privilege(current_user, ?, 'SELECT') AND
             has_table_privilege(current_user, ?, 'INSERT') AND
-            has_table_privilege(current_user, ?, 'UPDATE')`, table, table, table).Scan(&permitted).Error; err != nil || !permitted {
+            has_table_privilege(current_user, ?, 'UPDATE')`, tabla, tabla, tabla).Scan(&permitido).Error; errorObtenido != nil || !permitido {
 			return errors.New("faltan permisos runtime de coordinación; revisar 06_propiedad_permisos.sql")
 		}
 	}
-	var canDelete bool
-	if err := modulo.db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&canDelete).Error; err != nil || !canDelete {
+	var puedeEliminar bool
+	if errorObtenido := modulo.baseDatos.WithContext(contexto).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&puedeEliminar).Error; errorObtenido != nil || !puedeEliminar {
 		return errors.New("conceder DELETE en scraper.entregas_trabajos al rol de coordinación antes de iniciar la API")
 	}
 	return nil
 }
 
 // Sólo main inicia los loops; construir el router no crea goroutines.
-func (modulo *Module) Start(ctx context.Context) {
-	modulo.wg.Add(2)
+func (modulo *Module) Start(contexto context.Context) {
+	modulo.grupoEspera.Add(2)
 	go func() {
-		defer modulo.wg.Done()
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
+		defer modulo.grupoEspera.Done()
+		temporizador := time.NewTicker(time.Second)
+		defer temporizador.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-contexto.Done():
 				return
-			case <-ticker.C:
-				attempt, cancel := context.WithTimeout(ctx, 65*time.Second)
-				modulo.recover(attempt)
-				cancel()
+			case <-temporizador.C:
+				intento, cancelar := context.WithTimeout(contexto, 65*time.Second)
+				modulo.recuperar(intento)
+				cancelar()
 			}
 		}
 	}()
 	go func() {
-		defer modulo.wg.Done()
-		ticker := time.NewTicker(5 * time.Second)
-		defer ticker.Stop()
-		defer modulo.close()
+		defer modulo.grupoEspera.Done()
+		temporizador := time.NewTicker(5 * time.Second)
+		defer temporizador.Stop()
+		defer modulo.cerrar()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-contexto.Done():
 				return
-			case <-ticker.C:
-				attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
-				modulo.queue.Recuperar(attempt)
-				cancel()
+			case <-temporizador.C:
+				intento, cancelar := context.WithTimeout(contexto, 10*time.Second)
+				modulo.cola.Recuperar(intento)
+				cancelar()
 			}
 		}
 	}()
 }
 
 // Wait espera que terminen los dos loops y cierre el cliente del publisher.
-func (modulo *Module) Wait(ctx context.Context) error {
-	done := make(chan struct{})
-	go func() { modulo.wg.Wait(); close(done) }()
+func (modulo *Module) Wait(contexto context.Context) error {
+	terminado := make(chan struct{})
+	go func() { modulo.grupoEspera.Wait(); close(terminado) }()
 	select {
-	case <-done:
+	case <-terminado:
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-contexto.Done():
+		return contexto.Err()
 	}
 }
 
-func (modulo *Module) RegisterRoutes(group *gin.RouterGroup) {
-	routes.RegistrarRutasScraper(group, modulo.handler, modulo.auth)
+func (modulo *Module) RegisterRoutes(grupo *gin.RouterGroup) {
+	routes.RegistrarRutasScraper(grupo, modulo.manejador, modulo.autenticacion)
 }

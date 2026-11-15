@@ -14,10 +14,10 @@ import (
 	"github.com/google/uuid"
 )
 
-type sqlQueue struct{ saved []domain.Ejecucion }
+type sqlQueue struct{ ejecuciones []domain.Ejecucion }
 
 func (cola *sqlQueue) RegistrarEjecucion(_ context.Context, ejecucion domain.Ejecucion) error {
-	cola.saved = append(cola.saved, ejecucion)
+	cola.ejecuciones = append(cola.ejecuciones, ejecucion)
 	return nil
 }
 func (cola *sqlQueue) Pendientes(context.Context) ([]domain.Ejecucion, error) { return nil, nil }
@@ -25,77 +25,77 @@ func (cola *sqlQueue) PosponerPublicacion(context.Context, uuid.UUID) error   { 
 
 func TestExecutionWithoutRedisClientStillPersistsSQL(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
-	repo := newMockScraperRepository()
-	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
-	id := uuid.New()
-	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
-	manejador := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
-	queue := &sqlQueue{}
-	manejador.SetQueue(services.NewQueueService(queue, nil))
-	peticion := gin.New()
-	peticion.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
+	repositorio := newMockScraperRepository()
+	repositorio.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
+	identificador := uuid.New()
+	repositorio.trabajos[identificador] = &domain.TrabajoScraper{ID: identificador, CadenaID: 1, Estado: "en_progreso"}
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorio, repositorio))
+	cola := &sqlQueue{}
+	manejador.SetQueue(services.NewQueueService(cola, nil))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
 	respuestaHTTP := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/trabajos/"+id.String()+"/ejecutar", strings.NewReader(`{"spider":"jumbo_rsc"}`))
-	req.Header.Set("Content-Type", "application/json")
-	peticion.ServeHTTP(respuestaHTTP, req)
-	if respuestaHTTP.Code != 202 || len(queue.saved) != 1 || queue.saved[0].TrabajoID != id || respuestaHTTP.Header().Get("X-Scraper-Queue") != "durable-stream" {
-		prueba.Fatal(respuestaHTTP.Code, respuestaHTTP.Body.String(), queue.saved)
+	peticionHTTP := httptest.NewRequest("POST", "/trabajos/"+identificador.String()+"/ejecutar", strings.NewReader(`{"spider":"jumbo_rsc"}`))
+	peticionHTTP.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(respuestaHTTP, peticionHTTP)
+	if respuestaHTTP.Code != 202 || len(cola.ejecuciones) != 1 || cola.ejecuciones[0].TrabajoID != identificador || respuestaHTTP.Header().Get("X-Scraper-Queue") != "durable-stream" {
+		prueba.Fatal(respuestaHTTP.Code, respuestaHTTP.Body.String(), cola.ejecuciones)
 	}
 }
 
 func TestExecutionForwardsAddURLAndEnrichEAN(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
-	repo := newMockScraperRepository()
-	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
-	id := uuid.New()
-	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
-	manejador := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
-	queue := &sqlQueue{}
-	manejador.SetQueue(services.NewQueueService(queue, nil))
-	peticion := gin.New()
-	peticion.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
+	repositorio := newMockScraperRepository()
+	repositorio.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
+	identificador := uuid.New()
+	repositorio.trabajos[identificador] = &domain.TrabajoScraper{ID: identificador, CadenaID: 1, Estado: "en_progreso"}
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorio, repositorio))
+	cola := &sqlQueue{}
+	manejador.SetQueue(services.NewQueueService(cola, nil))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
 	respuestaHTTP := httptest.NewRecorder()
-	body := `{"spider":"jumbo_rsc","add_url":"https://www.jumbo.cl/despensa","enrich_ean":true}`
-	req := httptest.NewRequest("POST", "/trabajos/"+id.String()+"/ejecutar", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	peticion.ServeHTTP(respuestaHTTP, req)
+	cuerpo := `{"spider":"jumbo_rsc","add_url":"https://www.jumbo.cl/despensa","enrich_ean":true}`
+	peticionHTTP := httptest.NewRequest("POST", "/trabajos/"+identificador.String()+"/ejecutar", strings.NewReader(cuerpo))
+	peticionHTTP.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(respuestaHTTP, peticionHTTP)
 	if respuestaHTTP.Code != 202 {
 		prueba.Fatalf("status = %d, body = %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
 	}
-	if len(queue.saved) != 1 {
-		prueba.Fatalf("ejecuciones guardadas = %d", len(queue.saved))
+	if len(cola.ejecuciones) != 1 {
+		prueba.Fatalf("ejecuciones guardadas = %d", len(cola.ejecuciones))
 	}
-	var payload map[string]any
-	if err := json.Unmarshal([]byte(queue.saved[0].Payload), &payload); err != nil {
-		prueba.Fatalf("payload inválido: %v", err)
+	var carga map[string]any
+	if errorObtenido := json.Unmarshal([]byte(cola.ejecuciones[0].Payload), &carga); errorObtenido != nil {
+		prueba.Fatalf("payload inválido: %v", errorObtenido)
 	}
-	if payload["add_url"] != "https://www.jumbo.cl/despensa" {
-		prueba.Errorf("add_url = %v", payload["add_url"])
+	if carga["add_url"] != "https://www.jumbo.cl/despensa" {
+		prueba.Errorf("add_url = %v", carga["add_url"])
 	}
-	if payload["enrich_ean"] != true {
-		prueba.Errorf("enrich_ean = %v", payload["enrich_ean"])
+	if carga["enrich_ean"] != true {
+		prueba.Errorf("enrich_ean = %v", carga["enrich_ean"])
 	}
 }
 
 func TestExecutionRejectsEmptyAddURL(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
-	repo := newMockScraperRepository()
-	repo.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
-	id := uuid.New()
-	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
-	manejador := handlers.NewScraperHandler(services.NewScraperService(repo, repo))
-	queue := &sqlQueue{}
-	manejador.SetQueue(services.NewQueueService(queue, nil))
-	peticion := gin.New()
-	peticion.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
+	repositorio := newMockScraperRepository()
+	repositorio.cadenas["jumbo"] = &domain.CadenaSupermercado{ID: 1, Nombre: "Jumbo", EstaActiva: true}
+	identificador := uuid.New()
+	repositorio.trabajos[identificador] = &domain.TrabajoScraper{ID: identificador, CadenaID: 1, Estado: "en_progreso"}
+	manejador := handlers.NewScraperHandler(services.NewScraperService(repositorio, repositorio))
+	cola := &sqlQueue{}
+	manejador.SetQueue(services.NewQueueService(cola, nil))
+	enrutador := gin.New()
+	enrutador.POST("/trabajos/:id/ejecutar", manejador.EjecutarTrabajo)
 	respuestaHTTP := httptest.NewRecorder()
-	req := httptest.NewRequest("POST", "/trabajos/"+id.String()+"/ejecutar", strings.NewReader(`{"spider":"jumbo_rsc","add_url":"   "}`))
-	req.Header.Set("Content-Type", "application/json")
-	peticion.ServeHTTP(respuestaHTTP, req)
+	peticionHTTP := httptest.NewRequest("POST", "/trabajos/"+identificador.String()+"/ejecutar", strings.NewReader(`{"spider":"jumbo_rsc","add_url":"   "}`))
+	peticionHTTP.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(respuestaHTTP, peticionHTTP)
 	if respuestaHTTP.Code != 400 {
 		prueba.Fatalf("status = %d, body = %s", respuestaHTTP.Code, respuestaHTTP.Body.String())
 	}
-	if len(queue.saved) != 0 {
-		prueba.Fatalf("no se debe encolar: %+v", queue.saved)
+	if len(cola.ejecuciones) != 0 {
+		prueba.Fatalf("no se debe encolar: %+v", cola.ejecuciones)
 	}
 }

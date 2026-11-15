@@ -40,8 +40,8 @@ func ErrorHandler() gin.HandlerFunc {
 
 		// Procesar errores acumulados en el contexto Gin si aún no se ha escrito la respuesta
 		if len(contextoHTTP.Errors) > 0 && !contextoHTTP.Writer.Written() {
-			err := contextoHTTP.Errors.Last()
-			slog.Error("scraping_context_error", "request_id", contextoHTTP.GetString("request_id"), "error", err.Err)
+			errorObtenido := contextoHTTP.Errors.Last()
+			slog.Error("scraping_context_error", "request_id", contextoHTTP.GetString("request_id"), "error", errorObtenido.Err)
 
 			contextoHTTP.JSON(http.StatusInternalServerError, RespuestaError{
 				Estado:  http.StatusInternalServerError,
@@ -74,14 +74,14 @@ func MethodNotAllowedHandler() gin.HandlerFunc {
 }
 
 // ResponderError es una función utilitaria exportada para emitir errores estandarizados desde cualquier handler
-func ResponderError(contextoHTTP *gin.Context, estado int, mensaje string, err error) {
+func ResponderError(contextoHTTP *gin.Context, estado int, mensaje string, errorObtenido error) {
 	detalle := ""
-	if err != nil && estado == http.StatusBadRequest {
-		detalle = err.Error()
+	if errorObtenido != nil && estado == http.StatusBadRequest {
+		detalle = errorObtenido.Error()
 	}
 
-	if err != nil && estado >= 500 {
-		slog.Error("scraping_http_error", "request_id", contextoHTTP.GetString("request_id"), "status", estado, "error", err)
+	if errorObtenido != nil && estado >= 500 {
+		slog.Error("scraping_http_error", "request_id", contextoHTTP.GetString("request_id"), "status", estado, "error", errorObtenido)
 	}
 	contextoHTTP.JSON(estado, RespuestaError{
 		Estado:  estado,

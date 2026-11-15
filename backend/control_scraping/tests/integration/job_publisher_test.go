@@ -25,8 +25,8 @@ import (
 
 // TestPublisherStalledRedisAllowsJobFinalization ejerce la API sobre una BD aislada.
 func TestPublisherStalledRedisAllowsJobFinalization(prueba *testing.T) {
-	dsn := os.Getenv("SUP270_PUBLISHER_TEST_DB_URL")
-	if dsn == "" {
+	cadenaConexion := os.Getenv("SUP270_PUBLISHER_TEST_DB_URL")
+	if cadenaConexion == "" {
 		prueba.Skip("ejecutado por smoke_scraping_recovery_compose.sh con DB efímera")
 	}
 	gin.SetMode(gin.TestMode)
@@ -42,25 +42,25 @@ func TestPublisherStalledRedisAllowsJobFinalization(prueba *testing.T) {
 	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("prueba", 32))
 	prueba.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
 
-	baseDatos, err := gorm.Open(postgres.Open(dsn), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
+	baseDatos, errorObtenido := gorm.Open(postgres.Open(cadenaConexion), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if errorObtenido != nil {
 		prueba.Fatal("no se pudo conectar a PostgreSQL de prueba")
 	}
-	conexionSQL, err := baseDatos.DB()
-	if err != nil {
-		prueba.Fatal(err)
+	conexionSQL, errorObtenido := baseDatos.DB()
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	defer conexionSQL.Close()
 	trabajo := domain.TrabajoScraper{
 		ID: uuid.New(), CadenaID: 1, Estado: "en_progreso", IniciadoEl: time.Now(),
 	}
-	if err := baseDatos.Create(&trabajo).Error; err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := baseDatos.Create(&trabajo).Error; errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 
-	servidorTCP, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		prueba.Fatal(err)
+	servidorTCP, errorObtenido := net.Listen("tcp", "127.0.0.1:0")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	defer servidorTCP.Close()
 	conexionAceptada := make(chan struct{})
@@ -80,9 +80,9 @@ func TestPublisherStalledRedisAllowsJobFinalization(prueba *testing.T) {
 	}()
 	clienteRedis := redis.NewClient(&redis.Options{Addr: servidorTCP.Addr().String()})
 	defer clienteRedis.Close()
-	router, coordinacion, err := app.NewApplication(baseDatos, clienteRedis)
-	if err != nil {
-		prueba.Fatal(err)
+	enrutador, coordinacion, errorObtenido := app.NewApplication(baseDatos, clienteRedis)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	contexto, cancelar := context.WithCancel(context.Background())
 	coordinacion.Start(contexto)
@@ -103,7 +103,7 @@ func TestPublisherStalledRedisAllowsJobFinalization(prueba *testing.T) {
 	peticionEjecucion.Header.Set("Content-Type", "application/json")
 	peticionEjecucion.Header.Set("Authorization", "Bearer "+testServiceToken)
 	respuestaEjecucion := httptest.NewRecorder()
-	router.ServeHTTP(respuestaEjecucion, peticionEjecucion)
+	enrutador.ServeHTTP(respuestaEjecucion, peticionEjecucion)
 	if respuestaEjecucion.Code != http.StatusAccepted {
 		prueba.Fatalf("no se aceptó la ejecución: %d %s", respuestaEjecucion.Code, respuestaEjecucion.Body)
 	}
@@ -123,13 +123,13 @@ func TestPublisherStalledRedisAllowsJobFinalization(prueba *testing.T) {
 	peticionCierre.Header.Set("Content-Type", "application/json")
 	peticionCierre.Header.Set("Authorization", "Bearer "+testServiceToken)
 	respuestaCierre := httptest.NewRecorder()
-	router.ServeHTTP(respuestaCierre, peticionCierre)
+	enrutador.ServeHTTP(respuestaCierre, peticionCierre)
 	if respuestaCierre.Code != http.StatusOK {
 		prueba.Fatalf("Redis lento bloqueó el cierre SQL: %d %s", respuestaCierre.Code, respuestaCierre.Body)
 	}
 
 	var resultado map[string]any
-	if err := json.Unmarshal(respuestaCierre.Body.Bytes(), &resultado); err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := json.Unmarshal(respuestaCierre.Body.Bytes(), &resultado); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 }

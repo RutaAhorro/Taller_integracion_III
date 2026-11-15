@@ -11,8 +11,8 @@ import (
 // main inicia la aplicación y termina con error si el servicio no puede arrancar.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))
-	if err := app.Run(); err != nil {
-		slog.Error("scraping_startup_failed", "error", err)
+	if errorObtenido := app.Run(); errorObtenido != nil {
+		slog.Error("scraping_startup_failed", "error", errorObtenido)
 		os.Exit(1)
 	}
 }

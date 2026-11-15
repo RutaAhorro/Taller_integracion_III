@@ -8,17 +8,17 @@ import (
 
 // RegistrarRutasScraper configura los endpoints de ingesta de datos y ciclo de vida de arañas
 // bajo el prefijo /api/v1/scraper. auth se aplica a todo el grupo (token de servicio).
-func RegistrarRutasScraper(rg *gin.RouterGroup, scraperHandler *handlers.ScraperHandler, auth ...gin.HandlerFunc) {
-	scraper := rg.Group("/scraper", auth...)
+func RegistrarRutasScraper(grupoRutas *gin.RouterGroup, manejadorScraper *handlers.ScraperHandler, autenticacion ...gin.HandlerFunc) {
+	rutasScraper := grupoRutas.Group("/scraper", autenticacion...)
 	{
 		// Auditoría y ciclo de vida de arañas
-		scraper.POST("/trabajos", scraperHandler.IniciarTrabajo)
-		scraper.GET("/trabajos/:id", scraperHandler.ObtenerTrabajo)
-		scraper.PUT("/trabajos/:id/finalizar", scraperHandler.FinalizarTrabajo)
-		scraper.POST("/trabajos/:id/ejecutar", scraperHandler.EjecutarTrabajo)
+		rutasScraper.POST("/trabajos", manejadorScraper.IniciarTrabajo)
+		rutasScraper.GET("/trabajos/:id", manejadorScraper.ObtenerTrabajo)
+		rutasScraper.PUT("/trabajos/:id/finalizar", manejadorScraper.FinalizarTrabajo)
+		rutasScraper.POST("/trabajos/:id/ejecutar", manejadorScraper.EjecutarTrabajo)
 
 		// Ingesta de productos (con sesión de trabajo o directa)
-		scraper.POST("/trabajos/:id/productos", scraperHandler.IngestarProductosConTrabajo)
-		scraper.POST("/productos", scraperHandler.IngestarProductosDirecto)
+		rutasScraper.POST("/trabajos/:id/productos", manejadorScraper.IngestarProductosConTrabajo)
+		rutasScraper.POST("/productos", manejadorScraper.IngestarProductosDirecto)
 	}
 }

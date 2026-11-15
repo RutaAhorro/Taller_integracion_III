@@ -26,8 +26,8 @@ import (
 
 // healthConnector permite controlar la respuesta de Ping sin abrir una base real.
 type healthConnector struct {
-	failed atomic.Bool
-	pings  atomic.Int32
+	falloPing     atomic.Bool
+	consultasPing atomic.Int32
 }
 
 // Connect crea una conexión de prueba asociada al estado del conector.
@@ -66,11 +66,11 @@ func (healthConn) Begin() (driver.Tx, error) {
 
 // Ping permite probar readiness exitosa, fallida y cancelada.
 func (conexion healthConn) Ping(contexto context.Context) error {
-	conexion.conector.pings.Add(1)
-	if err := contexto.Err(); err != nil {
-		return err
+	conexion.conector.consultasPing.Add(1)
+	if errorObtenido := contexto.Err(); errorObtenido != nil {
+		return errorObtenido
 	}
-	if conexion.conector.failed.Load() {
+	if conexion.conector.falloPing.Load() {
 		return errors.New("private PostgreSQL diagnostic")
 	}
 	return nil
@@ -81,9 +81,9 @@ func probeDatabase(prueba *testing.T, conector *healthConnector) *gorm.DB {
 	prueba.Helper()
 	conexionSQL := sql.OpenDB(conector)
 	prueba.Cleanup(func() { _ = conexionSQL.Close() })
-	baseDatos, err := gorm.Open(postgres.New(postgres.Config{Conn: conexionSQL}), &gorm.Config{DisableAutomaticPing: true})
-	if err != nil {
-		prueba.Fatal(err)
+	baseDatos, errorObtenido := gorm.Open(postgres.New(postgres.Config{Conn: conexionSQL}), &gorm.Config{DisableAutomaticPing: true})
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	return baseDatos
 }
@@ -94,9 +94,9 @@ func probeDatabase(prueba *testing.T, conector *healthConnector) *gorm.DB {
 func TestHealthRedisTimeoutDoesNotRemoveReadiness(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	baseDatos := probeDatabase(prueba, &healthConnector{})
-	servidorTCP, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		prueba.Fatal(err)
+	servidorTCP, errorObtenido := net.Listen("tcp", "127.0.0.1:0")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	defer servidorTCP.Close()
 	go func() {
@@ -117,21 +117,21 @@ func TestHealthRedisTimeoutDoesNotRemoveReadiness(prueba *testing.T) {
 		ContextTimeoutEnabled: true,
 	})
 	defer clienteRedis.Close()
-	router := gin.New()
-	router.GET("/health", app.HealthHandler(baseDatos, clienteRedis, "control-scraping"))
+	enrutador := gin.New()
+	enrutador.GET("/health", app.HealthHandler(baseDatos, clienteRedis, "control-scraping"))
 	contexto, cancelar := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancelar()
 	respuesta := httptest.NewRecorder()
 	inicio := time.Now()
-	router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil).WithContext(contexto))
+	enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil).WithContext(contexto))
 	if transcurrido := time.Since(inicio); transcurrido > time.Second {
 		prueba.Fatalf("Redis lento bloqueó el probe durante %v", transcurrido)
 	}
 	var cuerpo struct {
 		Checks map[string]string `json:"checks"`
 	}
-	if err := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	if respuesta.Code != 200 || cuerpo.Checks["redis"] != "error" || cuerpo.Checks["database"] != "ok" {
 		prueba.Fatalf("Redis retiró readiness con PostgreSQL sano: %d %s", respuesta.Code, respuesta.Body)
@@ -147,7 +147,7 @@ func TestHealthRequiresScrapingDatabase(prueba *testing.T) {
 		nombre           string
 		baseDatosFallida bool
 		baseDatosAusente bool
-		status           int
+		codigoEstado     int
 	}{
 		{"healthy", false, false, 200},
 		{"scraping unavailable", true, false, 503},
@@ -155,32 +155,32 @@ func TestHealthRequiresScrapingDatabase(prueba *testing.T) {
 		{"recovered", false, false, 200},
 	} {
 		prueba.Run(caso.nombre, func(prueba *testing.T) {
-			conector.failed.Store(caso.baseDatosFallida)
+			conector.falloPing.Store(caso.baseDatosFallida)
 			baseDatosActual := baseDatos
 			if caso.baseDatosAusente {
 				baseDatosActual = nil
 			}
-			router := gin.New()
-			router.GET("/health", app.HealthHandler(baseDatosActual, nil, "control-scraping"))
-			router.GET("/_api/live", app.LivenessHandler)
+			enrutador := gin.New()
+			enrutador.GET("/health", app.HealthHandler(baseDatosActual, nil, "control-scraping"))
+			enrutador.GET("/_api/live", app.LivenessHandler)
 			respuesta := httptest.NewRecorder()
-			router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil))
-			if respuesta.Code != caso.status || strings.Contains(respuesta.Body.String(), "private PostgreSQL") {
+			enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil))
+			if respuesta.Code != caso.codigoEstado || strings.Contains(respuesta.Body.String(), "private PostgreSQL") {
 				prueba.Fatalf("readiness incorrecto: %d %s", respuesta.Code, respuesta.Body)
 			}
 			var cuerpo struct {
-				Status string `json:"status"`
+				Estado string `json:"status"`
 			}
-			if err := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); err != nil {
-				prueba.Fatal(err)
+			if errorObtenido := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); errorObtenido != nil {
+				prueba.Fatal(errorObtenido)
 			}
-			if (cuerpo.Status == "ok") != (caso.status == 200) {
+			if (cuerpo.Estado == "ok") != (caso.codigoEstado == 200) {
 				prueba.Fatal("estado JSON contradice HTTP")
 			}
-			consultasAntes := conector.pings.Load()
+			consultasAntes := conector.consultasPing.Load()
 			respuesta = httptest.NewRecorder()
-			router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/_api/live", nil))
-			if respuesta.Code != 200 || consultasAntes != conector.pings.Load() {
+			enrutador.ServeHTTP(respuesta, httptest.NewRequest("GET", "/_api/live", nil))
+			if respuesta.Code != 200 || consultasAntes != conector.consultasPing.Load() {
 				prueba.Fatal("liveness depende de PostgreSQL")
 			}
 		})

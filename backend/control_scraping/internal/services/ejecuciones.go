@@ -10,40 +10,40 @@ import (
 )
 
 type QueueService struct {
-	jobs      domain.EjecucionRepository
-	publisher domain.JobPublisher
+	trabajos   domain.EjecucionRepository
+	publicador domain.JobPublisher
 }
 
-func NewQueueService(jobs domain.EjecucionRepository, publisher domain.JobPublisher) *QueueService {
-	return &QueueService{jobs, publisher}
+func NewQueueService(trabajos domain.EjecucionRepository, publicador domain.JobPublisher) *QueueService {
+	return &QueueService{trabajos: trabajos, publicador: publicador}
 }
-func (servicioCola *QueueService) Encolar(ctx context.Context, id string, payload []byte) error {
-	jobID, err := uuid.Parse(id)
-	if err != nil {
+func (servicioCola *QueueService) Encolar(contexto context.Context, identificador string, carga []byte) error {
+	trabajoID, errorObtenido := uuid.Parse(identificador)
+	if errorObtenido != nil {
 		return ErrUUIDInvalido
 	}
-	hash := sha256.Sum256(payload)
-	ejecucion := domain.Ejecucion{TrabajoID: jobID, PayloadHash: hex.EncodeToString(hash[:]), Payload: string(payload)}
-	if err := servicioCola.jobs.RegistrarEjecucion(ctx, ejecucion); err != nil {
-		return err
+	huella := sha256.Sum256(carga)
+	ejecucion := domain.Ejecucion{TrabajoID: trabajoID, PayloadHash: hex.EncodeToString(huella[:]), Payload: string(carga)}
+	if errorObtenido := servicioCola.trabajos.RegistrarEjecucion(contexto, ejecucion); errorObtenido != nil {
+		return errorObtenido
 	}
 	// La aceptación depende sólo de SQL; Redis nunca bloquea el HTTP público.
-	slog.Info("scraper_execution_accepted", "trabajo_id", id)
+	slog.Info("scraper_execution_accepted", "trabajo_id", identificador)
 	return nil
 }
-func (servicioCola *QueueService) Recuperar(ctx context.Context) {
-	entries, err := servicioCola.jobs.Pendientes(ctx)
-	if err != nil {
-		slog.Error("scraper_outbox_error", "error", err)
+func (servicioCola *QueueService) Recuperar(contexto context.Context) {
+	entradas, errorObtenido := servicioCola.trabajos.Pendientes(contexto)
+	if errorObtenido != nil {
+		slog.Error("scraper_outbox_error", "error", errorObtenido)
 		return
 	}
-	for _, ejecucion := range entries {
-		if err := servicioCola.publisher.Publicar(ctx, ejecucion); err != nil {
+	for _, ejecucion := range entradas {
+		if errorObtenido := servicioCola.publicador.Publicar(contexto, ejecucion); errorObtenido != nil {
 			slog.Warn("scraper_publicacion_pendiente", "trabajo_id", ejecucion.TrabajoID)
 			continue
 		}
-		if err := servicioCola.jobs.PosponerPublicacion(ctx, ejecucion.TrabajoID); err != nil {
-			slog.Error("scraper_outbox_error", "trabajo_id", ejecucion.TrabajoID, "error", err)
+		if errorObtenido := servicioCola.trabajos.PosponerPublicacion(contexto, ejecucion.TrabajoID); errorObtenido != nil {
+			slog.Error("scraper_outbox_error", "trabajo_id", ejecucion.TrabajoID, "error", errorObtenido)
 		}
 	}
 }

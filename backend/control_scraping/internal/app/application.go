@@ -30,12 +30,12 @@ import (
 // ===== Carga y validación de dependencias =====
 
 // openScrapingDatabase carga y abre la conexión PostgreSQL propia de Control.
-func openScrapingDatabase(ctx context.Context) (*gorm.DB, error) {
-	configuracion, err := database.Load()
-	if err != nil {
-		return nil, err
+func openScrapingDatabase(contexto context.Context) (*gorm.DB, error) {
+	configuracion, errorObtenido := database.Load()
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	return database.Open(ctx, configuracion.ScrapingURL)
+	return database.Open(contexto, configuracion.ScrapingURL)
 }
 
 // NewRedisClientFromEnvironment valida REDIS_URL y crea el cliente de Redis.
@@ -44,8 +44,8 @@ func NewRedisClientFromEnvironment() (*redis.Client, error) {
 	if direccionRedis == "" {
 		return nil, errors.New("REDIS_URL es obligatorio")
 	}
-	opciones, err := redis.ParseURL(direccionRedis)
-	if err != nil {
+	opciones, errorObtenido := redis.ParseURL(direccionRedis)
+	if errorObtenido != nil {
 		return nil, errors.New("REDIS_URL debe ser una URL Redis válida")
 	}
 	opciones.MaxRetries = -1
@@ -61,7 +61,7 @@ func NewRedisClientFromEnvironment() (*redis.Client, error) {
 	contexto, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancelar()
 
-	if err := clienteRedis.Ping(contexto).Err(); err != nil {
+	if errorObtenido := clienteRedis.Ping(contexto).Err(); errorObtenido != nil {
 		log.Print("Aviso: Redis no está disponible. La cola SQL conservará las ejecuciones hasta recuperar Redis.")
 	} else {
 		log.Println("Conexión a Redis establecida exitosamente.")
@@ -73,61 +73,61 @@ func NewRedisClientFromEnvironment() (*redis.Client, error) {
 
 // NewApplication compone el router y los loops de coordinación con sus dependencias.
 func NewApplication(baseDatos *gorm.DB, clienteRedis *redis.Client) (*gin.Engine, *control.Module, error) {
-	router := gin.New()
+	enrutador := gin.New()
 
 	// Logger por defecto y Middleware Global de Errores
-	router.Use(middleware.Observe(slog.Default()))
-	router.Use(middleware.ErrorHandler())
-	router.Use(middleware.BoundedRequest())
+	enrutador.Use(middleware.Observe(slog.Default()))
+	enrutador.Use(middleware.ErrorHandler())
+	enrutador.Use(middleware.BoundedRequest())
 
 	// Habilitar detección de métodos HTTP no permitidos
-	router.HandleMethodNotAllowed = true
+	enrutador.HandleMethodNotAllowed = true
 
 	// Manejadores estandarizados para 404 (NoRoute) y 405 (NoMethod)
-	router.NoRoute(middleware.NotFoundHandler())
-	router.NoMethod(middleware.MethodNotAllowedHandler())
+	enrutador.NoRoute(middleware.NotFoundHandler())
+	enrutador.NoMethod(middleware.MethodNotAllowedHandler())
 
 	// No se acepta IP/identidad de headers ni un origen ajeno a la allowlist.
-	_ = router.SetTrustedProxies(nil)
+	_ = enrutador.SetTrustedProxies(nil)
 	origenesPermitidos := strings.Split(os.Getenv("SCRAPING_CORS_ALLOWED_ORIGINS"), ",")
 	for indice, origen := range origenesPermitidos {
 		origenesPermitidos[indice] = strings.TrimSpace(origen)
 		if origenesPermitidos[indice] == "" {
 			continue
 		}
-		origenURL, err := url.Parse(origenesPermitidos[indice])
-		if err != nil || origenURL.Hostname() == "" || (origenURL.Scheme != "http" && origenURL.Scheme != "https") || origenURL.User != nil || origenURL.Path != "" || origenURL.RawQuery != "" || origenURL.ForceQuery || origenURL.Fragment != "" {
+		origenURL, errorObtenido := url.Parse(origenesPermitidos[indice])
+		if errorObtenido != nil || origenURL.Hostname() == "" || (origenURL.Scheme != "http" && origenURL.Scheme != "https") || origenURL.User != nil || origenURL.Path != "" || origenURL.RawQuery != "" || origenURL.ForceQuery || origenURL.Fragment != "" {
 			return nil, nil, errors.New("SCRAPING_CORS_ALLOWED_ORIGINS debe contener orígenes HTTP(S) exactos")
 		}
 	}
-	router.Use(middleware.CORS(origenesPermitidos))
+	enrutador.Use(middleware.CORS(origenesPermitidos))
 
-	router.GET("/", RootHandler)
-	router.GET("/_api/live", LivenessHandler) // Alias de compatibilidad de la imagen SUP-272.
-	router.GET("/_scraping/live", LivenessHandler)
-	router.GET("/_scraping/ready", HealthHandler(baseDatos, clienteRedis, "control-scraping"))
-	router.GET("/health", HealthHandler(baseDatos, clienteRedis, "api-gateway"))
+	enrutador.GET("/", RootHandler)
+	enrutador.GET("/_api/live", LivenessHandler) // Alias de compatibilidad de la imagen SUP-272.
+	enrutador.GET("/_scraping/live", LivenessHandler)
+	enrutador.GET("/_scraping/ready", HealthHandler(baseDatos, clienteRedis, "control-scraping"))
+	enrutador.GET("/health", HealthHandler(baseDatos, clienteRedis, "api-gateway"))
 
 	// Swagger describe todo el contrato de coordinación. Sólo se publica si se
 	// habilita explícitamente (Compose local y CI); en Kubernetes queda apagado.
 	switch os.Getenv("SCRAPING_SWAGGER_ENABLED") {
 	case "true":
-		router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		enrutador.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 	case "", "false":
 	default:
 		return nil, nil, errors.New("SCRAPING_SWAGGER_ENABLED debe ser true o false")
 	}
 
 	// Grupo de rutas de la API v1
-	v1 := router.Group("/api/v1")
-	v1.GET("/health", HealthHandler(baseDatos, clienteRedis, "api-gateway"))
-	coordinacion, err := control.New(baseDatos, clienteRedis)
-	if err != nil {
-		return nil, nil, err
+	grupoAPI := enrutador.Group("/api/v1")
+	grupoAPI.GET("/health", HealthHandler(baseDatos, clienteRedis, "api-gateway"))
+	coordinacion, errorObtenido := control.New(baseDatos, clienteRedis)
+	if errorObtenido != nil {
+		return nil, nil, errorObtenido
 	}
-	coordinacion.RegisterRoutes(v1)
+	coordinacion.RegisterRoutes(grupoAPI)
 
-	return router, coordinacion, nil
+	return enrutador, coordinacion, nil
 }
 
 // ===== Endpoints de salud =====
@@ -173,8 +173,8 @@ func writeHealth(contextoHTTP *gin.Context, baseDatos *gorm.DB, clienteRedis *re
 		}
 		contextoBaseDatos, cancelarBaseDatos := context.WithTimeout(contexto, time.Second)
 		defer cancelarBaseDatos()
-		conexionSQL, err := conexion.DB()
-		if err != nil || conexionSQL.PingContext(contextoBaseDatos) != nil {
+		conexionSQL, errorObtenido := conexion.DB()
+		if errorObtenido != nil || conexionSQL.PingContext(contextoBaseDatos) != nil {
 			return "error"
 		}
 		return "ok"
@@ -192,7 +192,7 @@ func writeHealth(contextoHTTP *gin.Context, baseDatos *gorm.DB, clienteRedis *re
 	if clienteRedis != nil {
 		contextoRedis, cancelarRedis := context.WithTimeout(contexto, 500*time.Millisecond)
 		defer cancelarRedis()
-		if err := clienteRedis.Ping(contextoRedis).Err(); err != nil {
+		if errorObtenido := clienteRedis.Ping(contextoRedis).Err(); errorObtenido != nil {
 			estadoRedis = "error"
 		}
 	} else {
@@ -235,7 +235,7 @@ func Run() error {
 // run administra el inicio, apagado y liberación de recursos del servicio.
 func run() error {
 	// Intentar cargar .env, pero si no existe (ej. Producción/Docker), continuar usando variables de entorno inyectadas
-	if err := godotenv.Load(); err != nil {
+	if errorObtenido := godotenv.Load(); errorObtenido != nil {
 		log.Println("Aviso: No se encontró archivo .env, usando variables de entorno del sistema")
 	}
 
@@ -243,66 +243,66 @@ func run() error {
 	docs.SwaggerInfo.Host = ""
 
 	contextoConexion, cancelarConexion := context.WithTimeout(context.Background(), 5*time.Second)
-	baseDatos, err := openScrapingDatabase(contextoConexion)
-	if err != nil {
+	baseDatos, errorObtenido := openScrapingDatabase(contextoConexion)
+	if errorObtenido != nil {
 		cancelarConexion()
-		return err
+		return errorObtenido
 	}
 	cancelarConexion()
 	defer database.Close(baseDatos)
-	clienteRedis, err := NewRedisClientFromEnvironment()
-	if err != nil {
-		return err
+	clienteRedis, errorObtenido := NewRedisClientFromEnvironment()
+	if errorObtenido != nil {
+		return errorObtenido
 	}
 	defer clienteRedis.Close()
 
-	router, coordinacion, err := NewApplication(baseDatos, clienteRedis)
-	if err != nil {
-		return err
+	enrutador, coordinacion, errorObtenido := NewApplication(baseDatos, clienteRedis)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	storageCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	if err := coordinacion.VerifyStorage(storageCtx); err != nil {
-		cancel()
-		return err
+	contexto, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer detener()
+	contextoPersistencia, cancelar := context.WithTimeout(contexto, 5*time.Second)
+	if errorObtenido := coordinacion.VerifyStorage(contextoPersistencia); errorObtenido != nil {
+		cancelar()
+		return errorObtenido
 	}
-	cancel()
-	runtimeCtx, runtimeCancel := context.WithCancel(context.Background())
+	cancelar()
+	contextoEjecucion, cancelarEjecucion := context.WithCancel(context.Background())
 	defer func() {
-		runtimeCancel()
-		waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = coordinacion.Wait(waitCtx)
+		cancelarEjecucion()
+		contextoEspera, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancelar()
+		_ = coordinacion.Wait(contextoEspera)
 	}()
-	coordinacion.Start(runtimeCtx)
+	coordinacion.Start(contextoEjecucion)
 
 	puerto := os.Getenv("PORT")
 	if puerto == "" {
 		puerto = "8080"
 	}
 
-	numeroPuerto, err := strconv.Atoi(puerto)
-	if err != nil || numeroPuerto < 1 || numeroPuerto > 65535 {
+	numeroPuerto, errorObtenido := strconv.Atoi(puerto)
+	if errorObtenido != nil || numeroPuerto < 1 || numeroPuerto > 65535 {
 		return errors.New("PORT debe estar entre 1 y 65535")
 	}
 	log.Printf("Iniciando servidor en el puerto %s...", puerto)
-	servidorHTTP := &http.Server{Addr: ":" + puerto, Handler: router, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 * 1024}
+	servidorHTTP := &http.Server{Addr: ":" + puerto, Handler: enrutador, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 30 * time.Second, WriteTimeout: 70 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 64 * 1024}
 	resultadoServidor := make(chan error, 1)
 	go func() { resultadoServidor <- servidorHTTP.ListenAndServe() }()
 	select {
-	case err := <-resultadoServidor:
-		if err != http.ErrServerClosed {
+	case errorObtenido := <-resultadoServidor:
+		if errorObtenido != http.ErrServerClosed {
 			return errors.New("no se pudo iniciar el listener HTTP")
 		}
-	case <-ctx.Done():
+	case <-contexto.Done():
 		contextoApagado, cancelarApagado := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancelarApagado()
-		if err := servidorHTTP.Shutdown(contextoApagado); err != nil {
+		if errorObtenido := servidorHTTP.Shutdown(contextoApagado); errorObtenido != nil {
 			_ = servidorHTTP.Close()
 		}
-		runtimeCancel()
-		if err := coordinacion.Wait(contextoApagado); err != nil {
+		cancelarEjecucion()
+		if errorObtenido := coordinacion.Wait(contextoApagado); errorObtenido != nil {
 			slog.Error("scraping_shutdown_timeout")
 		}
 	}
