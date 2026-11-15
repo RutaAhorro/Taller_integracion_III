@@ -269,17 +269,17 @@ func setQueryPage(rawURL, param string, page int, replace bool) string {
 
 // appendQueryParam concatena un nuevo parámetro a la query de la URL.
 func appendQueryParam(rawURL, key, value string, parsed *url.URL) string {
-	pairs := queryPairs(parsed.RawQuery)
-	filtered := pairs[:0]
-	for _, pair := range pairs {
-		name, _, _ := strings.Cut(pair, "=")
-		if name == key {
+	pares := queryPairs(parsed.RawQuery)
+	filtrados := pares[:0]
+	for _, par := range pares {
+		nombreClave, _, _ := strings.Cut(par, "=")
+		if nombreClave == key {
 			continue
 		}
-		filtered = append(filtered, pair)
+		filtrados = append(filtrados, par)
 	}
-	filtered = append(filtered, url.QueryEscape(key)+"="+url.QueryEscape(value))
-	parsed.RawQuery = strings.Join(filtered, "&")
+	filtrados = append(filtrados, url.QueryEscape(key)+"="+url.QueryEscape(value))
+	parsed.RawQuery = strings.Join(filtrados, "&")
 	return parsed.String()
 }
 
@@ -289,16 +289,16 @@ func removeQueryParam(rawURL, key string) string {
 	if err != nil {
 		return rawURL
 	}
-	pairs := queryPairs(parsed.RawQuery)
-	filtered := pairs[:0]
-	for _, pair := range pairs {
-		name, _, _ := strings.Cut(pair, "=")
-		if name == key {
+	pares := queryPairs(parsed.RawQuery)
+	filtrados := pares[:0]
+	for _, par := range pares {
+		nombreClave, _, _ := strings.Cut(par, "=")
+		if nombreClave == key {
 			continue
 		}
-		filtered = append(filtered, pair)
+		filtrados = append(filtrados, par)
 	}
-	parsed.RawQuery = strings.Join(filtered, "&")
+	parsed.RawQuery = strings.Join(filtrados, "&")
 	return parsed.String()
 }
 
@@ -349,8 +349,8 @@ func collectText(node *html.Node, parts *[]string) {
 		*parts = append(*parts, node.Data)
 		return
 	}
-	for child := node.FirstChild; child != nil; child = child.NextSibling {
-		collectText(child, parts)
+	for hijo := node.FirstChild; hijo != nil; hijo = hijo.NextSibling {
+		collectText(hijo, parts)
 	}
 }
 
@@ -366,9 +366,9 @@ func firstAttr(selection *goquery.Selection, selector, attribute string) string 
 func noscriptImage(selection *goquery.Selection, selector string) string {
 	for _, node := range selection.Find(selector).Nodes {
 		var raw strings.Builder
-		for child := node.FirstChild; child != nil; child = child.NextSibling {
-			if child.Type == html.TextNode {
-				raw.WriteString(child.Data)
+		for hijo := node.FirstChild; hijo != nil; hijo = hijo.NextSibling {
+			if hijo.Type == html.TextNode {
+				raw.WriteString(hijo.Data)
 			}
 		}
 		text := strings.TrimSpace(raw.String())
@@ -479,8 +479,8 @@ func schemaOffer(entry map[string]any) map[string]any {
 
 // extractNormalPrice obtiene el precio de lista o normal desde un nodo de producto.
 func extractNormalPrice(entry map[string]any) *float64 {
-	if price := firstPrice(entry, "price"); price != nil {
-		return price
+	if precioObtenido := firstPrice(entry, "price"); precioObtenido != nil {
+		return precioObtenido
 	}
 	specification := entry["priceSpecification"]
 	if list, ok := specification.([]any); ok && len(list) > 0 {
@@ -516,25 +516,25 @@ func firstPrice(data any, keys ...string) *float64 {
 
 // valueString formatea cualquier tipo de dato primitivo en su representación string.
 func valueString(value any) string {
-	switch typed := value.(type) {
+	switch valorTipado := value.(type) {
 	case string:
-		return typed
+		return valorTipado
 	case json.Number:
-		return typed.String()
+		return valorTipado.String()
 	case float64:
-		text := strconv.FormatFloat(typed, 'g', -1, 64)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
+		textoFormateado := strconv.FormatFloat(valorTipado, 'g', -1, 64)
+		if !strings.ContainsAny(textoFormateado, ".eE") {
+			textoFormateado += ".0"
 		}
-		return text
+		return textoFormateado
 	case float32:
-		text := strconv.FormatFloat(float64(typed), 'g', -1, 32)
-		if !strings.ContainsAny(text, ".eE") {
-			text += ".0"
+		textoFormateado := strconv.FormatFloat(float64(valorTipado), 'g', -1, 32)
+		if !strings.ContainsAny(textoFormateado, ".eE") {
+			textoFormateado += ".0"
 		}
-		return text
+		return textoFormateado
 	case bool:
-		if typed {
+		if valorTipado {
 			return "True"
 		}
 		return "False"
@@ -561,16 +561,16 @@ func stockValue(availability any) *bool {
 func walkJSON(value any) []any {
 	var result []any
 	var walk func(any)
-	walk = func(node any) {
-		switch typed := node.(type) {
+	walk = func(nodo any) {
+		switch tipoNodo := nodo.(type) {
 		case map[string]any:
-			result = append(result, typed)
-			for _, child := range typed {
-				walk(child)
+			result = append(result, tipoNodo)
+			for _, hijo := range tipoNodo {
+				walk(hijo)
 			}
 		case []any:
-			for _, child := range typed {
-				walk(child)
+			for _, hijo := range tipoNodo {
+				walk(hijo)
 			}
 		}
 	}
@@ -597,11 +597,11 @@ func imageURL(value any) *string {
 
 // isProductType comprueba si el tipo Schema.org corresponde a una entidad Producto.
 func isProductType(value any) bool {
-	switch typed := value.(type) {
+	switch valorTipado := value.(type) {
 	case string:
-		return typed == "Product"
+		return valorTipado == "Product"
 	case []any:
-		for _, item := range typed {
+		for _, item := range valorTipado {
 			if text, ok := item.(string); ok && text == "Product" {
 				return true
 			}
