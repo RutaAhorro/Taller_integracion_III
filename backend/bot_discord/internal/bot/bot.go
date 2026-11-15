@@ -1,6 +1,9 @@
-package main
+// Package bot integra Discord, notificaciones de GitHub y operaciones de scraping.
+package bot
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -12,123 +15,122 @@ import (
 	"time"
 
 	"github.com/bwmarrin/discordgo"
+	"github.com/equipo/bot_discord/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
 )
 
+// ===== Estado y ciclo de vida =====
+
 var (
-	reviewDebounceMutex  sync.Mutex
-	reviewDebounceTimers = make(map[int]*time.Timer)
-	reviewDebounceUsers  = make(map[int][]string)
+	mutexDebounceReviews  sync.Mutex
+	temporizadoresReviews = make(map[int]*time.Timer)
+	usuariosReviews       = make(map[int][]string)
+	configuracionActiva   config.Configuracion
 )
 
-func main() {
-	_ = godotenv.Load()
-
-	token := os.Getenv("DISCORD_BOT_TOKEN")
-	if token == "" {
-		log.Fatal("DISCORD_BOT_TOKEN no configurado en entorno")
+// Run carga configuración, conecta Discord y mantiene el servidor HTTP activo.
+func Run() error {
+	if err := godotenv.Load(); err != nil {
+		log.Printf("Aviso: no se encontró .env; se usará la configuración del entorno: %v", err)
 	}
-
-	channelID := os.Getenv("DISCORD_CHANNEL_ID")
-	if channelID == "" {
-		log.Fatal("DISCORD_CHANNEL_ID no configurado en entorno")
-	}
-
-	// Control de scraping responde 401 sin este token: fallar al arrancar y no
-	// recién cuando alguien presiona un botón.
-	if os.Getenv("SCRAPING_SERVICE_TOKEN") == "" {
-		log.Fatal("SCRAPING_SERVICE_TOKEN no configurado en entorno")
-	}
-
-	pushChannelID := os.Getenv("DISCORD_PUSH_CHANNEL_ID")
-	if pushChannelID == "" {
-		// Fallback por si no lo configuran de inmediato
-		pushChannelID = channelID
-	}
-
-	// Inicializar Discord
-	dg, err := discordgo.New("Bot " + token)
+	configuracion, err := config.Cargar()
 	if err != nil {
-		log.Fatalf("Error creando sesión Discord: %v", err)
+		return err
 	}
+	configuracionActiva = configuracion
+	configurarClienteScraper(configuracion)
 
-	dg.AddHandler(messageCreate)
-	dg.AddHandler(handleInteraction)
-	dg.Identify.Intents = discordgo.IntentsGuildMessages
-
-	err = dg.Open()
+	sesionDiscord, err := discordgo.New("Bot " + configuracion.TokenDiscord)
 	if err != nil {
-		log.Fatalf("Error abriendo conexión Discord: %v", err)
+		return fmt.Errorf("no se pudo crear la sesión de Discord: %w", err)
 	}
-	defer dg.Close()
-
-	log.Println("Bot conectado a Discord!")
-
-	// Inicializar Gin
-	r := gin.Default()
-
-	r.POST("/webhooks/github", func(c *gin.Context) {
-		event := c.GetHeader("X-GitHub-Event")
-
-		var payload map[string]interface{}
-		if err := c.BindJSON(&payload); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Payload inválido"})
-			return
-		}
-
-		switch event {
-		case "ping":
-			c.JSON(http.StatusOK, gin.H{"status": "Ping recibido"})
-			return
-		case "push":
-			handlePush(dg, pushChannelID, payload)
-		case "pull_request":
-			handlePullRequest(dg, channelID, payload)
-		case "pull_request_review":
-			handlePullRequestReview(dg, channelID, payload)
-		case "issue_comment":
-			handleIssueComment(dg, channelID, payload)
-		default:
-			log.Printf("Evento de GitHub ignorado: %s", event)
-		}
-
-		c.JSON(http.StatusOK, gin.H{"status": "Procesado"})
-	})
-
-	// Ejecutar servidor web en Goroutine
-	go func() {
-		port := os.Getenv("PORT")
-		if port == "" {
-			port = "8080"
-		}
-		log.Printf("Servidor Webhook escuchando en el puerto %s", port)
-		if err := r.Run(":" + port); err != nil {
-			log.Fatalf("Error en servidor web: %v", err)
+	sesionDiscord.AddHandler(messageCreate)
+	sesionDiscord.AddHandler(handleInteraction)
+	sesionDiscord.Identify.Intents = discordgo.IntentsGuildMessages
+	if err := sesionDiscord.Open(); err != nil {
+		return fmt.Errorf("no se pudo abrir la conexión de Discord: %w", err)
+	}
+	defer func() {
+		if err := sesionDiscord.Close(); err != nil {
+			log.Printf("No se pudo cerrar la sesión de Discord: %v", err)
 		}
 	}()
+	log.Println("Bot conectado a Discord!")
 
-	// Esperar señal de interrupción para cerrar limpio
-	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
-	<-sc
+	router := gin.Default()
+	router.POST("/webhooks/github", func(contextoHTTP *gin.Context) {
+		evento := contextoHTTP.GetHeader("X-GitHub-Event")
+		var cargaGitHub map[string]interface{}
+		if err := contextoHTTP.BindJSON(&cargaGitHub); err != nil {
+			contextoHTTP.JSON(http.StatusBadRequest, gin.H{"error": "Payload inválido"})
+			return
+		}
+		switch evento {
+		case "ping":
+			contextoHTTP.JSON(http.StatusOK, gin.H{"status": "Ping recibido"})
+			return
+		case "push":
+			handlePush(sesionDiscord, configuracion.CanalPushDiscordID, cargaGitHub)
+		case "pull_request":
+			handlePullRequest(sesionDiscord, configuracion.CanalDiscordID, cargaGitHub)
+		case "pull_request_review":
+			handlePullRequestReview(sesionDiscord, configuracion.CanalDiscordID, cargaGitHub)
+		case "issue_comment":
+			handleIssueComment(sesionDiscord, configuracion.CanalDiscordID, cargaGitHub)
+		default:
+			log.Printf("Evento de GitHub ignorado: %s", evento)
+		}
+		contextoHTTP.JSON(http.StatusOK, gin.H{"status": "Procesado"})
+	})
+	servidorHTTP := &http.Server{
+		Addr:              ":" + configuracion.PuertoWebhook,
+		Handler:           router,
+		ReadHeaderTimeout: configuracion.TimeoutCabeceraHTTP,
+	}
+	resultadoServidor := make(chan error, 1)
+	go func() {
+		log.Printf("Servidor Webhook escuchando en el puerto %s", configuracion.PuertoWebhook)
+		resultadoServidor <- servidorHTTP.ListenAndServe()
+	}()
+
+	contextoSenales, cancelarSenales := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
+	defer cancelarSenales()
+	select {
+	case err := <-resultadoServidor:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("falló el servidor de webhooks: %w", err)
+		}
+	case <-contextoSenales.Done():
+		contextoCierre, cancelarCierre := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancelarCierre()
+		if err := servidorHTTP.Shutdown(contextoCierre); err != nil {
+			return fmt.Errorf("no se pudo cerrar el servidor de webhooks: %w", err)
+		}
+		if err := <-resultadoServidor; !errors.Is(err, http.ErrServerClosed) {
+			return fmt.Errorf("falló el servidor de webhooks durante el cierre: %w", err)
+		}
+	}
+	return nil
 }
 
-// messageCreate responde a comandos de texto simples
-func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
-	if m.Author.ID == s.State.User.ID {
+// ===== Comandos de Discord =====
+
+// messageCreate responde a comandos de texto simples.
+func messageCreate(sesionDiscord *discordgo.Session, mensajeDiscord *discordgo.MessageCreate) {
+	if mensajeDiscord.Author.ID == sesionDiscord.State.User.ID {
 		return
 	}
 
-	if m.Content == "!ping" {
-		s.ChannelMessageSend(m.ChannelID, "Pong! El bot está vivo y respirando.")
+	if mensajeDiscord.Content == "!ping" {
+		sesionDiscord.ChannelMessageSend(mensajeDiscord.ChannelID, "Pong! El bot está vivo y respirando.")
 	}
 
-	if m.Content == "!scrapear" {
-		sendScraperMenu(s, m.ChannelID)
+	if mensajeDiscord.Content == "!scrapear" {
+		sendScraperMenu(sesionDiscord, mensajeDiscord.ChannelID)
 	}
 
-	if m.Content == "!help" {
+	if mensajeDiscord.Content == "!help" {
 		helpMsg := "📚 **Lista de Comandos del Bot**\n\n" +
 			"**Scraping:**\n" +
 			"`!scrapear` - Muestra el menú interactivo para seleccionar y ejecutar una araña de scraping (Jumbo, Lider, Santa Isabel).\n\n" +
@@ -141,32 +143,34 @@ func messageCreate(s *discordgo.Session, m *discordgo.MessageCreate) {
 			"**Otros:**\n" +
 			"`!ping` - Para comprobar que sigo con vida."
 
-		s.ChannelMessageSend(m.ChannelID, helpMsg)
+		sesionDiscord.ChannelMessageSend(mensajeDiscord.ChannelID, helpMsg)
 	}
 }
 
-// handlePush notifica sobre nuevos commits
-func handlePush(s *discordgo.Session, channelID string, payload map[string]interface{}) {
-	pusherMap, ok := payload["pusher"].(map[string]interface{})
+// ===== Notificaciones de GitHub =====
+
+// handlePush notifica sobre nuevos commits.
+func handlePush(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
+	pusherMap, ok := cargaGitHub["pusher"].(map[string]interface{})
 	if !ok {
 		return
 	}
 	pusherName := pusherMap["name"].(string)
 
-	ref, _ := payload["ref"].(string)
+	ref, _ := cargaGitHub["ref"].(string)
 	branch := strings.Replace(ref, "refs/heads/", "", 1)
 
 	isMerge := false
 	var commitsMsg string
 
-	if headCommit, ok := payload["head_commit"].(map[string]interface{}); ok && headCommit != nil {
+	if headCommit, ok := cargaGitHub["head_commit"].(map[string]interface{}); ok && headCommit != nil {
 		message, _ := headCommit["message"].(string)
 		if strings.HasPrefix(message, "Merge pull request") || strings.HasPrefix(message, "Merge branch") {
 			isMerge = true
 		}
 	}
 
-	if commits, ok := payload["commits"].([]interface{}); ok && len(commits) > 0 {
+	if commits, ok := cargaGitHub["commits"].([]interface{}); ok && len(commits) > 0 {
 		commitsMsg = "\n**Commits:**"
 		// Limitar a 5 commits para no hacer spam si empujan muchos de golpe
 		limit := len(commits)
@@ -201,14 +205,14 @@ func handlePush(s *discordgo.Session, channelID string, payload map[string]inter
 	}
 
 	msg += commitsMsg
-	s.ChannelMessageSend(channelID, msg)
+	sesionDiscord.ChannelMessageSend(canalID, msg)
 }
 
-// handlePullRequest notifica creación de PR, labels, reviews y merges
-func handlePullRequest(s *discordgo.Session, channelID string, payload map[string]interface{}) {
-	action, _ := payload["action"].(string)
+// handlePullRequest notifica creación de PR, etiquetas, revisiones y merges.
+func handlePullRequest(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
+	action, _ := cargaGitHub["action"].(string)
 
-	prMap, ok := payload["pull_request"].(map[string]interface{})
+	prMap, ok := cargaGitHub["pull_request"].(map[string]interface{})
 	if !ok {
 		return
 	}
@@ -271,73 +275,75 @@ func handlePullRequest(s *discordgo.Session, channelID string, payload map[strin
 			msg += fmt.Sprintf("\n**Reviewers Solicitados**: %s", strings.Join(reviewersList, " "))
 		}
 
-		s.ChannelMessageSend(channelID, msg)
+		sesionDiscord.ChannelMessageSend(canalID, msg)
 
 	case "closed":
-		senderMap, _ := payload["sender"].(map[string]interface{})
+		senderMap, _ := cargaGitHub["sender"].(map[string]interface{})
 		senderName, _ := senderMap["login"].(string)
 
 		merged, _ := prMap["merged"].(bool)
 		if merged {
 			msg := fmt.Sprintf("✅ **Pull Request Aceptado (Merged)** por `%s`\n**Título**: %s\n**Link**: %s", senderName, title, url)
-			s.ChannelMessageSend(channelID, msg)
+			sesionDiscord.ChannelMessageSend(canalID, msg)
 		} else {
 			msg := fmt.Sprintf("❌ **Pull Request Rechazado/Cerrado** por `%s`\n**Título**: %s\n**Link**: %s", senderName, title, url)
-			s.ChannelMessageSend(channelID, msg)
+			sesionDiscord.ChannelMessageSend(canalID, msg)
 		}
 
 	case "review_requested":
 
-		if reqRev, ok := payload["requested_reviewer"].(map[string]interface{}); ok {
+		if reqRev, ok := cargaGitHub["requested_reviewer"].(map[string]interface{}); ok {
 			reviewer := reqRev["login"].(string)
 			reviewerDiscord := mapGitHubToDiscord(reviewer)
 
-			reviewDebounceMutex.Lock()
-			
+			mutexDebounceReviews.Lock()
+
 			// Solo añadir si no existe ya para evitar duplicados en la lista (por si acaso GitHub manda eventos de mas)
 			exists := false
-			for _, u := range reviewDebounceUsers[number] {
-				if u == reviewerDiscord {
+			for _, usuario := range usuariosReviews[number] {
+				if usuario == reviewerDiscord {
 					exists = true
 					break
 				}
 			}
 			if !exists {
-				reviewDebounceUsers[number] = append(reviewDebounceUsers[number], reviewerDiscord)
+				usuariosReviews[number] = append(usuariosReviews[number], reviewerDiscord)
 			}
 
-			if timer, ok := reviewDebounceTimers[number]; ok {
-				timer.Stop()
+			if temporizador, existeTemporizador := temporizadoresReviews[number]; existeTemporizador {
+				temporizador.Stop()
 			}
 
-			// Iniciar timer de 2.5 segundos para acumular requests de reviews
-			reviewDebounceTimers[number] = time.AfterFunc(2500*time.Millisecond, func() {
-				reviewDebounceMutex.Lock()
-				users := reviewDebounceUsers[number]
-				delete(reviewDebounceUsers, number)
-				delete(reviewDebounceTimers, number)
-				reviewDebounceMutex.Unlock()
+			// Acumular solicitudes repetidas de revisión antes de enviar una notificación.
+			temporizadoresReviews[number] = time.AfterFunc(configuracionActiva.RetrasoDebounceReviews, func() {
+				mutexDebounceReviews.Lock()
+				usuarios := usuariosReviews[number]
+				delete(usuariosReviews, number)
+				delete(temporizadoresReviews, number)
+				mutexDebounceReviews.Unlock()
 
-				if len(users) > 0 {
+				if len(usuarios) > 0 {
 					// Las URL entre <> evitan que Discord genere la caja gigante de previsualización
-					msg := fmt.Sprintf("👀 **Review Solicitado** en el PR #%d\nSe ha solicitado la revisión de %s.\n**Link**: <%s>", number, strings.Join(users, ", "), url)
-					s.ChannelMessageSend(channelID, msg)
+					mensaje := fmt.Sprintf("👀 **Review Solicitado** en el PR #%d\nSe ha solicitado la revisión de %s.\n**Link**: <%s>", number, strings.Join(usuarios, ", "), url)
+					sesionDiscord.ChannelMessageSend(canalID, mensaje)
 				}
 			})
-			reviewDebounceMutex.Unlock()
+			mutexDebounceReviews.Unlock()
 		}
 
 	case "labeled":
-		if labelMap, ok := payload["label"].(map[string]interface{}); ok {
+		if labelMap, ok := cargaGitHub["label"].(map[string]interface{}); ok {
 			labelName := labelMap["name"].(string)
 			msg := fmt.Sprintf("🏷️ **Nueva Etiqueta** en el PR #%d\nSe añadió la etiqueta `%s`.\n**Link**: <%s>", number, labelName, url)
-			s.ChannelMessageSend(channelID, msg)
+			sesionDiscord.ChannelMessageSend(canalID, msg)
 		}
 	}
 }
 
-// mapGitHubToDiscord traduce usuarios de Github a IDs de Discord o nombres
-func mapGitHubToDiscord(githubUser string) string {
+// ===== Mapeo de usuarios =====
+
+// mapGitHubToDiscord traduce usuarios de GitHub a identificadores de Discord o nombres.
+func mapGitHubToDiscord(usuarioGitHub string) string {
 	// Diccionario estático de miembros del equipo
 	users := map[string]string{
 		"VichoMatus": "<@!537347874875506698>",
@@ -348,27 +354,29 @@ func mapGitHubToDiscord(githubUser string) string {
 		"Web":        "<@!265591689211674624>", // Mapeo para su otro nick de GitHub
 	}
 
-	if discordPing, exists := users[githubUser]; exists {
+	if discordPing, exists := users[usuarioGitHub]; exists {
 		return discordPing
 	}
 
 	// Si no está mapeado, retornar solo el nombre de Github resaltado
-	return "`@" + githubUser + "`"
+	return "`@" + usuarioGitHub + "`"
 }
 
-// handlePullRequestReview notifica cuando alguien deja un review (aprueba, rechaza o comenta)
-func handlePullRequestReview(s *discordgo.Session, channelID string, payload map[string]interface{}) {
-	action, _ := payload["action"].(string)
+// ===== Notificaciones de revisiones y comentarios =====
+
+// handlePullRequestReview notifica cuando alguien aprueba, rechaza o comenta un PR.
+func handlePullRequestReview(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
+	action, _ := cargaGitHub["action"].(string)
 	if action != "submitted" {
 		return
 	}
 
-	reviewMap, ok := payload["review"].(map[string]interface{})
+	reviewMap, ok := cargaGitHub["review"].(map[string]interface{})
 	if !ok {
 		return
 	}
 
-	prMap, ok := payload["pull_request"].(map[string]interface{})
+	prMap, ok := cargaGitHub["pull_request"].(map[string]interface{})
 	if !ok {
 		return
 	}
@@ -416,17 +424,17 @@ func handlePullRequestReview(s *discordgo.Session, channelID string, payload map
 	}
 	msg += fmt.Sprintf("**Link**: <%s>", url)
 
-	s.ChannelMessageSend(channelID, msg)
+	sesionDiscord.ChannelMessageSend(canalID, msg)
 }
 
-// handleIssueComment notifica cuando alguien deja un comentario normal en el hilo del PR
-func handleIssueComment(s *discordgo.Session, channelID string, payload map[string]interface{}) {
-	action, _ := payload["action"].(string)
+// handleIssueComment notifica cuando alguien comenta en el hilo de un PR.
+func handleIssueComment(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
+	action, _ := cargaGitHub["action"].(string)
 	if action != "created" {
 		return
 	}
 
-	issueMap, ok := payload["issue"].(map[string]interface{})
+	issueMap, ok := cargaGitHub["issue"].(map[string]interface{})
 	if !ok {
 		return
 	}
@@ -434,7 +442,7 @@ func handleIssueComment(s *discordgo.Session, channelID string, payload map[stri
 		return // Ignorar comentarios en issues normales por ahora
 	}
 
-	commentMap, ok := payload["comment"].(map[string]interface{})
+	commentMap, ok := cargaGitHub["comment"].(map[string]interface{})
 	if !ok {
 		return
 	}
@@ -454,5 +462,5 @@ func handleIssueComment(s *discordgo.Session, channelID string, payload map[stri
 	}
 
 	msg := fmt.Sprintf("💬 **Nuevo Comentario** de %s en el PR #%d\n> *\"%s\"*\n**Link**: <%s>", commenterDiscord, number, body, url)
-	s.ChannelMessageSend(channelID, msg)
+	sesionDiscord.ChannelMessageSend(canalID, msg)
 }

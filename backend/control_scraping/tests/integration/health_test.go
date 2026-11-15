@@ -75,24 +75,24 @@ func (conexion healthConn) Ping(contexto context.Context) error {
 }
 
 // probeDatabase crea una conexión GORM que usa el conector controlado por la prueba.
-func probeDatabase(t *testing.T, conector *healthConnector) *gorm.DB {
-	t.Helper()
+func probeDatabase(prueba *testing.T, conector *healthConnector) *gorm.DB {
+	prueba.Helper()
 	conexionSQL := sql.OpenDB(conector)
-	t.Cleanup(func() { _ = conexionSQL.Close() })
+	prueba.Cleanup(func() { _ = conexionSQL.Close() })
 	baseDatos, err := gorm.Open(postgres.New(postgres.Config{Conn: conexionSQL}), &gorm.Config{DisableAutomaticPing: true})
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	return baseDatos
 }
 
 // TestHealthRedisTimeoutDoesNotRemoveReadiness verifica que Redis sólo sea diagnóstico.
-func TestHealthRedisTimeoutDoesNotRemoveReadiness(t *testing.T) {
+func TestHealthRedisTimeoutDoesNotRemoveReadiness(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
-	baseDatos := probeDatabase(t, &healthConnector{})
+	baseDatos := probeDatabase(prueba, &healthConnector{})
 	servidorTCP, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	defer servidorTCP.Close()
 	go func() {
@@ -121,24 +121,24 @@ func TestHealthRedisTimeoutDoesNotRemoveReadiness(t *testing.T) {
 	inicio := time.Now()
 	router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil).WithContext(contexto))
 	if transcurrido := time.Since(inicio); transcurrido > time.Second {
-		t.Fatalf("Redis lento bloqueó el probe durante %v", transcurrido)
+		prueba.Fatalf("Redis lento bloqueó el probe durante %v", transcurrido)
 	}
 	var cuerpo struct {
 		Checks map[string]string `json:"checks"`
 	}
 	if err := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	if respuesta.Code != 200 || cuerpo.Checks["redis"] != "error" || cuerpo.Checks["database"] != "ok" {
-		t.Fatalf("Redis retiró readiness con PostgreSQL sano: %d %s", respuesta.Code, respuesta.Body)
+		prueba.Fatalf("Redis retiró readiness con PostgreSQL sano: %d %s", respuesta.Code, respuesta.Body)
 	}
 }
 
 // TestHealthRequiresScrapingDatabase verifica readiness SQL y liveness independiente.
-func TestHealthRequiresScrapingDatabase(t *testing.T) {
+func TestHealthRequiresScrapingDatabase(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	conector := &healthConnector{}
-	baseDatos := probeDatabase(t, conector)
+	baseDatos := probeDatabase(prueba, conector)
 	for _, caso := range []struct {
 		nombre           string
 		baseDatosFallida bool
@@ -150,7 +150,7 @@ func TestHealthRequiresScrapingDatabase(t *testing.T) {
 		{"scraping not configured", false, true, 503},
 		{"recovered", false, false, 200},
 	} {
-		t.Run(caso.nombre, func(t *testing.T) {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
 			conector.failed.Store(caso.baseDatosFallida)
 			baseDatosActual := baseDatos
 			if caso.baseDatosAusente {
@@ -162,22 +162,22 @@ func TestHealthRequiresScrapingDatabase(t *testing.T) {
 			respuesta := httptest.NewRecorder()
 			router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/health", nil))
 			if respuesta.Code != caso.status || strings.Contains(respuesta.Body.String(), "private PostgreSQL") {
-				t.Fatalf("readiness incorrecto: %d %s", respuesta.Code, respuesta.Body)
+				prueba.Fatalf("readiness incorrecto: %d %s", respuesta.Code, respuesta.Body)
 			}
 			var cuerpo struct {
 				Status string `json:"status"`
 			}
 			if err := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); err != nil {
-				t.Fatal(err)
+				prueba.Fatal(err)
 			}
 			if (cuerpo.Status == "ok") != (caso.status == 200) {
-				t.Fatal("estado JSON contradice HTTP")
+				prueba.Fatal("estado JSON contradice HTTP")
 			}
 			consultasAntes := conector.pings.Load()
 			respuesta = httptest.NewRecorder()
 			router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/_api/live", nil))
 			if respuesta.Code != 200 || consultasAntes != conector.pings.Load() {
-				t.Fatal("liveness depende de PostgreSQL")
+				prueba.Fatal("liveness depende de PostgreSQL")
 			}
 		})
 	}

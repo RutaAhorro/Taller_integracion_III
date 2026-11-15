@@ -140,13 +140,6 @@ func RootHandler(contextoHTTP *gin.Context) {
 	})
 }
 
-// HealthHandler genera una comprobación de readiness para las dependencias recibidas.
-func HealthHandler(baseDatos *gorm.DB, clienteRedis *redis.Client, servicio string) gin.HandlerFunc {
-	return func(contextoHTTP *gin.Context) {
-		writeHealth(contextoHTTP, baseDatos, clienteRedis, servicio)
-	}
-}
-
 // HealthHandler godoc
 // @Summary      Comprobación de salud del servicio (Healthcheck)
 // @Description  Readiness: requiere la conexión PostgreSQL de coordinación; Redis es diagnóstico y puede degradarse sin retirar la API.
@@ -156,6 +149,13 @@ func HealthHandler(baseDatos *gorm.DB, clienteRedis *redis.Client, servicio stri
 // @Failure      503  {object}  map[string]interface{}
 // @Router       /health [get]
 // @Router       /api/v1/health [get]
+// HealthHandler genera una comprobación de readiness para las dependencias recibidas.
+func HealthHandler(baseDatos *gorm.DB, clienteRedis *redis.Client, servicio string) gin.HandlerFunc {
+	return func(contextoHTTP *gin.Context) {
+		writeHealth(contextoHTTP, baseDatos, clienteRedis, servicio)
+	}
+}
+
 // writeHealth consulta SQL para readiness y Redis sólo como diagnóstico.
 func writeHealth(contextoHTTP *gin.Context, baseDatos *gorm.DB, clienteRedis *redis.Client, servicio string) {
 	// Un presupuesto común mantiene el probe por debajo del timeout de K8s (3s).

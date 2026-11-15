@@ -52,7 +52,10 @@ corrige el documento.
 Cada servicio mantiene su `README.md` junto al código; su barrido lo deja
 verificado. [Frontend](../frontend/web/README.md) ·
 [Gateway](../backend/gateway/README.md) · [Identidad](../backend/identidad/README.md) ·
-[Catálogo](../backend/catalogo/README.md) · [Scraper Go](../backend/scraper_go/README.md) ·
+[Catálogo](../backend/catalogo/README.md) ·
+[Control de scraping](../backend/control_scraping/README.md) ·
+[Bot de Discord](../backend/bot_discord/README.md) ·
+[Scraper Go](../backend/scraper_go/README.md) ·
 [Motor de rutas](../backend/motor_rutas/README.md).
 
 La guía de extracción de [Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347)

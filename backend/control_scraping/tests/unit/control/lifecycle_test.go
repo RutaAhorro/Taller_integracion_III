@@ -10,44 +10,44 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/control"
 )
 
-func TestCanceledRecoveryLoopsStop(t *testing.T) {
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", strings.Repeat("s", 32))
+func TestCanceledRecoveryLoopsStop(prueba *testing.T) {
+	prueba.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("prueba", 32))
+	prueba.Setenv("SCRAPING_SERVICE_TOKEN", strings.Repeat("s", 32))
 	modulo, err := control.New(nil, nil)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
-	contexto, cancelar := context.WithCancel(t.Context())
+	contexto, cancelar := context.WithCancel(prueba.Context())
 	modulo.Start(contexto)
 	cancelar()
-	contextoEspera, detenerEspera := context.WithTimeout(t.Context(), time.Second)
+	contextoEspera, detenerEspera := context.WithTimeout(prueba.Context(), time.Second)
 	defer detenerEspera()
 	if err := modulo.Wait(contextoEspera); err != nil {
-		t.Fatalf("los loops no terminaron: %v", err)
+		prueba.Fatalf("los loops no terminaron: %v", err)
 	}
 }
 
-func TestRecoveryShutdownHasDeadline(t *testing.T) {
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", strings.Repeat("s", 32))
+func TestRecoveryShutdownHasDeadline(prueba *testing.T) {
+	prueba.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("prueba", 32))
+	prueba.Setenv("SCRAPING_SERVICE_TOKEN", strings.Repeat("s", 32))
 	modulo, err := control.New(nil, nil)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
-	contexto, cancelar := context.WithCancel(t.Context())
+	contexto, cancelar := context.WithCancel(prueba.Context())
 	modulo.Start(contexto)
-	contextoEspera, detenerEspera := context.WithTimeout(t.Context(), 10*time.Millisecond)
+	contextoEspera, detenerEspera := context.WithTimeout(prueba.Context(), 10*time.Millisecond)
 	defer detenerEspera()
 	if err := modulo.Wait(contextoEspera); !errors.Is(err, context.DeadlineExceeded) {
 		cancelar()
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	cancelar()
-	contextoFinal, cancelarFinal := context.WithTimeout(t.Context(), time.Second)
+	contextoFinal, cancelarFinal := context.WithTimeout(prueba.Context(), time.Second)
 	defer cancelarFinal()
 	if err := modulo.Wait(contextoFinal); err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 }

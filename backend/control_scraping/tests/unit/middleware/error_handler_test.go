@@ -10,20 +10,20 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestInternalDiagnosticsAreNotReturned(t *testing.T) {
+func TestInternalDiagnosticsAreNotReturned(prueba *testing.T) {
 	for _, path := range []string{"/panic", "/context", "/internal"} {
-		t.Run(path, func(t *testing.T) {
-			r := gin.New()
-			r.Use(middleware.ErrorHandler())
-			r.GET("/panic", func(contexto *gin.Context) { panic("private database relation and secret") })
-			r.GET("/context", func(contexto *gin.Context) { _ = contexto.Error(errors.New("private database relation and secret")) })
-			r.GET("/internal", func(contexto *gin.Context) {
+		prueba.Run(path, func(prueba *testing.T) {
+			router := gin.New()
+			router.Use(middleware.ErrorHandler())
+			router.GET("/panic", func(contexto *gin.Context) { panic("private database relation and secret") })
+			router.GET("/context", func(contexto *gin.Context) { _ = contexto.Error(errors.New("private database relation and secret")) })
+			router.GET("/internal", func(contexto *gin.Context) {
 				middleware.ResponderError(contexto, 500, "Error interno.", errors.New("private database relation and secret"))
 			})
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, httptest.NewRequest("GET", path, nil))
-			if w.Code != 500 || strings.Contains(w.Body.String(), "detalle") || strings.Contains(w.Body.String(), "private") {
-				t.Fatal(w.Code, w.Body)
+			respuestaHTTP := httptest.NewRecorder()
+			router.ServeHTTP(respuestaHTTP, httptest.NewRequest("GET", path, nil))
+			if respuestaHTTP.Code != 500 || strings.Contains(respuestaHTTP.Body.String(), "detalle") || strings.Contains(respuestaHTTP.Body.String(), "private") {
+				prueba.Fatal(respuestaHTTP.Code, respuestaHTTP.Body)
 			}
 		})
 	}
