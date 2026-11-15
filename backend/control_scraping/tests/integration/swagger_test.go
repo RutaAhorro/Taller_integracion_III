@@ -1,4 +1,5 @@
-package main
+// Package integration_test comprueba que Swagger publique sólo el contrato activo.
+package integration_test
 
 import (
 	"encoding/json"
@@ -6,16 +7,16 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/app"
 )
 
 // Cada operación publicada debe existir en el router del servicio, incluso al
 // generar Swagger después de extraer otro dominio.
 func TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T) {
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
+	prepareApplicationEnvironment(t)
 	t.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
-	router, err := setupRouter()
+	router, _, err := app.NewApplication(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,13 +54,11 @@ func TestSwaggerOnlyDocumentsRegisteredRoutes(t *testing.T) {
 
 // SUP-274: sin habilitarlo explícitamente, el contrato no se publica.
 func TestSwaggerDisabledByDefault(t *testing.T) {
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
+	prepareApplicationEnvironment(t)
 	for _, value := range []string{"", "false"} {
 		t.Run("valor "+value, func(t *testing.T) {
 			t.Setenv("SCRAPING_SWAGGER_ENABLED", value)
-			router, err := setupRouter()
+			router, _, err := app.NewApplication(nil, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +73,7 @@ func TestSwaggerDisabledByDefault(t *testing.T) {
 	}
 	t.Run("valor inválido", func(t *testing.T) {
 		t.Setenv("SCRAPING_SWAGGER_ENABLED", "yes")
-		if _, err := setupRouter(); err == nil {
+		if _, _, err := app.NewApplication(nil, nil); err == nil {
 			t.Fatal("un valor ambiguo debe impedir el arranque")
 		}
 	})

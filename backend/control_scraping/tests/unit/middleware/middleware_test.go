@@ -1,4 +1,4 @@
-package tests
+package middleware_test
 
 import (
 	"encoding/json"
@@ -23,16 +23,16 @@ func setupTestRouter() *gin.Engine {
 	r.NoRoute(middleware.NotFoundHandler())
 	r.NoMethod(middleware.MethodNotAllowedHandler())
 
-	r.GET("/ping", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"message": "pong"})
+	r.GET("/ping", func(contexto *gin.Context) {
+		contexto.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
 
-	r.GET("/panic", func(c *gin.Context) {
+	r.GET("/panic", func(contexto *gin.Context) {
 		panic("error crítico de prueba simulado")
 	})
 
-	r.GET("/bad-request", func(c *gin.Context) {
-		middleware.ResponderError(c, http.StatusBadRequest, "Datos de entrada inválidos", errors.New("campo 'nombre' es requerido"))
+	r.GET("/bad-request", func(contexto *gin.Context) {
+		middleware.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos", errors.New("campo 'nombre' es requerido"))
 	})
 
 	return r
@@ -49,16 +49,16 @@ func TestNotFoundHandler(t *testing.T) {
 		t.Fatalf("Esperaba código 404, pero obtuve %d", w.Code)
 	}
 
-	var resp middleware.RespuestaError
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	var respuesta middleware.RespuestaError
+	err := json.Unmarshal(w.Body.Bytes(), &respuesta)
 	if err != nil {
 		t.Fatalf("Error al decodificar JSON de respuesta: %v", err)
 	}
 
-	if resp.Estado != 404 {
-		t.Errorf("Esperaba estado=404 en el cuerpo JSON, obtuve %d", resp.Estado)
+	if respuesta.Estado != 404 {
+		t.Errorf("Esperaba estado=404 en el cuerpo JSON, obtuve %d", respuesta.Estado)
 	}
-	if resp.Mensaje == "" {
+	if respuesta.Mensaje == "" {
 		t.Errorf("El mensaje de respuesta no debería estar vacío")
 	}
 }
@@ -74,14 +74,14 @@ func TestMethodNotAllowedHandler(t *testing.T) {
 		t.Fatalf("Esperaba código 405, pero obtuve %d", w.Code)
 	}
 
-	var resp middleware.RespuestaError
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	var respuesta middleware.RespuestaError
+	err := json.Unmarshal(w.Body.Bytes(), &respuesta)
 	if err != nil {
 		t.Fatalf("Error al decodificar JSON de respuesta: %v", err)
 	}
 
-	if resp.Estado != 405 {
-		t.Errorf("Esperaba estado=405 en el cuerpo JSON, obtuve %d", resp.Estado)
+	if respuesta.Estado != 405 {
+		t.Errorf("Esperaba estado=405 en el cuerpo JSON, obtuve %d", respuesta.Estado)
 	}
 }
 
@@ -96,17 +96,17 @@ func TestPanicRecoveryHandler(t *testing.T) {
 		t.Fatalf("Esperaba código 500 tras panic, pero obtuve %d", w.Code)
 	}
 
-	var resp middleware.RespuestaError
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	var respuesta middleware.RespuestaError
+	err := json.Unmarshal(w.Body.Bytes(), &respuesta)
 	if err != nil {
 		t.Fatalf("Error al decodificar JSON de respuesta: %v", err)
 	}
 
-	if resp.Estado != 500 {
-		t.Errorf("Esperaba estado=500 en el cuerpo JSON, obtuve %d", resp.Estado)
+	if respuesta.Estado != 500 {
+		t.Errorf("Esperaba estado=500 en el cuerpo JSON, obtuve %d", respuesta.Estado)
 	}
-	if resp.Detalle != "" {
-		t.Errorf("El panic filtró un detalle interno: '%s'", resp.Detalle)
+	if respuesta.Detalle != "" {
+		t.Errorf("El panic filtró un detalle interno: '%s'", respuesta.Detalle)
 	}
 }
 
@@ -121,19 +121,19 @@ func TestResponderError(t *testing.T) {
 		t.Fatalf("Esperaba código 400, pero obtuve %d", w.Code)
 	}
 
-	var resp middleware.RespuestaError
-	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	var respuesta middleware.RespuestaError
+	err := json.Unmarshal(w.Body.Bytes(), &respuesta)
 	if err != nil {
 		t.Fatalf("Error al decodificar JSON de respuesta: %v", err)
 	}
 
-	if resp.Estado != 400 {
-		t.Errorf("Esperaba estado=400 en el cuerpo JSON, obtuve %d", resp.Estado)
+	if respuesta.Estado != 400 {
+		t.Errorf("Esperaba estado=400 en el cuerpo JSON, obtuve %d", respuesta.Estado)
 	}
-	if resp.Mensaje != "Datos de entrada inválidos" {
-		t.Errorf("Mensaje inesperado: %s", resp.Mensaje)
+	if respuesta.Mensaje != "Datos de entrada inválidos" {
+		t.Errorf("Mensaje inesperado: %s", respuesta.Mensaje)
 	}
-	if resp.Detalle != "campo 'nombre' es requerido" {
-		t.Errorf("Detalle inesperado: %s", resp.Detalle)
+	if respuesta.Detalle != "campo 'nombre' es requerido" {
+		t.Errorf("Detalle inesperado: %s", respuesta.Detalle)
 	}
 }

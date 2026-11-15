@@ -1,20 +1,22 @@
-package database
+package database_test
 
 import (
 	"strings"
 	"testing"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/database"
 )
 
 func TestRuntimeCredentials(t *testing.T) {
 	t.Setenv("DB_URL", "postgres://postgres:old-admin-secret@db/test")
 	t.Setenv("IDENTITY_DB_URL", "")
 	t.Setenv("SCRAPING_DB_URL", "")
-	if _, err := Load(); err == nil {
+	if _, err := database.Load(); err == nil {
 		t.Fatal("se aceptó el fallback al administrador")
 	}
 	t.Setenv("IDENTITY_DB_URL", "postgres://app_identity:identity-secret@db/test")
 	t.Setenv("SCRAPING_DB_URL", "postgres://app_scraping:scraping-secret@db/test")
-	if _, err := Load(); err != nil {
+	if _, err := database.Load(); err != nil {
 		t.Fatal(err)
 	}
 	for _, dsn := range []string{
@@ -24,7 +26,7 @@ func TestRuntimeCredentials(t *testing.T) {
 	} {
 		t.Run(dsn, func(t *testing.T) {
 			t.Setenv("SCRAPING_DB_URL", dsn)
-			_, err := Load()
+			_, err := database.Load()
 			if err == nil || strings.Contains(err.Error(), "do-not-leak") || strings.Contains(err.Error(), "old-admin-secret") {
 				t.Fatal("credencial inválida aceptada o expuesta", err)
 			}

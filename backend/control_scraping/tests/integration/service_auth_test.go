@@ -1,26 +1,23 @@
-package main
+// Package integration_test valida autenticación de servicio en las rutas públicas.
+package integration_test
 
 import (
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/app"
 )
-
-var testServiceToken = strings.Repeat("s", 32)
 
 // El Gateway es público: sin el token de servicio ninguna ruta de coordinación
 // llega al handler, aunque el cuerpo sea válido o el origen esté permitido.
 func TestScraperRequiresServiceToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
+	prepareApplicationEnvironment(t)
 	catalogoToken := strings.Repeat("t", 32)
 	t.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
-	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
 	t.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
-	router, err := setupRouter()
+	router, _, err := app.NewApplication(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,8 +67,8 @@ func TestScraperRequiresServiceToken(t *testing.T) {
 }
 
 func TestServiceTokenConfigurationFailsClosed(t *testing.T) {
+	prepareApplicationEnvironment(t)
 	catalogoToken := strings.Repeat("t", 32)
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
 	t.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
 	for name, value := range map[string]string{
 		"vacío":                "",
@@ -81,7 +78,7 @@ func TestServiceTokenConfigurationFailsClosed(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Setenv("SCRAPING_SERVICE_TOKEN", value)
-			if _, err := setupRouter(); err == nil {
+			if _, _, err := app.NewApplication(nil, nil); err == nil {
 				t.Fatal("la configuración insegura debe impedir el arranque")
 			}
 		})

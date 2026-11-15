@@ -1,4 +1,4 @@
-package repositories
+package repositories_test
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 	"github.com/google/uuid"
 )
@@ -42,22 +43,22 @@ func TestCatalogoClientContract(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	repo, err := NewCatalogoClient(srv.URL, token, time.Second)
+	repo, err := repositories.NewCatalogoClient(srv.URL, token, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := WithRequestID(context.Background(), "sup269-test")
-	chain, err := repo.ObtenerCadena(ctx, 1, "")
-	if err != nil || chain.ID != 1 {
+	contexto := repositories.WithRequestID(context.Background(), "sup269-test")
+	cadena, err := repo.ObtenerCadena(contexto, 1, "")
+	if err != nil || cadena.ID != 1 {
 		t.Fatalf("cadena: %v", err)
 	}
-	branch, err := repo.ObtenerSucursal(ctx, 1, nil, nil)
-	if err != nil || branch.ID != 2 {
+	sucursal, err := repo.ObtenerSucursal(contexto, 1, nil, nil)
+	if err != nil || sucursal.ID != 2 {
 		t.Fatalf("sucursal: %v", err)
 	}
-	batch, err := repo.IngestarLote(ctx, &id, 2, []domain.ProductoScrapeadoDTO{{SKU: "SKU", Producto: "Producto", PrecioNormal: 1000}})
-	if err != nil || batch.TrabajoID == nil || *batch.TrabajoID != id.String() || calls.Load() != 3 {
-		t.Fatalf("lote: %+v %v", batch, err)
+	lote, err := repo.IngestarLote(contexto, &id, 2, []domain.ProductoScrapeadoDTO{{SKU: "SKU", Producto: "Producto", PrecioNormal: 1000}})
+	if err != nil || lote.TrabajoID == nil || *lote.TrabajoID != id.String() || calls.Load() != 3 {
+		t.Fatalf("lote: %+v %v", lote, err)
 	}
 }
 
@@ -73,7 +74,7 @@ func TestCatalogoClientObtenerCadenaPropagaEstado(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	repo, err := NewCatalogoClient(srv.URL, token, time.Second)
+	repo, err := repositories.NewCatalogoClient(srv.URL, token, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,7 +108,7 @@ func TestCatalogoClientFailuresAndNoRetry(t *testing.T) {
 				io.WriteString(w, tc.body)
 			}))
 			defer srv.Close()
-			repo, err := NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
+			repo, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -122,7 +123,7 @@ func TestCatalogoClientFailuresAndNoRetry(t *testing.T) {
 func TestCatalogoClientTimeoutAndCancellation(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.Copy(io.Discard, r.Body); <-r.Context().Done() }))
 	defer srv.Close()
-	repo, err := NewCatalogoClient(srv.URL, strings.Repeat("t", 32), 25*time.Millisecond)
+	repo, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), 25*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,14 +139,14 @@ func TestCatalogoClientTimeoutAndCancellation(t *testing.T) {
 
 func TestCatalogoClientInvalidConfiguration(t *testing.T) {
 	for _, origin := range []string{"", "ftp://catalogo", "http://user:secret@catalogo", "http://catalogo/path", "http://catalogo?token=secret", "http://catalogo#fragment"} {
-		if _, err := NewCatalogoClient(origin, strings.Repeat("t", 32), time.Second); err == nil {
+		if _, err := repositories.NewCatalogoClient(origin, strings.Repeat("t", 32), time.Second); err == nil {
 			t.Errorf("aceptó %q", origin)
 		}
 	}
-	if _, err := NewCatalogoClient("http://catalogo", "short", time.Second); err == nil {
+	if _, err := repositories.NewCatalogoClient("http://catalogo", "short", time.Second); err == nil {
 		t.Error("aceptó secreto débil")
 	}
-	if _, err := NewCatalogoClient("http://catalogo", strings.Repeat("t", 32), 30*time.Second); err == nil {
+	if _, err := repositories.NewCatalogoClient("http://catalogo", strings.Repeat("t", 32), 30*time.Second); err == nil {
 		t.Error("aceptó timeout mayor al límite")
 	}
 }

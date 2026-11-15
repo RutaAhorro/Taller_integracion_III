@@ -1,10 +1,11 @@
-package repositories
+package repositories_test
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 	"github.com/google/uuid"
 	"net/http"
@@ -29,7 +30,7 @@ func TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T) {
 		w.WriteHeader(409)
 	}))
 	defer srv.Close()
-	client, err := NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
+	client, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +46,7 @@ func TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T) {
 		t.Run(http.StatusText(status), func(t *testing.T) {
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
 			defer srv.Close()
-			client, err := NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
+			client, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}

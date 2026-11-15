@@ -1,4 +1,5 @@
-package tests
+// Package integration_test verifica límites arquitectónicos del módulo.
+package integration_test
 
 import (
 	"go/parser"
@@ -17,7 +18,7 @@ func TestModuleDependencies(t *testing.T) {
 	const api = "github.com/danirc2024/Taller_integracion_III/backend/control_scraping/"
 	for _, module := range []string{"control-scraping"} {
 		t.Run(module, func(t *testing.T) {
-			root := filepath.Join("..", "internal")
+			root := filepath.Join("..", "..", "internal")
 			own := api + "internal/"
 			err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 				if err != nil {
@@ -40,7 +41,7 @@ func TestModuleDependencies(t *testing.T) {
 						t.Errorf("%s importa otro servicio: %s", path, dependency)
 					}
 					if strings.HasPrefix(dependency, api) {
-						allowed := strings.HasPrefix(dependency, own) || dependency == api+"internal/middleware"
+						allowed := strings.HasPrefix(dependency, own) || dependency == api+"internal/middleware" || dependency == api+"docs"
 						if !allowed {
 							t.Errorf("%s depende de código de otro dominio: %s", path, dependency)
 						}

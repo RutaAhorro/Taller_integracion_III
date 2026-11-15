@@ -1,4 +1,4 @@
-package main
+package integration_test
 
 import (
 	"net/http"
@@ -6,17 +6,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/app"
 )
 
 // Comprueba la composición real y que la API ya no aloje Identidad ni Catálogo.
 func TestModuleCompositionHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
-	t.Setenv("CATALOGO_INGEST_TIMEOUT", "")
-	router, err := setupRouter()
+	prepareApplicationEnvironment(t)
+	router, _, err := app.NewApplication(nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
