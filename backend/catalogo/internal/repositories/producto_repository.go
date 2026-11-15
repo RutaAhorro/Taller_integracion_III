@@ -56,6 +56,14 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 			consulta = consulta.Where("(cp.precio_oferta IS NULL OR cp.precio_oferta >= cp.precio_normal)")
 		}
 	}
+	if filtro.SoloMarcasBlancas != nil && *filtro.SoloMarcasBlancas {
+		consulta = consulta.Where(`(
+			pc.marca_cruda ILIKE ANY(ARRAY['%lider%', '%great value%', '%a cuenta%', '%acuenta%', '%ekono%', '%seleccion%', '%selección%', '%jumbo%', '%cuisine & co%', '%cuisine&co%', '%santa isabel%', '%maxima%', '%máxima%', '%tottus%', '%precio uno%', '%unimarc%', '%merkat%', '%nuestra cocina%', '%cugat%'])
+			OR (
+				pc.marca_cruda = '' AND pc.titulo_crudo ILIKE ANY(ARRAY['%lider%', '%great value%', '%a cuenta%', '%acuenta%', '%ekono%', '%jumbo%', '%cuisine & co%', '%cuisine&co%', '%santa isabel%', '%tottus%', '%precio uno%', '%unimarc%', '%merkat%', '%cugat%'])
+			)
+		)`)
+	}
 	return consulta
 }
 

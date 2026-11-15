@@ -30,7 +30,8 @@ export function useCatalog(query: string, category: string | null, activeMarket:
     const search = query.trim();
     if (search.length >= 3) params.set('q', search);
     if (isOfferFilter(category)) params.set('en_oferta', 'true');
-    else if (category && category !== 'marcas') params.set('categoria', category);
+    else if (category === 'marcas') params.set('solo_marcas_blancas', 'true');
+    else if (category) params.set('categoria', category);
     if (marketName) params.set('supermercado', marketName);
     return getProducts(`?${params}`);
   };
@@ -38,14 +39,6 @@ export function useCatalog(query: string, category: string | null, activeMarket:
   // Primera página cada vez que cambian los filtros.
   useEffect(() => {
     const current = ++requestId.current;
-    if (category === 'marcas') {
-      setProducts([]);
-      setPage(1);
-      setTotalPages(0);
-      setIsLoading(false);
-      setError('El filtro de marcas blancas aún no está disponible.');
-      return;
-    }
     setIsLoading(true);
     setError(null);
 
@@ -72,7 +65,7 @@ export function useCatalog(query: string, category: string | null, activeMarket:
 
   // Agrega la página siguiente al continuar el desplazamiento, sin duplicar productos.
   const fetchMore = () => {
-    if (category === 'marcas' || isFetchingMore || isLoading || page >= totalPages) return;
+    if (isFetchingMore || isLoading || page >= totalPages) return;
     const current = requestId.current;
     setIsFetchingMore(true);
 

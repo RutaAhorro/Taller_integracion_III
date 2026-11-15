@@ -88,6 +88,12 @@ func (manejador *ProductoHandler) ObtenerProductos(contexto *gin.Context) {
 		}
 	}
 
+	if marcasBlancasStr := contexto.Query("solo_marcas_blancas"); marcasBlancasStr != "" {
+		if soloMarcasBlancas, err := strconv.ParseBool(marcasBlancasStr); err == nil {
+			filtro.SoloMarcasBlancas = &soloMarcasBlancas
+		}
+	}
+
 	filtro.SortBy = contexto.Query("sort_by")
 	filtro.Order = contexto.Query("order")
 
@@ -176,6 +182,12 @@ func (manejador *ProductoHandler) ObtenerProductosAdmin(contexto *gin.Context) {
 	if enOfertaStr := contexto.Query("en_oferta"); enOfertaStr != "" {
 		if enOferta, err := strconv.ParseBool(enOfertaStr); err == nil {
 			filtro.EnOferta = &enOferta
+		}
+	}
+
+	if marcasBlancasStr := contexto.Query("solo_marcas_blancas"); marcasBlancasStr != "" {
+		if soloMarcasBlancas, err := strconv.ParseBool(marcasBlancasStr); err == nil {
+			filtro.SoloMarcasBlancas = &soloMarcasBlancas
 		}
 	}
 
