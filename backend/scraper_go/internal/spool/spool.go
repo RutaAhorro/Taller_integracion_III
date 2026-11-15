@@ -70,6 +70,7 @@ func Open(workID, stateDir string, minFree int64) (*Spool, error) {
 	return result, nil
 }
 
+// initialize prepara el esquema de tablas e índices del almacén SQLite local.
 func (s *Spool) initialize() error {
 	if _, err := s.db.Exec(`
 		CREATE TABLE IF NOT EXISTS items (
@@ -118,6 +119,7 @@ func (s *Spool) Add(product domain.Product, market *string) error {
 	return err
 }
 
+// productFingerprint genera un hash SHA-256 para garantizar idempotencia en productos.
 func productFingerprint(market *string, data []byte) string {
 	hasher := sha256.New()
 	if market != nil {
@@ -164,11 +166,13 @@ func (s *Spool) Seal(batchSize int) error {
 	}
 }
 
+// itemRow representa una fila de producto leída directamente desde SQLite local.
 type itemRow struct {
 	id      int64
 	product string
 }
 
+// firstUnbatchedMarket identifica el primer supermercado con productos pendientes de entrega.
 func (s *Spool) firstUnbatchedMarket() (sql.NullString, bool, error) {
 	var market sql.NullString
 	err := s.db.QueryRow(
@@ -183,6 +187,7 @@ func (s *Spool) firstUnbatchedMarket() (sql.NullString, bool, error) {
 	return market, true, nil
 }
 
+// unbatchedRows extrae las filas aún no entregadas de un supermercado dado.
 func (s *Spool) unbatchedRows(market sql.NullString, batchSize int) ([]itemRow, error) {
 	var (
 		rows *sql.Rows
@@ -215,11 +220,13 @@ func (s *Spool) unbatchedRows(market sql.NullString, batchSize int) ([]itemRow, 
 	return result, rows.Err()
 }
 
+// batchPayload agrupa el conjunto de productos que se despachan a la API de control.
 type batchPayload struct {
 	Products    []json.RawMessage `json:"products"`
 	Supermarket *string           `json:"supermarket"`
 }
 
+// persistBatch actualiza el estado de entrega de las filas procesadas en SQLite.
 func (s *Spool) persistBatch(market sql.NullString, rows []itemRow) error {
 	var extra int64
 	products := make([]json.RawMessage, 0, len(rows))

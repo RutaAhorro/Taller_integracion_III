@@ -222,6 +222,7 @@ func (c *Collector) Collect(ctx context.Context, api *controlscraping.Client, qu
 	return removed, nil
 }
 
+// isPressure comprueba si el espacio libre en disco es menor al umbral de seguridad.
 func (c *Collector) isPressure() (bool, error) {
 	free, err := FreeBytes(c.stateDir)
 	if err != nil {
@@ -230,6 +231,7 @@ func (c *Collector) isPressure() (bool, error) {
 	return free < c.minFree, nil
 }
 
+// parseTimestamp convierte la marca de tiempo de un nombre de archivo a time.Time.
 func parseTimestamp(value string) (time.Time, error) {
 	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
 		if parsed, err := time.Parse(layout, value); err == nil {

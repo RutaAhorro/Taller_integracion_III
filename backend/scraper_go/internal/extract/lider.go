@@ -17,6 +17,9 @@ import (
 var liderFormatPattern = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|g|ml|lt|l|un(?:idades?)?)\b`)
 
 // LiderProducts intenta __NEXT_DATA__ y cae a las tarjetas del HTML.
+
+// ===== Extracción Principal =====
+
 func LiderProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
 	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
@@ -63,6 +66,10 @@ func LiderProduct(site catalog.Site, body []byte, requested string, responseURL 
 	return SelectProductByURL(liderCards(site, document, responseURL), requested, responseURL)
 }
 
+// liderNextDataProducts extrae productos desde el bloque __NEXT_DATA__ en Lider.
+
+// ===== Extracción __NEXT_DATA__ =====
+
 func liderNextDataProducts(site catalog.Site, document *goquery.Document, responseURL *url.URL) ([]domain.Product, bool) {
 	payload, ok := liderNextDataPayload(site, document)
 	if !ok {
@@ -101,6 +108,7 @@ func liderNextDataProducts(site catalog.Site, document *goquery.Document, respon
 	return products, true
 }
 
+// liderNextDataPayload parsea el contenido JSON de __NEXT_DATA__.
 func liderNextDataPayload(site catalog.Site, document *goquery.Document) (map[string]any, bool) {
 	selector := site.Selector("next_data")
 	if selector == "" {
@@ -119,6 +127,7 @@ func liderNextDataPayload(site catalog.Site, document *goquery.Document) (map[st
 	return payload, true
 }
 
+// liderProductFromItem mapea un ítem del JSON de Lider a domain.Product.
 func liderProductFromItem(site catalog.Site, item map[string]any, responseURL *url.URL) (domain.Product, bool) {
 	name := normalize.Texto(item["name"])
 	productCode := normalize.EAN(item["usItemId"])
@@ -183,6 +192,10 @@ func liderProductFromItem(site catalog.Site, item map[string]any, responseURL *u
 		Imagen:            image,
 	}, true
 }
+
+// liderCards extrae productos a partir de las tarjetas del catálogo HTML de Lider.
+
+// ===== Extracción Tarjetas HTML =====
 
 func liderCards(site catalog.Site, document *goquery.Document, responseURL *url.URL) []domain.Product {
 	cards := document.Find(site.Selector("product_card"))
@@ -264,6 +277,10 @@ func liderCards(site catalog.Site, document *goquery.Document, responseURL *url.
 	})
 	return products
 }
+
+// containsAny determina si una cadena contiene alguna de las subcadenas indicadas.
+
+// ===== Utilidades =====
 
 func containsAny(text string, values []string) bool {
 	for _, value := range values {

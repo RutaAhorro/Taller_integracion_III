@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// readCategoryURLs lee las URLs de categorías desde un archivo en disco.
 func readCategoryURLs(file string) []string {
 	body, err := os.ReadFile(file)
 	if err != nil {
@@ -22,6 +23,7 @@ func readCategoryURLs(file string) []string {
 	return urls
 }
 
+// appendCategoryURL agrega una categoría validando formato y unicidad.
 func appendCategoryURL(file, rawURL string, validate func(string) error) error {
 	if err := validate(rawURL); err != nil {
 		return err
@@ -43,6 +45,7 @@ func appendCategoryURL(file, rawURL string, validate func(string) error) error {
 	return err
 }
 
+// envCategoryURLs recupera URLs de categorías declaradas en variables de entorno.
 func envCategoryURLs(name string) []string {
 	var urls []string
 	for _, raw := range strings.Split(os.Getenv(name), ",") {
@@ -53,6 +56,7 @@ func envCategoryURLs(name string) []string {
 	return urls
 }
 
+// dedupeStrings remueve valores duplicados preservando el orden de aparición.
 func dedupeStrings(values []string) []string {
 	seen := make(map[string]struct{}, len(values))
 	result := make([]string, 0, len(values))

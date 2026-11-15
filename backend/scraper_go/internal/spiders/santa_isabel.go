@@ -19,6 +19,7 @@ func NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *s
 	return newSantaIsabel(mustSite(SantaIsabelName), fetcher, categoryDir, maxPages, logger)
 }
 
+// newSantaIsabel instancia el spider específico de santa_isabel usando el catálogo central.
 func newSantaIsabel(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel {
 	return &SantaIsabel{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
 		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {

@@ -18,6 +18,9 @@ import (
 var renderDataPattern = regexp.MustCompile(`window\.__renderData\s*=\s*("(?:\\.|[^"\\])*")`)
 
 // SantaIsabelProducts usa window.__renderData y, si no existe, JSON-LD.
+
+// ===== Extracción Principal =====
+
 func SantaIsabelProducts(site catalog.Site, body []byte, baseURL *url.URL) []domain.Product {
 	if products := SantaIsabelRenderData(site, body, baseURL); len(products) > 0 {
 		return products
@@ -250,6 +253,10 @@ func SantaIsabelJSONLD(site catalog.Site, body []byte, baseURL *url.URL) []domai
 	return products
 }
 
+// santaIsabelSeller recupera los datos del vendedor predeterminado en Santa Isabel.
+
+// ===== Vendedores y Precios =====
+
 func santaIsabelSeller(value any, sellerName string) map[string]any {
 	sellers, _ := value.([]any)
 	for _, rawSeller := range sellers {
@@ -265,6 +272,10 @@ func santaIsabelSeller(value any, sellerName string) map[string]any {
 	return nil
 }
 
+// firstMap retorna el primer submapa válido encontrado en una lista heterogénea.
+
+// ===== Utilidades y Tipos Dinámicos =====
+
 func firstMap(value any) map[string]any {
 	values, _ := value.([]any)
 	for _, raw := range values {
@@ -275,6 +286,7 @@ func firstMap(value any) map[string]any {
 	return nil
 }
 
+// firstNonZeroPrice obtiene el primer valor de precio numérico superior a cero.
 func firstNonZeroPrice(data map[string]any, keys ...string) *float64 {
 	for _, key := range keys {
 		if price := normalize.PrecioCLP(data[key]); price != nil && *price != 0 {
@@ -284,6 +296,7 @@ func firstNonZeroPrice(data map[string]any, keys ...string) *float64 {
 	return nil
 }
 
+// firstTruthyString obtiene la primera cadena de texto no vacía.
 func firstTruthyString(values ...any) *string {
 	for _, value := range values {
 		if !isTruthy(value) {
@@ -298,6 +311,7 @@ func firstTruthyString(values ...any) *string {
 	return nil
 }
 
+// isTruthy evalúa si un valor booleano o de texto representa una afirmación positiva.
 func isTruthy(value any) bool {
 	switch typed := value.(type) {
 	case nil:
@@ -322,6 +336,7 @@ func isTruthy(value any) bool {
 	}
 }
 
+// numberValue convierte un valor numérico genérico o string a float64.
 func numberValue(value any) *float64 {
 	var number float64
 	switch typed := value.(type) {
@@ -357,6 +372,7 @@ func numberValue(value any) *float64 {
 	return &number
 }
 
+// joinValueStrings une una colección de elementos de texto usando un separador.
 func joinValueStrings(values ...any) *string {
 	var parts []string
 	for _, value := range values {

@@ -19,6 +19,9 @@ func (sitio Site) ValidateProductURL(rawURL string) error {
 	return sitio.validate(rawURL, sitio.ProductURL)
 }
 
+// ===== Validación Interna =====
+
+// validate comprueba un esquema HTTPS, host permitido y segmentos de ruta.
 func (sitio Site) validate(rawURL string, rule URLRule) error {
 	message := rule.Message
 	parsed, err := url.Parse(rawURL)
@@ -43,6 +46,7 @@ func (sitio Site) validate(rawURL string, rule URLRule) error {
 	return nil
 }
 
+// nonEmptySegments descompone la ruta en segmentos descartando componentes vacíos.
 func nonEmptySegments(path string) []string {
 	var segments []string
 	for _, segment := range strings.Split(path, "/") {

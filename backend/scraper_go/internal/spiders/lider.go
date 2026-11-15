@@ -19,6 +19,7 @@ func NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Lo
 	return newLider(mustSite(LiderName), fetcher, categoryDir, maxPages, logger)
 }
 
+// newLider instancia el spider específico de lider usando el catálogo central.
 func newLider(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider {
 	return &Lider{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
 		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {

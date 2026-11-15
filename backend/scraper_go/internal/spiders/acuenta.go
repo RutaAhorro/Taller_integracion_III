@@ -19,6 +19,7 @@ func NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.
 	return newAcuenta(mustSite(AcuentaName), fetcher, categoryDir, maxPages, logger)
 }
 
+// newAcuenta instancia el spider específico de acuenta usando el catálogo central.
 func newAcuenta(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta {
 	return &Acuenta{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
 		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {

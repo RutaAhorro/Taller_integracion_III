@@ -19,6 +19,7 @@ func NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Lo
 	return newCugat(mustSite(CugatName), fetcher, categoryDir, maxPages, logger)
 }
 
+// newCugat instancia el spider específico de cugat usando el catálogo central.
 func newCugat(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat {
 	return &Cugat{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
 		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {

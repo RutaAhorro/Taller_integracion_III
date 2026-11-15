@@ -101,6 +101,7 @@ func CugatProduct(site catalog.Site, body []byte, responseURL *url.URL) *domain.
 	return ExtractJSONLDProduct(site, body, responseURL)
 }
 
+// cugatPriceFrom analiza y extrae el precio numérico en pesos desde Cugat.
 func cugatPriceFrom(card *goquery.Selection, site catalog.Site, selector string) *float64 {
 	if selector == "" {
 		return nil

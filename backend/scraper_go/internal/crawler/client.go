@@ -93,6 +93,9 @@ type Options struct {
 
 // Client descarga páginas respetando robots.txt, throttle por dominio,
 // tamaño máximo y reintentos con backoff.
+
+// ===== Estructura de Cliente y Opciones =====
+
 type Client struct {
 	http       *http.Client
 	userAgent  string
@@ -108,6 +111,9 @@ type Client struct {
 
 // New construye el cliente y aplica valores seguros a los campos de Options
 // que lleguen en cero.
+
+// ===== Constructor =====
+
 func New(opts Options) *Client {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 30 * time.Second
@@ -158,6 +164,9 @@ func New(opts Options) *Client {
 	return client
 }
 
+// ===== Cliente HTTP =====
+
+// newHTTPClient instancia un cliente HTTP con timeouts estrictos para crawling.
 func newHTTPClient(timeout time.Duration) *http.Client {
 	roots, err := x509.SystemCertPool()
 	if err != nil || roots == nil {
@@ -188,6 +197,9 @@ func newHTTPClient(timeout time.Duration) *http.Client {
 // Fetch aplica robots, throttle y reintentos. Un 404 se devuelve como
 // respuesta para que el spider decida si termina la paginación; un bloqueo
 // persistente se devuelve como BlockedError.
+
+// ===== Método Público Fetch =====
+
 func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -267,6 +279,10 @@ func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
 	return nil, fmt.Errorf("no se pudo obtener %s", rawURL)
 }
 
+// doRequest ejecuta la solicitud HTTP GET incorporando cabeceras de navegación.
+
+// ===== Petición HTTP y Transporte =====
+
 func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -296,6 +312,10 @@ func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error
 	}, nil
 }
 
+// backoff calcula el tiempo de espera exponencial con variación aleatoria para reintentos.
+
+// ===== Reintentos y Espera =====
+
 func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
 	wait := retryAfter
 	if wait <= 0 {
@@ -324,6 +344,7 @@ func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Durat
 	}
 }
 
+// retryAfter interpreta la cabecera Retry-After en segundos o formato HTTP-date.
 func retryAfter(header http.Header) time.Duration {
 	value := strings.TrimSpace(header.Get("Retry-After"))
 	if value == "" {
@@ -369,6 +390,10 @@ var (
 	)
 )
 
+// detectBlock analiza la respuesta para detectar patrones de bloqueo o desafíos antibot.
+
+// ===== Detección de Bloqueos =====
+
 func detectBlock(status int, body []byte) string {
 	switch status {
 	case http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
@@ -393,10 +418,16 @@ func detectBlock(status int, body []byte) string {
 	return ""
 }
 
+// throttle gestiona la cadencia de peticiones por host para evitar saturaciones.
+
+// ===== Regulación de Tasa (Throttle) =====
+
 type throttle struct {
 	mu   sync.Mutex
 	next map[string]time.Time
 }
+
+// newThrottle instancia un regulador de frecuencia de peticiones por intervalo.
 
 func newThrottle() *throttle {
 	return &throttle{next: make(map[string]time.Time)}
@@ -431,12 +462,17 @@ func (t *throttle) Wait(ctx context.Context, host string, delay time.Duration) e
 	}
 }
 
+// robotsEntry almacena las reglas y tiempos de crawl-delay para un dominio.
+
+// ===== Gestión de Robots.txt =====
+
 type robotsEntry struct {
 	data       *robotstxt.RobotsData
 	crawlDelay time.Duration
 	fetched    time.Time
 }
 
+// robotsCache mantiene en memoria las directivas de robots.txt por host.
 type robotsCache struct {
 	mu         sync.Mutex
 	entries    map[string]*robotsEntry
@@ -448,6 +484,8 @@ type robotsCache struct {
 	maxBytes   int64
 	logger     *slog.Logger
 }
+
+// newRobotsCache inicializa el caché de directivas de robots.txt.
 
 func newRobotsCache(
 	client *http.Client,
@@ -469,6 +507,7 @@ func newRobotsCache(
 	}
 }
 
+// Allowed determina si una URL cumple las reglas de exclusión de robots.txt.
 func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.Duration, error) {
 	base := target.Scheme + "://" + target.Host
 	r.mu.Lock()
@@ -506,6 +545,7 @@ func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.
 	return entry.data.TestAgent(path, r.userAgent), entry.crawlDelay, nil
 }
 
+// fetch descarga y procesa el archivo robots.txt correspondiente a un host.
 func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/robots.txt", nil)
 	if err != nil {
@@ -538,6 +578,7 @@ func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, err
 	}, nil
 }
 
+// parseCrawlDelay busca la directiva Crawl-delay aplicable en robots.txt.
 func parseCrawlDelay(body []byte, userAgent string) time.Duration {
 	var (
 		agents []string
@@ -571,6 +612,7 @@ func parseCrawlDelay(body []byte, userAgent string) time.Duration {
 	return delay
 }
 
+// matchesAgent verifica si una directiva de User-agent aplica al cliente actual.
 func matchesAgent(agents []string, userAgent string) bool {
 	lowerUser := strings.ToLower(userAgent)
 	for _, agent := range agents {

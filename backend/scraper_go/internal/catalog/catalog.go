@@ -19,6 +19,9 @@ var embedded []byte
 const FileEnv = "SCRAPER_SPIDERS_FILE"
 
 // Catalog agrupa todos los sitios configurados.
+
+// ===== Modelos de Catálogo =====
+
 type Catalog struct {
 	Sites []Site `json:"sites"`
 }
@@ -77,6 +80,9 @@ type CategoryFrom struct {
 }
 
 // Default devuelve el catálogo embebido. Un fallo aquí es un error de build.
+
+// ===== Carga de Spiders Embebidos =====
+
 func Default() Catalog {
 	catalog, err := parse(embedded)
 	if err != nil {
@@ -104,6 +110,9 @@ func FromEnv() (Catalog, error) {
 }
 
 // Get busca un sitio por nombre.
+
+// ===== Búsqueda y Accesores =====
+
 func (catalogo Catalog) Get(name string) (Site, bool) {
 	for _, site := range catalogo.Sites {
 		if site.Name == name {
@@ -122,6 +131,9 @@ func (catalogo Catalog) Names() []string {
 	return names
 }
 
+// ===== Decodificación =====
+
+// parse deserializa la especificación JSON de spiders y valida su estructura.
 func parse(body []byte) (Catalog, error) {
 	var catalog Catalog
 	if err := json.Unmarshal(body, &catalog); err != nil {
@@ -144,6 +156,9 @@ func parse(body []byte) (Catalog, error) {
 	return catalog, nil
 }
 
+// ===== Inicialización de Sitio =====
+
+// prepare compila las expresiones regulares y valida los límites requeridos por sitio.
 func (sitio *Site) prepare() error {
 	if sitio.Name == "" {
 		return fmt.Errorf("falta name")

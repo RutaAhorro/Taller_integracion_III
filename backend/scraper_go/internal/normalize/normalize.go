@@ -48,6 +48,7 @@ func PrecioCLP(value any) *float64 {
 	return &result
 }
 
+// priceText aísla los caracteres correspondientes al precio en una cadena de texto.
 func priceText(value any) (string, bool) {
 	switch v := value.(type) {
 	case nil:
@@ -94,6 +95,7 @@ func priceText(value any) (string, bool) {
 	}
 }
 
+// parseAmount analiza y convierte un monto en pesos chilenos a float64.
 func parseAmount(text string) (*big.Rat, bool) {
 	lastDot := strings.LastIndex(text, ".")
 	lastComma := strings.LastIndex(text, ",")
@@ -137,6 +139,7 @@ func parseAmount(text string) (*big.Rat, bool) {
 	return amount, ok
 }
 
+// usesThousandsGroups comprueba si el número emplea formato de puntos de miles.
 func usesThousandsGroups(parts []string) bool {
 	first := strings.TrimLeft(parts[0], "-")
 	if len(first) < 1 || len(first) > 3 {
@@ -300,6 +303,7 @@ func SKUFromURL(rawURL string) *string {
 	return &candidate
 }
 
+// isDigits comprueba si todos los caracteres de la cadena son dígitos numéricos.
 func isDigits(value string) bool {
 	if value == "" {
 		return false
@@ -324,6 +328,7 @@ func Texto(value any) *string {
 	return &text
 }
 
+// formatString limpia espacios redundantes y caracteres de control en cadenas.
 func formatString(value any) string {
 	switch v := value.(type) {
 	case bool:

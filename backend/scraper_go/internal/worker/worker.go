@@ -36,6 +36,9 @@ var (
 
 // Worker consume trabajos de la cola y ejecuta el ciclo completo: lease,
 // spool, crawl, entrega y cierre.
+
+// ===== Estructura de Orquestador =====
+
 type Worker struct {
 	cfg       config.Config
 	api       *controlscraping.Client
@@ -48,6 +51,9 @@ type Worker struct {
 
 // New construye el worker y las dependencias derivadas de la configuración:
 // el cliente que usa el recolector y el recolector de spools.
+
+// ===== Constructor =====
+
 func New(
 	cfg config.Config,
 	api *controlscraping.Client,
@@ -82,6 +88,9 @@ func New(
 // Run asegura el grupo de consumo, recolecta spools vencidos y procesa
 // mensajes hasta que el contexto se cancela. Los fallos de dependencias se
 // reintentan con RetryInterval.
+
+// ===== Bucle Principal =====
+
 func (w *Worker) Run(ctx context.Context) error {
 	if w.cfg.Token == "" {
 		return fmt.Errorf("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
@@ -261,6 +270,10 @@ func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
 	}
 }
 
+// processJob ejecuta la secuencia de extracción, acumulación en spool y envío al control.
+
+// ===== Procesamiento de Trabajos =====
+
 func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domain.Job) (string, error) {
 	status, err := w.api.GetWork(ctx, job.WorkID)
 	if err != nil {
@@ -379,6 +392,10 @@ func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domai
 	return fmt.Sprint(final["estado"]), nil
 }
 
+// jobPayload modela el esquema JSON del mensaje de trabajo recibido desde la cola.
+
+// ===== Deserialización y Validación =====
+
 type jobPayload struct {
 	WorkID     string `json:"trabajo_id"`
 	Spider     string `json:"spider"`
@@ -388,6 +405,7 @@ type jobPayload struct {
 	EnrichEAN  any    `json:"enrich_ean"`
 }
 
+// parseJob deserializa y valida la carga útil de un trabajo recibido en la cola.
 func (w *Worker) parseJob(raw string) (domain.Job, error) {
 	var payload jobPayload
 	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
@@ -415,6 +433,7 @@ func (w *Worker) parseJob(raw string) (domain.Job, error) {
 	}, nil
 }
 
+// parseEnrich extrae los parámetros específicos de enriquecimiento individual de producto.
 func parseEnrich(value any) bool {
 	switch typed := value.(type) {
 	case bool:
@@ -430,19 +449,27 @@ func parseEnrich(value any) bool {
 	return false
 }
 
+// isTerminal verifica si un estado reportado por control indica la culminación del trabajo.
 func isTerminal(status map[string]any) bool {
 	state := stateOf(status)
 	return state == "completado" || state == "fallido"
 }
 
+// stateOf recupera el estado vigente de un trabajo consultando el servicio de control.
 func stateOf(status map[string]any) string {
 	state, _ := status["estado"].(string)
 	return state
 }
 
+// executionLock gestiona el descriptor del archivo de bloqueo para evitar concurrencia.
+
+// ===== Bloqueos de Concurrencia =====
+
 type executionLock struct {
 	file *os.File
 }
+
+// lockExecution adquiere un bloqueo exclusivo sobre el sistema de archivos para el trabajo.
 
 func lockExecution(directory string) (*executionLock, error) {
 	file, err := os.OpenFile(filepath.Join(directory, "execution.lock"), os.O_CREATE|os.O_RDWR, 0o600)
@@ -459,11 +486,13 @@ func lockExecution(directory string) (*executionLock, error) {
 	return &executionLock{file: file}, nil
 }
 
+// Close libera los recursos asociados al descriptor o conexión.
 func (l *executionLock) Close() error {
 	_ = syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	return l.file.Close()
 }
 
+// sleep realiza una pausa controlada que respeta la cancelación del contexto.
 func sleep(ctx context.Context, duration time.Duration) bool {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()

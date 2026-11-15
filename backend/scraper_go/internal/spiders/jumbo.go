@@ -20,6 +20,7 @@ func NewJumbo(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Lo
 	return newJumbo(mustSite(JumboName), fetcher, categoryDir, maxPages, logger)
 }
 
+// newJumbo instancia el spider específico de jumbo usando el catálogo central.
 func newJumbo(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Jumbo {
 	spider := &Jumbo{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
 		extractProducts: func(body []byte, _ *url.URL) []domain.Product {

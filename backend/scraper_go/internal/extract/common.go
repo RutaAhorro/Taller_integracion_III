@@ -232,6 +232,12 @@ func TitleCase(value string) string {
 	return builder.String()
 }
 
+// ===== Paginación =====
+
+// pagePathURL construye una URL de paginación incorporando el número de página a la ruta.
+
+// ===== Paginación y Rutas =====
+
 func pagePathURL(rawURL, segment string, page int) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -246,6 +252,7 @@ func pagePathURL(rawURL, segment string, page int) string {
 	return parsed.String()
 }
 
+// setQueryPage actualiza o añade el parámetro de página en la consulta de la URL.
 func setQueryPage(rawURL, param string, page int, replace bool) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -260,6 +267,7 @@ func setQueryPage(rawURL, param string, page int, replace bool) string {
 	return appendQueryParam(rawURL, param, strconv.Itoa(page), parsed)
 }
 
+// appendQueryParam concatena un nuevo parámetro a la query de la URL.
 func appendQueryParam(rawURL, key, value string, parsed *url.URL) string {
 	pairs := queryPairs(parsed.RawQuery)
 	filtered := pairs[:0]
@@ -275,6 +283,7 @@ func appendQueryParam(rawURL, key, value string, parsed *url.URL) string {
 	return parsed.String()
 }
 
+// removeQueryParam elimina un parámetro de la cadena de consulta de la URL.
 func removeQueryParam(rawURL, key string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -293,12 +302,19 @@ func removeQueryParam(rawURL, key string) string {
 	return parsed.String()
 }
 
+// queryPairs desglosa los parámetros clave-valor preservando su orden original.
 func queryPairs(rawQuery string) []string {
 	if rawQuery == "" {
 		return nil
 	}
 	return strings.Split(rawQuery, "&")
 }
+
+// ===== Canónicos de URL =====
+
+// canonicalProductURL normaliza la URL de un producto removiendo parámetros de rastreo.
+
+// ===== Normalización de URLs =====
 
 func canonicalProductURL(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
@@ -307,6 +323,10 @@ func canonicalProductURL(rawURL string) string {
 	}
 	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
 }
+
+// firstText retorna el texto del primer selector que coincida en la selección.
+
+// ===== Extracción de Texto y Atributos =====
 
 func firstText(selection *goquery.Selection, selector string) string {
 	return selection.Find(selector).First().Text()
@@ -323,6 +343,7 @@ func allText(selection *goquery.Selection) string {
 	return strings.Join(parts, " ")
 }
 
+// collectText acumula todo el texto visible limpiando saltos y espacios.
 func collectText(node *html.Node, parts *[]string) {
 	if node.Type == html.TextNode {
 		*parts = append(*parts, node.Data)
@@ -333,6 +354,7 @@ func collectText(node *html.Node, parts *[]string) {
 	}
 }
 
+// firstAttr retorna el valor del atributo solicitado para el primer selector coincidente.
 func firstAttr(selection *goquery.Selection, selector, attribute string) string {
 	value, _ := selection.Find(selector).First().Attr(attribute)
 	return value
@@ -364,6 +386,7 @@ func noscriptImage(selection *goquery.Selection, selector string) string {
 	return ""
 }
 
+// firstNonNilString retorna el primer puntero a cadena no nulo de la lista.
 func firstNonNilString(values ...*string) *string {
 	for _, value := range values {
 		if value != nil && *value != "" {
@@ -373,6 +396,7 @@ func firstNonNilString(values ...*string) *string {
 	return nil
 }
 
+// nonEmptyStringPtr convierte una cadena no vacía en un puntero a string.
 func nonEmptyStringPtr(value string) *string {
 	if value == "" {
 		return nil
@@ -380,6 +404,7 @@ func nonEmptyStringPtr(value string) *string {
 	return &value
 }
 
+// lastPathSegment extrae el último componente de la ruta de una URL.
 func lastPathSegment(rawURL string) string {
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -392,6 +417,7 @@ func lastPathSegment(rawURL string) string {
 	return segments[len(segments)-1]
 }
 
+// isDigits comprueba si todos los caracteres de la cadena son dígitos numéricos.
 func isDigits(value string) bool {
 	if value == "" {
 		return false
@@ -404,6 +430,7 @@ func isDigits(value string) bool {
 	return true
 }
 
+// nonEmptySegments divide una ruta en segmentos descartando barras intermedias vacías.
 func nonEmptySegments(path string) []string {
 	var segments []string
 	for _, segment := range strings.Split(path, "/") {
@@ -414,6 +441,7 @@ func nonEmptySegments(path string) []string {
 	return segments
 }
 
+// hasClass evalúa si un atributo de clase HTML contiene una clase específica.
 func hasClass(classes, wanted string) bool {
 	for _, class := range strings.Fields(classes) {
 		if class == wanted {
@@ -423,12 +451,17 @@ func hasClass(classes, wanted string) bool {
 	return false
 }
 
+// urlString normaliza la representación textual de una URL.
 func urlString(value *url.URL) string {
 	if value == nil {
 		return ""
 	}
 	return value.String()
 }
+
+// schemaOffer extrae el nodo de oferta Schema.org de un producto.
+
+// ===== Microdatos Schema.org =====
 
 func schemaOffer(entry map[string]any) map[string]any {
 	switch raw := entry["offers"].(type) {
@@ -444,6 +477,7 @@ func schemaOffer(entry map[string]any) map[string]any {
 	return map[string]any{}
 }
 
+// extractNormalPrice obtiene el precio de lista o normal desde un nodo de producto.
 func extractNormalPrice(entry map[string]any) *float64 {
 	if price := firstPrice(entry, "price"); price != nil {
 		return price
@@ -455,6 +489,7 @@ func extractNormalPrice(entry map[string]any) *float64 {
 	return firstPrice(specification, "price")
 }
 
+// firstValue retorna el primer valor hallado para una lista de claves candidatas.
 func firstValue(data any, keys ...string) any {
 	values, ok := data.(map[string]any)
 	if !ok {
@@ -474,10 +509,12 @@ func firstValue(data any, keys ...string) any {
 	return nil
 }
 
+// firstPrice busca y transforma a float64 el primer precio válido entre varias claves.
 func firstPrice(data any, keys ...string) *float64 {
 	return normalize.PrecioCLP(firstValue(data, keys...))
 }
 
+// valueString formatea cualquier tipo de dato primitivo en su representación string.
 func valueString(value any) string {
 	switch typed := value.(type) {
 	case string:
@@ -506,6 +543,7 @@ func valueString(value any) string {
 	}
 }
 
+// stockValue infiere la disponibilidad de stock a partir de indicadores del producto.
 func stockValue(availability any) *bool {
 	text, ok := availability.(string)
 	if !ok {
@@ -515,6 +553,10 @@ func stockValue(availability any) *bool {
 	inStock := strings.ToLower(parts[len(parts)-1]) != "outofstock"
 	return &inStock
 }
+
+// walkJSON visita recursivamente cada objeto JSON invocando la función callback.
+
+// ===== Recorrido y Utilidades JSON =====
 
 func walkJSON(value any) []any {
 	var result []any
@@ -536,6 +578,7 @@ func walkJSON(value any) []any {
 	return result
 }
 
+// imageURL extrae la URL de la imagen principal del producto.
 func imageURL(value any) *string {
 	if list, ok := value.([]any); ok {
 		if len(list) == 0 {
@@ -552,6 +595,7 @@ func imageURL(value any) *string {
 	return nil
 }
 
+// isProductType comprueba si el tipo Schema.org corresponde a una entidad Producto.
 func isProductType(value any) bool {
 	switch typed := value.(type) {
 	case string:
@@ -566,6 +610,7 @@ func isProductType(value any) bool {
 	return false
 }
 
+// firstMapValue obtiene el primer mapa asociado a alguna de las claves especificadas.
 func firstMapValue(value any) any {
 	if list, ok := value.([]any); ok {
 		if len(list) == 0 {

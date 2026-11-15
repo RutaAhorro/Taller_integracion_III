@@ -24,10 +24,14 @@ import (
 
 type stringList []string
 
+// ===== Argumentos CLI =====
+
+// String implementa flag.Value formateando la lista de cadenas.
 func (s *stringList) String() string {
 	return strings.Join(*s, ",")
 }
 
+// Set implementa flag.Value acumulando valores pasados por línea de comandos.
 func (s *stringList) Set(value string) error {
 	value = strings.TrimSpace(value)
 	if value == "" {
@@ -37,6 +41,9 @@ func (s *stringList) Set(value string) error {
 	return nil
 }
 
+// ===== Ejecución =====
+
+// main es el punto de entrada para extracción puntual desde terminal.
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -44,6 +51,7 @@ func main() {
 	}
 }
 
+// run ejecuta el bucle de procesamiento continuo o la tarea solicitada.
 func run() error {
 	var urls stringList
 	spiderName := flag.String("spider", spiders.JumboName, "spider a ejecutar")
@@ -157,6 +165,9 @@ func run() error {
 	return nil
 }
 
+// ===== Utilidades =====
+
+// directoryExists comprueba la existencia de un directorio en el sistema de archivos.
 func directoryExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()

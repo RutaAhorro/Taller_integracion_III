@@ -75,6 +75,7 @@ func New(endpoint, token string, timeout time.Duration) *Client {
 	}
 }
 
+// ingestPayload define el cuerpo de la petición de ingesta hacia control de scraping.
 type ingestPayload struct {
 	Productos      []domain.Product `json:"productos"`
 	Supermercado   *string          `json:"supermercado,omitempty"`
@@ -232,6 +233,7 @@ func (c *Client) GetWork(ctx context.Context, workID string) (map[string]any, er
 	}
 }
 
+// do realiza peticiones HTTP seguras hacia la API de control de scraping.
 func (c *Client) do(request *http.Request) ([]byte, error) {
 	response, err := c.http.Do(request)
 	if err != nil {
@@ -260,10 +262,12 @@ func (c *Client) do(request *http.Request) ([]byte, error) {
 	return body, nil
 }
 
+// base retorna la URL base limpia de la API de control de scraping.
 func (c *Client) base() string {
 	return strings.TrimSuffix(c.endpoint, "/productos")
 }
 
+// ingestionEndpoint resuelve el endpoint completo para el envío de lotes.
 func (c *Client) ingestionEndpoint(workID string) string {
 	if workID != "" {
 		return c.base() + "/trabajos/" + workID + "/productos"
@@ -285,6 +289,7 @@ func limitProducts(products []domain.Product) []domain.Product {
 	return limited
 }
 
+// asInt convierte valores genéricos numéricos al tipo int.
 func asInt(value any) (int, bool) {
 	number, ok := value.(float64)
 	if !ok || math.Trunc(number) != number {

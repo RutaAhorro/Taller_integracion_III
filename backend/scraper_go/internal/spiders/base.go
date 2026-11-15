@@ -33,6 +33,9 @@ type baseSpider struct {
 	materialize func(context.Context, domain.Product, string, *url.URL, bool) (domain.Item, error)
 }
 
+// ===== Constructor =====
+
+// newBaseSpider crea una instancia base compartida con configuración del catálogo.
 func newBaseSpider(
 	fetcher Fetcher,
 	categoryDir string,
@@ -57,25 +60,27 @@ func newBaseSpider(
 	}
 }
 
-func (b *baseSpider) Name() string {
-	return b.site.Name
+// Name devuelve el identificador oficial del spider.
+func (base *baseSpider) Name() string {
+	return base.site.Name
 }
 
-func (b *baseSpider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
+// Run ejecuta la rutina de extracción del spider para el trabajo indicado.
+func (base *baseSpider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
 	if job.ProductURL != "" {
-		return b.runProduct(ctx, job, emit)
+		return base.runProduct(ctx, job, emit)
 	}
 	if job.AddURL != "" {
-		if err := b.appendCategoryURL(job.AddURL); err != nil {
+		if err := base.appendCategoryURL(job.AddURL); err != nil {
 			return err
 		}
 	}
-	urls, err := b.startURLs(job.CategoryURLs)
+	urls, err := base.startURLs(job.CategoryURLs)
 	if err != nil {
 		return err
 	}
 	for _, categoryURL := range urls {
-		if err := b.runCategory(ctx, categoryURL, job.EnrichEAN, emit); err != nil {
+		if err := base.runCategory(ctx, categoryURL, job.EnrichEAN, emit); err != nil {
 			return err
 		}
 	}
@@ -83,55 +88,56 @@ func (b *baseSpider) Run(ctx context.Context, job domain.Job, emit Emitter) erro
 }
 
 // runProduct atiende un scraping puntual. Nunca cae al crawl de categorías.
-func (b *baseSpider) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := b.site.ValidateProductURL(job.ProductURL); err != nil {
+func (base *baseSpider) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
+	if err := base.site.ValidateProductURL(job.ProductURL); err != nil {
 		return err
 	}
-	response, err := b.fetcher.Fetch(ctx, job.ProductURL)
+	response, err := base.fetcher.Fetch(ctx, job.ProductURL)
 	if err != nil {
 		return err
 	}
 	if response.Status == 404 {
-		b.logger.Warn(b.site.Name+"_product_not_found", "url", job.ProductURL)
+		base.logger.Warn(base.site.Name+"_product_not_found", "url", job.ProductURL)
 		return nil
 	}
-	product := b.cfg.extractProduct(response.Body, response.URL, job.ProductURL)
+	product := base.cfg.extractProduct(response.Body, response.URL, job.ProductURL)
 	if product == nil {
-		b.logger.Warn(b.site.Name+"_product_without_data", "url", job.ProductURL)
+		base.logger.Warn(base.site.Name+"_product_without_data", "url", job.ProductURL)
 		return nil
 	}
-	return emit(b.toItem(*product, "producto", job.ProductURL))
+	return emit(base.toItem(*product, "producto", job.ProductURL))
 }
 
-func (b *baseSpider) runCategory(ctx context.Context, categoryURL string, enrichEAN bool, emit Emitter) error {
-	category := extract.CategoryFromURL(b.site, categoryURL)
-	for page := extract.StartPage(b.site, categoryURL); page <= b.maxPages; page++ {
-		pageURL := extract.PageURL(b.site, categoryURL, page)
-		response, err := b.fetcher.Fetch(ctx, pageURL)
+// runCategory procesa la secuencia de páginas pertenecientes a una categoría.
+func (base *baseSpider) runCategory(ctx context.Context, categoryURL string, enrichEAN bool, emit Emitter) error {
+	category := extract.CategoryFromURL(base.site, categoryURL)
+	for page := extract.StartPage(base.site, categoryURL); page <= base.maxPages; page++ {
+		pageURL := extract.PageURL(base.site, categoryURL, page)
+		response, err := base.fetcher.Fetch(ctx, pageURL)
 		if err != nil {
 			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				b.logger.Warn(b.site.Name+"_category_robots_disallowed", "url", pageURL)
+				base.logger.Warn(base.site.Name+"_category_robots_disallowed", "url", pageURL)
 				return nil
 			}
 			var statusErr *crawler.HTTPStatusError
 			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				b.logger.Info(b.site.Name+"_pagination_end", "url", pageURL, "page", page)
+				base.logger.Info(base.site.Name+"_pagination_end", "url", pageURL, "page", page)
 				return nil
 			}
 			return err
 		}
 		if response.Status == 404 {
-			b.logger.Info(b.site.Name+"_pagination_end", "url", pageURL, "page", page)
+			base.logger.Info(base.site.Name+"_pagination_end", "url", pageURL, "page", page)
 			return nil
 		}
 
-		products := b.cfg.extractProducts(response.Body, response.URL)
+		products := base.cfg.extractProducts(response.Body, response.URL)
 		if len(products) == 0 {
-			b.logger.Warn(b.site.Name+"_category_without_products", "url", pageURL, "page", page)
+			base.logger.Warn(base.site.Name+"_category_without_products", "url", pageURL, "page", page)
 			return nil
 		}
 		for _, product := range products {
-			item, err := b.item(ctx, product, category, response.URL, enrichEAN)
+			item, err := base.item(ctx, product, category, response.URL, enrichEAN)
 			if err != nil {
 				return err
 			}
@@ -139,60 +145,65 @@ func (b *baseSpider) runCategory(ctx context.Context, categoryURL string, enrich
 				return err
 			}
 		}
-		if page == b.maxPages {
-			b.logger.Warn(b.site.Name+"_pagination_limit", "url", categoryURL, "max_pages", b.maxPages)
+		if page == base.maxPages {
+			base.logger.Warn(base.site.Name+"_pagination_limit", "url", categoryURL, "max_pages", base.maxPages)
 		}
 	}
 	return nil
 }
 
-func (b *baseSpider) item(
+// item empaqueta un producto asociándole su supermercado de origen.
+func (base *baseSpider) item(
 	ctx context.Context,
 	product domain.Product,
 	category string,
 	responseURL *url.URL,
 	enrichEAN bool,
 ) (domain.Item, error) {
-	if b.materialize != nil {
-		return b.materialize(ctx, product, category, responseURL, enrichEAN)
+	if base.materialize != nil {
+		return base.materialize(ctx, product, category, responseURL, enrichEAN)
 	}
-	return b.toItem(product, category, urlString(responseURL)), nil
+	return base.toItem(product, category, urlString(responseURL)), nil
 }
 
-func (b *baseSpider) startURLs(overrides []string) ([]string, error) {
+// startURLs determina las URLs iniciales de extracción a partir del trabajo.
+func (base *baseSpider) startURLs(overrides []string) ([]string, error) {
 	urls := append([]string(nil), overrides...)
 	if len(urls) == 0 {
-		urls = readCategoryURLs(filepath.Join(b.categoryDir, b.site.CategoryFile))
-		urls = append(urls, envCategoryURLs(b.site.CategoryEnv)...)
+		urls = readCategoryURLs(filepath.Join(base.categoryDir, base.site.CategoryFile))
+		urls = append(urls, envCategoryURLs(base.site.CategoryEnv)...)
 	}
 	urls = dedupeStrings(urls)
 	if len(urls) == 0 {
-		return append([]string(nil), b.site.DefaultCategories...), nil
+		return append([]string(nil), base.site.DefaultCategories...), nil
 	}
 	for _, rawURL := range urls {
-		if err := b.site.ValidateCategoryURL(rawURL); err != nil {
+		if err := base.site.ValidateCategoryURL(rawURL); err != nil {
 			return nil, err
 		}
 	}
 	return urls, nil
 }
 
-func (b *baseSpider) appendCategoryURL(rawURL string) error {
+// appendCategoryURL agrega una categoría validando formato y unicidad.
+func (base *baseSpider) appendCategoryURL(rawURL string) error {
 	return appendCategoryURL(
-		filepath.Join(b.categoryDir, b.site.CategoryFile),
+		filepath.Join(base.categoryDir, base.site.CategoryFile),
 		rawURL,
-		b.site.ValidateCategoryURL,
+		base.site.ValidateCategoryURL,
 	)
 }
 
-func (b *baseSpider) toItem(product domain.Product, category, responseURL string) domain.Item {
+// toItem convierte un producto en elemento listo para ser emitido.
+func (base *baseSpider) toItem(product domain.Product, category, responseURL string) domain.Item {
 	if product.URLProducto == nil || *product.URLProducto == "" {
 		product.URLProducto = domain.StringPtr(responseURL)
 	}
 	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: b.site.Supermarket}
+	return domain.Item{Product: product, Supermercado: base.site.Supermarket}
 }
 
+// urlString normaliza la representación textual de una URL.
 func urlString(value *url.URL) string {
 	if value == nil {
 		return ""

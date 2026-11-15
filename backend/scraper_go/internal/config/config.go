@@ -15,6 +15,9 @@ import (
 const DefaultMaxPages = 100
 
 // Config concentra las variables de entorno del worker.
+
+// ===== Estructura de Configuración =====
+
 type Config struct {
 	RedisURL        string
 	APIURL          string
@@ -55,6 +58,9 @@ type Config struct {
 }
 
 // Default devuelve los valores por defecto documentados en .env.example.
+
+// ===== Valores por Defecto =====
+
 func Default() Config {
 	return Config{
 		RedisURL:        "redis://localhost:6379/0",
@@ -96,6 +102,9 @@ func Default() Config {
 }
 
 // FromEnv construye y valida la configuración del scraper a partir de variables de entorno.
+
+// ===== Carga desde Entorno =====
+
 func FromEnv() (Config, error) {
 	cfg := Default()
 	cfg.RedisURL = env("REDIS_URL", cfg.RedisURL)
@@ -142,6 +151,9 @@ func FromEnv() (Config, error) {
 }
 
 // Validate comprueba los rangos admitidos por el worker.
+
+// ===== Validación Operativa =====
+
 func (cfg Config) Validate() error {
 	switch {
 	case cfg.Lease < 10*time.Second:
@@ -200,6 +212,9 @@ func (cfg Config) Validate() error {
 	return nil
 }
 
+// ===== Lectura de Entorno =====
+
+// env obtiene el valor de una variable de entorno o devuelve el respaldo por defecto.
 func env(key, fallback string) string {
 	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
 		return value
@@ -207,6 +222,7 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// envInt lee una variable de entorno numérica y valida su conversión.
 func envInt(key string, fallback int) int {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
@@ -219,6 +235,7 @@ func envInt(key string, fallback int) int {
 	return value
 }
 
+// parseLevel mapea la cadena de texto de nivel de log a slog.Level.
 func parseLevel(raw string) slog.Level {
 	switch strings.ToUpper(strings.TrimSpace(raw)) {
 	case "DEBUG":

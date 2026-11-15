@@ -20,6 +20,9 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/worker"
 )
 
+// ===== Ejecución =====
+
+// main es el punto de entrada del demonio trabajador del scraper.
 func main() {
 	if err := run(); err != nil {
 		slog.Error("worker_exit", "error", err)
@@ -27,6 +30,7 @@ func main() {
 	}
 }
 
+// run ejecuta el bucle de procesamiento continuo o la tarea solicitada.
 func run() error {
 	cfg, err := config.FromEnv()
 	if err != nil {
