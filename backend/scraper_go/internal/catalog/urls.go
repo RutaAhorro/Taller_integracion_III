@@ -9,17 +9,17 @@ import (
 
 // ValidateCategoryURL comprueba que la URL sea HTTPS del sitio y cumpla las
 // restricciones de path declaradas para categorías.
-func (s Site) ValidateCategoryURL(rawURL string) error {
-	return s.validate(rawURL, s.CategoryURL)
+func (sitio Site) ValidateCategoryURL(rawURL string) error {
+	return sitio.validate(rawURL, sitio.CategoryURL)
 }
 
 // ValidateProductURL comprueba que la URL sea HTTPS del sitio y cumpla las
 // restricciones de path declaradas para fichas de producto.
-func (s Site) ValidateProductURL(rawURL string) error {
-	return s.validate(rawURL, s.ProductURL)
+func (sitio Site) ValidateProductURL(rawURL string) error {
+	return sitio.validate(rawURL, sitio.ProductURL)
 }
 
-func (s Site) validate(rawURL string, rule URLRule) error {
+func (sitio Site) validate(rawURL string, rule URLRule) error {
 	message := rule.Message
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
@@ -28,7 +28,7 @@ func (s Site) validate(rawURL string, rule URLRule) error {
 	if parsed.Scheme != "https" {
 		return fmt.Errorf("%s", message)
 	}
-	if _, ok := s.hosts[strings.ToLower(parsed.Hostname())]; !ok {
+	if _, ok := sitio.hosts[strings.ToLower(parsed.Hostname())]; !ok {
 		return fmt.Errorf("%s", message)
 	}
 	if rule.Prefix != "" && !strings.HasPrefix(parsed.Path, rule.Prefix) {

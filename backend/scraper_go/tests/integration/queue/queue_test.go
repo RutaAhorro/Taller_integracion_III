@@ -22,23 +22,23 @@ type fixture struct {
 	workID       string
 }
 
-func skipIfRedisUnavailable(t *testing.T, rawURL string, err error) {
-	t.Helper()
+func skipIfRedisUnavailable(prueba *testing.T, rawURL string, err error) {
+	prueba.Helper()
 	if os.Getenv("REDIS_TEST_URL") != "" {
-		t.Fatalf("Redis configurado en REDIS_TEST_URL=%s no está disponible: %v", rawURL, err)
+		prueba.Fatalf("Redis configurado en REDIS_TEST_URL=%s no está disponible: %v", rawURL, err)
 	}
-	t.Skipf("Redis no disponible en %s: %v", rawURL, err)
+	prueba.Skipf("Redis no disponible en %s: %v", rawURL, err)
 }
 
-func newFixture(t *testing.T, consumer string) *fixture {
-	t.Helper()
+func newFixture(prueba *testing.T, consumer string) *fixture {
+	prueba.Helper()
 	rawURL := os.Getenv("REDIS_TEST_URL")
 	if rawURL == "" {
 		rawURL = "redis://localhost:6379/15"
 	}
 	options, err := redis.ParseURL(rawURL)
 	if err != nil {
-		t.Fatalf("REDIS_TEST_URL inválida: %v", err)
+		prueba.Fatalf("REDIS_TEST_URL inválida: %v", err)
 	}
 	options.DialTimeout = 500 * time.Millisecond
 	options.ReadTimeout = 2 * time.Second
@@ -49,11 +49,11 @@ func newFixture(t *testing.T, consumer string) *fixture {
 	defer cancel()
 	if err := client.Ping(ctx).Err(); err != nil {
 		_ = client.Close()
-		skipIfRedisUnavailable(t, rawURL, err)
+		skipIfRedisUnavailable(prueba, rawURL, err)
 	}
 
 	prefix := "scraper:test:" + uuid.NewString()
-	f := &fixture{
+	accesorio := &fixture{
 		client:       client,
 		stream:       prefix + ":stream",
 		index:        prefix + ":index",
@@ -61,154 +61,154 @@ func newFixture(t *testing.T, consumer string) *fixture {
 		closedPrefix: prefix + ":closed:",
 		workID:       uuid.NewString(),
 	}
-	f.queue, err = queue.New(client, queue.Options{
-		Stream:       f.stream,
+	accesorio.queue, err = queue.New(client, queue.Options{
+		Stream:       accesorio.stream,
 		Group:        prefix + ":group",
 		Lease:        10 * time.Second,
 		Consumer:     consumer,
-		IndexKey:     f.index,
-		DeadLetter:   f.dead,
-		ClosedPrefix: f.closedPrefix,
+		IndexKey:     accesorio.index,
+		DeadLetter:   accesorio.dead,
+		ClosedPrefix: accesorio.closedPrefix,
 	})
 	if err != nil {
-		t.Fatalf("queue.New() error = %v", err)
+		prueba.Fatalf("queue.New() error = %v", err)
 	}
-	if err := f.queue.EnsureGroup(context.Background()); err != nil {
-		t.Fatalf("EnsureGroup() error = %v", err)
+	if err := accesorio.queue.EnsureGroup(context.Background()); err != nil {
+		prueba.Fatalf("EnsureGroup() error = %v", err)
 	}
-	t.Cleanup(func() {
+	prueba.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cleanupCancel()
 		_ = client.Del(cleanupCtx,
-			f.stream,
-			f.index,
-			f.dead,
-			f.closedPrefix+f.workID,
+			accesorio.stream,
+			accesorio.index,
+			accesorio.dead,
+			accesorio.closedPrefix+accesorio.workID,
 		).Err()
 		_ = client.Close()
 	})
-	return f
+	return accesorio
 }
 
-func (f *fixture) addJob(t *testing.T, payload string) string {
-	t.Helper()
+func (accesorio *fixture) addJob(prueba *testing.T, payload string) string {
+	prueba.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	messageID, err := f.client.XAdd(ctx, &redis.XAddArgs{
-		Stream: f.stream,
+	messageID, err := accesorio.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: accesorio.stream,
 		Values: map[string]any{"payload": payload},
 	}).Result()
 	if err != nil {
-		t.Fatalf("XAdd() error = %v", err)
+		prueba.Fatalf("XAdd() error = %v", err)
 	}
-	if err := f.client.HSet(ctx, f.index, f.workID, messageID).Err(); err != nil {
-		t.Fatalf("HSet() error = %v", err)
+	if err := accesorio.client.HSet(ctx, accesorio.index, accesorio.workID, messageID).Err(); err != nil {
+		prueba.Fatalf("HSet() error = %v", err)
 	}
 	return messageID
 }
 
-func TestAckOwnershipAndDeadLetter(t *testing.T) {
-	f := newFixture(t, "consumer-a")
+func TestAckOwnershipAndDeadLetter(prueba *testing.T) {
+	accesorio := newFixture(prueba, "consumer-a")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	raw := `{"trabajo_id":"` + f.workID + `","spider":"jumbo_rsc"}`
-	messageID := f.addJob(t, raw)
+	raw := `{"trabajo_id":"` + accesorio.workID + `","spider":"jumbo_rsc"}`
+	messageID := accesorio.addJob(prueba, raw)
 
-	has, err := f.queue.HasMessage(ctx, f.workID)
+	has, err := accesorio.queue.HasMessage(ctx, accesorio.workID)
 	if err != nil || !has {
-		t.Fatalf("HasMessage() = %v, %v; want true", has, err)
+		prueba.Fatalf("HasMessage() = %v, %v; want true", has, err)
 	}
-	message, err := f.queue.Receive(ctx)
+	message, err := accesorio.queue.Receive(ctx)
 	if err != nil {
-		t.Fatalf("Receive() error = %v", err)
+		prueba.Fatalf("Receive() error = %v", err)
 	}
 	if message == nil || message.ID != messageID {
-		t.Fatalf("message = %+v, want %s", message, messageID)
+		prueba.Fatalf("message = %+v, want %s", message, messageID)
 	}
-	renewed, err := f.queue.Renew(ctx, messageID)
+	renewed, err := accesorio.queue.Renew(ctx, messageID)
 	if err != nil || !renewed {
-		t.Fatalf("Renew() = %v, %v; want true", renewed, err)
+		prueba.Fatalf("Renew() = %v, %v; want true", renewed, err)
 	}
 
-	other, err := queue.New(f.client, queue.Options{
-		Stream:       f.stream,
-		Group:        f.queue.Group(),
+	other, err := queue.New(accesorio.client, queue.Options{
+		Stream:       accesorio.stream,
+		Group:        accesorio.queue.Group(),
 		Lease:        10 * time.Second,
 		Consumer:     "consumer-b",
-		IndexKey:     f.index,
-		DeadLetter:   f.dead,
-		ClosedPrefix: f.closedPrefix,
+		IndexKey:     accesorio.index,
+		DeadLetter:   accesorio.dead,
+		ClosedPrefix: accesorio.closedPrefix,
 	})
 	if err != nil {
-		t.Fatalf("queue.New(other) error = %v", err)
+		prueba.Fatalf("queue.New(other) error = %v", err)
 	}
 	if ok, _ := other.Renew(ctx, messageID); ok {
-		t.Fatal("otro consumidor no debe poder renovar la lease")
+		prueba.Fatal("otro consumidor no debe poder renovar la lease")
 	}
-	if ok, _ := other.Ack(ctx, messageID, raw, f.workID, ""); ok {
-		t.Fatal("otro consumidor no debe poder hacer ACK")
+	if ok, _ := other.Ack(ctx, messageID, raw, accesorio.workID, ""); ok {
+		prueba.Fatal("otro consumidor no debe poder hacer ACK")
 	}
 
-	acked, err := f.queue.Ack(ctx, messageID, raw, f.workID, "attempts_exhausted")
+	acked, err := accesorio.queue.Ack(ctx, messageID, raw, accesorio.workID, "attempts_exhausted")
 	if err != nil || !acked {
-		t.Fatalf("Ack() = %v, %v; want true", acked, err)
+		prueba.Fatalf("Ack() = %v, %v; want true", acked, err)
 	}
-	if has, _ := f.queue.HasMessage(ctx, f.workID); has {
-		t.Fatal("el índice debe limpiarse después del ACK")
+	if has, _ := accesorio.queue.HasMessage(ctx, accesorio.workID); has {
+		prueba.Fatal("el índice debe limpiarse después del ACK")
 	}
-	if exists, _ := f.client.Exists(ctx, f.closedPrefix+f.workID).Result(); exists != 1 {
-		t.Errorf("marcador de cierre existe = %d, want 1", exists)
+	if exists, _ := accesorio.client.Exists(ctx, accesorio.closedPrefix+accesorio.workID).Result(); exists != 1 {
+		prueba.Errorf("marcador de cierre existe = %d, want 1", exists)
 	}
-	if length, _ := f.client.XLen(ctx, f.stream).Result(); length != 0 {
-		t.Errorf("stream length = %d, want 0", length)
+	if length, _ := accesorio.client.XLen(ctx, accesorio.stream).Result(); length != 0 {
+		prueba.Errorf("stream length = %d, want 0", length)
 	}
 
-	dead, err := f.client.XRange(ctx, f.dead, "-", "+").Result()
+	dead, err := accesorio.client.XRange(ctx, accesorio.dead, "-", "+").Result()
 	if err != nil {
-		t.Fatalf("XRange(dead) error = %v", err)
+		prueba.Fatalf("XRange(dead) error = %v", err)
 	}
 	if len(dead) != 1 {
-		t.Fatalf("dead letter = %d mensajes, want 1", len(dead))
+		prueba.Fatalf("dead letter = %d mensajes, want 1", len(dead))
 	}
 	if dead[0].Values["reason"] != "attempts_exhausted" {
-		t.Errorf("reason = %v", dead[0].Values["reason"])
+		prueba.Errorf("reason = %v", dead[0].Values["reason"])
 	}
 	if dead[0].Values["source_id"] != messageID {
-		t.Errorf("source_id = %v, want %s", dead[0].Values["source_id"], messageID)
+		prueba.Errorf("source_id = %v, want %s", dead[0].Values["source_id"], messageID)
 	}
 	if dead[0].Values["payload"] != raw {
-		t.Errorf("payload = %v", dead[0].Values["payload"])
+		prueba.Errorf("payload = %v", dead[0].Values["payload"])
 	}
 }
 
-func TestAckSuccessDoesNotCreateDeadLetter(t *testing.T) {
-	f := newFixture(t, "consumer-a")
+func TestAckSuccessDoesNotCreateDeadLetter(prueba *testing.T) {
+	accesorio := newFixture(prueba, "consumer-a")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	raw := `{"trabajo_id":"` + f.workID + `","spider":"jumbo_rsc"}`
-	messageID := f.addJob(t, raw)
-	message, err := f.queue.Receive(ctx)
+	raw := `{"trabajo_id":"` + accesorio.workID + `","spider":"jumbo_rsc"}`
+	messageID := accesorio.addJob(prueba, raw)
+	message, err := accesorio.queue.Receive(ctx)
 	if err != nil || message == nil {
-		t.Fatalf("Receive() = %+v, %v", message, err)
+		prueba.Fatalf("Receive() = %+v, %v", message, err)
 	}
-	acked, err := f.queue.Ack(ctx, messageID, raw, f.workID, "")
+	acked, err := accesorio.queue.Ack(ctx, messageID, raw, accesorio.workID, "")
 	if err != nil || !acked {
-		t.Fatalf("Ack() = %v, %v; want true", acked, err)
+		prueba.Fatalf("Ack() = %v, %v; want true", acked, err)
 	}
-	if exists, _ := f.client.Exists(ctx, f.dead).Result(); exists != 0 {
-		t.Errorf("dead letter existe = %d, want 0", exists)
+	if exists, _ := accesorio.client.Exists(ctx, accesorio.dead).Result(); exists != 0 {
+		prueba.Errorf("dead letter existe = %d, want 0", exists)
 	}
-	if exists, _ := f.client.Exists(ctx, f.closedPrefix+f.workID).Result(); exists != 1 {
-		t.Errorf("marcador de cierre existe = %d, want 1", exists)
+	if exists, _ := accesorio.client.Exists(ctx, accesorio.closedPrefix+accesorio.workID).Result(); exists != 1 {
+		prueba.Errorf("marcador de cierre existe = %d, want 1", exists)
 	}
 }
 
-func TestRejectsShortLease(t *testing.T) {
+func TestRejectsShortLease(prueba *testing.T) {
 	client := redis.NewClient(&redis.Options{Addr: "localhost:0"})
 	defer client.Close()
 	if _, err := queue.New(client, queue.Options{Lease: time.Second}); err == nil {
-		t.Fatal("New() debió rechazar una lease menor a 10 s")
+		prueba.Fatal("New() debió rechazar una lease menor a 10 s")
 	}
 }

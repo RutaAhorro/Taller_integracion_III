@@ -9,16 +9,16 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
-func site(t *testing.T, name string) catalog.Site {
-	t.Helper()
+func site(prueba *testing.T, name string) catalog.Site {
+	prueba.Helper()
 	site, ok := catalog.Default().Get(name)
 	if !ok {
-		t.Fatalf("falta el sitio %q en el catálogo", name)
+		prueba.Fatalf("falta el sitio %q en el catálogo", name)
 	}
 	return site
 }
 
-func TestPageURL(t *testing.T) {
+func TestPageURL(prueba *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
@@ -75,35 +75,35 @@ func TestPageURL(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name+" "+tc.want, func(t *testing.T) {
-			if got := extract.PageURL(site(t, tc.name), tc.raw, tc.page); got != tc.want {
-				t.Errorf("PageURL() = %q, want %q", got, tc.want)
+		prueba.Run(tc.name+" "+tc.want, func(prueba *testing.T) {
+			if got := extract.PageURL(site(prueba, tc.name), tc.raw, tc.page); got != tc.want {
+				prueba.Errorf("PageURL() = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestStartPage(t *testing.T) {
-	acuenta := site(t, "acuenta_rsc")
+func TestStartPage(prueba *testing.T) {
+	acuenta := site(prueba, "acuenta_rsc")
 	if got := extract.StartPage(acuenta, "https://www.acuenta.cl/ca/congelados/04?currentPage=3"); got != 3 {
-		t.Errorf("StartPage(acuenta) = %d, want 3", got)
+		prueba.Errorf("StartPage(acuenta) = %d, want 3", got)
 	}
 	if got := extract.StartPage(acuenta, "https://www.acuenta.cl/ca/congelados/04"); got != 1 {
-		t.Errorf("StartPage(acuenta sin página) = %d, want 1", got)
+		prueba.Errorf("StartPage(acuenta sin página) = %d, want 1", got)
 	}
 
-	lider := site(t, "lider_rsc")
+	lider := site(prueba, "lider_rsc")
 	if got := extract.StartPage(lider, "https://super.lider.cl/browse/frutas/22884697?page=2"); got != 2 {
-		t.Errorf("StartPage(lider) = %d, want 2", got)
+		prueba.Errorf("StartPage(lider) = %d, want 2", got)
 	}
 
-	jumbo := site(t, "jumbo_rsc")
+	jumbo := site(prueba, "jumbo_rsc")
 	if got := extract.StartPage(jumbo, "https://www.jumbo.cl/frutas?page=4"); got != 1 {
-		t.Errorf("StartPage(jumbo) = %d, want 1", got)
+		prueba.Errorf("StartPage(jumbo) = %d, want 1", got)
 	}
 }
 
-func TestCategoryFromURL(t *testing.T) {
+func TestCategoryFromURL(prueba *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
@@ -116,30 +116,30 @@ func TestCategoryFromURL(t *testing.T) {
 		{"lider_rsc", "https://super.lider.cl/browse/frutas-y-verduras/frutas/22884697_93034836", "frutas"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := extract.CategoryFromURL(site(t, tc.name), tc.raw); got != tc.want {
-				t.Errorf("CategoryFromURL() = %q, want %q", got, tc.want)
+		prueba.Run(tc.name, func(prueba *testing.T) {
+			if got := extract.CategoryFromURL(site(prueba, tc.name), tc.raw); got != tc.want {
+				prueba.Errorf("CategoryFromURL() = %q, want %q", got, tc.want)
 			}
 		})
 	}
 
-	cugat := site(t, "cugat_rsc")
+	cugat := site(prueba, "cugat_rsc")
 	if got := extract.CategoryFromURL(cugat, "https://cugat.cl/"); got != "sin_categoria" {
-		t.Errorf("CategoryFromURL() fallback = %q, want sin_categoria", got)
+		prueba.Errorf("CategoryFromURL() fallback = %q, want sin_categoria", got)
 	}
 }
 
-func TestResolveURL(t *testing.T) {
-	base := mustURL(t, "https://cugat.cl/categoria-producto/bebidas/page/2/")
+func TestResolveURL(prueba *testing.T) {
+	base := mustURL(prueba, "https://cugat.cl/categoria-producto/bebidas/page/2/")
 	if got := extract.ResolveURL(base, "/producto/uno/"); got != "https://cugat.cl/producto/uno/" {
-		t.Errorf("ResolveURL() = %q", got)
+		prueba.Errorf("ResolveURL() = %q", got)
 	}
 	if got := extract.ResolveURL(nil, "/producto/uno/"); got != "/producto/uno/" {
-		t.Errorf("ResolveURL(nil) = %q", got)
+		prueba.Errorf("ResolveURL(nil) = %q", got)
 	}
 }
 
-func TestSelectProductByURL(t *testing.T) {
+func TestSelectProductByURL(prueba *testing.T) {
 	tomateURL := "https://www.jumbo.cl/p/tomate"
 	lechugaURL := "https://www.jumbo.cl/p/lechuga"
 	products := []domain.Product{
@@ -147,30 +147,30 @@ func TestSelectProductByURL(t *testing.T) {
 		{Producto: "Lechuga", URLProducto: &lechugaURL},
 	}
 
-	selected := extract.SelectProductByURL(products, "https://www.jumbo.cl/p/lechuga?utm=1", mustURL(t, "https://www.jumbo.cl/cat"))
+	selected := extract.SelectProductByURL(products, "https://www.jumbo.cl/p/lechuga?utm=1", mustURL(prueba, "https://www.jumbo.cl/cat"))
 	if selected == nil || selected.Producto != "Lechuga" {
-		t.Errorf("SelectProductByURL() = %+v", selected)
+		prueba.Errorf("SelectProductByURL() = %+v", selected)
 	}
 
-	if got := extract.SelectProductByURL(products, "https://www.jumbo.cl/p/otro", mustURL(t, "https://www.jumbo.cl/cat")); got != nil {
-		t.Errorf("SelectProductByURL() con varios candidatos = %+v, want nil", got)
+	if got := extract.SelectProductByURL(products, "https://www.jumbo.cl/p/otro", mustURL(prueba, "https://www.jumbo.cl/cat")); got != nil {
+		prueba.Errorf("SelectProductByURL() con varios candidatos = %+v, want nil", got)
 	}
 
 	single := []domain.Product{{Producto: "Único", URLProducto: &tomateURL}}
-	if got := extract.SelectProductByURL(single, "https://www.jumbo.cl/p/otro", mustURL(t, "https://www.jumbo.cl/cat")); got == nil || got.Producto != "Único" {
-		t.Errorf("SelectProductByURL() con un candidato = %+v", got)
+	if got := extract.SelectProductByURL(single, "https://www.jumbo.cl/p/otro", mustURL(prueba, "https://www.jumbo.cl/cat")); got == nil || got.Producto != "Único" {
+		prueba.Errorf("SelectProductByURL() con un candidato = %+v", got)
 	}
 }
 
-func TestFormatFromTextYTitleCase(t *testing.T) {
+func TestFormatFromTextYTitleCase(prueba *testing.T) {
 	pattern := regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|g|l)\b`)
 	if got := extract.FormatFromText("Bebida 1.5 L", pattern); got == nil || *got != "1.5 L" {
-		t.Errorf("FormatFromText() = %v", got)
+		prueba.Errorf("FormatFromText() = %v", got)
 	}
 	if got := extract.FormatFromText("Pan", pattern); got != nil {
-		t.Errorf("FormatFromText(sin formato) = %v", got)
+		prueba.Errorf("FormatFromText(sin formato) = %v", got)
 	}
 	if got := extract.TitleCase("coca cola 1.5l"); got != "Coca Cola 1.5L" {
-		t.Errorf("TitleCase() = %q", got)
+		prueba.Errorf("TitleCase() = %q", got)
 	}
 }

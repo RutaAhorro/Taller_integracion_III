@@ -407,7 +407,7 @@ func envFloat(name string, fallback float64) float64 {
 	return value
 }
 
-func writeJSONResponse(w http.ResponseWriter, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(payload)
+func writeJSONResponse(respuesta http.ResponseWriter, payload any) {
+	respuesta.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(respuesta).Encode(payload)
 }

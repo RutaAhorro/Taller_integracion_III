@@ -7,15 +7,15 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
-func santaIsabelBody(t *testing.T, payload any) []byte {
-	t.Helper()
+func santaIsabelBody(prueba *testing.T, payload any) []byte {
+	prueba.Helper()
 	inner, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	outer, err := json.Marshal(string(inner))
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	return []byte("<script>window.__renderData = " + string(outer) + ";</script>")
 }
@@ -60,14 +60,14 @@ func santaIsabelPayload() map[string]any {
 	}
 }
 
-func TestSantaIsabelProductsDesdeRenderData(t *testing.T) {
-	body := santaIsabelBody(t, santaIsabelPayload())
-	products := extract.SantaIsabelProducts(site(t, "santa_isabel_rsc"), body, mustURL(t, "https://www.santaisabel.cl/despensa"))
+func TestSantaIsabelProductsDesdeRenderData(prueba *testing.T) {
+	body := santaIsabelBody(prueba, santaIsabelPayload())
+	products := extract.SantaIsabelProducts(site(prueba, "santa_isabel_rsc"), body, mustURL(prueba, "https://www.santaisabel.cl/despensa"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	product := products[0]
-	assertProductFields(t, product, map[string]string{
+	assertProductFields(prueba, product, map[string]string{
 		"producto":  "Cafe molido 250 g",
 		"ean":       "7800000000001",
 		"sku":       "sku-1",
@@ -78,20 +78,20 @@ func TestSantaIsabelProductsDesdeRenderData(t *testing.T) {
 		"imagen":    "https://img.test/cafe.jpg",
 	})
 	if value, ok := floatValue(product.Precio); !ok || value != 990 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 	if value, ok := floatValue(product.PrecioNormal); !ok || value != 1290 {
-		t.Errorf("precio_normal = %v", product.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", product.PrecioNormal)
 	}
 	if value, ok := floatValue(product.PrecioOferta); !ok || value != 990 {
-		t.Errorf("precio_oferta = %v", product.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v", product.PrecioOferta)
 	}
 	if value, ok := boolValue(product.EnStock); !ok || !value {
-		t.Errorf("en_stock = %v", product.EnStock)
+		prueba.Errorf("en_stock = %v", product.EnStock)
 	}
 }
 
-func TestSantaIsabelProductsDesdeJSONLD(t *testing.T) {
+func TestSantaIsabelProductsDesdeJSONLD(prueba *testing.T) {
 	body := []byte(`<script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -134,35 +134,35 @@ func TestSantaIsabelProductsDesdeJSONLD(t *testing.T) {
   ]
 }
 </script>`)
-	products := extract.SantaIsabelProducts(site(t, "santa_isabel_rsc"), body, mustURL(t, "https://www.santaisabel.cl/frutas-y-verduras"))
+	products := extract.SantaIsabelProducts(site(prueba, "santa_isabel_rsc"), body, mustURL(prueba, "https://www.santaisabel.cl/frutas-y-verduras"))
 	if len(products) != 2 {
-		t.Fatalf("productos = %d, want 2", len(products))
+		prueba.Fatalf("productos = %d, want 2", len(products))
 	}
 	first := products[0]
-	assertProductFields(t, first, map[string]string{
+	assertProductFields(prueba, first, map[string]string{
 		"producto": "Plátano Extra Granel (1 a 2 un. Aprox)",
 		"marca":    "Frutas y Verduras Propias",
 		"sku":      "platano-granel",
 		"url":      "https://www.santaisabel.cl/platano-granel/p",
 	})
 	if value, ok := floatValue(first.Precio); !ok || value != 745 {
-		t.Errorf("precio = %v", first.Precio)
+		prueba.Errorf("precio = %v", first.Precio)
 	}
 	if value, ok := floatValue(first.PrecioNormal); !ok || value != 745 {
-		t.Errorf("precio_normal = %v", first.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", first.PrecioNormal)
 	}
 	if first.PrecioOferta != nil {
-		t.Errorf("precio_oferta = %v, want nil", first.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v, want nil", first.PrecioOferta)
 	}
 	if value, ok := boolValue(first.EnStock); !ok || !value {
-		t.Errorf("en_stock = %v", first.EnStock)
+		prueba.Errorf("en_stock = %v", first.EnStock)
 	}
 	if value, ok := boolValue(products[1].EnStock); !ok || value {
-		t.Errorf("en_stock segundo = %v", products[1].EnStock)
+		prueba.Errorf("en_stock segundo = %v", products[1].EnStock)
 	}
 }
 
-func TestSantaIsabelSoloUsaAlVendedorPropio(t *testing.T) {
+func TestSantaIsabelSoloUsaAlVendedorPropio(prueba *testing.T) {
 	payload := map[string]any{
 		"plp": map[string]any{
 			"plp_products": map[string]any{
@@ -185,14 +185,14 @@ func TestSantaIsabelSoloUsaAlVendedorPropio(t *testing.T) {
 			},
 		},
 	}
-	body := santaIsabelBody(t, payload)
-	if products := extract.SantaIsabelProducts(site(t, "santa_isabel_rsc"), body, mustURL(t, "https://www.santaisabel.cl/despensa")); len(products) != 0 {
-		t.Fatalf("productos = %+v, want 0", products)
+	body := santaIsabelBody(prueba, payload)
+	if products := extract.SantaIsabelProducts(site(prueba, "santa_isabel_rsc"), body, mustURL(prueba, "https://www.santaisabel.cl/despensa")); len(products) != 0 {
+		prueba.Fatalf("productos = %+v, want 0", products)
 	}
 }
 
-func TestSantaIsabelSinDatosDevuelveVacio(t *testing.T) {
-	if products := extract.SantaIsabelProducts(site(t, "santa_isabel_rsc"), []byte("<html></html>"), mustURL(t, "https://www.santaisabel.cl/despensa")); len(products) != 0 {
-		t.Fatalf("productos = %+v, want 0", products)
+func TestSantaIsabelSinDatosDevuelveVacio(prueba *testing.T) {
+	if products := extract.SantaIsabelProducts(site(prueba, "santa_isabel_rsc"), []byte("<html></html>"), mustURL(prueba, "https://www.santaisabel.cl/despensa")); len(products) != 0 {
+		prueba.Fatalf("productos = %+v, want 0", products)
 	}
 }

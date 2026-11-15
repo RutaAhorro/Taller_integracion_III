@@ -22,71 +22,71 @@ var envKeys = []string{
 	"SCRAPER_ROBOTS_MAX_BYTES", "SCRAPER_BACKOFF_MIN_MS", "SCRAPER_BACKOFF_MAX_SECONDS",
 }
 
-func clearEnv(t *testing.T) {
-	t.Helper()
+func clearEnv(prueba *testing.T) {
+	prueba.Helper()
 	for _, key := range envKeys {
-		t.Setenv(key, "")
+		prueba.Setenv(key, "")
 	}
 }
 
-func TestFromEnvUsaLosValoresPorDefecto(t *testing.T) {
-	clearEnv(t)
+func TestFromEnvUsaLosValoresPorDefecto(prueba *testing.T) {
+	clearEnv(prueba)
 
 	cfg, err := config.FromEnv()
 	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
+		prueba.Fatalf("FromEnv() error = %v", err)
 	}
 	defaults := config.Default()
 	if cfg.Lease != defaults.Lease {
-		t.Errorf("Lease = %v, want %v", cfg.Lease, defaults.Lease)
+		prueba.Errorf("Lease = %v, want %v", cfg.Lease, defaults.Lease)
 	}
 	if cfg.BatchSize != defaults.BatchSize {
-		t.Errorf("BatchSize = %d, want %d", cfg.BatchSize, defaults.BatchSize)
+		prueba.Errorf("BatchSize = %d, want %d", cfg.BatchSize, defaults.BatchSize)
 	}
 	if cfg.QueueName != defaults.QueueName || cfg.Group != defaults.Group {
-		t.Errorf("cola/grupo = %q/%q", cfg.QueueName, cfg.Group)
+		prueba.Errorf("cola/grupo = %q/%q", cfg.QueueName, cfg.Group)
 	}
 	if cfg.CategoryDir != defaults.CategoryDir {
-		t.Errorf("CategoryDir = %q, want %q", cfg.CategoryDir, defaults.CategoryDir)
+		prueba.Errorf("CategoryDir = %q, want %q", cfg.CategoryDir, defaults.CategoryDir)
 	}
 	if cfg.LogLevel != slog.LevelInfo {
-		t.Errorf("LogLevel = %v", cfg.LogLevel)
+		prueba.Errorf("LogLevel = %v", cfg.LogLevel)
 	}
 	if cfg.MaxPages != config.DefaultMaxPages {
-		t.Errorf("MaxPages = %d, want %d", cfg.MaxPages, config.DefaultMaxPages)
+		prueba.Errorf("MaxPages = %d, want %d", cfg.MaxPages, config.DefaultMaxPages)
 	}
 }
 
-func TestFromEnvLeeValoresConfigurados(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SCRAPER_LEASE_MS", "90000")
-	t.Setenv("SCRAPER_API_BATCH_SIZE", "25")
-	t.Setenv("SCRAPER_MAX_PAGES", "7")
-	t.Setenv("LOG_LEVEL", "debug")
-	t.Setenv("SCRAPER_CATEGORY_DIR", "/app/research")
+func TestFromEnvLeeValoresConfigurados(prueba *testing.T) {
+	clearEnv(prueba)
+	prueba.Setenv("SCRAPER_LEASE_MS", "90000")
+	prueba.Setenv("SCRAPER_API_BATCH_SIZE", "25")
+	prueba.Setenv("SCRAPER_MAX_PAGES", "7")
+	prueba.Setenv("LOG_LEVEL", "debug")
+	prueba.Setenv("SCRAPER_CATEGORY_DIR", "/app/research")
 
 	cfg, err := config.FromEnv()
 	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
+		prueba.Fatalf("FromEnv() error = %v", err)
 	}
 	if cfg.Lease != 90*time.Second {
-		t.Errorf("Lease = %v", cfg.Lease)
+		prueba.Errorf("Lease = %v", cfg.Lease)
 	}
 	if cfg.BatchSize != 25 {
-		t.Errorf("BatchSize = %d", cfg.BatchSize)
+		prueba.Errorf("BatchSize = %d", cfg.BatchSize)
 	}
 	if cfg.MaxPages != 7 {
-		t.Errorf("MaxPages = %d", cfg.MaxPages)
+		prueba.Errorf("MaxPages = %d", cfg.MaxPages)
 	}
 	if cfg.LogLevel != slog.LevelDebug {
-		t.Errorf("LogLevel = %v", cfg.LogLevel)
+		prueba.Errorf("LogLevel = %v", cfg.LogLevel)
 	}
 	if cfg.CategoryDir != "/app/research" {
-		t.Errorf("CategoryDir = %q", cfg.CategoryDir)
+		prueba.Errorf("CategoryDir = %q", cfg.CategoryDir)
 	}
 }
 
-func TestValidateRechazaValoresFueraDeRango(t *testing.T) {
+func TestValidateRechazaValoresFueraDeRango(prueba *testing.T) {
 	cases := map[string]func(*config.Config){
 		"lease corta":         func(cfg *config.Config) { cfg.Lease = time.Second },
 		"batch cero":          func(cfg *config.Config) { cfg.BatchSize = 0 },
@@ -98,26 +98,26 @@ func TestValidateRechazaValoresFueraDeRango(t *testing.T) {
 		"backoff maximo cero": func(cfg *config.Config) { cfg.BackoffMax = 0 },
 	}
 	for name, mutate := range cases {
-		t.Run(name, func(t *testing.T) {
+		prueba.Run(name, func(prueba *testing.T) {
 			cfg := config.Default()
 			mutate(&cfg)
 			if err := cfg.Validate(); err == nil {
-				t.Fatal("Validate() debió rechazar la configuración")
+				prueba.Fatal("Validate() debió rechazar la configuración")
 			}
 		})
 	}
 }
 
-func TestDefaultEsValido(t *testing.T) {
+func TestDefaultEsValido(prueba *testing.T) {
 	if err := config.Default().Validate(); err != nil {
-		t.Fatalf("Default() no es válido: %v", err)
+		prueba.Fatalf("Default() no es válido: %v", err)
 	}
 }
 
-func TestFromEnvRechazaLimitesInvalidos(t *testing.T) {
-	clearEnv(t)
-	t.Setenv("SCRAPER_API_BATCH_SIZE", "0")
+func TestFromEnvRechazaLimitesInvalidos(prueba *testing.T) {
+	clearEnv(prueba)
+	prueba.Setenv("SCRAPER_API_BATCH_SIZE", "0")
 	if _, err := config.FromEnv(); err == nil {
-		t.Fatal("FromEnv() debió rechazar batch size 0")
+		prueba.Fatal("FromEnv() debió rechazar batch size 0")
 	}
 }

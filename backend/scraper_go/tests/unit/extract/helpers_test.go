@@ -7,11 +7,11 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 )
 
-func mustURL(t *testing.T, rawURL string) *url.URL {
-	t.Helper()
+func mustURL(prueba *testing.T, rawURL string) *url.URL {
+	prueba.Helper()
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		t.Fatalf("url.Parse(%q) error = %v", rawURL, err)
+		prueba.Fatalf("url.Parse(%q) error = %v", rawURL, err)
 	}
 	return parsed
 }
@@ -41,8 +41,8 @@ func boolValue(value *bool) (bool, bool) {
 	return *value, true
 }
 
-func assertProductFields(t *testing.T, product domain.Product, checks map[string]string) {
-	t.Helper()
+func assertProductFields(prueba *testing.T, product domain.Product, checks map[string]string) {
+	prueba.Helper()
 	for name, want := range checks {
 		var got string
 		switch name {
@@ -66,7 +66,7 @@ func assertProductFields(t *testing.T, product domain.Product, checks map[string
 			got = product.Categoria
 		}
 		if got != want {
-			t.Errorf("%s = %q, want %q", name, got, want)
+			prueba.Errorf("%s = %q, want %q", name, got, want)
 		}
 	}
 }

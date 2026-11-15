@@ -6,12 +6,12 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
-func acuentaSite(t *testing.T) string {
-	t.Helper()
+func acuentaSite(prueba *testing.T) string {
+	prueba.Helper()
 	return "acuenta_rsc"
 }
 
-func TestAcuentaProductsDesdeTarjetas(t *testing.T) {
+func TestAcuentaProductsDesdeTarjetas(prueba *testing.T) {
 	body := `
 	<main><div class="product-card">
 	  <a href="/p/helado-chocolate-1-l-savory-1075736">Helado Chocolate Suizo 1 L Savory</a>
@@ -19,12 +19,12 @@ func TestAcuentaProductsDesdeTarjetas(t *testing.T) {
 	  <div>$2.950 ($3.490) $2.950 por LT</div>
 	</div></main>
 	`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04?currentPage=2"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04?currentPage=2"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	product := products[0]
-	assertProductFields(t, product, map[string]string{
+	assertProductFields(prueba, product, map[string]string{
 		"producto": "Helado Chocolate Suizo 1 L Savory",
 		"sku":      "ACUENTA-1075736",
 		"marca":    "Savory",
@@ -32,17 +32,17 @@ func TestAcuentaProductsDesdeTarjetas(t *testing.T) {
 		"imagen":   "https://www.acuenta.cl/images/helado.webp",
 	})
 	if value, ok := floatValue(product.Precio); !ok || value != 2950 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 	if value, ok := floatValue(product.PrecioNormal); !ok || value != 3490 {
-		t.Errorf("precio_normal = %v", product.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", product.PrecioNormal)
 	}
 	if value, ok := floatValue(product.PrecioOferta); !ok || value != 2950 {
-		t.Errorf("precio_oferta = %v", product.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v", product.PrecioOferta)
 	}
 }
 
-func TestAcuentaFusionaLaOfertaVisibleEnElProductoRSC(t *testing.T) {
+func TestAcuentaFusionaLaOfertaVisibleEnElProductoRSC(prueba *testing.T) {
 	body := `<main><div class="product-card">` +
 		`<a href="/p/helado-chocolate-1-l-savory-1075736">Helado Chocolate Suizo 1 L Savory</a>` +
 		`<div>$2.590 ($3.490) $2.590 por LT</div>` +
@@ -52,23 +52,23 @@ func TestAcuentaFusionaLaOfertaVisibleEnElProductoRSC(t *testing.T) {
 		`\"slug\":\"helado-chocolate-1-l-savory-1075736\",\"brand\":\"Savory\",\"stock\":1,` +
 		`\"priceBeforeTaxes\":3490,\"promotion\":\"$p1\"` +
 		`])</script>`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04?currentPage=2"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04?currentPage=2"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	product := products[0]
 	if value, ok := floatValue(product.Precio); !ok || value != 2590 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 	if value, ok := floatValue(product.PrecioNormal); !ok || value != 3490 {
-		t.Errorf("precio_normal = %v", product.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", product.PrecioNormal)
 	}
 	if value, ok := floatValue(product.PrecioOferta); !ok || value != 2590 {
-		t.Errorf("precio_oferta = %v", product.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v", product.PrecioOferta)
 	}
 }
 
-func TestAcuentaNoCruzaLosLimitesDeLosScriptsRSC(t *testing.T) {
+func TestAcuentaNoCruzaLosLimitesDeLosScriptsRSC(prueba *testing.T) {
 	body := `<script>self.__next_f.push([1,` +
 		`\"name\":\"Producto limpio\",\"sku\":\"123\",\"ean\":[\"7800000000001\"],\"maxQty\":1,` +
 		`\"slug\":\"producto-limpio-123\",\"brand\":\"Marca\",\"stock\":1,` +
@@ -76,17 +76,17 @@ func TestAcuentaNoCruzaLosLimitesDeLosScriptsRSC(t *testing.T) {
 		`])</script><script>self.__next_f.push([1,` +
 		`\"name\":\"otro bloque del runtime\"` +
 		`])</script>`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
-	assertProductFields(t, products[0], map[string]string{
+	assertProductFields(prueba, products[0], map[string]string{
 		"producto": "Producto Limpio",
 		"ean":      "7800000000001",
 	})
 }
 
-func TestAcuentaUsaLosCamposQueSiguenAlSKU(t *testing.T) {
+func TestAcuentaUsaLosCamposQueSiguenAlSKU(prueba *testing.T) {
 	body := `<script>self.__next_f.push([1,` +
 		`\"name\":\"Congelados\",\"slug\":\"congelados/04\",` +
 		`\"brand\":\"Categoria\",\"stock\":1,\"priceBeforeTaxes\":5000,` +
@@ -95,21 +95,21 @@ func TestAcuentaUsaLosCamposQueSiguenAlSKU(t *testing.T) {
 		`\"brand\":\"Frutos del Maipo\",\"stock\":25,\"priceBeforeTaxes\":2000,` +
 		`\"promotion\":null` +
 		`])</script>`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	product := products[0]
-	assertProductFields(t, product, map[string]string{
+	assertProductFields(prueba, product, map[string]string{
 		"producto": "Salteado Chapsui Wok Congelado 500 G Frutos Del Maipo",
 		"url":      "https://www.acuenta.cl/p/salteado-chapsui-wok-congelado-500-g-frutos-del-maipo-434645",
 	})
 	if value, ok := floatValue(product.Precio); !ok || value != 2000 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 }
 
-func TestAcuentaResuelveReferenciasDelPayloadRSC(t *testing.T) {
+func TestAcuentaResuelveReferenciasDelPayloadRSC(prueba *testing.T) {
 	cases := []struct {
 		name      string
 		body      string
@@ -158,31 +158,31 @@ func TestAcuentaResuelveReferenciasDelPayloadRSC(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(tc.body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04"))
+		prueba.Run(tc.name, func(prueba *testing.T) {
+			products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(tc.body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04"))
 			if len(products) != 1 {
-				t.Fatalf("productos = %d, want 1", len(products))
+				prueba.Fatalf("productos = %d, want 1", len(products))
 			}
 			product := products[0]
 			if got := stringValue(product.EanGtin); got != tc.wantEAN {
-				t.Errorf("ean = %q, want %q", got, tc.wantEAN)
+				prueba.Errorf("ean = %q, want %q", got, tc.wantEAN)
 			}
 			if value, ok := floatValue(product.Precio); !ok || value != tc.wantPrice {
-				t.Errorf("precio = %v, want %v", product.Precio, tc.wantPrice)
+				prueba.Errorf("precio = %v, want %v", product.Precio, tc.wantPrice)
 			}
 			if got := product.PrecioOferta != nil; got != tc.wantOffer {
-				t.Errorf("precio_oferta = %v, want oferta=%t", product.PrecioOferta, tc.wantOffer)
+				prueba.Errorf("precio_oferta = %v, want oferta=%t", product.PrecioOferta, tc.wantOffer)
 			}
 			if tc.wantImage != "" {
 				if got := stringValue(product.Imagen); got != tc.wantImage {
-					t.Errorf("imagen = %q, want %q", got, tc.wantImage)
+					prueba.Errorf("imagen = %q, want %q", got, tc.wantImage)
 				}
 			}
 		})
 	}
 }
 
-func TestAcuentaNoUsaElPrecioMultiunidadComoOferta(t *testing.T) {
+func TestAcuentaNoUsaElPrecioMultiunidadComoOferta(prueba *testing.T) {
 	body := `<script>self.__next_f.push([1,` +
 		`\"name\":\"Producto pack\",\"sku\":\"456\",\"ean\":null,\"maxQty\":1,` +
 		`\"slug\":\"producto-pack-456\",\"brand\":\"Marca\",\"stock\":1,` +
@@ -192,40 +192,40 @@ func TestAcuentaNoUsaElPrecioMultiunidadComoOferta(t *testing.T) {
 		`\nc0:[\"$c1\"]` +
 		`\np1:{\"type\":\"nx$\",\"conditions\":\"$c0\"}` +
 		`])</script>`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	if products[0].PrecioOferta != nil {
-		t.Errorf("precio_oferta = %v, want nil", products[0].PrecioOferta)
+		prueba.Errorf("precio_oferta = %v, want nil", products[0].PrecioOferta)
 	}
 }
 
-func TestAcuentaCodificaLosCorchetesDeLaImagen(t *testing.T) {
+func TestAcuentaCodificaLosCorchetesDeLaImagen(prueba *testing.T) {
 	body := `<script>self.__next_f.push([1,` +
 		`\"name\":\"Producto imagen\",\"sku\":\"4756977\",\"ean\":null,\"maxQty\":1,` +
 		`\"slug\":\"producto-imagen-4756977\",\"brand\":\"Marca\",\"stock\":1,` +
 		`\"priceBeforeTaxes\":990,\"promotion\":null` +
 		`])</script>` +
 		`d5:["https://images.lider.cl/wmtcl?source=url[file:/productos/4756977aa.jpg]\u0026sink"]`
-	products := extract.AcuentaProducts(site(t, acuentaSite(t)), []byte(body), mustURL(t, "https://www.acuenta.cl/ca/congelados/04"))
+	products := extract.AcuentaProducts(site(prueba, acuentaSite(prueba)), []byte(body), mustURL(prueba, "https://www.acuenta.cl/ca/congelados/04"))
 	if len(products) != 1 {
-		t.Fatalf("productos = %d, want 1", len(products))
+		prueba.Fatalf("productos = %d, want 1", len(products))
 	}
 	want := "https://images.lider.cl/wmtcl?source=url%5Bfile:/productos/4756977aa.jpg%5D&sink"
-	assertProductFields(t, products[0], map[string]string{"imagen": want})
+	assertProductFields(prueba, products[0], map[string]string{"imagen": want})
 }
 
-func TestAcuentaProductSeleccionaLaFichaSolicitada(t *testing.T) {
+func TestAcuentaProductSeleccionaLaFichaSolicitada(prueba *testing.T) {
 	body := `<script>self.__next_f.push([1,` +
 		`\"sku\":\"1075736\",\"name\":\"Helado Chocolate 1 L Savory\",\"ean\":null,\"maxQty\":1,` +
 		`\"slug\":\"helado-chocolate-1-l-savory-1075736\",\"brand\":\"Savory\",\"stock\":1,` +
 		`\"priceBeforeTaxes\":3490,\"promotion\":null` +
 		`])</script>`
 	requested := "https://www.acuenta.cl/p/helado-chocolate-1-l-savory-1075736"
-	product := extract.AcuentaProduct(site(t, acuentaSite(t)), []byte(body), requested, mustURL(t, requested))
+	product := extract.AcuentaProduct(site(prueba, acuentaSite(prueba)), []byte(body), requested, mustURL(prueba, requested))
 	if product == nil {
-		t.Fatal("AcuentaProduct() = nil")
+		prueba.Fatal("AcuentaProduct() = nil")
 	}
-	assertProductFields(t, *product, map[string]string{"producto": "Helado Chocolate 1 L Savory"})
+	assertProductFields(prueba, *product, map[string]string{"producto": "Helado Chocolate 1 L Savory"})
 }

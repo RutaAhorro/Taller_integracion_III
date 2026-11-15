@@ -18,12 +18,12 @@ type fakeFetcher struct {
 	calls     []string
 }
 
-func (f *fakeFetcher) Fetch(_ context.Context, rawURL string) (*crawler.Response, error) {
-	f.calls = append(f.calls, rawURL)
-	if err, ok := f.errs[rawURL]; ok {
+func (falso *fakeFetcher) Fetch(_ context.Context, rawURL string) (*crawler.Response, error) {
+	falso.calls = append(falso.calls, rawURL)
+	if err, ok := falso.errs[rawURL]; ok {
 		return nil, err
 	}
-	if response, ok := f.responses[rawURL]; ok {
+	if response, ok := falso.responses[rawURL]; ok {
 		return response, nil
 	}
 	return &crawler.Response{URL: mustURL(rawURL), Status: 404}, nil
@@ -50,14 +50,14 @@ type categoryRunner interface {
 	Run(context.Context, domain.Job, spiders.Emitter) error
 }
 
-func collect(t *testing.T, spider categoryRunner, job domain.Job) []domain.Item {
-	t.Helper()
+func collect(prueba *testing.T, spider categoryRunner, job domain.Job) []domain.Item {
+	prueba.Helper()
 	var items []domain.Item
 	if err := spider.Run(context.Background(), job, func(item domain.Item) error {
 		items = append(items, item)
 		return nil
 	}); err != nil {
-		t.Fatalf("%s.Run() error = %v", spider.Name(), err)
+		prueba.Fatalf("%s.Run() error = %v", spider.Name(), err)
 	}
 	return items
 }

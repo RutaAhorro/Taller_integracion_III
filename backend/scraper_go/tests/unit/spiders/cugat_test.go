@@ -16,39 +16,39 @@ func cugatCategoryBody(name, path string, price string) string {
 </div></div>`
 }
 
-func TestCugatProductMode(t *testing.T) {
+func TestCugatProductMode(prueba *testing.T) {
 	productURL := "https://cugat.cl/producto/bebida-cugat/"
 	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
 		productURL: response(productURL, `<script type="application/ld+json">
 {"@type":"Product","name":"Bebida Cugat","url":"https://cugat.cl/producto/bebida-cugat/","offers":{"price":"990"}}
 </script>`),
 	}}
-	spider := spiders.NewCugat(fetcher, t.TempDir(), 100, quietLogger())
-	items := collect(t, spider, domain.Job{ProductURL: productURL})
+	spider := spiders.NewCugat(fetcher, prueba.TempDir(), 100, quietLogger())
+	items := collect(prueba, spider, domain.Job{ProductURL: productURL})
 	if len(items) != 1 {
-		t.Fatalf("items = %d", len(items))
+		prueba.Fatalf("items = %d", len(items))
 	}
 	if items[0].Producto != "Bebida Cugat" || items[0].Categoria != "producto" || items[0].Supermercado != "Cugat" {
-		t.Errorf("item = %+v", items[0])
+		prueba.Errorf("item = %+v", items[0])
 	}
 }
 
-func TestCugatPaginacionDeCategoria(t *testing.T) {
+func TestCugatPaginacionDeCategoria(prueba *testing.T) {
 	categoryURL := "https://cugat.cl/categoria-producto/bebidas/"
 	page2 := "https://cugat.cl/categoria-producto/bebidas/page/2/"
-	t.Setenv("CUGAT_CATEGORY_URLS", categoryURL)
+	prueba.Setenv("CUGAT_CATEGORY_URLS", categoryURL)
 	fetcher := &fakeFetcher{responses: map[string]*crawler.Response{
 		categoryURL: response(categoryURL, cugatCategoryBody("Uno", "uno", "$1.000")),
 		page2:       response(page2, cugatCategoryBody("Dos", "dos", "$2.000")),
 	}}
-	spider := spiders.NewCugat(fetcher, t.TempDir(), 100, quietLogger())
-	items := collect(t, spider, domain.Job{})
+	spider := spiders.NewCugat(fetcher, prueba.TempDir(), 100, quietLogger())
+	items := collect(prueba, spider, domain.Job{})
 	if len(items) != 2 {
-		t.Fatalf("items = %d", len(items))
+		prueba.Fatalf("items = %d", len(items))
 	}
 	for _, item := range items {
 		if item.Categoria != "bebidas" || item.Supermercado != "Cugat" {
-			t.Errorf("item = %+v", item)
+			prueba.Errorf("item = %+v", item)
 		}
 	}
 }

@@ -9,16 +9,16 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/input"
 )
 
-func TestCollectCombinaArgumentosYArchivo(t *testing.T) {
-	file := filepath.Join(t.TempDir(), "urls.txt")
+func TestCollectCombinaArgumentosYArchivo(prueba *testing.T) {
+	file := filepath.Join(prueba.TempDir(), "urls.txt")
 	body := "# comentario\nhttps://www.jumbo.cl/uno\n\n  https://www.jumbo.cl/dos  \n"
 	if err := os.WriteFile(file, []byte(body), 0o644); err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 
 	got, err := input.Collect([]string{"https://www.jumbo.cl/inicial"}, file)
 	if err != nil {
-		t.Fatalf("Collect() error = %v", err)
+		prueba.Fatalf("Collect() error = %v", err)
 	}
 	want := []string{
 		"https://www.jumbo.cl/inicial",
@@ -26,22 +26,22 @@ func TestCollectCombinaArgumentosYArchivo(t *testing.T) {
 		"https://www.jumbo.cl/dos",
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Errorf("Collect() = %#v, want %#v", got, want)
+		prueba.Errorf("Collect() = %#v, want %#v", got, want)
 	}
 }
 
-func TestCollectSinArchivoConservaLosArgumentos(t *testing.T) {
+func TestCollectSinArchivoConservaLosArgumentos(prueba *testing.T) {
 	got, err := input.Collect([]string{"https://www.jumbo.cl/uno"}, "")
 	if err != nil {
-		t.Fatalf("Collect() error = %v", err)
+		prueba.Fatalf("Collect() error = %v", err)
 	}
 	if !reflect.DeepEqual(got, []string{"https://www.jumbo.cl/uno"}) {
-		t.Errorf("Collect() = %#v", got)
+		prueba.Errorf("Collect() = %#v", got)
 	}
 }
 
-func TestCollectRechazaArchivoInexistente(t *testing.T) {
-	if _, err := input.Collect(nil, filepath.Join(t.TempDir(), "no-existe.txt")); err == nil {
-		t.Fatal("Collect() debió fallar con un archivo inexistente")
+func TestCollectRechazaArchivoInexistente(prueba *testing.T) {
+	if _, err := input.Collect(nil, filepath.Join(prueba.TempDir(), "no-existe.txt")); err == nil {
+		prueba.Fatal("Collect() debió fallar con un archivo inexistente")
 	}
 }

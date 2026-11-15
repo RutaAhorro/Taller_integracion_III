@@ -32,32 +32,32 @@ func receipt(count int) map[string]any {
 	}
 }
 
-func TestIngestBatchAndFinalizeWork(t *testing.T) {
+func TestIngestBatchAndFinalizeWork(prueba *testing.T) {
 	var (
 		received    ingestPayload
 		idempotency string
 		final       map[string]any
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/scraper/trabajos/work-1/productos":
-			if got := r.Header.Get("Authorization"); got != "Bearer token" {
-				t.Errorf("Authorization = %q", got)
+		case peticion.Method == http.MethodPost && peticion.URL.Path == "/api/v1/scraper/trabajos/work-1/productos":
+			if got := peticion.Header.Get("Authorization"); got != "Bearer token" {
+				prueba.Errorf("Authorization = %q", got)
 			}
-			idempotency = r.Header.Get("Idempotency-Key")
-			if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-				t.Errorf("decode payload: %v", err)
+			idempotency = peticion.Header.Get("Idempotency-Key")
+			if err := json.NewDecoder(peticion.Body).Decode(&received); err != nil {
+				prueba.Errorf("decode payload: %v", err)
 			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(receipt(len(received.Productos)))
-		case r.Method == http.MethodPut && r.URL.Path == "/api/v1/scraper/trabajos/work-1/finalizar":
-			if err := json.NewDecoder(r.Body).Decode(&final); err != nil {
-				t.Errorf("decode finalizar: %v", err)
+			respuesta.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(respuesta).Encode(receipt(len(received.Productos)))
+		case peticion.Method == http.MethodPut && peticion.URL.Path == "/api/v1/scraper/trabajos/work-1/finalizar":
+			if err := json.NewDecoder(peticion.Body).Decode(&final); err != nil {
+				prueba.Errorf("decode finalizar: %v", err)
 			}
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "work-1", "estado": "completado"})
+			respuesta.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(respuesta).Encode(map[string]any{"id": "work-1", "estado": "completado"})
 		default:
-			http.NotFound(w, r)
+			http.NotFound(respuesta, peticion)
 		}
 	}))
 	defer server.Close()
@@ -70,42 +70,42 @@ func TestIngestBatchAndFinalizeWork(t *testing.T) {
 	}
 	result, err := client.IngestBatch(context.Background(), products, &supermarket, "work-1", "batch-1")
 	if err != nil {
-		t.Fatalf("IngestBatch() error = %v", err)
+		prueba.Fatalf("IngestBatch() error = %v", err)
 	}
 	if idempotency != "batch-1" {
-		t.Errorf("Idempotency-Key = %q", idempotency)
+		prueba.Errorf("Idempotency-Key = %q", idempotency)
 	}
 	if received.Supermercado == nil || *received.Supermercado != "Jumbo" {
-		t.Errorf("supermercado = %v", received.Supermercado)
+		prueba.Errorf("supermercado = %v", received.Supermercado)
 	}
 	if len(received.Productos) != 2 || received.Productos[1].Precio != nil {
-		t.Errorf("productos = %+v", received.Productos)
+		prueba.Errorf("productos = %+v", received.Productos)
 	}
 	if result["insertados"] != float64(2) {
-		t.Errorf("resultado = %+v", result)
+		prueba.Errorf("resultado = %+v", result)
 	}
 
 	blocked := 4
 	closed, err := client.FinalizeWork(context.Background(), "work-1", "completado", nil, &blocked, "")
 	if err != nil {
-		t.Fatalf("FinalizeWork() error = %v", err)
+		prueba.Fatalf("FinalizeWork() error = %v", err)
 	}
 	if closed["estado"] != "completado" {
-		t.Errorf("estado = %v", closed["estado"])
+		prueba.Errorf("estado = %v", closed["estado"])
 	}
 	if final["respuestas_bloqueadas"] != float64(4) {
-		t.Errorf("respuestas_bloqueadas = %v", final["respuestas_bloqueadas"])
+		prueba.Errorf("respuestas_bloqueadas = %v", final["respuestas_bloqueadas"])
 	}
 }
 
-func TestIngestBatchLimitaLasColumnasDeLaBase(t *testing.T) {
+func TestIngestBatchLimitaLasColumnasDeLaBase(prueba *testing.T) {
 	var received ingestPayload
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Errorf("decode payload: %v", err)
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		if err := json.NewDecoder(peticion.Body).Decode(&received); err != nil {
+			prueba.Errorf("decode payload: %v", err)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(receipt(len(received.Productos)))
+		respuesta.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(respuesta).Encode(receipt(len(received.Productos)))
 	}))
 	defer server.Close()
 
@@ -127,11 +127,11 @@ func TestIngestBatchLimitaLasColumnasDeLaBase(t *testing.T) {
 		URLProducto: &productURL,
 	}}, nil, "work-1", "batch-1")
 	if err != nil {
-		t.Fatalf("IngestBatch() error = %v", err)
+		prueba.Fatalf("IngestBatch() error = %v", err)
 	}
 
 	if len(received.Productos) != 2 {
-		t.Fatalf("productos = %d", len(received.Productos))
+		prueba.Fatalf("productos = %d", len(received.Productos))
 	}
 	product := received.Productos[0]
 	checks := []struct {
@@ -149,15 +149,15 @@ func TestIngestBatchLimitaLasColumnasDeLaBase(t *testing.T) {
 	}
 	for _, check := range checks {
 		if got := len([]rune(check.got)); got != check.max {
-			t.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.max)
+			prueba.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.max)
 		}
 	}
 	if got := received.Productos[1].SKU; got == nil || *got != "1993238" {
-		t.Errorf("sku derivado de URL = %v, want 1993238", got)
+		prueba.Errorf("sku derivado de URL = %v, want 1993238", got)
 	}
 }
 
-func TestIngestBatchVacioNoLlamaALaAPI(t *testing.T) {
+func TestIngestBatchVacioNoLlamaALaAPI(prueba *testing.T) {
 	calls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		calls++
@@ -167,17 +167,17 @@ func TestIngestBatchVacioNoLlamaALaAPI(t *testing.T) {
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	result, err := client.IngestBatch(context.Background(), nil, nil, "work-1", "batch-1")
 	if err != nil {
-		t.Fatalf("IngestBatch() error = %v", err)
+		prueba.Fatalf("IngestBatch() error = %v", err)
 	}
 	if calls != 0 {
-		t.Errorf("calls = %d, want 0", calls)
+		prueba.Errorf("calls = %d, want 0", calls)
 	}
 	if result["total_recibidos"] != 0 {
-		t.Errorf("resultado = %+v", result)
+		prueba.Errorf("resultado = %+v", result)
 	}
 }
 
-func TestIngestBatchRechazaRecibosInconsistentes(t *testing.T) {
+func TestIngestBatchRechazaRecibosInconsistentes(prueba *testing.T) {
 	cases := map[string]map[string]any{
 		"total distinto": {
 			"total_recibidos":     0,
@@ -194,35 +194,35 @@ func TestIngestBatchRechazaRecibosInconsistentes(t *testing.T) {
 		},
 	}
 	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(body)
+		prueba.Run(name, func(prueba *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
+				respuesta.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(respuesta).Encode(body)
 			}))
 			defer server.Close()
 
 			client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 			_, err := client.IngestBatch(context.Background(), []domain.Product{{Producto: "Leche"}}, nil, "work-1", "batch-1")
 			if err == nil {
-				t.Fatal("IngestBatch() debió rechazar un recibo inconsistente")
+				prueba.Fatal("IngestBatch() debió rechazar un recibo inconsistente")
 			}
 		})
 	}
 }
 
-func TestIngestBatchRechazaJSONInvalido(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte("no es json"))
+func TestIngestBatchRechazaJSONInvalido(prueba *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
+		_, _ = respuesta.Write([]byte("no es json"))
 	}))
 	defer server.Close()
 
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	if _, err := client.IngestBatch(context.Background(), []domain.Product{{Producto: "Leche"}}, nil, "work-1", "batch-1"); err == nil {
-		t.Fatal("IngestBatch() debió rechazar un JSON inválido")
+		prueba.Fatal("IngestBatch() debió rechazar un JSON inválido")
 	}
 }
 
-func TestPermanentAPIError(t *testing.T) {
+func TestPermanentAPIError(prueba *testing.T) {
 	cases := []struct {
 		name   string
 		status int
@@ -237,15 +237,15 @@ func TestPermanentAPIError(t *testing.T) {
 		{"servicio caído", http.StatusServiceUnavailable, "", false},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(tc.status)
+		prueba.Run(tc.name, func(prueba *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
+				respuesta.Header().Set("Content-Type", "application/json")
+				respuesta.WriteHeader(tc.status)
 				body := map[string]any{}
 				if tc.code != "" {
 					body["codigo"] = tc.code
 				}
-				_ = json.NewEncoder(w).Encode(body)
+				_ = json.NewEncoder(respuesta).Encode(body)
 			}))
 			defer server.Close()
 
@@ -253,16 +253,16 @@ func TestPermanentAPIError(t *testing.T) {
 			_, err := client.IngestBatch(context.Background(), []domain.Product{{Producto: "Leche"}}, nil, "work-1", "batch-1")
 			var apiErr *controlscraping.Error
 			if !errors.As(err, &apiErr) {
-				t.Fatalf("error = %T %v, want *Error", err, err)
+				prueba.Fatalf("error = %T %v, want *Error", err, err)
 			}
 			if got := apiErr.Permanent(); got != tc.want {
-				t.Errorf("Permanent() = %t, want %t (error=%v)", got, tc.want, apiErr)
+				prueba.Errorf("Permanent() = %t, want %t (error=%v)", got, tc.want, apiErr)
 			}
 		})
 	}
 }
 
-func TestGetWorkValidaEstadoYIdentidad(t *testing.T) {
+func TestGetWorkValidaEstadoYIdentidad(prueba *testing.T) {
 	cases := []struct {
 		name    string
 		payload map[string]any
@@ -274,35 +274,35 @@ func TestGetWorkValidaEstadoYIdentidad(t *testing.T) {
 		{"estado desconocido", map[string]any{"id": "work-1", "estado": "pendiente"}, true},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				_ = json.NewEncoder(w).Encode(tc.payload)
+		prueba.Run(tc.name, func(prueba *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
+				respuesta.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(respuesta).Encode(tc.payload)
 			}))
 			defer server.Close()
 
 			client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 			_, err := client.GetWork(context.Background(), "work-1")
 			if tc.wantErr && err == nil {
-				t.Fatal("GetWork() debió rechazar la respuesta")
+				prueba.Fatal("GetWork() debió rechazar la respuesta")
 			}
 			if !tc.wantErr && err != nil {
-				t.Fatalf("GetWork() error = %v", err)
+				prueba.Fatalf("GetWork() error = %v", err)
 			}
 		})
 	}
 }
 
-func TestFinalizeWorkExigeConfirmacion(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": "work-1", "estado": "en_progreso"})
+func TestFinalizeWorkExigeConfirmacion(prueba *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, _ *http.Request) {
+		respuesta.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(respuesta).Encode(map[string]any{"id": "work-1", "estado": "en_progreso"})
 	}))
 	defer server.Close()
 
 	client := controlscraping.New(server.URL+"/api/v1/scraper/productos", "", time.Second)
 	if _, err := client.FinalizeWork(context.Background(), "work-1", "completado", nil, nil, ""); err == nil {
-		t.Fatal("FinalizeWork() debió rechazar un cierre no confirmado")
+		prueba.Fatal("FinalizeWork() debió rechazar un cierre no confirmado")
 	}
 }
 

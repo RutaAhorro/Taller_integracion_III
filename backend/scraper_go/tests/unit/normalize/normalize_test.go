@@ -10,7 +10,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/normalize"
 )
 
-func TestPrecioCLP(t *testing.T) {
+func TestPrecioCLP(prueba *testing.T) {
 	cases := []struct {
 		value any
 		want  float64
@@ -26,18 +26,18 @@ func TestPrecioCLP(t *testing.T) {
 	for _, tc := range cases {
 		got := normalize.PrecioCLP(tc.value)
 		if got == nil || *got != tc.want {
-			t.Errorf("PrecioCLP(%v) = %v, want %v", tc.value, got, tc.want)
+			prueba.Errorf("PrecioCLP(%v) = %v, want %v", tc.value, got, tc.want)
 		}
 	}
 
 	for _, value := range []any{nil, true, "", "$abc", -1, math.Inf(1)} {
 		if got := normalize.PrecioCLP(value); got != nil {
-			t.Errorf("PrecioCLP(%v) = %v, want nil", value, *got)
+			prueba.Errorf("PrecioCLP(%v) = %v, want nil", value, *got)
 		}
 	}
 }
 
-func TestEAN(t *testing.T) {
+func TestEAN(prueba *testing.T) {
 	cases := []struct {
 		value any
 		want  string
@@ -48,48 +48,48 @@ func TestEAN(t *testing.T) {
 	for _, tc := range cases {
 		got := normalize.EAN(tc.value)
 		if got == nil || *got != tc.want {
-			t.Errorf("EAN(%v) = %v, want %q", tc.value, got, tc.want)
+			prueba.Errorf("EAN(%v) = %v, want %q", tc.value, got, tc.want)
 		}
 	}
 	if got := normalize.EAN("EAN-unknown"); got != nil {
-		t.Errorf("EAN inválido = %v, want nil", *got)
+		prueba.Errorf("EAN inválido = %v, want nil", *got)
 	}
 }
 
-func TestTexto(t *testing.T) {
+func TestTexto(prueba *testing.T) {
 	got := normalize.Texto("  Leche\n entera   1 L ")
 	if got == nil || *got != "Leche entera 1 L" {
-		t.Errorf("Texto = %v", got)
+		prueba.Errorf("Texto = %v", got)
 	}
 	if got := normalize.Texto(" \n "); got != nil {
-		t.Errorf("Texto vacío = %v, want nil", *got)
+		prueba.Errorf("Texto vacío = %v, want nil", *got)
 	}
 }
 
-func TestTruncar(t *testing.T) {
+func TestTruncar(prueba *testing.T) {
 	if got := normalize.Truncar("Leche entera", 100); got != "Leche entera" {
-		t.Errorf("Truncar corto = %q", got)
+		prueba.Errorf("Truncar corto = %q", got)
 	}
 	if got := normalize.Truncar("Leche entera", 5); got != "Leche" {
-		t.Errorf("Truncar = %q, want %q", got, "Leche")
+		prueba.Errorf("Truncar = %q, want %q", got, "Leche")
 	}
 	got := normalize.Truncar("Bebida azúcar 1 L", 8)
 	if got != "Bebida a" || !utf8.ValidString(got) {
-		t.Errorf("Truncar UTF-8 = %q, válido=%v", got, utf8.ValidString(got))
+		prueba.Errorf("Truncar UTF-8 = %q, válido=%v", got, utf8.ValidString(got))
 	}
 	if got := normalize.Truncar("Leche", 0); got != "" {
-		t.Errorf("Truncar con límite 0 = %q", got)
+		prueba.Errorf("Truncar con límite 0 = %q", got)
 	}
 	value := strings.Repeat("a", 120)
 	if got := normalize.TruncarPtr(&value, 100); got == nil || len(*got) != 100 {
-		t.Errorf("TruncarPtr = %v", got)
+		prueba.Errorf("TruncarPtr = %v", got)
 	}
 	if got := normalize.TruncarPtr(nil, 100); got != nil {
-		t.Errorf("TruncarPtr(nil) = %v", got)
+		prueba.Errorf("TruncarPtr(nil) = %v", got)
 	}
 }
 
-func TestSKUFromURL(t *testing.T) {
+func TestSKUFromURL(prueba *testing.T) {
 	cases := []struct {
 		url  string
 		want string
@@ -105,17 +105,17 @@ func TestSKUFromURL(t *testing.T) {
 		got := normalize.SKUFromURL(tc.url)
 		if tc.want == "" {
 			if got != nil {
-				t.Errorf("SKUFromURL(%q) = %q, want nil", tc.url, *got)
+				prueba.Errorf("SKUFromURL(%q) = %q, want nil", tc.url, *got)
 			}
 			continue
 		}
 		if got == nil || *got != tc.want {
-			t.Errorf("SKUFromURL(%q) = %v, want %q", tc.url, got, tc.want)
+			prueba.Errorf("SKUFromURL(%q) = %v, want %q", tc.url, got, tc.want)
 		}
 	}
 }
 
-func TestLimitarProductoRecortaColumnasYDerivaSKU(t *testing.T) {
+func TestLimitarProductoRecortaColumnasYDerivaSKU(prueba *testing.T) {
 	long := strings.Repeat("á", 400)
 	productURL := "https://www.santaisabel.cl/producto-1993238/p"
 	product := normalize.LimitarProducto(domain.Product{
@@ -144,10 +144,10 @@ func TestLimitarProductoRecortaColumnasYDerivaSKU(t *testing.T) {
 	}
 	for _, check := range checks {
 		if !utf8.ValidString(check.value) {
-			t.Errorf("%s no es UTF-8 válido", check.name)
+			prueba.Errorf("%s no es UTF-8 válido", check.name)
 		}
 		if got := utf8.RuneCountInString(check.value); got != check.limit {
-			t.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.limit)
+			prueba.Errorf("%s tiene %d caracteres, want %d", check.name, got, check.limit)
 		}
 	}
 
@@ -156,6 +156,6 @@ func TestLimitarProductoRecortaColumnasYDerivaSKU(t *testing.T) {
 		URLProducto: &productURL,
 	})
 	if derived.SKU == nil || *derived.SKU != "1993238" {
-		t.Errorf("SKU derivado = %v, want 1993238", derived.SKU)
+		prueba.Errorf("SKU derivado = %v, want 1993238", derived.SKU)
 	}
 }

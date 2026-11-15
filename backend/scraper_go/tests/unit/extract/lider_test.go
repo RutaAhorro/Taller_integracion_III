@@ -7,7 +7,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
-func TestLiderProductsDesdeTarjetas(t *testing.T) {
+func TestLiderProductsDesdeTarjetas(prueba *testing.T) {
 	body := `
 	<div data-testid="item-stack">
 	  <div role="group" data-item-id="item-1" data-dca-id="00079919219638">
@@ -35,43 +35,43 @@ func TestLiderProductsDesdeTarjetas(t *testing.T) {
 	  </div>
 	</div>
 	`
-	products := extract.LiderProducts(site(t, "lider_rsc"), []byte(body), mustURL(t, "https://super.lider.cl/browse/frutas/22884697_93034836?page=2"))
+	products := extract.LiderProducts(site(prueba, "lider_rsc"), []byte(body), mustURL(prueba, "https://super.lider.cl/browse/frutas/22884697_93034836?page=2"))
 	if len(products) != 2 {
-		t.Fatalf("productos = %d, want 2", len(products))
+		prueba.Fatalf("productos = %d, want 2", len(products))
 	}
 	product := products[0]
-	assertProductFields(t, product, map[string]string{
+	assertProductFields(prueba, product, map[string]string{
 		"ean":     "00079919219638",
 		"marca":   "Marca Lider",
 		"formato": "100g",
 		"imagen":  "https://super.lider.cl/images/cafe.webp",
 	})
 	if value, ok := floatValue(product.Precio); !ok || value != 26990 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 	if value, ok := floatValue(product.PrecioNormal); !ok || value != 30970 {
-		t.Errorf("precio_normal = %v", product.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", product.PrecioNormal)
 	}
 	if value, ok := floatValue(product.PrecioOferta); !ok || value != 26990 {
-		t.Errorf("precio_oferta = %v", product.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v", product.PrecioOferta)
 	}
 	if value, ok := boolValue(product.EnStock); !ok || !value {
-		t.Errorf("en_stock = %v", product.EnStock)
+		prueba.Errorf("en_stock = %v", product.EnStock)
 	}
 
 	second := products[1]
 	if value, ok := floatValue(second.Precio); !ok || value != 13350 {
-		t.Errorf("segundo precio = %v", second.Precio)
+		prueba.Errorf("segundo precio = %v", second.Precio)
 	}
 	if value, ok := floatValue(second.PrecioNormal); !ok || value != 13350 {
-		t.Errorf("segundo precio_normal = %v", second.PrecioNormal)
+		prueba.Errorf("segundo precio_normal = %v", second.PrecioNormal)
 	}
 	if second.PrecioOferta != nil {
-		t.Errorf("segundo precio_oferta = %v", second.PrecioOferta)
+		prueba.Errorf("segundo precio_oferta = %v", second.PrecioOferta)
 	}
 }
 
-func TestLiderProductsPrefiereItemsHidratados(t *testing.T) {
+func TestLiderProductsPrefiereItemsHidratados(prueba *testing.T) {
 	payload := map[string]any{
 		"props": map[string]any{
 			"pageProps": map[string]any{
@@ -109,36 +109,36 @@ func TestLiderProductsPrefiereItemsHidratados(t *testing.T) {
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	body := `<div data-testid="item-stack"><div role="group" data-item-id="tile-only" data-dca-id="00000000000001">` +
 		`<a href="/ip/cafe/tile-only/00000000000001"><span data-automation-id="product-title">Only card</span></a></div></div>` +
 		`<script id="__NEXT_DATA__" type="application/json">` + string(encoded) + `</script>`
 
-	products := extract.LiderProducts(site(t, "lider_rsc"), []byte(body), mustURL(t, "https://super.lider.cl/browse/frutas/22884697_93034836"))
+	products := extract.LiderProducts(site(prueba, "lider_rsc"), []byte(body), mustURL(prueba, "https://super.lider.cl/browse/frutas/22884697_93034836"))
 	if len(products) != 2 {
-		t.Fatalf("productos = %d, want 2", len(products))
+		prueba.Fatalf("productos = %d, want 2", len(products))
 	}
 	product := products[0]
 	if value, ok := floatValue(product.Precio); !ok || value != 26990 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
 	if value, ok := floatValue(product.PrecioNormal); !ok || value != 30970 {
-		t.Errorf("precio_normal = %v", product.PrecioNormal)
+		prueba.Errorf("precio_normal = %v", product.PrecioNormal)
 	}
 	if value, ok := floatValue(product.PrecioOferta); !ok || value != 26990 {
-		t.Errorf("precio_oferta = %v", product.PrecioOferta)
+		prueba.Errorf("precio_oferta = %v", product.PrecioOferta)
 	}
-	assertProductFields(t, product, map[string]string{
+	assertProductFields(prueba, product, map[string]string{
 		"marca":  "Marca Test",
 		"imagen": "https://images.test/cafe.webp",
 	})
 	if value, ok := boolValue(products[1].EnStock); !ok || value {
-		t.Errorf("en_stock segundo = %v", products[1].EnStock)
+		prueba.Errorf("en_stock segundo = %v", products[1].EnStock)
 	}
 }
 
-func TestLiderFormatoDelTitulo(t *testing.T) {
+func TestLiderFormatoDelTitulo(prueba *testing.T) {
 	tests := []struct {
 		name  string
 		title string
@@ -149,23 +149,23 @@ func TestLiderFormatoDelTitulo(t *testing.T) {
 		{name: "litros", title: "Bebida 1.5 L", want: "1.5 L"},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
+		prueba.Run(tc.name, func(prueba *testing.T) {
 			body := `<div data-testid="item-stack"><div role="group" data-item-id="1" data-dca-id="00000000000001">` +
 				`<a href="/ip/frutas/uno/00000000000001"><span data-automation-id="product-title">` + tc.title + `</span></a>` +
 				`<div data-automation-id="product-price"><div aria-hidden="true">$1.000</div></div>` +
 				`</div></div>`
-			products := extract.LiderProducts(site(t, "lider_rsc"), []byte(body), mustURL(t, "https://super.lider.cl/browse/frutas/22884697"))
+			products := extract.LiderProducts(site(prueba, "lider_rsc"), []byte(body), mustURL(prueba, "https://super.lider.cl/browse/frutas/22884697"))
 			if len(products) != 1 {
-				t.Fatalf("productos = %d, want 1", len(products))
+				prueba.Fatalf("productos = %d, want 1", len(products))
 			}
 			if got := stringValue(products[0].FormatoCrudo); got != tc.want {
-				t.Errorf("formato = %q, want %q", got, tc.want)
+				prueba.Errorf("formato = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestLiderProductDesdeNextData(t *testing.T) {
+func TestLiderProductDesdeNextData(prueba *testing.T) {
 	productURL := "https://super.lider.cl/ip/leche-entera/12345678"
 	nextData := `{"props":{"pageProps":{"product":{` +
 		`"name":"Leche Entera 1 L","usItemId":"12345678","price":1290,` +
@@ -173,14 +173,14 @@ func TestLiderProductDesdeNextData(t *testing.T) {
 		`"isOutOfStock":false,"imageInfo":{"thumbnailUrl":"/img/leche.webp"}}}}}`
 	body := `<html><body><script id="__NEXT_DATA__" type="application/json">` + nextData + `</script></body></html>`
 
-	product := extract.LiderProduct(site(t, "lider_rsc"), []byte(body), productURL, mustURL(t, productURL))
+	product := extract.LiderProduct(site(prueba, "lider_rsc"), []byte(body), productURL, mustURL(prueba, productURL))
 	if product == nil || product.Producto != "Leche Entera 1 L" {
-		t.Fatalf("LiderProduct() = %+v", product)
+		prueba.Fatalf("LiderProduct() = %+v", product)
 	}
 	if value, ok := floatValue(product.Precio); !ok || value != 1290 {
-		t.Errorf("precio = %v", product.Precio)
+		prueba.Errorf("precio = %v", product.Precio)
 	}
-	assertProductFields(t, *product, map[string]string{
+	assertProductFields(prueba, *product, map[string]string{
 		"url":    productURL,
 		"imagen": "https://super.lider.cl/img/leche.webp",
 	})

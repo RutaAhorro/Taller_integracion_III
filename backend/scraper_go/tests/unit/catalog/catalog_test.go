@@ -9,7 +9,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
 )
 
-func TestDefaultDeclaraTodosLosSitios(t *testing.T) {
+func TestDefaultDeclaraTodosLosSitios(prueba *testing.T) {
 	sites := catalog.Default()
 	want := []string{
 		"jumbo_rsc",
@@ -19,20 +19,20 @@ func TestDefaultDeclaraTodosLosSitios(t *testing.T) {
 		"lider_rsc",
 	}
 	if got := sites.Names(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("Names() = %v, want %v", got, want)
+		prueba.Fatalf("Names() = %v, want %v", got, want)
 	}
 	for _, name := range want {
 		site, ok := sites.Get(name)
 		if !ok {
-			t.Fatalf("falta el sitio %q", name)
+			prueba.Fatalf("falta el sitio %q", name)
 		}
 		if site.Supermarket == "" || site.Parser == "" || site.CategoryFile == "" {
-			t.Errorf("sitio %q incompleto: %+v", name, site)
+			prueba.Errorf("sitio %q incompleto: %+v", name, site)
 		}
 	}
 }
 
-func TestValidateCategoryURL(t *testing.T) {
+func TestValidateCategoryURL(prueba *testing.T) {
 	cases := []struct {
 		site  string
 		valid string
@@ -45,25 +45,25 @@ func TestValidateCategoryURL(t *testing.T) {
 	}
 	sites := catalog.Default()
 	for _, tc := range cases {
-		t.Run(tc.site, func(t *testing.T) {
+		prueba.Run(tc.site, func(prueba *testing.T) {
 			site, ok := sites.Get(tc.site)
 			if !ok {
-				t.Fatalf("falta el sitio %q", tc.site)
+				prueba.Fatalf("falta el sitio %q", tc.site)
 			}
 			if err := site.ValidateCategoryURL(tc.valid); err != nil {
-				t.Errorf("ValidateCategoryURL(%q) = %v", tc.valid, err)
+				prueba.Errorf("ValidateCategoryURL(%q) = %v", tc.valid, err)
 			}
 			if err := site.ValidateCategoryURL("https://example.com/categoria"); err == nil {
-				t.Error("ValidateCategoryURL() aceptó un host ajeno")
+				prueba.Error("ValidateCategoryURL() aceptó un host ajeno")
 			}
 			if err := site.ValidateCategoryURL("http://" + site.AllowedHosts[0] + "/categoria"); err == nil {
-				t.Error("ValidateCategoryURL() aceptó HTTP sin TLS")
+				prueba.Error("ValidateCategoryURL() aceptó HTTP sin TLS")
 			}
 		})
 	}
 }
 
-func TestValidateProductURL(t *testing.T) {
+func TestValidateProductURL(prueba *testing.T) {
 	cases := []struct {
 		site  string
 		valid string
@@ -76,66 +76,66 @@ func TestValidateProductURL(t *testing.T) {
 	}
 	sites := catalog.Default()
 	for _, tc := range cases {
-		t.Run(tc.site, func(t *testing.T) {
+		prueba.Run(tc.site, func(prueba *testing.T) {
 			site, ok := sites.Get(tc.site)
 			if !ok {
-				t.Fatalf("falta el sitio %q", tc.site)
+				prueba.Fatalf("falta el sitio %q", tc.site)
 			}
 			if err := site.ValidateProductURL(tc.valid); err != nil {
-				t.Errorf("ValidateProductURL(%q) = %v", tc.valid, err)
+				prueba.Errorf("ValidateProductURL(%q) = %v", tc.valid, err)
 			}
 			if err := site.ValidateProductURL("https://example.com/producto/1"); err == nil {
-				t.Error("ValidateProductURL() aceptó un host ajeno")
+				prueba.Error("ValidateProductURL() aceptó un host ajeno")
 			}
 		})
 	}
 }
 
-func TestValidateProductURLRespetaReglasDeRuta(t *testing.T) {
+func TestValidateProductURLRespetaReglasDeRuta(prueba *testing.T) {
 	sites := catalog.Default()
 
 	santaIsabel, _ := sites.Get("santa_isabel_rsc")
 	if err := santaIsabel.ValidateProductURL("https://www.santaisabel.cl/despensa"); err == nil {
-		t.Error("Santa Isabel aceptó una categoría como ficha /p")
+		prueba.Error("Santa Isabel aceptó una categoría como ficha /p")
 	}
 
 	lider, _ := sites.Get("lider_rsc")
 	if err := lider.ValidateProductURL("https://super.lider.cl/browse/frutas/1"); err == nil {
-		t.Error("Lider aceptó una categoría como ficha /ip")
+		prueba.Error("Lider aceptó una categoría como ficha /ip")
 	}
 
 	acuenta, _ := sites.Get("acuenta_rsc")
 	if err := acuenta.ValidateProductURL("https://www.acuenta.cl/ca/congelados/04"); err == nil {
-		t.Error("A Cuenta aceptó una categoría como ficha /p")
+		prueba.Error("A Cuenta aceptó una categoría como ficha /p")
 	}
 }
 
-func TestAccesoresDelSitio(t *testing.T) {
+func TestAccesoresDelSitio(prueba *testing.T) {
 	site, ok := catalog.Default().Get("jumbo_rsc")
 	if !ok {
-		t.Fatal("falta jumbo_rsc")
+		prueba.Fatal("falta jumbo_rsc")
 	}
 	if got := site.Selector("json_ld"); got == "" {
-		t.Error("Selector(json_ld) vacío")
+		prueba.Error("Selector(json_ld) vacío")
 	}
 	if got := site.Setting("sku_prefix"); got != "JUMBO-" {
-		t.Errorf("Setting(sku_prefix) = %q", got)
+		prueba.Errorf("Setting(sku_prefix) = %q", got)
 	}
 	if got := site.Limit("sku_max_length"); got != 100 {
-		t.Errorf("Limit(sku_max_length) = %d", got)
+		prueba.Errorf("Limit(sku_max_length) = %d", got)
 	}
 	if got := site.Regexp("no_existe"); got != nil {
-		t.Errorf("Regexp(no_existe) = %v, want nil", got)
+		prueba.Errorf("Regexp(no_existe) = %v, want nil", got)
 	}
 
 	acuenta, _ := catalog.Default().Get("acuenta_rsc")
 	if got := acuenta.List("brands"); len(got) == 0 {
-		t.Error("List(brands) vacío")
+		prueba.Error("List(brands) vacío")
 	}
 }
 
-func TestFromEnvLeeElArchivoIndicado(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "spiders.json")
+func TestFromEnvLeeElArchivoIndicado(prueba *testing.T) {
+	path := filepath.Join(prueba.TempDir(), "spiders.json")
 	body := `{"sites":[{
 		"name":"demo_rsc","parser":"jumbo","supermarket":"Demo",
 		"category_file":"demo_categories.txt",
@@ -144,20 +144,20 @@ func TestFromEnvLeeElArchivoIndicado(t *testing.T) {
 		"product_url":{"message":"producto inválido"}
 	}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
-	t.Setenv(catalog.FileEnv, path)
+	prueba.Setenv(catalog.FileEnv, path)
 
 	sites, err := catalog.FromEnv()
 	if err != nil {
-		t.Fatalf("FromEnv() error = %v", err)
+		prueba.Fatalf("FromEnv() error = %v", err)
 	}
 	if names := sites.Names(); !reflect.DeepEqual(names, []string{"demo_rsc"}) {
-		t.Errorf("Names() = %v", names)
+		prueba.Errorf("Names() = %v", names)
 	}
 }
 
-func TestFromEnvRechazaCatalogosInvalidos(t *testing.T) {
+func TestFromEnvRechazaCatalogosInvalidos(prueba *testing.T) {
 	cases := map[string]string{
 		"json inválido":   `{`,
 		"sin sitios":      `{"sites":[]}`,
@@ -169,22 +169,22 @@ func TestFromEnvRechazaCatalogosInvalidos(t *testing.T) {
 			{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"}}]}`,
 	}
 	for name, body := range cases {
-		t.Run(name, func(t *testing.T) {
-			path := filepath.Join(t.TempDir(), "spiders.json")
+		prueba.Run(name, func(prueba *testing.T) {
+			path := filepath.Join(prueba.TempDir(), "spiders.json")
 			if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
-				t.Fatal(err)
+				prueba.Fatal(err)
 			}
-			t.Setenv(catalog.FileEnv, path)
+			prueba.Setenv(catalog.FileEnv, path)
 			if _, err := catalog.FromEnv(); err == nil {
-				t.Fatal("FromEnv() debió rechazar el catálogo")
+				prueba.Fatal("FromEnv() debió rechazar el catálogo")
 			}
 		})
 	}
 }
 
-func TestFromEnvRechazaArchivoInexistente(t *testing.T) {
-	t.Setenv(catalog.FileEnv, filepath.Join(t.TempDir(), "no-existe.json"))
+func TestFromEnvRechazaArchivoInexistente(prueba *testing.T) {
+	prueba.Setenv(catalog.FileEnv, filepath.Join(prueba.TempDir(), "no-existe.json"))
 	if _, err := catalog.FromEnv(); err == nil {
-		t.Fatal("FromEnv() debió fallar con un archivo inexistente")
+		prueba.Fatal("FromEnv() debió fallar con un archivo inexistente")
 	}
 }

@@ -30,8 +30,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "jumbo_categories.txt",
 			first:  "https://www.jumbo.cl/categoria-vacia",
 			second: "https://www.jumbo.cl/frutas",
-			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return spiders.NewJumbo(f, dir, pages, logger)
+			factory: func(extractor spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewJumbo(extractor, dir, pages, logger)
 			},
 		},
 		{
@@ -39,8 +39,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "santa_isabel_categories.txt",
 			first:  "https://www.santaisabel.cl/categoria-vacia",
 			second: "https://www.santaisabel.cl/frutas",
-			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return spiders.NewSantaIsabel(f, dir, pages, logger)
+			factory: func(extractor spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewSantaIsabel(extractor, dir, pages, logger)
 			},
 		},
 		{
@@ -48,8 +48,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "cugat_categories.txt",
 			first:  "https://cugat.cl/categoria-producto/vacia/",
 			second: "https://cugat.cl/categoria-producto/bebidas/",
-			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return spiders.NewCugat(f, dir, pages, logger)
+			factory: func(extractor spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewCugat(extractor, dir, pages, logger)
 			},
 		},
 		{
@@ -59,8 +59,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			second:     "https://www.acuenta.cl/ca/frutas/02",
 			firstCall:  "https://www.acuenta.cl/ca/vacia/01?currentPage=1",
 			secondCall: "https://www.acuenta.cl/ca/frutas/02?currentPage=1",
-			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return spiders.NewAcuenta(f, dir, pages, logger)
+			factory: func(extractor spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewAcuenta(extractor, dir, pages, logger)
 			},
 		},
 		{
@@ -68,8 +68,8 @@ func TestEmptyCategoryDoesNotAbortChain(t *testing.T) {
 			file:   "lider_categories.txt",
 			first:  "https://super.lider.cl/browse/vacia/12345678",
 			second: "https://super.lider.cl/browse/frutas/87654321",
-			factory: func(f spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
-				return spiders.NewLider(f, dir, pages, logger)
+			factory: func(extractor spiders.Fetcher, dir string, pages int, logger *slog.Logger) categoryRunner {
+				return spiders.NewLider(extractor, dir, pages, logger)
 			},
 		},
 	}

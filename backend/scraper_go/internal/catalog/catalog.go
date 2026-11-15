@@ -104,8 +104,8 @@ func FromEnv() (Catalog, error) {
 }
 
 // Get busca un sitio por nombre.
-func (c Catalog) Get(name string) (Site, bool) {
-	for _, site := range c.Sites {
+func (catalogo Catalog) Get(name string) (Site, bool) {
+	for _, site := range catalogo.Sites {
 		if site.Name == name {
 			return site, true
 		}
@@ -114,9 +114,9 @@ func (c Catalog) Get(name string) (Site, bool) {
 }
 
 // Names devuelve los nombres en el orden del catálogo.
-func (c Catalog) Names() []string {
-	names := make([]string, 0, len(c.Sites))
-	for _, site := range c.Sites {
+func (catalogo Catalog) Names() []string {
+	names := make([]string, 0, len(catalogo.Sites))
+	for _, site := range catalogo.Sites {
 		names = append(names, site.Name)
 	}
 	return names
@@ -144,81 +144,81 @@ func parse(body []byte) (Catalog, error) {
 	return catalog, nil
 }
 
-func (s *Site) prepare() error {
-	if s.Name == "" {
+func (sitio *Site) prepare() error {
+	if sitio.Name == "" {
 		return fmt.Errorf("falta name")
 	}
-	if s.Parser == "" {
+	if sitio.Parser == "" {
 		return fmt.Errorf("falta parser")
 	}
-	if s.Supermarket == "" {
+	if sitio.Supermarket == "" {
 		return fmt.Errorf("falta supermarket")
 	}
-	if s.CategoryFile == "" {
+	if sitio.CategoryFile == "" {
 		return fmt.Errorf("falta category_file")
 	}
-	if len(s.AllowedHosts) == 0 {
+	if len(sitio.AllowedHosts) == 0 {
 		return fmt.Errorf("falta allowed_hosts")
 	}
-	if s.CategoryURL.Message == "" || s.ProductURL.Message == "" {
+	if sitio.CategoryURL.Message == "" || sitio.ProductURL.Message == "" {
 		return fmt.Errorf("faltan mensajes de validación de URL")
 	}
-	s.hosts = make(map[string]struct{}, len(s.AllowedHosts))
-	for _, host := range s.AllowedHosts {
-		s.hosts[strings.ToLower(strings.TrimSpace(host))] = struct{}{}
+	sitio.hosts = make(map[string]struct{}, len(sitio.AllowedHosts))
+	for _, host := range sitio.AllowedHosts {
+		sitio.hosts[strings.ToLower(strings.TrimSpace(host))] = struct{}{}
 	}
-	s.compiled = make(map[string]*regexp.Regexp, len(s.Patterns))
-	for name, pattern := range s.Patterns {
+	sitio.compiled = make(map[string]*regexp.Regexp, len(sitio.Patterns))
+	for name, pattern := range sitio.Patterns {
 		compiled, err := regexp.Compile(pattern)
 		if err != nil {
 			return fmt.Errorf("patrón %q inválido: %w", name, err)
 		}
-		s.compiled[name] = compiled
+		sitio.compiled[name] = compiled
 	}
-	if s.CategoryFrom.IDPattern != "" {
-		compiled, err := regexp.Compile(s.CategoryFrom.IDPattern)
+	if sitio.CategoryFrom.IDPattern != "" {
+		compiled, err := regexp.Compile(sitio.CategoryFrom.IDPattern)
 		if err != nil {
 			return fmt.Errorf("category_from.id_pattern inválido: %w", err)
 		}
-		s.compiled["category_id"] = compiled
+		sitio.compiled["category_id"] = compiled
 	}
-	switch s.Pagination.Mode {
+	switch sitio.Pagination.Mode {
 	case "", "none":
 	case "query":
-		if s.Pagination.Param == "" {
+		if sitio.Pagination.Param == "" {
 			return fmt.Errorf("pagination.param es obligatorio en modo query")
 		}
 	case "path":
-		if s.Pagination.PathSegment == "" {
+		if sitio.Pagination.PathSegment == "" {
 			return fmt.Errorf("pagination.path_segment es obligatorio en modo path")
 		}
 	default:
-		return fmt.Errorf("pagination.mode desconocido %q", s.Pagination.Mode)
+		return fmt.Errorf("pagination.mode desconocido %q", sitio.Pagination.Mode)
 	}
 	return nil
 }
 
 // Regexp devuelve un patrón compilado del sitio.
-func (s Site) Regexp(name string) *regexp.Regexp {
-	return s.compiled[name]
+func (sitio Site) Regexp(name string) *regexp.Regexp {
+	return sitio.compiled[name]
 }
 
 // Setting devuelve un valor de texto del sitio.
-func (s Site) Setting(name string) string {
-	return s.Settings[name]
+func (sitio Site) Setting(name string) string {
+	return sitio.Settings[name]
 }
 
 // Limit devuelve un límite numérico del sitio.
-func (s Site) Limit(name string) int {
-	return s.Limits[name]
+func (sitio Site) Limit(name string) int {
+	return sitio.Limits[name]
 }
 
 // List devuelve una lista de valores del sitio.
-func (s Site) List(name string) []string {
-	return s.Lists[name]
+func (sitio Site) List(name string) []string {
+	return sitio.Lists[name]
 }
 
 // Selector devuelve un selector CSS del sitio.
-func (s Site) Selector(name string) string {
-	return s.Selectors[name]
+func (sitio Site) Selector(name string) string {
+	return sitio.Selectors[name]
 }
