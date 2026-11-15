@@ -202,33 +202,13 @@ En Kubernetes ([deployment.yaml](../../infrastructure/k8s/catalogo/deployment.ya
 
 ## Procedimientos de rollback
 
-### Rollback de ingesta (Docker Compose)
+### Rollback de ingesta y consultas (Histórico)
 
-Si se requiere revertir el cliente HTTP de ingesta y volver temporalmente al escritor
-SQL histórico en coordinación de scraping, se utiliza
-[docker-compose.catalogo-ingesta-rollback.yml](../../docker-compose.catalogo-ingesta-rollback.yml).
-Catálogo permanece activo como servicio de consulta:
+Los overrides de rollback en Compose (`docker-compose.catalogo-ingesta-rollback.yml` y
+`docker-compose.catalogo-rollback.yml`) formaron parte de la verificación de migración
+del monolito (Sprint 2) y fueron retirados en SUP-355 al consolidarse los servicios
+desacoplados.
 
-```bash
-SUP269_LEGACY_API_IMAGE=<imagen_control_anterior> \
-docker compose -f docker-compose.yml -f docker-compose.catalogo-ingesta-rollback.yml up -d control_scraping
-```
-
-El escritor histórico requiere credenciales con permisos compartidos sobre trabajos
-y catálogo (`DB_USER`/`DB_PASSWORD` en `.env`).
-
-### Rollback de consultas y enrutamiento (Docker Compose)
-
-Para revertir el enrutamiento de Gateway y consultar productos a través de una imagen
-anterior desacoplando Catálogo, se aplica
-[docker-compose.catalogo-rollback.yml](../../docker-compose.catalogo-rollback.yml):
-
-El override deja `CATALOGO_URL=''` en Gateway y devuelve las rutas públicas a una
-imagen histórica de la API (`SUP268_LEGACY_API_IMAGE`). El orden importa: primero
-debe estar sana la imagen histórica y solo después se cambia Gateway; si no, las
-consultas de productos responden 404. El procedimiento paso a paso, con los
-comandos exactos, está en el
-[README del Gateway](../gateway/README.md) (sección «Rollback de Catálogo (SUP-268) en Compose»).
 
 ### Rollback en Kubernetes
 

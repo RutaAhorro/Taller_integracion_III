@@ -194,10 +194,13 @@ compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
 compose stop control_scraping identidad reference_api redis >/dev/null
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode api-down
 
-compose up -d --wait --wait-timeout 90 redis
-compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
-python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode ingesta-rollback
-compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
-compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --no-deps --force-recreate --wait --wait-timeout 60 frontend
-compose stop catalogo >/dev/null
-python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode rollback
+if [[ -f "$repo_root/docker-compose.catalogo-rollback.yml" && -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" ]]; then
+  compose up -d --wait --wait-timeout 90 redis
+  compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
+  python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode ingesta-rollback
+  compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
+  compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --no-deps --force-recreate --wait --wait-timeout 60 frontend
+  compose stop catalogo >/dev/null
+  python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode rollback
+fi
+
