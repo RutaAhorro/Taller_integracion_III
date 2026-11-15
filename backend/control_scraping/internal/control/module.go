@@ -54,20 +54,20 @@ func New(db *gorm.DB, rdb *redis.Client) (*Module, error) {
 	return &Module{db: db, handler: handler, auth: middleware.RequireServiceToken(serviceToken), queue: queue, close: publisher.Close, recover: service.(interface{ Recuperar(context.Context) }).Recuperar}, nil
 }
 
-func (m *Module) VerifyStorage(ctx context.Context) error {
-	rows, err := m.db.WithContext(ctx).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
+func (modulo *Module) VerifyStorage(ctx context.Context) error {
+	rows, err := modulo.db.WithContext(ctx).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
 	if err != nil {
 		return errors.New("aplicar 06_propiedad_permisos.sql y permisos de coordinación antes de iniciar la API")
 	}
 	rows.Close()
 	for _, table := range []string{"scraper.trabajos_scraper", "scraper.entregas_ingesta", "scraper.entregas_trabajos"} {
-		rows, err := m.db.WithContext(ctx).Raw("SELECT * FROM " + table + " LIMIT 0").Rows()
+		rows, err := modulo.db.WithContext(ctx).Raw("SELECT * FROM " + table + " LIMIT 0").Rows()
 		if err != nil {
 			return errors.New("aplicar 05_recuperacion_scraping.sql y permisos de coordinación antes de iniciar la API")
 		}
 		rows.Close()
 		var permitted bool
-		if err := m.db.WithContext(ctx).Raw(`SELECT
+		if err := modulo.db.WithContext(ctx).Raw(`SELECT
             has_table_privilege(current_user, ?, 'SELECT') AND
             has_table_privilege(current_user, ?, 'INSERT') AND
             has_table_privilege(current_user, ?, 'UPDATE')`, table, table, table).Scan(&permitted).Error; err != nil || !permitted {
@@ -75,17 +75,17 @@ func (m *Module) VerifyStorage(ctx context.Context) error {
 		}
 	}
 	var canDelete bool
-	if err := m.db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&canDelete).Error; err != nil || !canDelete {
+	if err := modulo.db.WithContext(ctx).Raw("SELECT has_table_privilege(current_user, 'scraper.entregas_trabajos', 'DELETE')").Scan(&canDelete).Error; err != nil || !canDelete {
 		return errors.New("conceder DELETE en scraper.entregas_trabajos al rol de coordinación antes de iniciar la API")
 	}
 	return nil
 }
 
 // Sólo main inicia los loops; construir el router no crea goroutines.
-func (m *Module) Start(ctx context.Context) {
-	m.wg.Add(2)
+func (modulo *Module) Start(ctx context.Context) {
+	modulo.wg.Add(2)
 	go func() {
-		defer m.wg.Done()
+		defer modulo.wg.Done()
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -94,23 +94,23 @@ func (m *Module) Start(ctx context.Context) {
 				return
 			case <-ticker.C:
 				attempt, cancel := context.WithTimeout(ctx, 65*time.Second)
-				m.recover(attempt)
+				modulo.recover(attempt)
 				cancel()
 			}
 		}
 	}()
 	go func() {
-		defer m.wg.Done()
+		defer modulo.wg.Done()
 		ticker := time.NewTicker(5 * time.Second)
 		defer ticker.Stop()
-		defer m.close()
+		defer modulo.close()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
 				attempt, cancel := context.WithTimeout(ctx, 10*time.Second)
-				m.queue.Recuperar(attempt)
+				modulo.queue.Recuperar(attempt)
 				cancel()
 			}
 		}
@@ -118,9 +118,9 @@ func (m *Module) Start(ctx context.Context) {
 }
 
 // Wait espera que terminen los dos loops y cierre el cliente del publisher.
-func (m *Module) Wait(ctx context.Context) error {
+func (modulo *Module) Wait(ctx context.Context) error {
 	done := make(chan struct{})
-	go func() { m.wg.Wait(); close(done) }()
+	go func() { modulo.wg.Wait(); close(done) }()
 	select {
 	case <-done:
 		return nil
@@ -129,6 +129,6 @@ func (m *Module) Wait(ctx context.Context) error {
 	}
 }
 
-func (m *Module) RegisterRoutes(group *gin.RouterGroup) {
-	routes.RegistrarRutasScraper(group, m.handler, m.auth)
+func (modulo *Module) RegisterRoutes(group *gin.RouterGroup) {
+	routes.RegistrarRutasScraper(group, modulo.handler, modulo.auth)
 }

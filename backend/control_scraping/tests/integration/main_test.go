@@ -10,11 +10,11 @@ import (
 )
 
 // Comprueba la composición real y que la API ya no aloje Identidad ni Catálogo.
-func TestModuleCompositionHTTP(t *testing.T) {
-	prepareApplicationEnvironment(t)
+func TestModuleCompositionHTTP(prueba *testing.T) {
+	prepareApplicationEnvironment(prueba)
 	router, _, err := app.NewApplication(nil, nil)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	token := "cookie-que-control-no-interpreta"
 
@@ -45,7 +45,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		{"ejecución con ID inválido sin Redis", "POST", "/api/v1/scraper/trabajos/invalid/ejecutar", "{}", "", 400},
 	}
 	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+		prueba.Run(tc.name, func(prueba *testing.T) {
 			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Content-Type", "application/json")
 			req.Header.Set("Authorization", "Bearer "+testServiceToken)
@@ -55,7 +55,7 @@ func TestModuleCompositionHTTP(t *testing.T) {
 			response := httptest.NewRecorder()
 			router.ServeHTTP(response, req)
 			if response.Code != tc.status {
-				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
+				prueba.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
 			}
 
 		})

@@ -19,14 +19,14 @@ func NewTrabajoRepository(db *gorm.DB) domain.TrabajoRepository {
 }
 
 // CrearTrabajo inserta una nueva ejecución en scraper.trabajos_scraper
-func (r *gormTrabajoRepository) CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error {
-	return r.db.WithContext(ctx).Create(trabajo).Error
+func (repositorio *gormTrabajoRepository) CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error {
+	return repositorio.db.WithContext(ctx).Create(trabajo).Error
 }
 
 // ObtenerTrabajoPorID lee únicamente el trabajo y su snapshot de auditoría.
-func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
+func (repositorio *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
-	err := r.db.WithContext(ctx).
+	err := repositorio.db.WithContext(ctx).
 		Where("id = ?", id).
 		First(&trabajo).Error
 	if err != nil {
@@ -40,8 +40,8 @@ func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid
 
 // IncrementarElementos mantiene las métricas bajo propiedad del coordinador.
 // Se ejecuta sólo después de confirmar el commit de Catálogo.
-func (r *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
-	result := r.db.WithContext(ctx).Model(&domain.TrabajoScraper{}).
+func (repositorio *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
+	result := repositorio.db.WithContext(ctx).Model(&domain.TrabajoScraper{}).
 		Where("id = ?", id).Update("elementos_extraidos", gorm.Expr("elementos_extraidos + ?", cantidad))
 	if result.Error != nil {
 		return result.Error
@@ -53,9 +53,9 @@ func (r *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uui
 }
 
 // FinalizarTrabajo actualiza el estado, fecha fin, items extraídos y posibles errores
-func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
+func (repositorio *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&trabajo, "id = ?", id).Error; err != nil {
 			return err
 		}
@@ -108,5 +108,5 @@ func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UU
 	if err != nil {
 		return nil, err
 	}
-	return r.ObtenerTrabajoPorID(ctx, id)
+	return repositorio.ObtenerTrabajoPorID(ctx, id)
 }

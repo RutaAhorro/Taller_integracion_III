@@ -48,16 +48,16 @@ type scraperService struct {
 
 // NewScraperService crea una nueva instancia de ScraperService con sus dependencias
 func NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.IngestaRepository, entregas ...domain.EntregaRepository) ScraperService {
-	s := &scraperService{trabajos: trabajos, ingesta: ingesta}
+	servicio := &scraperService{trabajos: trabajos, ingesta: ingesta}
 	if len(entregas) > 0 {
-		s.entregas = entregas[0]
+		servicio.entregas = entregas[0]
 	}
-	return s
+	return servicio
 }
 
 // IniciarTrabajo registra el arranque de una araña de scraping y retorna su DTO
-func (s *scraperService) IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error) {
-	cadena, err := s.ingesta.ObtenerCadena(ctx, input.CadenaID, input.Supermercado)
+func (servicio *scraperService) IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error) {
+	cadena, err := servicio.ingesta.ObtenerCadena(ctx, input.CadenaID, input.Supermercado)
 	if err != nil {
 		return nil, err
 	}
@@ -86,15 +86,15 @@ func (s *scraperService) IniciarTrabajo(ctx context.Context, input domain.Inicia
 		ElementosExtraidos:    0,
 	}
 
-	if err := s.trabajos.CrearTrabajo(ctx, trabajo); err != nil {
+	if err := servicio.trabajos.CrearTrabajo(ctx, trabajo); err != nil {
 		return nil, err
 	}
 
-	return s.mapearTrabajoDTO(trabajo, cadena.Nombre), nil
+	return servicio.mapearTrabajoDTO(trabajo, cadena.Nombre), nil
 }
 
 // FinalizarTrabajo actualiza el estado de la ejecución a 'completado' o 'fallido'
-func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error) {
+func (servicio *scraperService) FinalizarTrabajo(ctx context.Context, id string, input domain.FinalizarTrabajoDTO) (*domain.TrabajoScraperDTO, error) {
 	trabajoUUID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return nil, ErrUUIDInvalido
@@ -105,7 +105,7 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 		return nil, ErrEstadoTrabajoInvalido
 	}
 
-	existente, err := s.trabajos.ObtenerTrabajoPorID(ctx, trabajoUUID)
+	existente, err := servicio.trabajos.ObtenerTrabajoPorID(ctx, trabajoUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,31 +113,31 @@ func (s *scraperService) FinalizarTrabajo(ctx context.Context, id string, input 
 		return nil, ErrTrabajoNoEncontrado
 	}
 	if existente.Estado == "completado" || existente.Estado == "fallido" {
-		if s.entregas != nil && existente.Estado == estado {
-			return s.mapearTrabajoDTO(existente, s.nombreTrabajo(ctx, existente)), nil
+		if servicio.entregas != nil && existente.Estado == estado {
+			return servicio.mapearTrabajoDTO(existente, servicio.nombreTrabajo(ctx, existente)), nil
 		}
 		return nil, ErrTrabajoYaFinalizado
 	}
 
-	actualizado, err := s.trabajos.FinalizarTrabajo(ctx, trabajoUUID, estado, input.ElementosExtraidos, input.RespuestasBloqueadas, input.RegistroErrores)
+	actualizado, err := servicio.trabajos.FinalizarTrabajo(ctx, trabajoUUID, estado, input.ElementosExtraidos, input.RespuestasBloqueadas, input.RegistroErrores)
 	if err != nil {
 		return nil, err
 	}
 
 	cadenaNombre := ""
-	cadenaNombre = s.nombreTrabajo(ctx, actualizado)
+	cadenaNombre = servicio.nombreTrabajo(ctx, actualizado)
 
-	return s.mapearTrabajoDTO(actualizado, cadenaNombre), nil
+	return servicio.mapearTrabajoDTO(actualizado, cadenaNombre), nil
 }
 
 // ObtenerTrabajo recupera la información y métricas de un trabajo de scraping
-func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error) {
+func (servicio *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain.TrabajoScraperDTO, error) {
 	trabajoUUID, err := uuid.Parse(strings.TrimSpace(id))
 	if err != nil {
 		return nil, ErrUUIDInvalido
 	}
 
-	trabajo, err := s.trabajos.ObtenerTrabajoPorID(ctx, trabajoUUID)
+	trabajo, err := servicio.trabajos.ObtenerTrabajoPorID(ctx, trabajoUUID)
 	if err != nil {
 		return nil, err
 	}
@@ -146,16 +146,16 @@ func (s *scraperService) ObtenerTrabajo(ctx context.Context, id string) (*domain
 	}
 
 	cadenaNombre := ""
-	cadenaNombre = s.nombreTrabajo(ctx, trabajo)
+	cadenaNombre = servicio.nombreTrabajo(ctx, trabajo)
 
-	return s.mapearTrabajoDTO(trabajo, cadenaNombre), nil
+	return servicio.mapearTrabajoDTO(trabajo, cadenaNombre), nil
 }
 
 // ObtenerCadena consulta una cadena de supermercado en Catálogo por ID o nombre.
 // El contrato HTTP usa 404 para ausente; se traduce al error de dominio para que
 // los handlers no confundan una fuente inexistente con una respuesta vacía.
-func (s *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
-	cadena, err := s.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
+func (servicio *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
+	cadena, err := servicio.ingesta.ObtenerCadena(ctx, cadenaID, nombre)
 	if err != nil {
 		return nil, err
 	}
@@ -166,9 +166,9 @@ func (s *scraperService) ObtenerCadena(ctx context.Context, cadenaID int, nombre
 }
 
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios
-func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
-	if s.entregas != nil {
-		return s.ingestarDurable(ctx, trabajoIDStr, input)
+func (servicio *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
+	if servicio.entregas != nil {
+		return servicio.ingestarDurable(ctx, trabajoIDStr, input)
 	}
 	if len(input.Productos) == 0 {
 		return nil, ErrLoteVacio
@@ -186,7 +186,7 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 			return nil, ErrUUIDInvalido
 		}
 
-		trabajo, err := s.trabajos.ObtenerTrabajoPorID(ctx, parsed)
+		trabajo, err := servicio.trabajos.ObtenerTrabajoPorID(ctx, parsed)
 		if err != nil {
 			return nil, err
 		}
@@ -203,7 +203,7 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 
 	// Si no vino cadenaID por trabajo, resolver por nombre de supermercado si está disponible
 	if cadenaID == 0 && input.Supermercado != nil && strings.TrimSpace(*input.Supermercado) != "" {
-		cadena, err := s.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
+		cadena, err := servicio.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
 		if err != nil {
 			return nil, err
 		}
@@ -218,7 +218,7 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	}
 
 	// Obtener la sucursal de destino
-	sucursal, err := s.ingesta.ObtenerSucursal(ctx, cadenaID, input.SucursalID, input.CodigoSucursal)
+	sucursal, err := servicio.ingesta.ObtenerSucursal(ctx, cadenaID, input.SucursalID, input.CodigoSucursal)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	if parsedTrabajoUUID == nil && cadenaID == 0 {
 		// La ingesta directa también puede identificar la fuente sólo por
 		// sucursal; en ese caso se valida la cadena antes de escribir.
-		cadena, err := s.ingesta.ObtenerCadena(ctx, sucursal.CadenaID, "")
+		cadena, err := servicio.ingesta.ObtenerCadena(ctx, sucursal.CadenaID, "")
 		if err != nil {
 			return nil, err
 		}
@@ -238,54 +238,54 @@ func (s *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *st
 	}
 
 	// Ejecutar la persistencia en lote
-	resultado, err := s.ingesta.IngestarLote(ctx, parsedTrabajoUUID, sucursal.ID, input.Productos)
+	resultado, err := servicio.ingesta.IngestarLote(ctx, parsedTrabajoUUID, sucursal.ID, input.Productos)
 	if err != nil {
 		return nil, err
 	}
 	if parsedTrabajoUUID != nil && resultado.Insertados+resultado.Actualizados > 0 {
-		if err := s.trabajos.IncrementarElementos(ctx, *parsedTrabajoUUID, resultado.Insertados+resultado.Actualizados); err != nil {
+		if err := servicio.trabajos.IncrementarElementos(ctx, *parsedTrabajoUUID, resultado.Insertados+resultado.Actualizados); err != nil {
 			return nil, ErrContadorPendiente
 		}
 	}
 	return resultado, nil
 }
 
-func (s *scraperService) mapearTrabajoDTO(t *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO {
+func (servicio *scraperService) mapearTrabajoDTO(trabajo *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO {
 	var duracion *float64
-	if t.FinalizadoEl != nil {
-		seg := t.FinalizadoEl.Sub(t.IniciadoEl).Seconds()
+	if trabajo.FinalizadoEl != nil {
+		seg := trabajo.FinalizadoEl.Sub(trabajo.IniciadoEl).Seconds()
 		duracion = &seg
 	}
 
 	return &domain.TrabajoScraperDTO{
-		ID:                   t.ID.String(),
-		CadenaID:             t.CadenaID,
+		ID:                   trabajo.ID.String(),
+		CadenaID:             trabajo.CadenaID,
 		CadenaNombre:         cadenaNombre,
-		Estado:               t.Estado,
-		IniciadoEl:           t.IniciadoEl,
-		FinalizadoEl:         t.FinalizadoEl,
+		Estado:               trabajo.Estado,
+		IniciadoEl:           trabajo.IniciadoEl,
+		FinalizadoEl:         trabajo.FinalizadoEl,
 		DuracionSegundos:     duracion,
-		ElementosExtraidos:   t.ElementosExtraidos,
-		RespuestasBloqueadas: t.RespuestasBloqueadas,
-		RegistroErrores:      t.RegistroErrores,
+		ElementosExtraidos:   trabajo.ElementosExtraidos,
+		RespuestasBloqueadas: trabajo.RespuestasBloqueadas,
+		RegistroErrores:      trabajo.RegistroErrores,
 	}
 }
 
 // El nombre es información auxiliar: consultar/finalizar un trabajo no debe
 // quedar bloqueado por una caída de Catálogo. El resto del DTO se conserva.
-func (s *scraperService) nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string {
+func (servicio *scraperService) nombreTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) string {
 	if trabajo.CadenaNombre != "" {
 		return trabajo.CadenaNombre
 	}
 	// Compatibilidad con trabajos históricos cuyo origen ya no estaba presente
 	// al migrar. Ninguna lectura SQL cruza hacia tablas de Catálogo.
-	return s.nombreCadena(ctx, trabajo.CadenaID)
+	return servicio.nombreCadena(ctx, trabajo.CadenaID)
 }
 
-func (s *scraperService) nombreCadena(ctx context.Context, cadenaID int) string {
+func (servicio *scraperService) nombreCadena(ctx context.Context, cadenaID int) string {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	if cadena, err := s.ingesta.ObtenerCadena(ctx, cadenaID, ""); err == nil && cadena != nil {
+	if cadena, err := servicio.ingesta.ObtenerCadena(ctx, cadenaID, ""); err == nil && cadena != nil {
 		return cadena.Nombre
 	}
 	return ""

@@ -24,9 +24,9 @@ type catalogoClient struct {
 }
 
 func NewCatalogoClient(origin, token string, timeout time.Duration) (domain.IngestaRepository, error) {
-	u, err := url.Parse(origin)
-	if err != nil || u == nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
-		u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(origin, "?#\\ \t\r\n") {
+	direccion, err := url.Parse(origin)
+	if err != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") || direccion.Hostname() == "" ||
+		direccion.User != nil || (direccion.Path != "" && direccion.Path != "/") || direccion.RawQuery != "" || direccion.ForceQuery || direccion.Fragment != "" || strings.ContainsAny(origin, "?#\\ \t\r\n") {
 		return nil, errors.New("CATALOGO_INTERNAL_URL debe ser un origen HTTP(S), sin credenciales, rutas ni parámetros")
 	}
 	if len(token) < 32 || strings.ContainsAny(token, " \t\r\n") {
@@ -50,24 +50,24 @@ func NewCatalogoClient(origin, token string, timeout time.Duration) (domain.Inge
 	}}, nil
 }
 
-func (r *catalogoClient) call(ctx context.Context, path string, payload, result any) (bool, error) {
+func (clienteCatalogo *catalogoClient) call(ctx context.Context, path string, payload, result any) (bool, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return false, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.origin+"/internal/v1/"+path, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, clienteCatalogo.origin+"/internal/v1/"+path, bytes.NewReader(data))
 	if err != nil {
 		return false, services.ErrCatalogoNoDisponible
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+r.token)
+	req.Header.Set("Authorization", "Bearer "+clienteCatalogo.token)
 	if id, ok := ctx.Value(requestIDKey{}).(string); ok {
 		req.Header.Set("X-Request-ID", id)
 	}
 	if req.Header.Get("X-Request-ID") == "" {
 		req.Header.Set("X-Request-ID", domain.LoteID(ctx))
 	}
-	response, err := r.client.Do(req)
+	response, err := clienteCatalogo.client.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -105,29 +105,29 @@ func WithRequestID(ctx context.Context, id string) context.Context {
 	return context.WithValue(ctx, requestIDKey{}, id)
 }
 
-func (r *catalogoClient) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
+func (clienteCatalogo *catalogoClient) ObtenerCadena(ctx context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
 	var result domain.CadenaSupermercado
-	found, err := r.call(ctx, "cadenas/resolver", map[string]any{"cadena_id": cadenaID, "nombre": nombre}, &result)
+	found, err := clienteCatalogo.call(ctx, "cadenas/resolver", map[string]any{"cadena_id": cadenaID, "nombre": nombre}, &result)
 	if err != nil || !found {
 		return nil, err
 	}
 	return &result, nil
 }
-func (r *catalogoClient) ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error) {
+func (clienteCatalogo *catalogoClient) ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error) {
 	var result domain.SucursalSupermercado
-	found, err := r.call(ctx, "sucursales/resolver", map[string]any{"cadena_id": cadenaID, "sucursal_id": sucursalID, "codigo_sucursal": codigo}, &result)
+	found, err := clienteCatalogo.call(ctx, "sucursales/resolver", map[string]any{"cadena_id": cadenaID, "sucursal_id": sucursalID, "codigo_sucursal": codigo}, &result)
 	if err != nil || !found {
 		return nil, err
 	}
 	return &result, nil
 }
-func (r *catalogoClient) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
+func (clienteCatalogo *catalogoClient) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
 	var result domain.IngestaResultadoDTO
 	payload := map[string]any{"sucursal_id": sucursalID, "productos": productos}
 	if id := domain.LoteID(ctx); id != "" {
 		payload["lote_id"] = id
 	}
-	found, err := r.call(ctx, "ingestas", payload, &result)
+	found, err := clienteCatalogo.call(ctx, "ingestas", payload, &result)
 	if err != nil {
 		return nil, err
 	}

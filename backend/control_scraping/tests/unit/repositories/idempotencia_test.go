@@ -15,40 +15,40 @@ import (
 	"time"
 )
 
-func TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(t *testing.T) {
+func TestBatchKeyIsSentWithoutJobIdentityAndConflictIsNotRetried(prueba *testing.T) {
 	key := uuid.New().String()
 	calls := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
 		calls++
 		var payload map[string]any
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Error(err)
+		if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
+			prueba.Error(err)
 		}
 		if payload["lote_id"] != key || payload["trabajo_id"] != nil {
-			t.Errorf("contrato interno=%v", payload)
+			prueba.Errorf("contrato interno=%v", payload)
 		}
-		w.WriteHeader(409)
+		respuestaHTTP.WriteHeader(409)
 	}))
 	defer srv.Close()
 	client, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	id := uuid.New()
 	_, err = client.IngestarLote(domain.ConLoteID(context.Background(), key), &id, 1, []domain.ProductoScrapeadoDTO{{SKU: "sku"}})
 	if !errors.Is(err, services.ErrIdempotencia) || calls != 1 {
-		t.Fatal(err, calls)
+		prueba.Fatal(err, calls)
 	}
 }
 
-func TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T) {
+func TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(prueba *testing.T) {
 	for _, status := range []int{400, 413, 500, 503} {
-		t.Run(http.StatusText(status), func(t *testing.T) {
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(status) }))
+		prueba.Run(http.StatusText(status), func(prueba *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) { respuestaHTTP.WriteHeader(status) }))
 			defer srv.Close()
 			client, err := repositories.NewCatalogoClient(srv.URL, strings.Repeat("t", 32), time.Second)
 			if err != nil {
-				t.Fatal(err)
+				prueba.Fatal(err)
 			}
 			_, err = client.IngestarLote(context.Background(), nil, 1, []domain.ProductoScrapeadoDTO{{SKU: "sku"}})
 			want := services.ErrCatalogoNoDisponible
@@ -56,7 +56,7 @@ func TestCatalogDataRejectionIsDistinctFromInfrastructureFailure(t *testing.T) {
 				want = services.ErrCatalogoRechazo
 			}
 			if !errors.Is(err, want) {
-				t.Fatal(err)
+				prueba.Fatal(err)
 			}
 		})
 	}

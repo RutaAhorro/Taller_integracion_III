@@ -11,15 +11,15 @@ import (
 
 // El Gateway es público: sin el token de servicio ninguna ruta de coordinación
 // llega al handler, aunque el cuerpo sea válido o el origen esté permitido.
-func TestScraperRequiresServiceToken(t *testing.T) {
-	prepareApplicationEnvironment(t)
+func TestScraperRequiresServiceToken(prueba *testing.T) {
+	prepareApplicationEnvironment(prueba)
 	catalogoToken := strings.Repeat("t", 32)
-	t.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
-	t.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
+	prueba.Setenv("SCRAPING_CORS_ALLOWED_ORIGINS", "https://frontend.example")
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
+	prueba.Setenv("SCRAPING_SWAGGER_ENABLED", "true")
 	router, _, err := app.NewApplication(nil, nil)
 	if err != nil {
-		t.Fatal(err)
+		prueba.Fatal(err)
 	}
 	routes := []struct{ method, path string }{
 		{"POST", "/api/v1/scraper/trabajos"},
@@ -38,7 +38,7 @@ func TestScraperRequiresServiceToken(t *testing.T) {
 	}
 	for _, route := range routes {
 		for name, value := range headers {
-			t.Run(route.method+" "+route.path+" "+name, func(t *testing.T) {
+			prueba.Run(route.method+" "+route.path+" "+name, func(prueba *testing.T) {
 				req := httptest.NewRequest(route.method, route.path, strings.NewReader(`{}`))
 				req.Header.Set("Content-Type", "application/json")
 				req.Header.Set("Origin", "https://frontend.example")
@@ -48,10 +48,10 @@ func TestScraperRequiresServiceToken(t *testing.T) {
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, req)
 				if response.Code != 401 {
-					t.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
+					prueba.Fatalf("HTTP %d; esperado 401: %s", response.Code, response.Body)
 				}
 				if response.Header().Get("WWW-Authenticate") == "" {
-					t.Fatal("falta WWW-Authenticate")
+					prueba.Fatal("falta WWW-Authenticate")
 				}
 			})
 		}
@@ -61,25 +61,25 @@ func TestScraperRequiresServiceToken(t *testing.T) {
 		response := httptest.NewRecorder()
 		router.ServeHTTP(response, httptest.NewRequest("GET", path, nil))
 		if response.Code == 401 {
-			t.Fatalf("%s no debe exigir token de servicio", path)
+			prueba.Fatalf("%s no debe exigir token de servicio", path)
 		}
 	}
 }
 
-func TestServiceTokenConfigurationFailsClosed(t *testing.T) {
-	prepareApplicationEnvironment(t)
+func TestServiceTokenConfigurationFailsClosed(prueba *testing.T) {
+	prepareApplicationEnvironment(prueba)
 	catalogoToken := strings.Repeat("t", 32)
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", catalogoToken)
 	for name, value := range map[string]string{
 		"vacío":                "",
 		"corto":                strings.Repeat("s", 31),
 		"con espacios":         strings.Repeat("s", 20) + " " + strings.Repeat("s", 20),
 		"igual al de Catálogo": catalogoToken,
 	} {
-		t.Run(name, func(t *testing.T) {
-			t.Setenv("SCRAPING_SERVICE_TOKEN", value)
+		prueba.Run(name, func(prueba *testing.T) {
+			prueba.Setenv("SCRAPING_SERVICE_TOKEN", value)
 			if _, _, err := app.NewApplication(nil, nil); err == nil {
-				t.Fatal("la configuración insegura debe impedir el arranque")
+				prueba.Fatal("la configuración insegura debe impedir el arranque")
 			}
 		})
 	}

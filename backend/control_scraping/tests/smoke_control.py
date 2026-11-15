@@ -19,7 +19,7 @@ parser.add_argument('--gateway-url', required=True)
 args = parser.parse_args()
 assert args.project.startswith('sup268-'), 'Sólo el proyecto efímero del harness'
 root = Path(__file__).resolve().parents[3]
-env = {k: v for k, v in os.environ.items() if k not in {
+env = {nombre_variable: valor_variable for nombre_variable, valor_variable in os.environ.items() if nombre_variable not in {
     'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET', 'GOOGLE_CLIENT_ID',
     'IDENTITY_DB_PASSWORD', 'SCRAPING_DB_PASSWORD', 'CATALOGO_DB_PASSWORD',
     'CATALOGO_INTERNAL_TOKEN', 'GATEWAY_TRUSTED_PROXIES', 'IDENTIDAD_GATEWAY_IP',
@@ -59,8 +59,8 @@ def request(path, status=200, method='GET', data=None, opener=None, headers=None
         headers={'Content-Type': 'application/json', **scraper_auth(path), **(headers or {})})
     try:
         response = (opener or client()).open(req, timeout=15)
-    except urllib.error.HTTPError as e:
-        response = e
+    except urllib.error.HTTPError as error_http:
+        response = error_http
     with response:
         body = response.read()
         assert response.status == status, (path, status, response.status, body.decode())
@@ -79,7 +79,7 @@ def probes(ready=True):
     manifest = root/'infrastructure/k8s/control-scraping/deployment.yaml'
     commands = [json.loads(line.split('command:', 1)[1]) for line in manifest.read_text().splitlines()
                 if line.strip().startswith('command:')]
-    assert len(commands) == 3 and sum(c[-1].endswith('/ready') for c in commands) == 1
+    assert len(commands) == 3 and sum(comando[-1].endswith('/ready') for comando in commands) == 1
     for command in commands:
         assert command[-1].startswith('http://127.0.0.1:8080/_scraping/')
         compose('exec', '-T', 'control_scraping', *command, success=ready or command[-1].endswith('/live'))
@@ -99,7 +99,7 @@ body, _ = request('/_gateway/dependencies')
 assert body['checks']['scraping'] == body['checks']['scraping_database'] == 'ok'
 spec, _ = request('/swagger/doc.json')
 assert '/api/v1/scraper/trabajos' in spec['paths']
-assert not any(p.startswith(('/_', '/api/v1/auth', '/api/v1/productos', '/api/v1/admin/productos')) for p in spec['paths'])
+assert not any(ruta.startswith(('/_', '/api/v1/auth', '/api/v1/productos', '/api/v1/admin/productos')) for ruta in spec['paths'])
 probes()
 
 # Rechazar Origin antes de una escritura, conservando cookies/headers del frontend permitido.
@@ -169,18 +169,18 @@ with tempfile.TemporaryDirectory(dir=Path(args.env_file).parent) as private_dir:
 
         # Alcanzar determinísticamente las tres réplicas en sus puertos efímeros;
         # la confirmación final entra por Gateway. No depender del reparto DNS Docker.
-        replica_urls = ['http://' + compose('port', '--index', str(i), 'control_scraping', '8080').strip()
-                        for i in range(1, 4)]
+        replica_urls = ['http://' + compose('port', '--index', str(indice), 'control_scraping', '8080').strip()
+                        for indice in range(1, 4)]
 
-        def deliver(index):
-            base = args.gateway_url if index is None else replica_urls[index % 3]
+        def deliver(indice):
+            base = args.gateway_url if indice is None else replica_urls[indice % 3]
             req = urllib.request.Request(base+path+'/productos', method='POST',
                 headers={'Content-Type': 'application/json', 'Idempotency-Key': key, **scraper_auth(path)},
                 data=json.dumps(payload).encode())
             try:
                 response = client().open(req, timeout=20)
-            except urllib.error.HTTPError as e:
-                response = e
+            except urllib.error.HTTPError as error_http:
+                response = error_http
             with response:
                 assert response.status in (200, 202), (response.status, response.read())
                 return response.status

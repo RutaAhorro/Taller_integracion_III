@@ -26,13 +26,13 @@ func ValidarTokenServicio(token, catalogoToken string) error {
 // Se comparan hashes de largo fijo para no filtrar el largo ni el contenido por tiempo.
 func RequireServiceToken(token string) gin.HandlerFunc {
 	expected := sha256.Sum256([]byte("Bearer " + token))
-	return func(c *gin.Context) {
-		got := sha256.Sum256([]byte(c.GetHeader("Authorization")))
+	return func(contextoHTTP *gin.Context) {
+		got := sha256.Sum256([]byte(contextoHTTP.GetHeader("Authorization")))
 		if subtle.ConstantTimeCompare(got[:], expected[:]) != 1 {
-			c.Header("WWW-Authenticate", `Bearer realm="control-scraping"`)
-			ResponderError(c, 401, "Token de servicio inválido o ausente.", nil)
+			contextoHTTP.Header("WWW-Authenticate", `Bearer realm="control-scraping"`)
+			ResponderError(contextoHTTP, 401, "Token de servicio inválido o ausente.", nil)
 			return
 		}
-		c.Next()
+		contextoHTTP.Next()
 	}
 }

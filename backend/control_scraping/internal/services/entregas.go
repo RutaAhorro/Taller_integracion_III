@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-func (s *scraperService) ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
+func (servicio *scraperService) ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
 	if len(input.Productos) == 0 {
 		return nil, ErrLoteVacio
 	}
@@ -44,61 +44,61 @@ func (s *scraperService) ingestarDurable(ctx context.Context, trabajoID *string,
 		return nil, err
 	}
 	hash := sha256.Sum256(hashData)
-	e, err := s.entregas.Registrar(ctx, &domain.Entrega{ID: id, TrabajoID: jobID, Payload: string(data), PayloadHash: hex.EncodeToString(hash[:])})
+	entrega, err := servicio.entregas.Registrar(ctx, &domain.Entrega{ID: id, TrabajoID: jobID, Payload: string(data), PayloadHash: hex.EncodeToString(hash[:])})
 	if err != nil {
 		return nil, err
 	}
-	if e.Estado == "confirmada" {
+	if entrega.Estado == "confirmada" {
 		var result domain.IngestaResultadoDTO
-		err = json.Unmarshal([]byte(*e.Resultado), &result)
+		err = json.Unmarshal([]byte(*entrega.Resultado), &result)
 		return &result, err
 	}
-	if e.Estado == "fallida" {
+	if entrega.Estado == "fallida" {
 		return nil, ErrEntregaFallida
 	}
-	e, err = s.entregas.Adquirir(ctx, &id)
+	entrega, err = servicio.entregas.Adquirir(ctx, &id)
 	if err != nil {
 		return nil, err
 	}
-	if e == nil {
+	if entrega == nil {
 		return nil, ErrEntregaPendiente
 	}
-	return s.entregar(ctx, e)
+	return servicio.entregar(ctx, entrega)
 }
 
-func (s *scraperService) entregar(ctx context.Context, e *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
-	ctx = domain.ConLoteID(ctx, e.ID.String())
+func (servicio *scraperService) entregar(ctx context.Context, entrega *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
+	ctx = domain.ConLoteID(ctx, entrega.ID.String())
 	var input domain.IngestaLoteDTO
 	var result *domain.IngestaResultadoDTO
-	err := json.Unmarshal([]byte(e.Payload), &input)
-	if err == nil && e.SucursalID == nil {
-		chain := e.CadenaID
+	err := json.Unmarshal([]byte(entrega.Payload), &input)
+	if err == nil && entrega.SucursalID == nil {
+		chain := entrega.CadenaID
 		if chain == 0 && input.Supermercado != nil {
-			var c *domain.CadenaSupermercado
-			c, err = s.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
-			if err == nil && c != nil {
-				chain = c.ID
+			var cadena *domain.CadenaSupermercado
+			cadena, err = servicio.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
+			if err == nil && cadena != nil {
+				chain = cadena.ID
 			}
 		}
 		if err == nil {
 			var branch *domain.SucursalSupermercado
-			branch, err = s.ingesta.ObtenerSucursal(ctx, chain, input.SucursalID, input.CodigoSucursal)
+			branch, err = servicio.ingesta.ObtenerSucursal(ctx, chain, input.SucursalID, input.CodigoSucursal)
 			if err == nil && branch == nil {
 				err = ErrSucursalNoEncontrada
 			}
 			if err == nil {
 				var id int
-				id, err = s.entregas.FijarSucursal(ctx, e.ID, branch.ID)
-				e.SucursalID = &id
+				id, err = servicio.entregas.FijarSucursal(ctx, entrega.ID, branch.ID)
+				entrega.SucursalID = &id
 			}
 		}
 	}
 	if err == nil {
-		result, err = s.ingesta.IngestarLote(ctx, e.TrabajoID, *e.SucursalID, input.Productos)
+		result, err = servicio.ingesta.IngestarLote(ctx, entrega.TrabajoID, *entrega.SucursalID, input.Productos)
 	}
 	confirmed := err == nil
 	if confirmed {
-		err = s.entregas.Confirmar(ctx, e, *result)
+		err = servicio.entregas.Confirmar(ctx, entrega, *result)
 		if err == nil {
 			return result, nil
 		}
@@ -115,24 +115,24 @@ func (s *scraperService) entregar(ctx context.Context, e *domain.Entrega) (*doma
 	// No usar el contexto cancelado de una petición para liberar/reprogramar.
 	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 	defer cancel()
-	if failure := s.entregas.Reprogramar(retryCtx, e, code, permanent); failure != nil {
-		slog.Error("ingesta_reprogramar_error", "lote_id", e.ID, "error", failure)
+	if failure := servicio.entregas.Reprogramar(retryCtx, entrega, code, permanent); failure != nil {
+		slog.Error("ingesta_reprogramar_error", "lote_id", entrega.ID, "error", failure)
 	}
-	slog.Warn("ingesta_pendiente", "lote_id", e.ID, "trabajo_id", e.TrabajoID, "intento", e.Intentos, "codigo", code)
+	slog.Warn("ingesta_pendiente", "lote_id", entrega.ID, "trabajo_id", entrega.TrabajoID, "intento", entrega.Intentos, "codigo", code)
 	return nil, err
 }
 
 // Recuperar entrega una entrada por tick; las leases permiten varias API.
-func (s *scraperService) Recuperar(ctx context.Context) {
-	if s.entregas == nil {
+func (servicio *scraperService) Recuperar(ctx context.Context) {
+	if servicio.entregas == nil {
 		return
 	}
-	e, err := s.entregas.Adquirir(ctx, nil)
+	entrega, err := servicio.entregas.Adquirir(ctx, nil)
 	if err != nil {
 		slog.Error("ingesta_recuperacion_error", "error", err)
 		return
 	}
-	if e != nil {
-		_, _ = s.entregar(ctx, e)
+	if entrega != nil {
+		_, _ = servicio.entregar(ctx, entrega)
 	}
 }

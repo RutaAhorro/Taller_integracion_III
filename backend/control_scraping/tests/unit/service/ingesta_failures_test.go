@@ -16,15 +16,15 @@ type failingCounter struct {
 	errCounter error
 }
 
-func (m *failingCounter) IncrementarElementos(ctx context.Context, id uuid.UUID, n int) error {
-	m.increments++
-	if m.errCounter != nil {
-		return m.errCounter
+func (contador *failingCounter) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
+	contador.increments++
+	if contador.errCounter != nil {
+		return contador.errCounter
 	}
-	return m.mockScraperRepository.IncrementarElementos(ctx, id, n)
+	return contador.mockScraperRepository.IncrementarElementos(ctx, id, cantidad)
 }
 
-func TestCatalogFailureDoesNotIncrementJob(t *testing.T) {
+func TestCatalogFailureDoesNotIncrementJob(prueba *testing.T) {
 	for _, catalogErr := range []error{services.ErrCatalogoNoDisponible, services.ErrCatalogoTimeout} {
 		repo := newMockScraperRepository()
 		id := uuid.New()
@@ -36,12 +36,12 @@ func TestCatalogFailureDoesNotIncrementJob(t *testing.T) {
 		str := id.String()
 		_, err := service.IngestarProductos(context.Background(), &str, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
 		if !errors.Is(err, catalogErr) || jobs.increments != 0 || repo.trabajos[id].ElementosExtraidos != 0 {
-			t.Fatalf("error=%v increments=%d", err, jobs.increments)
+			prueba.Fatalf("error=%v increments=%d", err, jobs.increments)
 		}
 	}
 }
 
-func TestCommittedCatalogBatchAndFailedCounterIsExplicit(t *testing.T) {
+func TestCommittedCatalogBatchAndFailedCounterIsExplicit(prueba *testing.T) {
 	repo := newMockScraperRepository()
 	id := uuid.New()
 	repo.trabajos[id] = &domain.TrabajoScraper{ID: id, CadenaID: 1, Estado: "en_progreso"}
@@ -50,6 +50,6 @@ func TestCommittedCatalogBatchAndFailedCounterIsExplicit(t *testing.T) {
 	str := id.String()
 	_, err := service.IngestarProductos(context.Background(), &str, domain.IngestaLoteDTO{Productos: []domain.ProductoScrapeadoDTO{{SKU: "SKU"}}})
 	if !errors.Is(err, services.ErrContadorPendiente) || jobs.increments != 1 {
-		t.Fatal(err, jobs.increments)
+		prueba.Fatal(err, jobs.increments)
 	}
 }

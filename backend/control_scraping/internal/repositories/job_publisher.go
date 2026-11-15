@@ -41,14 +41,14 @@ func NewJobPublisher(rdb *redis.Client, db *gorm.DB) *jobPublisher {
 	return &jobPublisher{client, db}
 }
 
-func (p *jobPublisher) Close() error {
-	if p.rdb != nil {
-		return p.rdb.Close()
+func (publicador *jobPublisher) Close() error {
+	if publicador.rdb != nil {
+		return publicador.rdb.Close()
 	}
 	return nil
 }
-func (p *jobPublisher) Publicar(ctx context.Context, e domain.Ejecucion) error {
-	if p.rdb == nil {
+func (publicador *jobPublisher) Publicar(ctx context.Context, ejecucion domain.Ejecucion) error {
+	if publicador.rdb == nil {
 		return errors.New("Redis no está disponible")
 	}
 	// Leer SQL sin transacción ni FOR UPDATE; nunca retener locks durante Redis.
@@ -57,14 +57,14 @@ func (p *jobPublisher) Publicar(ctx context.Context, e domain.Ejecucion) error {
 	attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var job domain.TrabajoScraper
-	found := p.db.WithContext(attempt).Select("id").Where("id=? AND estado='en_progreso'", e.TrabajoID).Limit(1).Find(&job)
+	found := publicador.db.WithContext(attempt).Select("id").Where("id=? AND estado='en_progreso'", ejecucion.TrabajoID).Limit(1).Find(&job)
 	if found.Error != nil {
 		return found.Error
 	}
 	if found.RowsAffected == 0 {
 		return nil
 	}
-	err := publishJob.Run(attempt, p.rdb, []string{JobStream, JobIndex, JobClosedPrefix + e.TrabajoID.String()}, e.TrabajoID.String(), e.Payload).Err()
+	err := publishJob.Run(attempt, publicador.rdb, []string{JobStream, JobIndex, JobClosedPrefix + ejecucion.TrabajoID.String()}, ejecucion.TrabajoID.String(), ejecucion.Payload).Err()
 	if errors.Is(err, redis.Nil) { // trabajo ya cerrado por el worker
 		return nil
 	}
