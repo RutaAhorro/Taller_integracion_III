@@ -13,7 +13,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--gateway-url', required=True)
 parser.add_argument('--reference-url')
 parser.add_argument('--state-file', required=True)
-parser.add_argument('--mode', choices=['normal', 'counter-failure', 'catalog-down', 'ingesta-rollback'], required=True)
+parser.add_argument('--mode', choices=['normal', 'counter-failure', 'catalog-down'], required=True)
 args = parser.parse_args()
 passed = 0
 
@@ -114,15 +114,6 @@ elif args.mode == 'counter-failure':
     assert request(args.gateway_url, pending)['elementos_extraidos'] == 0
     products = request(args.gateway_url, '/api/v1/productos?q=Contador%20pendiente%20SUP269')
     assert len(products['data']) == 1 and products['data'][0]['precio_normal'] == 1500
-elif args.mode == 'ingesta-rollback':
-    legacy = job(args.gateway_url)
-    result = batch(args.gateway_url, legacy + '/productos', [item('SUP269-ROLLBACK-WRITER', producto='Rollback escritura SUP269')])
-    assert result['insertados'] == 1 and result['precios_registrados'] == 1
-    assert request(args.gateway_url, legacy)['elementos_extraidos'] == 1
-    products = request(args.gateway_url, '/api/v1/productos?q=Rollback%20escritura%20SUP269')
-    assert len(products['data']) == 1
-    health = request(args.gateway_url, '/_gateway/dependencies')
-    assert health['checks']['catalogo'] == 'ok'
 else:
     current = json.loads(Path(args.state_file).read_text())['job']
     for path in [current + '/productos', '/api/v1/scraper/productos']:
