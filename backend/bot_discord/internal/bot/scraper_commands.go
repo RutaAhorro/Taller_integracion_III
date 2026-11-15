@@ -74,9 +74,9 @@ func LeerEstadoTrabajo(respuestaHTTP *http.Response) (EstadoTrabajo, error) {
 	if errorObtenido := json.NewDecoder(respuestaHTTP.Body).Decode(&cuerpo); errorObtenido != nil {
 		return EstadoTrabajo{}, fmt.Errorf("respuesta inválida: %w", errorObtenido)
 	}
-	estado, okEstado := cuerpo["estado"].(string)
-	cadena, okCadena := cuerpo["cadena_nombre"].(string)
-	if !okEstado || !okCadena {
+	estado, estadoValido := cuerpo["estado"].(string)
+	cadena, cadenaValida := cuerpo["cadena_nombre"].(string)
+	if !estadoValido || !cadenaValida {
 		return EstadoTrabajo{}, fmt.Errorf("respuesta incompleta")
 	}
 	resultado := EstadoTrabajo{Estado: estado, Cadena: cadena}
@@ -101,8 +101,8 @@ func LeerIDTrabajo(respuestaHTTP *http.Response) (string, bool) {
 
 // ===== Comandos e interacción para scraping =====
 
-// sendScraperMenu presenta opciones de supermercados disponibles en Control.
-func sendScraperMenu(sesionDiscord *discordgo.Session, canalID string) {
+// enviarMenuScraper presenta opciones de supermercados disponibles en Control.
+func enviarMenuScraper(sesionDiscord *discordgo.Session, canalID string) {
 	mensaje := &discordgo.MessageSend{
 		Content: "🤖 **Menú de Scraping**\nSelecciona el supermercado que deseas scrapear:",
 		Components: []discordgo.MessageComponent{
@@ -158,8 +158,8 @@ func sendScraperMenu(sesionDiscord *discordgo.Session, canalID string) {
 	}
 }
 
-// handleInteraction enruta componentes de scraping y actualización de estado.
-func handleInteraction(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
+// manejarInteraccion enruta componentes de scraping y actualización de estado.
+func manejarInteraccion(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
 	if interaccion.Type != discordgo.InteractionMessageComponent {
 		return
 	}
@@ -167,18 +167,18 @@ func handleInteraction(sesionDiscord *discordgo.Session, interaccion *discordgo.
 	identificadorComponente := interaccion.MessageComponentData().CustomID
 
 	if strings.HasPrefix(identificadorComponente, "refresh_") {
-		handleRefresh(sesionDiscord, interaccion)
+		manejarActualizacionEstado(sesionDiscord, interaccion)
 		return
 	}
 
 	if strings.HasPrefix(identificadorComponente, "scrape_") {
-		handleScrapeStart(sesionDiscord, interaccion)
+		iniciarScraping(sesionDiscord, interaccion)
 		return
 	}
 }
 
-// handleScrapeStart interpreta la selección del usuario y solicita ejecución a Control.
-func handleScrapeStart(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
+// iniciarScraping interpreta la selección y solicita la ejecución a Control.
+func iniciarScraping(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
 	sesionDiscord.InteractionRespond(interaccion.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
 	})
@@ -218,25 +218,25 @@ func handleScrapeStart(sesionDiscord *discordgo.Session, interaccion *discordgo.
 			}},
 		},
 	})
-	go monitorJobAndNotify(sesionDiscord, interaccion.ChannelID, trabajoID, nombreCadena, usuarioID)
+	go monitorearTrabajoYNotificar(sesionDiscord, interaccion.ChannelID, trabajoID, nombreCadena, usuarioID)
 }
 
 // ===== Configuración de cadenas disponibles =====
 
-// cadenaScraper identifica la fuente y el spider usados por las opciones del bot.
+// cadenaScraper identifica la fuente y el rastreador usados por las opciones del bot.
 type cadenaScraper struct {
-	cadenaID     int
-	nombreSpider string
-	nombreCadena string
+	cadenaID         int
+	nombreRastreador string
+	nombreCadena     string
 }
 
 // cadenasScraper contiene las opciones contractuales expuestas por los botones.
 var cadenasScraper = []cadenaScraper{
-	{cadenaID: 1, nombreSpider: "jumbo_rsc", nombreCadena: "Jumbo"},
-	{cadenaID: 2, nombreSpider: "lider_rsc", nombreCadena: "Lider"},
-	{cadenaID: 4, nombreSpider: "santa_isabel_rsc", nombreCadena: "Santa Isabel"},
-	{cadenaID: 5, nombreSpider: "acuenta_rsc", nombreCadena: "A Cuenta"},
-	{cadenaID: 6, nombreSpider: "cugat_rsc", nombreCadena: "Cugat"},
+	{cadenaID: 1, nombreRastreador: "jumbo_rsc", nombreCadena: "Jumbo"},
+	{cadenaID: 2, nombreRastreador: "lider_rsc", nombreCadena: "Lider"},
+	{cadenaID: 4, nombreRastreador: "santa_isabel_rsc", nombreCadena: "Santa Isabel"},
+	{cadenaID: 5, nombreRastreador: "acuenta_rsc", nombreCadena: "A Cuenta"},
+	{cadenaID: 6, nombreRastreador: "cugat_rsc", nombreCadena: "Cugat"},
 }
 
 // iniciarTrabajosMasivos solicita un trabajo por cada cadena y presenta los aceptados.
@@ -245,7 +245,7 @@ func iniciarTrabajosMasivos(sesionDiscord *discordgo.Session, interaccion *disco
 	for _, cadena := range cadenasScraper {
 		trabajoID, errorObtenido := crearTrabajoScraper(cadena.cadenaID, usuarioID)
 		if errorObtenido == nil {
-			errorObtenido = ejecutarTrabajoScraper(trabajoID, cadena.nombreSpider)
+			errorObtenido = ejecutarTrabajoScraper(trabajoID, cadena.nombreRastreador)
 		}
 		if errorObtenido != nil {
 			log.Printf("No se pudo iniciar scraping de %s: %v", cadena.nombreCadena, errorObtenido)
@@ -255,7 +255,7 @@ func iniciarTrabajosMasivos(sesionDiscord *discordgo.Session, interaccion *disco
 			Label: "Actualizar " + cadena.nombreCadena, Style: discordgo.SecondaryButton,
 			CustomID: "refresh_" + trabajoID, Emoji: &discordgo.ComponentEmoji{Name: "🔄"},
 		})
-		go monitorJobAndNotify(sesionDiscord, interaccion.ChannelID, trabajoID, cadena.nombreCadena, usuarioID)
+		go monitorearTrabajoYNotificar(sesionDiscord, interaccion.ChannelID, trabajoID, cadena.nombreCadena, usuarioID)
 	}
 	contenido := fmt.Sprintf("🚀 **¡Scraping masivo iniciado!**\nSe iniciaron `%d` trabajos. Usa los botones para revisar su estado.", len(trabajosExitosos))
 	sesionDiscord.FollowupMessageCreate(interaccion.Interaction, true, &discordgo.WebhookParams{
@@ -301,9 +301,9 @@ func crearTrabajoScraper(cadenaID int, usuarioID string) (string, error) {
 	return trabajoID, nil
 }
 
-// ejecutarTrabajoScraper encola un spider en el trabajo previamente creado.
-func ejecutarTrabajoScraper(trabajoID, nombreSpider string) error {
-	cuerpoJSON, errorObtenido := json.Marshal(map[string]string{"spider": nombreSpider})
+// ejecutarTrabajoScraper encola un rastreador en el trabajo previamente creado.
+func ejecutarTrabajoScraper(trabajoID, nombreRastreador string) error {
+	cuerpoJSON, errorObtenido := json.Marshal(map[string]string{"spider": nombreRastreador})
 	if errorObtenido != nil {
 		return fmt.Errorf("no se pudo serializar la ejecución: %w", errorObtenido)
 	}
@@ -339,8 +339,8 @@ func botonesComoComponentes(botones []discordgo.Button) []discordgo.MessageCompo
 
 // ===== Seguimiento y consulta del estado =====
 
-// monitorJobAndNotify consulta periódicamente el trabajo y notifica su resultado.
-func monitorJobAndNotify(sesionDiscord *discordgo.Session, canalID, trabajoID, nombreCadena, usuarioID string) {
+// monitorearTrabajoYNotificar consulta periódicamente el trabajo y notifica su resultado.
+func monitorearTrabajoYNotificar(sesionDiscord *discordgo.Session, canalID, trabajoID, nombreCadena, usuarioID string) {
 	fallos := 0
 	for {
 		time.Sleep(configuracionActiva.IntervaloConsulta)
@@ -392,8 +392,8 @@ func monitorJobAndNotify(sesionDiscord *discordgo.Session, canalID, trabajoID, n
 	}
 }
 
-// handleRefresh actualiza la respuesta Discord con el estado del trabajo.
-func handleRefresh(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
+// manejarActualizacionEstado actualiza la respuesta Discord con el estado del trabajo.
+func manejarActualizacionEstado(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
 	identificadorComponente := interaccion.MessageComponentData().CustomID
 	trabajoID := strings.TrimPrefix(identificadorComponente, "refresh_")
 

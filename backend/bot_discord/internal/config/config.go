@@ -64,36 +64,36 @@ func Cargar() (Configuracion, error) {
 	if len(configuracion.TokenServicioScraping) < longitudMinimaToken || strings.ContainsAny(configuracion.TokenServicioScraping, " \t\r\n") {
 		return Configuracion{}, errors.New("SCRAPING_SERVICE_TOKEN debe tener al menos 32 caracteres y no contener espacios")
 	}
-	if err := validarURLScraper(configuracion.URLBaseScraper); err != nil {
-		return Configuracion{}, err
+	if errorObtenido := validarURLScraper(configuracion.URLBaseScraper); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
 	configuracion.URLBaseScraper = strings.TrimSuffix(configuracion.URLBaseScraper, "/")
-	if err := validarPuerto(configuracion.PuertoWebhook); err != nil {
-		return Configuracion{}, err
+	if errorObtenido := validarPuerto(configuracion.PuertoWebhook); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
-	var err error
-	if configuracion.TimeoutHTTP, err = cargarDuracionPositiva("SCRAPER_HTTP_TIMEOUT", timeoutHTTPDefecto, timeoutMaximoScraper); err != nil {
-		return Configuracion{}, err
+	var errorObtenido error
+	if configuracion.TimeoutHTTP, errorObtenido = cargarDuracionPositiva("SCRAPER_HTTP_TIMEOUT", timeoutHTTPDefecto, timeoutMaximoScraper); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
-	if configuracion.TimeoutCabeceraHTTP, err = cargarDuracionPositiva("BOT_HTTP_READ_HEADER_TIMEOUT", timeoutCabeceraDefecto, timeoutCabeceraMaximo); err != nil {
-		return Configuracion{}, err
+	if configuracion.TimeoutCabeceraHTTP, errorObtenido = cargarDuracionPositiva("BOT_HTTP_READ_HEADER_TIMEOUT", timeoutCabeceraDefecto, timeoutCabeceraMaximo); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
-	if configuracion.IntervaloConsulta, err = cargarDuracionPositiva("SCRAPER_POLL_INTERVAL", intervaloConsultaDefecto, intervaloMaximoScraper); err != nil {
-		return Configuracion{}, err
+	if configuracion.IntervaloConsulta, errorObtenido = cargarDuracionPositiva("SCRAPER_POLL_INTERVAL", intervaloConsultaDefecto, intervaloMaximoScraper); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
-	if configuracion.MaximoFallosMonitor, err = cargarEnteroAcotado("SCRAPER_MONITOR_MAX_FAILURES", fallosMonitorDefecto, 1, fallosMonitorMaximos); err != nil {
-		return Configuracion{}, err
+	if configuracion.MaximoFallosMonitor, errorObtenido = cargarEnteroAcotado("SCRAPER_MONITOR_MAX_FAILURES", fallosMonitorDefecto, 1, fallosMonitorMaximos); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
-	if configuracion.RetrasoDebounceReviews, err = cargarDuracionPositiva("DISCORD_REVIEW_DEBOUNCE", retrasoDebounceDefecto, retrasoDebounceMaximo); err != nil {
-		return Configuracion{}, err
+	if configuracion.RetrasoDebounceReviews, errorObtenido = cargarDuracionPositiva("DISCORD_REVIEW_DEBOUNCE", retrasoDebounceDefecto, retrasoDebounceMaximo); errorObtenido != nil {
+		return Configuracion{}, errorObtenido
 	}
 	return configuracion, nil
 }
 
 // validarURLScraper exige una URL pública del contrato HTTP configurado.
 func validarURLScraper(valor string) error {
-	direccion, err := url.Parse(valor)
-	if err != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") ||
+	direccion, errorObtenido := url.Parse(valor)
+	if errorObtenido != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") ||
 		direccion.Hostname() == "" || direccion.User != nil || direccion.RawQuery != "" ||
 		direccion.ForceQuery || direccion.Fragment != "" || strings.TrimSuffix(direccion.Path, "/") != rutaTrabajosScraper {
 		return errors.New("SCRAPER_API_BASE_URL debe ser una URL HTTP(S) válida terminada en /api/v1/scraper/trabajos")
@@ -103,8 +103,8 @@ func validarURLScraper(valor string) error {
 
 // validarPuerto evita abrir el servidor de webhooks en un puerto inválido.
 func validarPuerto(valor string) error {
-	puerto, err := strconv.Atoi(valor)
-	if err != nil || puerto < 1 || puerto > 65535 {
+	puerto, errorObtenido := strconv.Atoi(valor)
+	if errorObtenido != nil || puerto < 1 || puerto > 65535 {
 		return errors.New("PORT debe estar entre 1 y 65535")
 	}
 	return nil
@@ -116,8 +116,8 @@ func cargarDuracionPositiva(nombre string, defecto, maximo time.Duration) (time.
 	if valor == "" {
 		return defecto, nil
 	}
-	duracion, err := time.ParseDuration(valor)
-	if err != nil || duracion <= 0 || duracion > maximo {
+	duracion, errorObtenido := time.ParseDuration(valor)
+	if errorObtenido != nil || duracion <= 0 || duracion > maximo {
 		return 0, fmt.Errorf("%s debe ser una duración positiva no superior a %s", nombre, maximo)
 	}
 	return duracion, nil
@@ -129,8 +129,8 @@ func cargarEnteroAcotado(nombre string, defecto, minimo, maximo int) (int, error
 	if valor == "" {
 		return defecto, nil
 	}
-	numero, err := strconv.Atoi(valor)
-	if err != nil || numero < minimo || numero > maximo {
+	numero, errorObtenido := strconv.Atoi(valor)
+	if errorObtenido != nil || numero < minimo || numero > maximo {
 		return 0, fmt.Errorf("%s debe ser un entero entre %d y %d", nombre, minimo, maximo)
 	}
 	return numero, nil

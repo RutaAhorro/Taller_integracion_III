@@ -9,7 +9,7 @@ import (
 
 // main delega la ejecución al paquete del bot.
 func main() {
-	if err := bot.Run(); err != nil {
-		log.Fatal(err)
+	if errorObtenido := bot.Run(); errorObtenido != nil {
+		log.Fatal(errorObtenido)
 	}
 }

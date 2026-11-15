@@ -31,38 +31,38 @@ var (
 
 // Run carga configuración, conecta Discord y mantiene el servidor HTTP activo.
 func Run() error {
-	if err := godotenv.Load(); err != nil {
-		log.Printf("Aviso: no se encontró .env; se usará la configuración del entorno: %v", err)
+	if errorObtenido := godotenv.Load(); errorObtenido != nil {
+		log.Printf("Aviso: no se encontró .env; se usará la configuración del entorno: %v", errorObtenido)
 	}
-	configuracion, err := config.Cargar()
-	if err != nil {
-		return err
+	configuracion, errorObtenido := config.Cargar()
+	if errorObtenido != nil {
+		return errorObtenido
 	}
 	configuracionActiva = configuracion
 	configurarClienteScraper(configuracion)
 
-	sesionDiscord, err := discordgo.New("Bot " + configuracion.TokenDiscord)
-	if err != nil {
-		return fmt.Errorf("no se pudo crear la sesión de Discord: %w", err)
+	sesionDiscord, errorObtenido := discordgo.New("Bot " + configuracion.TokenDiscord)
+	if errorObtenido != nil {
+		return fmt.Errorf("no se pudo crear la sesión de Discord: %w", errorObtenido)
 	}
 	sesionDiscord.AddHandler(messageCreate)
-	sesionDiscord.AddHandler(handleInteraction)
+	sesionDiscord.AddHandler(manejarInteraccion)
 	sesionDiscord.Identify.Intents = discordgo.IntentsGuildMessages
-	if err := sesionDiscord.Open(); err != nil {
-		return fmt.Errorf("no se pudo abrir la conexión de Discord: %w", err)
+	if errorObtenido := sesionDiscord.Open(); errorObtenido != nil {
+		return fmt.Errorf("no se pudo abrir la conexión de Discord: %w", errorObtenido)
 	}
 	defer func() {
-		if err := sesionDiscord.Close(); err != nil {
-			log.Printf("No se pudo cerrar la sesión de Discord: %v", err)
+		if errorObtenido := sesionDiscord.Close(); errorObtenido != nil {
+			log.Printf("No se pudo cerrar la sesión de Discord: %v", errorObtenido)
 		}
 	}()
 	log.Println("Bot conectado a Discord!")
 
-	router := gin.Default()
-	router.POST("/webhooks/github", func(contextoHTTP *gin.Context) {
+	enrutador := gin.Default()
+	enrutador.POST("/webhooks/github", func(contextoHTTP *gin.Context) {
 		evento := contextoHTTP.GetHeader("X-GitHub-Event")
 		var cargaGitHub map[string]interface{}
-		if err := contextoHTTP.BindJSON(&cargaGitHub); err != nil {
+		if errorObtenido := contextoHTTP.BindJSON(&cargaGitHub); errorObtenido != nil {
 			contextoHTTP.JSON(http.StatusBadRequest, gin.H{"error": "Payload inválido"})
 			return
 		}
@@ -85,7 +85,7 @@ func Run() error {
 	})
 	servidorHTTP := &http.Server{
 		Addr:              ":" + configuracion.PuertoWebhook,
-		Handler:           router,
+		Handler:           enrutador,
 		ReadHeaderTimeout: configuracion.TimeoutCabeceraHTTP,
 	}
 	resultadoServidor := make(chan error, 1)
@@ -97,18 +97,18 @@ func Run() error {
 	contextoSenales, cancelarSenales := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 	defer cancelarSenales()
 	select {
-	case err := <-resultadoServidor:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("falló el servidor de webhooks: %w", err)
+	case errorObtenido := <-resultadoServidor:
+		if !errors.Is(errorObtenido, http.ErrServerClosed) {
+			return fmt.Errorf("falló el servidor de webhooks: %w", errorObtenido)
 		}
 	case <-contextoSenales.Done():
 		contextoCierre, cancelarCierre := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancelarCierre()
-		if err := servidorHTTP.Shutdown(contextoCierre); err != nil {
-			return fmt.Errorf("no se pudo cerrar el servidor de webhooks: %w", err)
+		if errorObtenido := servidorHTTP.Shutdown(contextoCierre); errorObtenido != nil {
+			return fmt.Errorf("no se pudo cerrar el servidor de webhooks: %w", errorObtenido)
 		}
-		if err := <-resultadoServidor; !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("falló el servidor de webhooks durante el cierre: %w", err)
+		if errorObtenido := <-resultadoServidor; !errors.Is(errorObtenido, http.ErrServerClosed) {
+			return fmt.Errorf("falló el servidor de webhooks durante el cierre: %w", errorObtenido)
 		}
 	}
 	return nil
@@ -127,11 +127,11 @@ func messageCreate(sesionDiscord *discordgo.Session, mensajeDiscord *discordgo.M
 	}
 
 	if mensajeDiscord.Content == "!scrapear" {
-		sendScraperMenu(sesionDiscord, mensajeDiscord.ChannelID)
+		enviarMenuScraper(sesionDiscord, mensajeDiscord.ChannelID)
 	}
 
 	if mensajeDiscord.Content == "!help" {
-		helpMsg := "📚 **Lista de Comandos del Bot**\n\n" +
+		mensajeAyuda := "📚 **Lista de Comandos del Bot**\n\n" +
 			"**Scraping:**\n" +
 			"`!scrapear` - Muestra el menú interactivo para seleccionar y ejecutar una araña de scraping (Jumbo, Lider, Santa Isabel).\n\n" +
 			"**GitHub (Automático):**\n" +
@@ -143,7 +143,7 @@ func messageCreate(sesionDiscord *discordgo.Session, mensajeDiscord *discordgo.M
 			"**Otros:**\n" +
 			"`!ping` - Para comprobar que sigo con vida."
 
-		sesionDiscord.ChannelMessageSend(mensajeDiscord.ChannelID, helpMsg)
+		sesionDiscord.ChannelMessageSend(mensajeDiscord.ChannelID, mensajeAyuda)
 	}
 }
 
@@ -151,180 +151,180 @@ func messageCreate(sesionDiscord *discordgo.Session, mensajeDiscord *discordgo.M
 
 // handlePush notifica sobre nuevos commits.
 func handlePush(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
-	pusherMap, ok := cargaGitHub["pusher"].(map[string]interface{})
-	if !ok {
+	datosEmisor, esValido := cargaGitHub["pusher"].(map[string]interface{})
+	if !esValido {
 		return
 	}
-	pusherName := pusherMap["name"].(string)
+	nombreEmisor := datosEmisor["name"].(string)
 
-	ref, _ := cargaGitHub["ref"].(string)
-	branch := strings.Replace(ref, "refs/heads/", "", 1)
+	referencia, _ := cargaGitHub["ref"].(string)
+	rama := strings.Replace(referencia, "refs/heads/", "", 1)
 
-	isMerge := false
-	var commitsMsg string
+	esFusion := false
+	var mensajesCommits string
 
-	if headCommit, ok := cargaGitHub["head_commit"].(map[string]interface{}); ok && headCommit != nil {
-		message, _ := headCommit["message"].(string)
-		if strings.HasPrefix(message, "Merge pull request") || strings.HasPrefix(message, "Merge branch") {
-			isMerge = true
+	if commitEncabezado, esValido := cargaGitHub["head_commit"].(map[string]interface{}); esValido && commitEncabezado != nil {
+		mensaje, _ := commitEncabezado["message"].(string)
+		if strings.HasPrefix(mensaje, "Merge pull request") || strings.HasPrefix(mensaje, "Merge branch") {
+			esFusion = true
 		}
 	}
 
-	if commits, ok := cargaGitHub["commits"].([]interface{}); ok && len(commits) > 0 {
-		commitsMsg = "\n**Commits:**"
+	if confirmaciones, esValido := cargaGitHub["commits"].([]interface{}); esValido && len(confirmaciones) > 0 {
+		mensajesCommits = "\n**Commits:**"
 		// Limitar a 5 commits para no hacer spam si empujan muchos de golpe
-		limit := len(commits)
-		if limit > 5 {
-			limit = 5
+		limite := len(confirmaciones)
+		if limite > 5 {
+			limite = 5
 		}
-		for i := 0; i < limit; i++ {
-			c := commits[i].(map[string]interface{})
-			msg, _ := c["message"].(string)
-			firstLine := strings.Split(msg, "\n")[0] // Solo la primera línea
+		for indice := 0; indice < limite; indice++ {
+			commitActual := confirmaciones[indice].(map[string]interface{})
+			mensaje, _ := commitActual["message"].(string)
+			primeraLinea := strings.Split(mensaje, "\n")[0] // Solo la primera línea
 
-			id, _ := c["id"].(string)
-			shortID := id
-			if len(id) > 7 {
-				shortID = id[:7]
+			identificador, _ := commitActual["id"].(string)
+			identificadorCorto := identificador
+			if len(identificador) > 7 {
+				identificadorCorto = identificador[:7]
 			}
-			url, _ := c["url"].(string)
+			direccion, _ := commitActual["url"].(string)
 
 			// Formato: - [`shortID`](url) Mensaje
-			commitsMsg += fmt.Sprintf("\n- [`%s`](<%s>) %s", shortID, url, firstLine)
+			mensajesCommits += fmt.Sprintf("\n- [`%s`](<%s>) %s", identificadorCorto, direccion, primeraLinea)
 		}
-		if len(commits) > 5 {
-			commitsMsg += fmt.Sprintf("\n*... y %d commits más.*", len(commits)-5)
+		if len(confirmaciones) > 5 {
+			mensajesCommits += fmt.Sprintf("\n*... y %d commits más.*", len(confirmaciones)-5)
 		}
 	}
 
-	var msg string
-	if isMerge {
-		msg = fmt.Sprintf("🔀 **Merge Realizado** por `%s` en la rama `%s`.", pusherName, branch)
+	var mensaje string
+	if esFusion {
+		mensaje = fmt.Sprintf("🔀 **Merge Realizado** por `%s` en la rama `%s`.", nombreEmisor, rama)
 	} else {
-		msg = fmt.Sprintf("🚀 **Nuevo Push** de `%s` en la rama `%s`.", pusherName, branch)
+		mensaje = fmt.Sprintf("🚀 **Nuevo Push** de `%s` en la rama `%s`.", nombreEmisor, rama)
 	}
 
-	msg += commitsMsg
-	sesionDiscord.ChannelMessageSend(canalID, msg)
+	mensaje += mensajesCommits
+	sesionDiscord.ChannelMessageSend(canalID, mensaje)
 }
 
 // handlePullRequest notifica creación de PR, etiquetas, revisiones y merges.
 func handlePullRequest(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
-	action, _ := cargaGitHub["action"].(string)
+	accion, _ := cargaGitHub["action"].(string)
 
-	prMap, ok := cargaGitHub["pull_request"].(map[string]interface{})
-	if !ok {
+	datosPR, esValido := cargaGitHub["pull_request"].(map[string]interface{})
+	if !esValido {
 		return
 	}
 
-	title, _ := prMap["title"].(string)
-	url, _ := prMap["html_url"].(string)
-	userMap, _ := prMap["user"].(map[string]interface{})
-	author, _ := userMap["login"].(string)
+	titulo, _ := datosPR["title"].(string)
+	direccion, _ := datosPR["html_url"].(string)
+	datosUsuario, _ := datosPR["user"].(map[string]interface{})
+	autor, _ := datosUsuario["login"].(string)
 
 	// Convertir PR number a float64 (JSON genérico) y luego a int
-	numberFloat, ok := prMap["number"].(float64)
-	number := 0
-	if ok {
-		number = int(numberFloat)
+	numeroDecimal, esValido := datosPR["number"].(float64)
+	numero := 0
+	if esValido {
+		numero = int(numeroDecimal)
 	}
 
-	switch action {
+	switch accion {
 	case "opened", "reopened":
 		// Extraer Assignees
-		var assigneesList []string
-		if assignees, ok := prMap["assignees"].([]interface{}); ok {
-			for _, a := range assignees {
-				assigneeMap := a.(map[string]interface{})
-				login := assigneeMap["login"].(string)
-				assigneesList = append(assigneesList, mapGitHubToDiscord(login))
+		var usuariosAsignados []string
+		if asignados, esValido := datosPR["assignees"].([]interface{}); esValido {
+			for _, asignadoActual := range asignados {
+				datosAsignado := asignadoActual.(map[string]interface{})
+				nombreUsuario := datosAsignado["login"].(string)
+				usuariosAsignados = append(usuariosAsignados, mapGitHubToDiscord(nombreUsuario))
 			}
 		}
 
 		// Extraer Requested Reviewers
-		var reviewersList []string
-		if reviewers, ok := prMap["requested_reviewers"].([]interface{}); ok {
-			for _, r := range reviewers {
-				reviewerMap := r.(map[string]interface{})
-				login := reviewerMap["login"].(string)
-				reviewersList = append(reviewersList, mapGitHubToDiscord(login))
+		var usuariosRevisores []string
+		if revisores, esValido := datosPR["requested_reviewers"].([]interface{}); esValido {
+			for _, revisorActual := range revisores {
+				datosRevisor := revisorActual.(map[string]interface{})
+				nombreUsuario := datosRevisor["login"].(string)
+				usuariosRevisores = append(usuariosRevisores, mapGitHubToDiscord(nombreUsuario))
 			}
 		}
 
 		// Extraer Labels
-		var labelsList []string
-		if labels, ok := prMap["labels"].([]interface{}); ok {
-			for _, l := range labels {
-				labelMap := l.(map[string]interface{})
-				name := labelMap["name"].(string)
-				labelsList = append(labelsList, "`"+name+"`")
+		var etiquetas []string
+		if etiquetas, esValido := datosPR["labels"].([]interface{}); esValido {
+			for _, etiquetaActual := range etiquetas {
+				datosEtiqueta := etiquetaActual.(map[string]interface{})
+				nombre := datosEtiqueta["name"].(string)
+				etiquetas = append(etiquetas, "`"+nombre+"`")
 			}
 		}
 
-		msg := fmt.Sprintf("🛠️ **Nuevo Pull Request** por `%s`\n**Título**: %s\n**Link**: %s", author, title, url)
+		mensaje := fmt.Sprintf("🛠️ **Nuevo Pull Request** por `%s`\n**Título**: %s\n**Link**: %s", autor, titulo, direccion)
 
-		if len(labelsList) > 0 {
-			msg += fmt.Sprintf("\n**Etiquetas**: %s", strings.Join(labelsList, ", "))
+		if len(etiquetas) > 0 {
+			mensaje += fmt.Sprintf("\n**Etiquetas**: %s", strings.Join(etiquetas, ", "))
 		}
 
-		if len(assigneesList) > 0 {
-			msg += fmt.Sprintf("\n**Asignados**: %s", strings.Join(assigneesList, " "))
+		if len(usuariosAsignados) > 0 {
+			mensaje += fmt.Sprintf("\n**Asignados**: %s", strings.Join(usuariosAsignados, " "))
 		}
 
-		if len(reviewersList) > 0 {
-			msg += fmt.Sprintf("\n**Reviewers Solicitados**: %s", strings.Join(reviewersList, " "))
+		if len(usuariosRevisores) > 0 {
+			mensaje += fmt.Sprintf("\n**Reviewers Solicitados**: %s", strings.Join(usuariosRevisores, " "))
 		}
 
-		sesionDiscord.ChannelMessageSend(canalID, msg)
+		sesionDiscord.ChannelMessageSend(canalID, mensaje)
 
 	case "closed":
-		senderMap, _ := cargaGitHub["sender"].(map[string]interface{})
-		senderName, _ := senderMap["login"].(string)
+		datosRemitente, _ := cargaGitHub["sender"].(map[string]interface{})
+		nombreRemitente, _ := datosRemitente["login"].(string)
 
-		merged, _ := prMap["merged"].(bool)
-		if merged {
-			msg := fmt.Sprintf("✅ **Pull Request Aceptado (Merged)** por `%s`\n**Título**: %s\n**Link**: %s", senderName, title, url)
-			sesionDiscord.ChannelMessageSend(canalID, msg)
+		fusionado, _ := datosPR["merged"].(bool)
+		if fusionado {
+			mensaje := fmt.Sprintf("✅ **Pull Request Aceptado (Merged)** por `%s`\n**Título**: %s\n**Link**: %s", nombreRemitente, titulo, direccion)
+			sesionDiscord.ChannelMessageSend(canalID, mensaje)
 		} else {
-			msg := fmt.Sprintf("❌ **Pull Request Rechazado/Cerrado** por `%s`\n**Título**: %s\n**Link**: %s", senderName, title, url)
-			sesionDiscord.ChannelMessageSend(canalID, msg)
+			mensaje := fmt.Sprintf("❌ **Pull Request Rechazado/Cerrado** por `%s`\n**Título**: %s\n**Link**: %s", nombreRemitente, titulo, direccion)
+			sesionDiscord.ChannelMessageSend(canalID, mensaje)
 		}
 
 	case "review_requested":
 
-		if reqRev, ok := cargaGitHub["requested_reviewer"].(map[string]interface{}); ok {
-			reviewer := reqRev["login"].(string)
-			reviewerDiscord := mapGitHubToDiscord(reviewer)
+		if revisorSolicitado, esValido := cargaGitHub["requested_reviewer"].(map[string]interface{}); esValido {
+			revisor := revisorSolicitado["login"].(string)
+			usuarioDiscord := mapGitHubToDiscord(revisor)
 
 			mutexDebounceReviews.Lock()
 
 			// Solo añadir si no existe ya para evitar duplicados en la lista (por si acaso GitHub manda eventos de mas)
-			exists := false
-			for _, usuario := range usuariosReviews[number] {
-				if usuario == reviewerDiscord {
-					exists = true
+			existe := false
+			for _, usuario := range usuariosReviews[numero] {
+				if usuario == usuarioDiscord {
+					existe = true
 					break
 				}
 			}
-			if !exists {
-				usuariosReviews[number] = append(usuariosReviews[number], reviewerDiscord)
+			if !existe {
+				usuariosReviews[numero] = append(usuariosReviews[numero], usuarioDiscord)
 			}
 
-			if temporizador, existeTemporizador := temporizadoresReviews[number]; existeTemporizador {
+			if temporizador, existeTemporizador := temporizadoresReviews[numero]; existeTemporizador {
 				temporizador.Stop()
 			}
 
 			// Acumular solicitudes repetidas de revisión antes de enviar una notificación.
-			temporizadoresReviews[number] = time.AfterFunc(configuracionActiva.RetrasoDebounceReviews, func() {
+			temporizadoresReviews[numero] = time.AfterFunc(configuracionActiva.RetrasoDebounceReviews, func() {
 				mutexDebounceReviews.Lock()
-				usuarios := usuariosReviews[number]
-				delete(usuariosReviews, number)
-				delete(temporizadoresReviews, number)
+				usuarios := usuariosReviews[numero]
+				delete(usuariosReviews, numero)
+				delete(temporizadoresReviews, numero)
 				mutexDebounceReviews.Unlock()
 
 				if len(usuarios) > 0 {
 					// Las URL entre <> evitan que Discord genere la caja gigante de previsualización
-					mensaje := fmt.Sprintf("👀 **Review Solicitado** en el PR #%d\nSe ha solicitado la revisión de %s.\n**Link**: <%s>", number, strings.Join(usuarios, ", "), url)
+					mensaje := fmt.Sprintf("👀 **Review Solicitado** en el PR #%d\nSe ha solicitado la revisión de %s.\n**Link**: <%s>", numero, strings.Join(usuarios, ", "), direccion)
 					sesionDiscord.ChannelMessageSend(canalID, mensaje)
 				}
 			})
@@ -332,10 +332,10 @@ func handlePullRequest(sesionDiscord *discordgo.Session, canalID string, cargaGi
 		}
 
 	case "labeled":
-		if labelMap, ok := cargaGitHub["label"].(map[string]interface{}); ok {
-			labelName := labelMap["name"].(string)
-			msg := fmt.Sprintf("🏷️ **Nueva Etiqueta** en el PR #%d\nSe añadió la etiqueta `%s`.\n**Link**: <%s>", number, labelName, url)
-			sesionDiscord.ChannelMessageSend(canalID, msg)
+		if datosEtiqueta, esValido := cargaGitHub["label"].(map[string]interface{}); esValido {
+			nombreEtiqueta := datosEtiqueta["name"].(string)
+			mensaje := fmt.Sprintf("🏷️ **Nueva Etiqueta** en el PR #%d\nSe añadió la etiqueta `%s`.\n**Link**: <%s>", numero, nombreEtiqueta, direccion)
+			sesionDiscord.ChannelMessageSend(canalID, mensaje)
 		}
 	}
 }
@@ -345,7 +345,7 @@ func handlePullRequest(sesionDiscord *discordgo.Session, canalID string, cargaGi
 // mapGitHubToDiscord traduce usuarios de GitHub a identificadores de Discord o nombres.
 func mapGitHubToDiscord(usuarioGitHub string) string {
 	// Diccionario estático de miembros del equipo
-	users := map[string]string{
+	usuarios := map[string]string{
 		"VichoMatus": "<@!537347874875506698>",
 		"danirc2024": "<@!1221186570455879702>",
 		"RCarrascoO": "<@!410177503592972288>",
@@ -354,8 +354,8 @@ func mapGitHubToDiscord(usuarioGitHub string) string {
 		"Web":        "<@!265591689211674624>", // Mapeo para su otro nick de GitHub
 	}
 
-	if discordPing, exists := users[usuarioGitHub]; exists {
-		return discordPing
+	if mencionDiscord, existe := usuarios[usuarioGitHub]; existe {
+		return mencionDiscord
 	}
 
 	// Si no está mapeado, retornar solo el nombre de Github resaltado
@@ -366,101 +366,101 @@ func mapGitHubToDiscord(usuarioGitHub string) string {
 
 // handlePullRequestReview notifica cuando alguien aprueba, rechaza o comenta un PR.
 func handlePullRequestReview(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
-	action, _ := cargaGitHub["action"].(string)
-	if action != "submitted" {
+	accion, _ := cargaGitHub["action"].(string)
+	if accion != "submitted" {
 		return
 	}
 
-	reviewMap, ok := cargaGitHub["review"].(map[string]interface{})
-	if !ok {
+	datosRevision, esValido := cargaGitHub["review"].(map[string]interface{})
+	if !esValido {
 		return
 	}
 
-	prMap, ok := cargaGitHub["pull_request"].(map[string]interface{})
-	if !ok {
+	datosPR, esValido := cargaGitHub["pull_request"].(map[string]interface{})
+	if !esValido {
 		return
 	}
 
-	state, _ := reviewMap["state"].(string) // "approved", "changes_requested", "commented"
-	body, _ := reviewMap["body"].(string)
-	url, _ := reviewMap["html_url"].(string)
+	estado, _ := datosRevision["state"].(string) // "approved", "changes_requested", "commented"
+	cuerpo, _ := datosRevision["body"].(string)
+	direccion, _ := datosRevision["html_url"].(string)
 
-	userMap, _ := reviewMap["user"].(map[string]interface{})
-	reviewer, _ := userMap["login"].(string)
-	reviewerDiscord := mapGitHubToDiscord(reviewer)
+	datosUsuario, _ := datosRevision["user"].(map[string]interface{})
+	revisor, _ := datosUsuario["login"].(string)
+	usuarioDiscord := mapGitHubToDiscord(revisor)
 
-	numberFloat, _ := prMap["number"].(float64)
-	number := int(numberFloat)
+	numeroDecimal, _ := datosPR["number"].(float64)
+	numero := int(numeroDecimal)
 
 	// Solo notificar si hay comentario o si es una aprobación/rechazo
-	if body == "" && state == "commented" {
+	if cuerpo == "" && estado == "commented" {
 		return
 	}
 
-	var statusEmoji string
-	var statusText string
+	var emojiEstado string
+	var textoEstado string
 
-	switch state {
+	switch estado {
 	case "approved":
-		statusEmoji = "✅"
-		statusText = "aprobó"
+		emojiEstado = "✅"
+		textoEstado = "aprobó"
 	case "changes_requested":
-		statusEmoji = "❌"
-		statusText = "solicitó cambios en"
+		emojiEstado = "❌"
+		textoEstado = "solicitó cambios en"
 	case "commented":
-		statusEmoji = "💬"
-		statusText = "comentó en"
+		emojiEstado = "💬"
+		textoEstado = "comentó en"
 	default:
-		statusEmoji = "📝"
-		statusText = "revisó"
+		emojiEstado = "📝"
+		textoEstado = "revisó"
 	}
 
-	msg := fmt.Sprintf("%s **Review**: %s %s el PR #%d\n", statusEmoji, reviewerDiscord, statusText, number)
-	if body != "" {
-		if len(body) > 300 {
-			body = body[:300] + "..."
+	mensaje := fmt.Sprintf("%s **Review**: %s %s el PR #%d\n", emojiEstado, usuarioDiscord, textoEstado, numero)
+	if cuerpo != "" {
+		if len(cuerpo) > 300 {
+			cuerpo = cuerpo[:300] + "..."
 		}
-		msg += fmt.Sprintf("> *\"%s\"*\n", body)
+		mensaje += fmt.Sprintf("> *\"%s\"*\n", cuerpo)
 	}
-	msg += fmt.Sprintf("**Link**: <%s>", url)
+	mensaje += fmt.Sprintf("**Link**: <%s>", direccion)
 
-	sesionDiscord.ChannelMessageSend(canalID, msg)
+	sesionDiscord.ChannelMessageSend(canalID, mensaje)
 }
 
 // handleIssueComment notifica cuando alguien comenta en el hilo de un PR.
 func handleIssueComment(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {
-	action, _ := cargaGitHub["action"].(string)
-	if action != "created" {
+	accion, _ := cargaGitHub["action"].(string)
+	if accion != "created" {
 		return
 	}
 
-	issueMap, ok := cargaGitHub["issue"].(map[string]interface{})
-	if !ok {
+	datosIncidencia, esValido := cargaGitHub["issue"].(map[string]interface{})
+	if !esValido {
 		return
 	}
-	if _, isPR := issueMap["pull_request"]; !isPR {
+	if _, esPR := datosIncidencia["pull_request"]; !esPR {
 		return // Ignorar comentarios en issues normales por ahora
 	}
 
-	commentMap, ok := cargaGitHub["comment"].(map[string]interface{})
-	if !ok {
+	datosComentario, esValido := cargaGitHub["comment"].(map[string]interface{})
+	if !esValido {
 		return
 	}
 
-	body, _ := commentMap["body"].(string)
-	url, _ := commentMap["html_url"].(string)
+	cuerpo, _ := datosComentario["body"].(string)
+	direccion, _ := datosComentario["html_url"].(string)
 
-	userMap, _ := commentMap["user"].(map[string]interface{})
-	commenter, _ := userMap["login"].(string)
-	commenterDiscord := mapGitHubToDiscord(commenter)
+	datosUsuario, _ := datosComentario["user"].(map[string]interface{})
+	usuarioComentarista, _ := datosUsuario["login"].(string)
+	usuarioDiscord := mapGitHubToDiscord(usuarioComentarista)
 
-	numberFloat, _ := issueMap["number"].(float64)
-	number := int(numberFloat)
+	numeroDecimal, _ := datosIncidencia["number"].(float64)
+	numero := int(numeroDecimal)
 
-	if len(body) > 300 {
-		body = body[:300] + "..."
+	if len(cuerpo) > 300 {
+		cuerpo = cuerpo[:300] + "..."
 	}
 
-	msg := fmt.Sprintf("💬 **Nuevo Comentario** de %s en el PR #%d\n> *\"%s\"*\n**Link**: <%s>", commenterDiscord, number, body, url)
-	sesionDiscord.ChannelMessageSend(canalID, msg)
+	mensaje := fmt.Sprintf("💬 **Nuevo Comentario** de %s en el PR #%d\n> *\"%s\"*\n**Link**: <%s>", usuarioDiscord, numero, cuerpo, direccion)
+	sesionDiscord.ChannelMessageSend(canalID, mensaje)
 }
