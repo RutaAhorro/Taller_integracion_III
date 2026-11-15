@@ -342,17 +342,13 @@ falle. Catálogo puede validar cookies existentes aun con Identidad detenida.
 5. Comprobar usuarios existentes, cookies anteriores, rol administrativo en
    Catálogo y creación/ejecución de scraping. No borrar datos ni roles.
 
-Para volver a SUP-271, restaurar **primero** su imagen de API con ambos DSN y
-verificar su health; después vaciar `IDENTIDAD_URL` en Gateway. Sólo entonces
-retirar Identidad. Vaciar la URL con API SUP-272 produciría 404, no un rollback.
-`docker-compose.identidad-rollback.yml` muestra los overrides; exige imagen
-aprobada de SUP-271. Conserva las otras migraciones y permisos; no usar al
-administrador ni ampliar grants. API SUP-271 liveness sigue en `/_api/live`.
-No eliminar counters Redis ni rotar JWT durante el retorno.
+Para volver a SUP-271 (histórico durante la migración del Sprint 2), se restauraba
+**primero** su imagen de API con ambos DSN y se verificaba su health; después se vaciaba
+`IDENTIDAD_URL` en Gateway. Sólo entonces se retiraba Identidad. Los overrides de
+`docker-compose.identidad-rollback.yml` fueron retirados en SUP-355 tras consolidarse
+los microservicios desacoplados. Conserva las otras migraciones y permisos; no usar al
+administrador ni ampliar grants. No eliminar counters Redis ni rotar JWT durante el retorno.
 
-Los rollbacks históricos de Catálogo/ingesta también vacían IDENTIDAD_URL para
-que auth vuelva a sus imágenes anteriores. Son procedimientos distintos: no
-confundir el rollback específico SUP-272 con volver a un escritor antiguo.
 
 ## Validación
 

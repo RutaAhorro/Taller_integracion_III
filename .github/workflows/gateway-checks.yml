@@ -162,6 +162,6 @@ jobs:
             infrastructure/k8s/motor-rutas/ \
             infrastructure/k8s/catalogo/ \
             infrastructure/k8s/control-scraping/ \
-            infrastructure/k8s/scraper/ \
+            infrastructure/k8s/scraper-go/ \
             infrastructure/k8s/redis/ \
             infrastructure/k8s/db/

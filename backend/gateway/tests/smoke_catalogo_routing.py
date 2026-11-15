@@ -1,4 +1,4 @@
-"""SUP-268: rutas públicas, fallos independientes, carga y rollback aislados."""
+"""SUP-268: rutas públicas, fallos independientes y carga aislados."""
 import argparse
 import concurrent.futures
 import http.cookiejar
@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--api-url', default='http://127.0.0.1:18080')
 parser.add_argument('--gateway-url', default='http://127.0.0.1:18082')
 parser.add_argument('--frontend-url', default='http://127.0.0.1:13000')
-parser.add_argument('--mode', choices=['normal', 'load', 'catalog-down', 'api-down', 'rollback'], required=True)
+parser.add_argument('--mode', choices=['normal', 'load', 'catalog-down', 'api-down'], required=True)
 parser.add_argument('--session-file', required=True, help='Archivo temporal privado para reutilizar una sesión real.')
 parser.add_argument('--swagger-scope', choices=['integrated', 'scraping'], default='integrated')
 args = parser.parse_args()
@@ -139,13 +139,6 @@ elif args.mode == 'api-down':
     check(args.gateway_url, '/_gateway/ready')
     health, _ = check(args.gateway_url, '/_gateway/dependencies', 503)
     assert health['checks']['catalogo'] == 'ok' and health['checks']['backend'] == 'error'
-elif args.mode == 'rollback':
-    catalog(args.gateway_url)
-    catalog(args.frontend_url)
-    check(args.api_url, '/api/v1/productos')
-    admin = login()
-    check(args.gateway_url, '/api/v1/admin/productos', opener=admin)
-    health, _ = check(args.gateway_url, '/_gateway/dependencies')
-    assert 'catalogo' not in health['checks']
 
 print(json.dumps({'task':'SUP-268','mode':args.mode,'passed':len(checks),'failed':0},ensure_ascii=False))
+

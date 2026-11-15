@@ -16,7 +16,7 @@
 
 ## Inconsistencias detectadas
 
-- `infrastructure/k8s/scraper/deployment.yaml` todavía describe el scraper Python, que se retiró en #126, y convive con `scraper-go/` (SUP-355).
-- `infrastructure/k8s/fortio/` sigue en el repositorio con `image: fortio/fortio:latest` (sin versión fija), aunque según el informe del benchmark Fortio ya no está en el clúster (SUP-355).
+- ~~`infrastructure/k8s/scraper/deployment.yaml` todavía describe el scraper Python~~: resuelto en SUP-355 (unificado en `scraper-go/` con su PVC).
+- ~~`infrastructure/k8s/fortio/` sigue en el repositorio~~: eliminado en SUP-355 (Fortio ya no está en el clúster).
 - Compose define `SCRAPER_CATEGORY_DIR=/app/categories`, pero el Dockerfile del Scraper Go copia las categorías a `/app/research` (SUP-351).
 - Sin Redis, el rate limiter de Identidad responde `500`; lo correcto sería `503`. Esto distorsiona la tasa de error si llega a medirse (SUP-362).
