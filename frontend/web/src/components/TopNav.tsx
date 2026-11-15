@@ -10,10 +10,11 @@ type TopNavProps = {
     query: string
     onQueryChange: (value: string) => void
     onMenuClick: () => void
+    sidebarOpen: boolean
     onResetFilters: () => void
 }
 
-export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: TopNavProps) {
+export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters }: TopNavProps) {
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [localQuery, setLocalQuery] = useState(query || '');
     const navigate = useNavigate();
@@ -26,8 +27,8 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
         setLocalQuery(query || '');
     }, [query]);
 
-    const handleSearch = (e: FormEvent) => {
-        e.preventDefault();
+    const handleSearch = (evento: FormEvent) => {
+        evento.preventDefault();
         onQueryChange(localQuery);
         navigate(ROUTES.CATALOGO);
     };
@@ -38,9 +39,13 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                 <Button
                     variant="ghost"
                     size="icon"
-                    className="hidden md:flex h-10 w-10 shrink-0 rounded-full"
+                    className="flex h-10 w-10 shrink-0 rounded-full"
                     onClick={onMenuClick}
-                    aria-label="Abrir menú principal"
+                    aria-label="Abrir filtros"
+                    aria-controls="catalog-filters"
+                    aria-expanded={sidebarOpen}
+                    aria-haspopup="dialog"
+                    title="Abrir filtros"
                 >
                     <Menu className="h-5 w-5" aria-hidden="true" />
                 </Button>
@@ -61,7 +66,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
 
                 <form
                     role="search"
-                    className="relative flex-1"
+                    className="relative min-w-0 flex-1"
                     onSubmit={handleSearch}
                 >
                     <label htmlFor="product-search" className="sr-only">
@@ -75,7 +80,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, onResetFilters }: To
                         id="product-search"
                         type="search"
                         value={localQuery}
-                        onChange={(e) => setLocalQuery(e.target.value)}
+                        onChange={(evento) => setLocalQuery(evento.target.value)}
                         placeholder="Buscar productos"
                         autoComplete="off"
                         className="h-11 w-full rounded-full border border-input bg-background pl-10 md:pl-12 pr-12 md:pr-28 text-sm md:text-base outline-none transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"

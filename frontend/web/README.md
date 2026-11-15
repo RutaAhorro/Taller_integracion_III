@@ -189,6 +189,25 @@ Con frontend, Gateway e Identidad ejecutándose y la base API configurada:
    catálogo incluso sin usuario local, para expirar la cookie que pudo quedar.
 6. Comprobar también «Continuar como invitado»: espera el cierre y abre el catálogo.
 
+### Comprobar filtros móviles (SUP-372)
+
+En Chrome o Edge, abrir DevTools (`F12`) y activar la barra de dispositivos
+(`Ctrl+Shift+M`). Elegir «Responsive» y probar anchos de 360 y 390 px:
+
+1. Entrar a `/dashboard`: el botón «Abrir filtros» debe estar visible.
+2. Abrir el panel, elegir una categoría y volver a abrirlo: la selección se conserva.
+3. Elegir un supermercado disponible y comprobar que se conserva al reabrir.
+4. Pulsar «Limpiar filtros»: se restablecen búsqueda, categoría y supermercado.
+5. Cerrar con la X, pulsando fuera y con Escape. La búsqueda y navegación siguen accesibles.
+6. Con teclado, abrir el panel y recorrerlo con Tab/Shift+Tab: el foco permanece
+   dentro. Al cerrar, vuelve al botón de apertura; el panel cerrado no recibe foco.
+7. Repetir en escritorio: el panel empieza cerrado y el foco no salta a «Cerrar
+   filtros» al cargar. Abrirlo con el botón y comprobar el mismo recorrido de
+   teclado. Verificar que no aparece desplazamiento horizontal.
+
+La emulación permite comprobar tamaño e interacción, pero no sustituye una
+prueba en un teléfono real. Registrar el navegador, ancho y resultado observado.
+
 ## Referencias
 
 - [Arquitectura y ejecución del proyecto](../../README.md).
