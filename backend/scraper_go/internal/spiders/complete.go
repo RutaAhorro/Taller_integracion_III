@@ -9,7 +9,7 @@ import (
 
 // CompleteItem asegura que el item cumpla el esquema de Catálogo antes de
 // guardarlo en el spool o publicarlo.
-func CompleteItem(item domain.Item) domain.Item {
-	item.Product = normalize.LimitarProducto(item.Product)
-	return item
+func CompleteItem(elemento domain.Item) domain.Item {
+	elemento.Product = normalize.LimitarProducto(elemento.Product)
+	return elemento
 }

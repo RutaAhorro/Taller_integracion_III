@@ -12,27 +12,27 @@ import (
 
 // Collect combina las URLs recibidas por argumento con las de un archivo, una
 // por línea. Ignora líneas vacías y comentarios.
-func Collect(values []string, file string) ([]string, error) {
-	result := append([]string(nil), values...)
-	if file == "" {
-		return result, nil
+func Collect(valores []string, archivo string) ([]string, error) {
+	resultado := append([]string(nil), valores...)
+	if archivo == "" {
+		return resultado, nil
 	}
-	handle, err := os.Open(file)
-	if err != nil {
-		return nil, fmt.Errorf("abrir %s: %w", file, err)
+	manejador, errorObtenido := os.Open(archivo)
+	if errorObtenido != nil {
+		return nil, fmt.Errorf("abrir %s: %w", archivo, errorObtenido)
 	}
-	defer handle.Close()
+	defer manejador.Close()
 
-	scanner := bufio.NewScanner(handle)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+	escaner := bufio.NewScanner(manejador)
+	for escaner.Scan() {
+		linea := strings.TrimSpace(escaner.Text())
+		if linea == "" || strings.HasPrefix(linea, "#") {
 			continue
 		}
-		result = append(result, line)
+		resultado = append(resultado, linea)
 	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("leer %s: %w", file, err)
+	if errorObtenido := escaner.Err(); errorObtenido != nil {
+		return nil, fmt.Errorf("leer %s: %w", archivo, errorObtenido)
 	}
-	return result, nil
+	return resultado, nil
 }

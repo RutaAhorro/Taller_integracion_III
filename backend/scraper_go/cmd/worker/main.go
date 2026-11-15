@@ -24,81 +24,81 @@ import (
 
 // main es el punto de entrada del demonio trabajador del scraper.
 func main() {
-	if err := run(); err != nil {
-		slog.Error("worker_exit", "error", err)
+	if errorObtenido := run(); errorObtenido != nil {
+		slog.Error("worker_exit", "error", errorObtenido)
 		os.Exit(1)
 	}
 }
 
 // run ejecuta el bucle de procesamiento continuo o la tarea solicitada.
 func run() error {
-	cfg, err := config.FromEnv()
-	if err != nil {
-		return err
+	configuracion, errorObtenido := config.FromEnv()
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: cfg.LogLevel}))
-	slog.SetDefault(logger)
+	registrador := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: configuracion.LogLevel}))
+	slog.SetDefault(registrador)
 
-	if cfg.Token == "" {
+	if configuracion.Token == "" {
 		return fmt.Errorf("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
 	}
-	if err := os.MkdirAll(cfg.StateDir, 0o700); err != nil {
-		return err
+	if errorObtenido := os.MkdirAll(configuracion.StateDir, 0o700); errorObtenido != nil {
+		return errorObtenido
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	contexto, parada := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer parada()
 
-	redisOptions, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
-		return fmt.Errorf("REDIS_URL inválida: %w", err)
+	opcionesRedis, errorObtenido := redis.ParseURL(configuracion.RedisURL)
+	if errorObtenido != nil {
+		return fmt.Errorf("REDIS_URL inválida: %w", errorObtenido)
 	}
-	redisOptions.DialTimeout = cfg.RedisDialTimeout
-	redisOptions.ReadTimeout = cfg.RedisDialTimeout
-	redisOptions.WriteTimeout = cfg.RedisDialTimeout
-	redisClient := redis.NewClient(redisOptions)
-	defer redisClient.Close()
+	opcionesRedis.DialTimeout = configuracion.RedisDialTimeout
+	opcionesRedis.ReadTimeout = configuracion.RedisDialTimeout
+	opcionesRedis.WriteTimeout = configuracion.RedisDialTimeout
+	clienteRedis := redis.NewClient(opcionesRedis)
+	defer clienteRedis.Close()
 
-	pingCtx, cancel := context.WithTimeout(ctx, cfg.RedisPingTimeout)
-	defer cancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
-		return fmt.Errorf("no se pudo conectar a Redis: %w", err)
+	contextoPing, cancelar := context.WithTimeout(contexto, configuracion.RedisPingTimeout)
+	defer cancelar()
+	if errorObtenido := clienteRedis.Ping(contextoPing).Err(); errorObtenido != nil {
+		return fmt.Errorf("no se pudo conectar a Redis: %w", errorObtenido)
 	}
 
-	httpClient := crawler.New(crawler.Options{
-		UserAgent:        cfg.UserAgent,
-		Delay:            cfg.DownloadDelay,
-		Timeout:          cfg.DownloadTimeout,
-		MaxSize:          cfg.MaxDownloadSize,
-		MaxRetries:       cfg.MaxRetries,
-		RobotsCacheTTL:   cfg.RobotsCacheTTL,
-		RobotsFailureTTL: cfg.RobotsFailureTTL,
-		RobotsMaxBytes:   cfg.RobotsMaxBytes,
-		BackoffMin:       cfg.BackoffMin,
-		BackoffMax:       cfg.BackoffMax,
-		Logger:           logger,
+	clienteHTTP := crawler.New(crawler.Options{
+		UserAgent:        configuracion.UserAgent,
+		Delay:            configuracion.DownloadDelay,
+		Timeout:          configuracion.DownloadTimeout,
+		MaxSize:          configuracion.MaxDownloadSize,
+		MaxRetries:       configuracion.MaxRetries,
+		RobotsCacheTTL:   configuracion.RobotsCacheTTL,
+		RobotsFailureTTL: configuracion.RobotsFailureTTL,
+		RobotsMaxBytes:   configuracion.RobotsMaxBytes,
+		BackoffMin:       configuracion.BackoffMin,
+		BackoffMax:       configuracion.BackoffMax,
+		Logger:           registrador,
 	})
-	registry, err := spiders.NewRegistryFromEnv(httpClient, cfg.CategoryDir, cfg.MaxPages, logger)
-	if err != nil {
-		return err
+	registro, errorObtenido := spiders.NewRegistryFromEnv(clienteHTTP, configuracion.CategoryDir, configuracion.MaxPages, registrador)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
 
-	queueClient, err := queue.New(redisClient, queue.Options{
-		Stream:    cfg.QueueName,
-		Group:     cfg.Group,
-		Lease:     cfg.Lease,
-		Block:     cfg.QueueBlock,
-		ClosedTTL: cfg.QueueClosedTTL,
+	clienteCola, errorObtenido := queue.New(clienteRedis, queue.Options{
+		Stream:    configuracion.QueueName,
+		Group:     configuracion.Group,
+		Lease:     configuracion.Lease,
+		Block:     configuracion.QueueBlock,
+		ClosedTTL: configuracion.QueueClosedTTL,
 	})
-	if err != nil {
-		return err
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	apiClient := controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout)
+	clienteAPI := controlscraping.New(configuracion.APIURL, configuracion.Token, configuracion.APITimeout)
 
-	scraperWorker := worker.New(cfg, apiClient, queueClient, registry, logger)
-	if err := scraperWorker.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
-		return err
+	trabajadorScraper := worker.New(configuracion, clienteAPI, clienteCola, registro, registrador)
+	if errorObtenido := trabajadorScraper.Run(contexto); errorObtenido != nil && !errors.Is(errorObtenido, context.Canceled) {
+		return errorObtenido
 	}
-	logger.Info("worker_stopped")
+	registrador.Info("worker_stopped")
 	return nil
 }

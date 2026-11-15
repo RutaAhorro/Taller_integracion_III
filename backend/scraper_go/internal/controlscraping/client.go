@@ -68,12 +68,12 @@ type Client struct {
 
 // New construye el cliente con el endpoint de ingesta, el token Bearer y el
 // timeout de cada llamada.
-func New(endpoint, token string, timeout time.Duration) *Client {
+func New(puntoAcceso, token string, tiempoEspera time.Duration) *Client {
 	return &Client{
-		endpoint: strings.TrimRight(endpoint, "/"),
+		endpoint: strings.TrimRight(puntoAcceso, "/"),
 		token:    token,
 		http: &http.Client{
-			Timeout: timeout,
+			Timeout: tiempoEspera,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -94,150 +94,150 @@ type ingestPayload struct {
 // IngestBatch envía un lote y valida el recibo cuando se usa una clave de
 // idempotencia, igual que ScraperAPIClient.ingest_batch.
 func (cliente *Client) IngestBatch(
-	ctx context.Context,
-	products []domain.Product,
-	supermarket *string,
-	workID string,
-	batchID string,
+	contexto context.Context,
+	productos []domain.Product,
+	supermercado *string,
+	trabajoID string,
+	loteID string,
 ) (map[string]any, error) {
-	if len(products) == 0 {
+	if len(productos) == 0 {
 		return map[string]any{"total_recibidos": 0}, nil
 	}
 
-	payload := ingestPayload{Productos: limitProducts(products)}
-	if supermarket != nil && *supermarket != "" {
-		payload.Supermercado = supermarket
+	carga := ingestPayload{Productos: limitProducts(productos)}
+	if supermercado != nil && *supermercado != "" {
+		carga.Supermercado = supermercado
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("serializar lote: %w", err)
+	cuerpo, errorObtenido := json.Marshal(carga)
+	if errorObtenido != nil {
+		return nil, fmt.Errorf("serializar lote: %w", errorObtenido)
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, cliente.ingestionEndpoint(workID), bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodPost, cliente.ingestionEndpoint(trabajoID), bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
+	peticion.Header.Set("Accept", "application/json")
+	peticion.Header.Set("Content-Type", "application/json")
 	if cliente.token != "" {
-		request.Header.Set("Authorization", "Bearer "+cliente.token)
+		peticion.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
-	if batchID != "" {
-		request.Header.Set("Idempotency-Key", batchID)
+	if loteID != "" {
+		peticion.Header.Set("Idempotency-Key", loteID)
 	}
 
-	responseBody, err := cliente.do(request)
-	if err != nil {
-		return nil, err
+	cuerpoRespuesta, errorObtenido := cliente.do(peticion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if len(responseBody) == 0 {
-		if batchID != "" {
+	if len(cuerpoRespuesta) == 0 {
+		if loteID != "" {
 			return nil, &Error{Message: "La API no confirmó el lote"}
 		}
 		return map[string]any{}, nil
 	}
 
-	var result map[string]any
-	if err := json.Unmarshal(responseBody, &result); err != nil {
+	var resultado map[string]any
+	if errorObtenido := json.Unmarshal(cuerpoRespuesta, &resultado); errorObtenido != nil {
 		return nil, &Error{Message: "La API respondió con JSON inválido"}
 	}
-	if result["codigo"] == "entrega_pendiente" {
+	if resultado["codigo"] == "entrega_pendiente" {
 		return nil, &Error{
 			Message: "Entrega pendiente de confirmación",
 			Status:  http.StatusAccepted,
 			Code:    "entrega_pendiente",
 		}
 	}
-	if batchID != "" {
-		total, ok := asInt(result["total_recibidos"])
-		if !ok || total != len(products) {
+	if loteID != "" {
+		total, valido := asInt(resultado["total_recibidos"])
+		if !valido || total != len(productos) {
 			return nil, &Error{Message: "La API devolvió un recibo de lote inconsistente"}
 		}
-		registered, okRegistered := asInt(result["precios_registrados"])
-		inserted, okInserted := asInt(result["insertados"])
-		updated, okUpdated := asInt(result["actualizados"])
-		if !okRegistered || !okInserted || !okUpdated || registered != inserted+updated {
+		registrado, validoRegistrado := asInt(resultado["precios_registrados"])
+		insertado, validoInsertado := asInt(resultado["insertados"])
+		actualizado, validoActualizado := asInt(resultado["actualizados"])
+		if !validoRegistrado || !validoInsertado || !validoActualizado || registrado != insertado+actualizado {
 			return nil, &Error{Message: "La API devolvió un recibo de lote inconsistente"}
 		}
 	}
-	return result, nil
+	return resultado, nil
 }
 
 // ===== Cierre y Consulta de Trabajos =====
 
 // FinalizeWork cierra un trabajo y exige que la API confirme id y estado.
 func (cliente *Client) FinalizeWork(
-	ctx context.Context,
-	workID string,
-	status string,
-	extractedItems *int,
-	blockedResponses *int,
-	errorMessage string,
+	contexto context.Context,
+	trabajoID string,
+	estado string,
+	elementosExtraidos *int,
+	respuestasBloqueadas *int,
+	mensajeError string,
 ) (map[string]any, error) {
-	payload := map[string]any{"estado": status}
-	if extractedItems != nil {
-		payload["elementos_extraidos"] = *extractedItems
+	carga := map[string]any{"estado": estado}
+	if elementosExtraidos != nil {
+		carga["elementos_extraidos"] = *elementosExtraidos
 	}
-	if blockedResponses != nil {
-		payload["respuestas_bloqueadas"] = *blockedResponses
+	if respuestasBloqueadas != nil {
+		carga["respuestas_bloqueadas"] = *respuestasBloqueadas
 	}
-	if errorMessage != "" {
-		payload["registro_errores"] = errorMessage
+	if mensajeError != "" {
+		carga["registro_errores"] = mensajeError
 	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, err
+	cuerpo, errorObtenido := json.Marshal(carga)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodPut, cliente.base()+"/trabajos/"+workID+"/finalizar", bytes.NewReader(body))
-	if err != nil {
-		return nil, err
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodPut, cliente.base()+"/trabajos/"+trabajoID+"/finalizar", bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Content-Type", "application/json")
+	peticion.Header.Set("Accept", "application/json")
+	peticion.Header.Set("Content-Type", "application/json")
 	if cliente.token != "" {
-		request.Header.Set("Authorization", "Bearer "+cliente.token)
+		peticion.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
 
-	responseBody, err := cliente.do(request)
-	if err != nil {
-		return nil, err
+	cuerpoRespuesta, errorObtenido := cliente.do(peticion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	var result map[string]any
-	if err := json.Unmarshal(responseBody, &result); err != nil {
+	var resultado map[string]any
+	if errorObtenido := json.Unmarshal(cuerpoRespuesta, &resultado); errorObtenido != nil {
 		return nil, &Error{Message: "La API respondió con JSON inválido al cerrar el trabajo"}
 	}
-	if fmt.Sprint(result["id"]) != workID || result["estado"] != status {
+	if fmt.Sprint(resultado["id"]) != trabajoID || resultado["estado"] != estado {
 		return nil, &Error{Message: "La API no confirmó el cierre del trabajo"}
 	}
-	return result, nil
+	return resultado, nil
 }
 
 // GetWork consulta el estado de un trabajo y valida su consistencia.
-func (cliente *Client) GetWork(ctx context.Context, workID string) (map[string]any, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, cliente.base()+"/trabajos/"+workID, nil)
-	if err != nil {
-		return nil, err
+func (cliente *Client) GetWork(contexto context.Context, trabajoID string) (map[string]any, error) {
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodGet, cliente.base()+"/trabajos/"+trabajoID, nil)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	request.Header.Set("Accept", "application/json")
+	peticion.Header.Set("Accept", "application/json")
 	if cliente.token != "" {
-		request.Header.Set("Authorization", "Bearer "+cliente.token)
+		peticion.Header.Set("Authorization", "Bearer "+cliente.token)
 	}
 
-	body, err := cliente.do(request)
-	if err != nil {
-		return nil, err
+	cuerpo, errorObtenido := cliente.do(peticion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	var result map[string]any
-	if err := json.Unmarshal(body, &result); err != nil {
+	var resultado map[string]any
+	if errorObtenido := json.Unmarshal(cuerpo, &resultado); errorObtenido != nil {
 		return nil, &Error{Message: "No se pudo consultar trabajo"}
 	}
-	if fmt.Sprint(result["id"]) != workID {
+	if fmt.Sprint(resultado["id"]) != trabajoID {
 		return nil, &Error{Message: "Estado de trabajo inconsistente"}
 	}
-	switch result["estado"] {
+	switch resultado["estado"] {
 	case "en_progreso", "completado", "fallido":
-		return result, nil
+		return resultado, nil
 	default:
 		return nil, &Error{Message: "Estado de trabajo inconsistente"}
 	}
@@ -246,32 +246,32 @@ func (cliente *Client) GetWork(ctx context.Context, workID string) (map[string]a
 // ===== Transporte HTTP =====
 
 // do realiza peticiones HTTP seguras hacia la API de control de scraping.
-func (cliente *Client) do(request *http.Request) ([]byte, error) {
-	response, err := cliente.http.Do(request)
-	if err != nil {
-		return nil, &Error{Message: "No se pudo conectar con la API", Err: err}
+func (cliente *Client) do(peticion *http.Request) ([]byte, error) {
+	respuesta, errorObtenido := cliente.http.Do(peticion)
+	if errorObtenido != nil {
+		return nil, &Error{Message: "No se pudo conectar con la API", Err: errorObtenido}
 	}
-	defer response.Body.Close()
+	defer respuesta.Body.Close()
 
-	body, readErr := io.ReadAll(io.LimitReader(response.Body, 4<<20))
-	if readErr != nil {
-		return nil, &Error{Message: "No se pudo leer la respuesta de la API", Err: readErr}
+	cuerpo, errorLectura := io.ReadAll(io.LimitReader(respuesta.Body, 4<<20))
+	if errorLectura != nil {
+		return nil, &Error{Message: "No se pudo leer la respuesta de la API", Err: errorLectura}
 	}
-	if response.StatusCode >= http.StatusBadRequest {
-		code := ""
-		var detail map[string]any
-		if json.Unmarshal(body, &detail) == nil {
-			if value, ok := detail["codigo"].(string); ok {
-				code = value
+	if respuesta.StatusCode >= http.StatusBadRequest {
+		codigo := ""
+		var detalle map[string]any
+		if json.Unmarshal(cuerpo, &detalle) == nil {
+			if valor, valido := detalle["codigo"].(string); valido {
+				codigo = valor
 			}
 		}
 		return nil, &Error{
 			Message: "La API rechazó la solicitud",
-			Status:  response.StatusCode,
-			Code:    code,
+			Status:  respuesta.StatusCode,
+			Code:    codigo,
 		}
 	}
-	return body, nil
+	return cuerpo, nil
 }
 
 // ===== Rutas del Contrato =====
@@ -282,9 +282,9 @@ func (cliente *Client) base() string {
 }
 
 // ingestionEndpoint resuelve el endpoint completo para el envío de lotes.
-func (cliente *Client) ingestionEndpoint(workID string) string {
-	if workID != "" {
-		return cliente.base() + "/trabajos/" + workID + "/productos"
+func (cliente *Client) ingestionEndpoint(trabajoID string) string {
+	if trabajoID != "" {
+		return cliente.base() + "/trabajos/" + trabajoID + "/productos"
 	}
 	if strings.HasSuffix(cliente.endpoint, "/productos") {
 		return cliente.endpoint
@@ -297,19 +297,19 @@ func (cliente *Client) ingestionEndpoint(workID string) string {
 // limitProducts ajusta los campos a los límites de scraper.productos_crudos.
 // CompleteItem ya los recorta antes de guardarlos en el spool; este paso queda
 // como defensa para lotes reenviados o construidos fuera del worker.
-func limitProducts(products []domain.Product) []domain.Product {
-	limited := make([]domain.Product, len(products))
-	for index, product := range products {
-		limited[index] = normalize.LimitarProducto(product)
+func limitProducts(productos []domain.Product) []domain.Product {
+	limitado := make([]domain.Product, len(productos))
+	for indice, producto := range productos {
+		limitado[indice] = normalize.LimitarProducto(producto)
 	}
-	return limited
+	return limitado
 }
 
 // asInt convierte valores genéricos numéricos al tipo int.
-func asInt(value any) (int, bool) {
-	number, ok := value.(float64)
-	if !ok || math.Trunc(number) != number {
+func asInt(valor any) (int, bool) {
+	numero, valido := valor.(float64)
+	if !valido || math.Trunc(numero) != numero {
 		return 0, false
 	}
-	return int(number), true
+	return int(numero), true
 }

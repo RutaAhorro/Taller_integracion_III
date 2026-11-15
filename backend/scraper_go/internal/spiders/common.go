@@ -9,65 +9,65 @@ import (
 // ===== Carga de Categorías =====
 
 // readCategoryURLs lee las URLs de categorías desde un archivo en disco.
-func readCategoryURLs(file string) []string {
-	body, err := os.ReadFile(file)
-	if err != nil {
+func readCategoryURLs(archivo string) []string {
+	cuerpo, errorObtenido := os.ReadFile(archivo)
+	if errorObtenido != nil {
 		return nil
 	}
 	var urls []string
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+	for _, linea := range strings.Split(string(cuerpo), "\n") {
+		linea = strings.TrimSpace(linea)
+		if linea == "" || strings.HasPrefix(linea, "#") {
 			continue
 		}
-		urls = append(urls, line)
+		urls = append(urls, linea)
 	}
 	return urls
 }
 
 // appendCategoryURL agrega una categoría validando formato y unicidad.
-func appendCategoryURL(file, rawURL string, validate func(string) error) error {
-	if err := validate(rawURL); err != nil {
-		return err
+func appendCategoryURL(archivo, urlCruda string, validar func(string) error) error {
+	if errorObtenido := validar(urlCruda); errorObtenido != nil {
+		return errorObtenido
 	}
-	for _, existing := range readCategoryURLs(file) {
-		if existing == rawURL {
+	for _, existente := range readCategoryURLs(archivo) {
+		if existente == urlCruda {
 			return nil
 		}
 	}
-	if err := os.MkdirAll(filepath.Dir(file), 0o755); err != nil {
-		return err
+	if errorObtenido := os.MkdirAll(filepath.Dir(archivo), 0o755); errorObtenido != nil {
+		return errorObtenido
 	}
-	handle, err := os.OpenFile(file, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-	if err != nil {
-		return err
+	manejador, errorObtenido := os.OpenFile(archivo, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	defer handle.Close()
-	_, err = handle.WriteString(rawURL + "\n")
-	return err
+	defer manejador.Close()
+	_, errorObtenido = manejador.WriteString(urlCruda + "\n")
+	return errorObtenido
 }
 
 // envCategoryURLs recupera URLs de categorías declaradas en variables de entorno.
-func envCategoryURLs(name string) []string {
+func envCategoryURLs(nombre string) []string {
 	var urls []string
-	for _, raw := range strings.Split(os.Getenv(name), ",") {
-		if value := strings.TrimSpace(raw); value != "" {
-			urls = append(urls, value)
+	for _, crudo := range strings.Split(os.Getenv(nombre), ",") {
+		if valor := strings.TrimSpace(crudo); valor != "" {
+			urls = append(urls, valor)
 		}
 	}
 	return urls
 }
 
 // dedupeStrings remueve valores duplicados preservando el orden de aparición.
-func dedupeStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if _, ok := seen[value]; ok {
+func dedupeStrings(valores []string) []string {
+	vistos := make(map[string]struct{}, len(valores))
+	resultado := make([]string, 0, len(valores))
+	for _, valor := range valores {
+		if _, valido := vistos[valor]; valido {
 			continue
 		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		vistos[valor] = struct{}{}
+		resultado = append(resultado, valor)
 	}
-	return result
+	return resultado
 }

@@ -22,86 +22,86 @@ import (
 )
 
 // PageURL construye la URL de una página según la configuración del sitio.
-func PageURL(site catalog.Site, rawURL string, page int) string {
-	pagination := site.Pagination
-	switch pagination.Mode {
+func PageURL(sitio catalog.Site, urlCruda string, pagina int) string {
+	paginacion := sitio.Pagination
+	switch paginacion.Mode {
 	case "path":
-		if page <= 1 && !pagination.IncludeFirst {
-			return rawURL
+		if pagina <= 1 && !paginacion.IncludeFirst {
+			return urlCruda
 		}
-		return pagePathURL(rawURL, pagination.PathSegment, page)
+		return pagePathURL(urlCruda, paginacion.PathSegment, pagina)
 	case "query":
-		if page <= 1 && !pagination.IncludeFirst {
-			return removeQueryParam(rawURL, pagination.Param)
+		if pagina <= 1 && !paginacion.IncludeFirst {
+			return removeQueryParam(urlCruda, paginacion.Param)
 		}
-		return setQueryPage(rawURL, pagination.Param, page, pagination.ReplaceQuery)
+		return setQueryPage(urlCruda, paginacion.Param, pagina, paginacion.ReplaceQuery)
 	default:
-		return rawURL
+		return urlCruda
 	}
 }
 
 // StartPage lee la página inicial de la propia URL cuando el sitio lo admite.
-func StartPage(site catalog.Site, rawURL string) int {
-	pagination := site.Pagination
-	if !pagination.StartFromURL || pagination.Mode != "query" {
+func StartPage(sitio catalog.Site, urlCruda string) int {
+	paginacion := sitio.Pagination
+	if !paginacion.StartFromURL || paginacion.Mode != "query" {
 		return 1
 	}
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
 		return 1
 	}
-	page, err := strconv.Atoi(parsed.Query().Get(pagination.Param))
-	if err != nil || page < 1 {
+	pagina, errorObtenido := strconv.Atoi(analizada.Query().Get(paginacion.Param))
+	if errorObtenido != nil || pagina < 1 {
 		return 1
 	}
-	return page
+	return pagina
 }
 
 // CategoryFromURL deriva el nombre de categoría que acompaña al producto.
-func CategoryFromURL(site catalog.Site, rawURL string) string {
-	rule := site.CategoryFrom
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rule.Fallback
+func CategoryFromURL(sitio catalog.Site, urlCruda string) string {
+	regla := sitio.CategoryFrom
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return regla.Fallback
 	}
-	segments := nonEmptySegments(parsed.Path)
+	segmentos := nonEmptySegments(analizada.Path)
 
-	switch rule.Mode {
+	switch regla.Mode {
 	case "cugat":
-		if len(segments) >= 2 && segments[len(segments)-2] == rule.PageSegment {
-			segments = segments[:len(segments)-2]
+		if len(segmentos) >= 2 && segmentos[len(segmentos)-2] == regla.PageSegment {
+			segmentos = segmentos[:len(segmentos)-2]
 		}
 	case "lider":
-		if rule.StripPrefix != "" && len(segments) > 0 && segments[0] == rule.StripPrefix {
-			segments = segments[1:]
+		if regla.StripPrefix != "" && len(segmentos) > 0 && segmentos[0] == regla.StripPrefix {
+			segmentos = segmentos[1:]
 		}
-		if pattern := site.Regexp("category_id"); pattern != nil && len(segments) > 0 && pattern.MatchString(segments[len(segments)-1]) {
-			segments = segments[:len(segments)-1]
+		if patron := sitio.Regexp("category_id"); patron != nil && len(segmentos) > 0 && patron.MatchString(segmentos[len(segmentos)-1]) {
+			segmentos = segmentos[:len(segmentos)-1]
 		}
 	case "acuenta":
-		if len(segments) >= 2 && isDigits(segments[len(segments)-1]) {
-			return segments[len(segments)-2]
+		if len(segmentos) >= 2 && isDigits(segmentos[len(segmentos)-1]) {
+			return segmentos[len(segmentos)-2]
 		}
 	}
 
-	for index := len(segments) - 1; index >= 0; index-- {
-		if segments[index] != "" {
-			return segments[index]
+	for indice := len(segmentos) - 1; indice >= 0; indice-- {
+		if segmentos[indice] != "" {
+			return segmentos[indice]
 		}
 	}
-	return rule.Fallback
+	return regla.Fallback
 }
 
 // ResolveURL resuelve una referencia relativa contra la URL de la respuesta.
-func ResolveURL(base *url.URL, reference string) string {
-	parsed, err := url.Parse(reference)
-	if err != nil {
-		return reference
+func ResolveURL(base *url.URL, referencia string) string {
+	analizada, errorObtenido := url.Parse(referencia)
+	if errorObtenido != nil {
+		return referencia
 	}
 	if base == nil {
-		return reference
+		return referencia
 	}
-	return base.ResolveReference(parsed).String()
+	return base.ResolveReference(analizada).String()
 }
 
 // SelectProductByURL elige el producto solicitado dentro de los candidatos.
@@ -109,314 +109,314 @@ func ResolveURL(base *url.URL, reference string) string {
 // coincidencia y el documento sólo trae un producto, se acepta ese único
 // candidato; si hay varios y ninguno coincide, devuelve nil para no emitir el
 // producto equivocado.
-func SelectProductByURL(products []domain.Product, requested string, responseURL *url.URL) *domain.Product {
-	if len(products) == 0 {
+func SelectProductByURL(productos []domain.Product, solicitado string, urlRespuesta *url.URL) *domain.Product {
+	if len(productos) == 0 {
 		return nil
 	}
-	wanted := canonicalProductURL(requested)
-	if wanted != "" {
-		for index := range products {
-			if products[index].URLProducto == nil {
+	deseado := canonicalProductURL(solicitado)
+	if deseado != "" {
+		for indice := range productos {
+			if productos[indice].URLProducto == nil {
 				continue
 			}
-			candidate := ResolveURL(responseURL, *products[index].URLProducto)
-			if canonicalProductURL(candidate) == wanted {
-				return &products[index]
+			candidato := ResolveURL(urlRespuesta, *productos[indice].URLProducto)
+			if canonicalProductURL(candidato) == deseado {
+				return &productos[indice]
 			}
 		}
 	}
-	if len(products) == 1 {
-		return &products[0]
+	if len(productos) == 1 {
+		return &productos[0]
 	}
 	return nil
 }
 
 // ExtractJSONLDProduct lee la primera ficha schema.org/Product publicada como
 // JSON-LD.
-func ExtractJSONLDProduct(site catalog.Site, body []byte, responseURL *url.URL) *domain.Product {
-	products := ExtractJSONLDProducts(site, body, responseURL)
-	if len(products) == 0 {
+func ExtractJSONLDProduct(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) *domain.Product {
+	productos := ExtractJSONLDProducts(sitio, cuerpo, urlRespuesta)
+	if len(productos) == 0 {
 		return nil
 	}
-	return &products[0]
+	return &productos[0]
 }
 
 // ExtractJSONLDProducts devuelve todas las fichas schema.org/Product del
 // documento. Una página de detalle puede incluir recomendaciones, por eso el
 // modo product_url filtra después por URL en vez de quedarse con la primera.
-func ExtractJSONLDProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
-	selector := site.Selector("json_ld")
+func ExtractJSONLDProducts(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+	selector := sitio.Selector("json_ld")
 	if selector == "" {
 		return nil
 	}
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
 		return nil
 	}
-	var products []domain.Product
-	scripts := document.Find(selector)
-	for index := 0; index < scripts.Length(); index++ {
-		var data any
-		decoder := json.NewDecoder(strings.NewReader(scripts.Eq(index).Text()))
-		decoder.UseNumber()
-		if err := decoder.Decode(&data); err != nil {
+	var productos []domain.Product
+	guiones := documento.Find(selector)
+	for indice := 0; indice < guiones.Length(); indice++ {
+		var datos any
+		decodificador := json.NewDecoder(strings.NewReader(guiones.Eq(indice).Text()))
+		decodificador.UseNumber()
+		if errorObtenido := decodificador.Decode(&datos); errorObtenido != nil {
 			continue
 		}
-		for _, entry := range walkJSON(data) {
-			object, ok := entry.(map[string]any)
-			if !ok || !isProductType(object["@type"]) {
+		for _, entrada := range walkJSON(datos) {
+			objeto, valido := entrada.(map[string]any)
+			if !valido || !isProductType(objeto["@type"]) {
 				continue
 			}
-			offers := firstMapValue(object["offers"])
-			price := normalize.PrecioCLP(firstValue(offers, "price"))
-			image := imageURL(object["image"])
-			brand := object["brand"]
-			if brandMap, ok := brand.(map[string]any); ok {
-				brand = brandMap["name"]
+			ofertas := firstMapValue(objeto["offers"])
+			precio := normalize.PrecioCLP(firstValue(ofertas, "price"))
+			imagen := imageURL(objeto["image"])
+			marca := objeto["brand"]
+			if mapaMarcas, valido := marca.(map[string]any); valido {
+				marca = mapaMarcas["name"]
 			}
-			eanValue := firstValue(object, "gtin13")
-			if eanValue == nil || eanValue == "" {
-				eanValue = firstValue(object, "gtin")
+			valorEAN := firstValue(objeto, "gtin13")
+			if valorEAN == nil || valorEAN == "" {
+				valorEAN = firstValue(objeto, "gtin")
 			}
-			productURL := urlString(responseURL)
-			if value, ok := object["url"].(string); ok && value != "" {
-				productURL = ResolveURL(responseURL, value)
+			urlProducto := urlString(urlRespuesta)
+			if valor, valido := objeto["url"].(string); valido && valor != "" {
+				urlProducto = ResolveURL(urlRespuesta, valor)
 			}
-			product := domain.Product{
-				Precio:       price,
-				PrecioNormal: price,
-				EanGtin:      normalize.EAN(eanValue),
-				SKU:          firstNonNilString(normalize.Texto(firstValue(object, "sku")), normalize.SKUFromURL(productURL)),
-				Marca:        normalize.Texto(brand),
-				FormatoCrudo: normalize.Texto(firstValue(object, "description")),
-				EnStock:      stockValue(firstValue(offers, "availability")),
-				URLProducto:  &productURL,
-				Imagen:       image,
+			producto := domain.Product{
+				Precio:       precio,
+				PrecioNormal: precio,
+				EanGtin:      normalize.EAN(valorEAN),
+				SKU:          firstNonNilString(normalize.Texto(firstValue(objeto, "sku")), normalize.SKUFromURL(urlProducto)),
+				Marca:        normalize.Texto(marca),
+				FormatoCrudo: normalize.Texto(firstValue(objeto, "description")),
+				EnStock:      stockValue(firstValue(ofertas, "availability")),
+				URLProducto:  &urlProducto,
+				Imagen:       imagen,
 			}
-			if name := normalize.Texto(firstValue(object, "name")); name != nil {
-				product.Producto = *name
+			if nombre := normalize.Texto(firstValue(objeto, "name")); nombre != nil {
+				producto.Producto = *nombre
 			}
-			products = append(products, product)
+			productos = append(productos, producto)
 		}
 	}
-	return products
+	return productos
 }
 
 // FormatFromText extrae el formato (peso o volumen) del nombre del producto.
-func FormatFromText(value string, pattern *regexp.Regexp) *string {
-	match := pattern.FindString(value)
-	if match == "" {
+func FormatFromText(valor string, patron *regexp.Regexp) *string {
+	coincidencia := patron.FindString(valor)
+	if coincidencia == "" {
 		return nil
 	}
-	return normalize.Texto(match)
+	return normalize.Texto(coincidencia)
 }
 
 // TitleCase pasa a mayúscula la primera letra de cada secuencia de letras y el
 // resto a minúscula. Los dígitos y signos cortan la secuencia (1.5l -> 1.5L).
-func TitleCase(value string) string {
-	var builder strings.Builder
-	previousLetter := false
-	for _, character := range value {
-		if unicode.IsLetter(character) {
-			if previousLetter {
-				builder.WriteRune(unicode.ToLower(character))
+func TitleCase(valor string) string {
+	var constructor strings.Builder
+	letraPrevia := false
+	for _, caracter := range valor {
+		if unicode.IsLetter(caracter) {
+			if letraPrevia {
+				constructor.WriteRune(unicode.ToLower(caracter))
 			} else {
-				builder.WriteRune(unicode.ToUpper(character))
+				constructor.WriteRune(unicode.ToUpper(caracter))
 			}
-			previousLetter = true
+			letraPrevia = true
 			continue
 		}
-		builder.WriteRune(character)
-		previousLetter = false
+		constructor.WriteRune(caracter)
+		letraPrevia = false
 	}
-	return builder.String()
+	return constructor.String()
 }
 
 // ===== Paginación y Rutas =====
 
 // pagePathURL construye una URL de paginación incorporando el número de página a la ruta.
-func pagePathURL(rawURL, segment string, page int) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
+func pagePathURL(urlCruda, segmento string, pagina int) string {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return urlCruda
 	}
-	segments := nonEmptySegments(parsed.Path)
-	if len(segments) >= 2 && segments[len(segments)-2] == segment && isDigits(segments[len(segments)-1]) {
-		segments = segments[:len(segments)-2]
+	segmentos := nonEmptySegments(analizada.Path)
+	if len(segmentos) >= 2 && segmentos[len(segmentos)-2] == segmento && isDigits(segmentos[len(segmentos)-1]) {
+		segmentos = segmentos[:len(segmentos)-2]
 	}
-	parsed.Path = "/" + strings.Join(segments, "/") + "/" + segment + "/" + strconv.Itoa(page) + "/"
-	parsed.RawPath = ""
-	return parsed.String()
+	analizada.Path = "/" + strings.Join(segmentos, "/") + "/" + segmento + "/" + strconv.Itoa(pagina) + "/"
+	analizada.RawPath = ""
+	return analizada.String()
 }
 
 // setQueryPage actualiza o añade el parámetro de página en la consulta de la URL.
-func setQueryPage(rawURL, param string, page int, replace bool) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
+func setQueryPage(urlCruda, parametro string, pagina int, reemplazar bool) string {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return urlCruda
 	}
-	if replace {
-		query := url.Values{}
-		query.Set(param, strconv.Itoa(page))
-		parsed.RawQuery = query.Encode()
-		return parsed.String()
+	if reemplazar {
+		consulta := url.Values{}
+		consulta.Set(parametro, strconv.Itoa(pagina))
+		analizada.RawQuery = consulta.Encode()
+		return analizada.String()
 	}
-	return appendQueryParam(rawURL, param, strconv.Itoa(page), parsed)
+	return appendQueryParam(urlCruda, parametro, strconv.Itoa(pagina), analizada)
 }
 
 // appendQueryParam concatena un nuevo parámetro a la query de la URL.
-func appendQueryParam(rawURL, key, value string, parsed *url.URL) string {
-	pares := queryPairs(parsed.RawQuery)
+func appendQueryParam(urlCruda, clave, valor string, analizada *url.URL) string {
+	pares := queryPairs(analizada.RawQuery)
 	filtrados := pares[:0]
 	for _, par := range pares {
 		nombreClave, _, _ := strings.Cut(par, "=")
-		if nombreClave == key {
+		if nombreClave == clave {
 			continue
 		}
 		filtrados = append(filtrados, par)
 	}
-	filtrados = append(filtrados, url.QueryEscape(key)+"="+url.QueryEscape(value))
-	parsed.RawQuery = strings.Join(filtrados, "&")
-	return parsed.String()
+	filtrados = append(filtrados, url.QueryEscape(clave)+"="+url.QueryEscape(valor))
+	analizada.RawQuery = strings.Join(filtrados, "&")
+	return analizada.String()
 }
 
 // removeQueryParam elimina un parámetro de la cadena de consulta de la URL.
-func removeQueryParam(rawURL, key string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
+func removeQueryParam(urlCruda, clave string) string {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return urlCruda
 	}
-	pares := queryPairs(parsed.RawQuery)
+	pares := queryPairs(analizada.RawQuery)
 	filtrados := pares[:0]
 	for _, par := range pares {
 		nombreClave, _, _ := strings.Cut(par, "=")
-		if nombreClave == key {
+		if nombreClave == clave {
 			continue
 		}
 		filtrados = append(filtrados, par)
 	}
-	parsed.RawQuery = strings.Join(filtrados, "&")
-	return parsed.String()
+	analizada.RawQuery = strings.Join(filtrados, "&")
+	return analizada.String()
 }
 
 // queryPairs desglosa los parámetros clave-valor preservando su orden original.
-func queryPairs(rawQuery string) []string {
-	if rawQuery == "" {
+func queryPairs(consultaCruda string) []string {
+	if consultaCruda == "" {
 		return nil
 	}
-	return strings.Split(rawQuery, "&")
+	return strings.Split(consultaCruda, "&")
 }
 
 // ===== Normalización de URLs =====
 
 // canonicalProductURL normaliza la URL de un producto removiendo parámetros de rastreo.
-func canonicalProductURL(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
+func canonicalProductURL(urlCruda string) string {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
 		return ""
 	}
-	return strings.ToLower(parsed.Hostname()) + "|" + strings.TrimRight(parsed.Path, "/")
+	return strings.ToLower(analizada.Hostname()) + "|" + strings.TrimRight(analizada.Path, "/")
 }
 
 // ===== Extracción de Texto y Atributos =====
 
 // firstText retorna el texto del primer selector que coincida en la selección.
-func firstText(selection *goquery.Selection, selector string) string {
-	return selection.Find(selector).First().Text()
+func firstText(seleccion *goquery.Selection, selector string) string {
+	return seleccion.Find(selector).First().Text()
 }
 
 // allText replica el " ".join(text()) de Scrapy: conserva el límite entre nodos
 // de texto, que importa para detectar frases como "Available for Despacho"
 // aunque el HTML las tenga en elementos separados.
-func allText(selection *goquery.Selection) string {
-	var parts []string
-	for _, node := range selection.Nodes {
-		collectText(node, &parts)
+func allText(seleccion *goquery.Selection) string {
+	var partes []string
+	for _, nodo := range seleccion.Nodes {
+		collectText(nodo, &partes)
 	}
-	return strings.Join(parts, " ")
+	return strings.Join(partes, " ")
 }
 
 // collectText acumula todo el texto visible limpiando saltos y espacios.
-func collectText(node *html.Node, parts *[]string) {
-	if node.Type == html.TextNode {
-		*parts = append(*parts, node.Data)
+func collectText(nodo *html.Node, partes *[]string) {
+	if nodo.Type == html.TextNode {
+		*partes = append(*partes, nodo.Data)
 		return
 	}
-	for hijo := node.FirstChild; hijo != nil; hijo = hijo.NextSibling {
-		collectText(hijo, parts)
+	for hijo := nodo.FirstChild; hijo != nil; hijo = hijo.NextSibling {
+		collectText(hijo, partes)
 	}
 }
 
 // firstAttr retorna el valor del atributo solicitado para el primer selector coincidente.
-func firstAttr(selection *goquery.Selection, selector, attribute string) string {
-	value, _ := selection.Find(selector).First().Attr(attribute)
-	return value
+func firstAttr(seleccion *goquery.Selection, selector, atributo string) string {
+	valor, _ := seleccion.Find(selector).First().Attr(atributo)
+	return valor
 }
 
 // noscriptImage lee el HTML crudo dentro de <noscript>. goquery puede dejar ese
 // contenido como texto cuando el parser tiene scripting habilitado, así que se
 // vuelve a parsear para no perder la imagen de respaldo de WooCommerce.
-func noscriptImage(selection *goquery.Selection, selector string) string {
-	for _, node := range selection.Find(selector).Nodes {
-		var raw strings.Builder
-		for hijo := node.FirstChild; hijo != nil; hijo = hijo.NextSibling {
+func noscriptImage(seleccion *goquery.Selection, selector string) string {
+	for _, nodo := range seleccion.Find(selector).Nodes {
+		var crudo strings.Builder
+		for hijo := nodo.FirstChild; hijo != nil; hijo = hijo.NextSibling {
 			if hijo.Type == html.TextNode {
-				raw.WriteString(hijo.Data)
+				crudo.WriteString(hijo.Data)
 			}
 		}
-		text := strings.TrimSpace(raw.String())
-		if text == "" {
+		texto := strings.TrimSpace(crudo.String())
+		if texto == "" {
 			continue
 		}
-		document, err := goquery.NewDocumentFromReader(strings.NewReader(text))
-		if err != nil {
+		documento, errorObtenido := goquery.NewDocumentFromReader(strings.NewReader(texto))
+		if errorObtenido != nil {
 			continue
 		}
-		if source, ok := document.Find("img").First().Attr("src"); ok && source != "" {
-			return source
+		if origen, valido := documento.Find("img").First().Attr("src"); valido && origen != "" {
+			return origen
 		}
 	}
 	return ""
 }
 
 // firstNonNilString retorna el primer puntero a cadena no nulo de la lista.
-func firstNonNilString(values ...*string) *string {
-	for _, value := range values {
-		if value != nil && *value != "" {
-			return value
+func firstNonNilString(valores ...*string) *string {
+	for _, valor := range valores {
+		if valor != nil && *valor != "" {
+			return valor
 		}
 	}
 	return nil
 }
 
 // nonEmptyStringPtr convierte una cadena no vacía en un puntero a string.
-func nonEmptyStringPtr(value string) *string {
-	if value == "" {
+func nonEmptyStringPtr(valor string) *string {
+	if valor == "" {
 		return nil
 	}
-	return &value
+	return &valor
 }
 
 // lastPathSegment extrae el último componente de la ruta de una URL.
-func lastPathSegment(rawURL string) string {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
+func lastPathSegment(urlCruda string) string {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
 		return ""
 	}
-	segments := nonEmptySegments(parsed.Path)
-	if len(segments) == 0 {
+	segmentos := nonEmptySegments(analizada.Path)
+	if len(segmentos) == 0 {
 		return ""
 	}
-	return segments[len(segments)-1]
+	return segmentos[len(segmentos)-1]
 }
 
 // isDigits comprueba si todos los caracteres de la cadena son dígitos numéricos.
-func isDigits(value string) bool {
-	if value == "" {
+func isDigits(valor string) bool {
+	if valor == "" {
 		return false
 	}
-	for _, char := range value {
-		if char < '0' || char > '9' {
+	for _, caracter := range valor {
+		if caracter < '0' || caracter > '9' {
 			return false
 		}
 	}
@@ -424,20 +424,20 @@ func isDigits(value string) bool {
 }
 
 // nonEmptySegments divide una ruta en segmentos descartando barras intermedias vacías.
-func nonEmptySegments(path string) []string {
-	var segments []string
-	for _, segment := range strings.Split(path, "/") {
-		if segment != "" {
-			segments = append(segments, segment)
+func nonEmptySegments(ruta string) []string {
+	var segmentos []string
+	for _, segmento := range strings.Split(ruta, "/") {
+		if segmento != "" {
+			segmentos = append(segmentos, segmento)
 		}
 	}
-	return segments
+	return segmentos
 }
 
 // hasClass evalúa si un atributo de clase HTML contiene una clase específica.
-func hasClass(classes, wanted string) bool {
-	for _, class := range strings.Fields(classes) {
-		if class == wanted {
+func hasClass(clases, deseado string) bool {
+	for _, clase := range strings.Fields(clases) {
+		if clase == deseado {
 			return true
 		}
 	}
@@ -445,24 +445,24 @@ func hasClass(classes, wanted string) bool {
 }
 
 // urlString normaliza la representación textual de una URL.
-func urlString(value *url.URL) string {
-	if value == nil {
+func urlString(valor *url.URL) string {
+	if valor == nil {
 		return ""
 	}
-	return value.String()
+	return valor.String()
 }
 
 // ===== Microdatos Schema.org =====
 
 // schemaOffer extrae el nodo de oferta Schema.org de un producto.
-func schemaOffer(entry map[string]any) map[string]any {
-	switch raw := entry["offers"].(type) {
+func schemaOffer(entrada map[string]any) map[string]any {
+	switch crudo := entrada["offers"].(type) {
 	case map[string]any:
-		return raw
+		return crudo
 	case []any:
-		if len(raw) > 0 {
-			if offer, ok := raw[0].(map[string]any); ok {
-				return offer
+		if len(crudo) > 0 {
+			if oferta, valido := crudo[0].(map[string]any); valido {
+				return oferta
 			}
 		}
 	}
@@ -470,45 +470,45 @@ func schemaOffer(entry map[string]any) map[string]any {
 }
 
 // extractNormalPrice obtiene el precio de lista o normal desde un nodo de producto.
-func extractNormalPrice(entry map[string]any) *float64 {
-	if precioObtenido := firstPrice(entry, "price"); precioObtenido != nil {
+func extractNormalPrice(entrada map[string]any) *float64 {
+	if precioObtenido := firstPrice(entrada, "price"); precioObtenido != nil {
 		return precioObtenido
 	}
-	specification := entry["priceSpecification"]
-	if list, ok := specification.([]any); ok && len(list) > 0 {
-		specification = list[0]
+	especificacion := entrada["priceSpecification"]
+	if lista, valido := especificacion.([]any); valido && len(lista) > 0 {
+		especificacion = lista[0]
 	}
-	return firstPrice(specification, "price")
+	return firstPrice(especificacion, "price")
 }
 
 // firstValue retorna el primer valor hallado para una lista de claves candidatas.
-func firstValue(data any, keys ...string) any {
-	values, ok := data.(map[string]any)
-	if !ok {
+func firstValue(datos any, claves ...string) any {
+	valores, valido := datos.(map[string]any)
+	if !valido {
 		return nil
 	}
-	for _, key := range keys {
-		value, found := values[key]
-		if !found || value == nil {
+	for _, clave := range claves {
+		valor, encontrado := valores[clave]
+		if !encontrado || valor == nil {
 			continue
 		}
-		switch value.(type) {
+		switch valor.(type) {
 		case map[string]any, []any:
 			continue
 		}
-		return valueString(value)
+		return valueString(valor)
 	}
 	return nil
 }
 
 // firstPrice busca y transforma a float64 el primer precio válido entre varias claves.
-func firstPrice(data any, keys ...string) *float64 {
-	return normalize.PrecioCLP(firstValue(data, keys...))
+func firstPrice(datos any, claves ...string) *float64 {
+	return normalize.PrecioCLP(firstValue(datos, claves...))
 }
 
 // valueString formatea cualquier tipo de dato primitivo en su representación string.
-func valueString(value any) string {
-	switch valorTipado := value.(type) {
+func valueString(valor any) string {
+	switch valorTipado := valor.(type) {
 	case string:
 		return valorTipado
 	case json.Number:
@@ -531,69 +531,69 @@ func valueString(value any) string {
 		}
 		return "False"
 	default:
-		return fmt.Sprint(value)
+		return fmt.Sprint(valor)
 	}
 }
 
 // stockValue infiere la disponibilidad de stock a partir de indicadores del producto.
-func stockValue(availability any) *bool {
-	text, ok := availability.(string)
-	if !ok {
+func stockValue(disponibilidad any) *bool {
+	texto, valido := disponibilidad.(string)
+	if !valido {
 		return nil
 	}
-	parts := strings.Split(text, "/")
-	inStock := strings.ToLower(parts[len(parts)-1]) != "outofstock"
-	return &inStock
+	partes := strings.Split(texto, "/")
+	conStock := strings.ToLower(partes[len(partes)-1]) != "outofstock"
+	return &conStock
 }
 
 // ===== Recorrido y Utilidades JSON =====
 
 // walkJSON visita recursivamente cada objeto JSON invocando la función callback.
-func walkJSON(value any) []any {
-	var result []any
-	var walk func(any)
-	walk = func(nodo any) {
+func walkJSON(valor any) []any {
+	var resultado []any
+	var recorrido func(any)
+	recorrido = func(nodo any) {
 		switch tipoNodo := nodo.(type) {
 		case map[string]any:
-			result = append(result, tipoNodo)
+			resultado = append(resultado, tipoNodo)
 			for _, hijo := range tipoNodo {
-				walk(hijo)
+				recorrido(hijo)
 			}
 		case []any:
 			for _, hijo := range tipoNodo {
-				walk(hijo)
+				recorrido(hijo)
 			}
 		}
 	}
-	walk(value)
-	return result
+	recorrido(valor)
+	return resultado
 }
 
 // imageURL extrae la URL de la imagen principal del producto.
-func imageURL(value any) *string {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
+func imageURL(valor any) *string {
+	if lista, valido := valor.([]any); valido {
+		if len(lista) == 0 {
 			return nil
 		}
-		value = list[0]
+		valor = lista[0]
 	}
-	if mapped, ok := value.(map[string]any); ok {
-		value = mapped["url"]
+	if mapeado, valido := valor.(map[string]any); valido {
+		valor = mapeado["url"]
 	}
-	if text, ok := value.(string); ok && text != "" {
-		return &text
+	if texto, valido := valor.(string); valido && texto != "" {
+		return &texto
 	}
 	return nil
 }
 
 // isProductType comprueba si el tipo Schema.org corresponde a una entidad Producto.
-func isProductType(value any) bool {
-	switch valorTipado := value.(type) {
+func isProductType(valor any) bool {
+	switch valorTipado := valor.(type) {
 	case string:
 		return valorTipado == "Product"
 	case []any:
-		for _, item := range valorTipado {
-			if text, ok := item.(string); ok && text == "Product" {
+		for _, elemento := range valorTipado {
+			if texto, valido := elemento.(string); valido && texto == "Product" {
 				return true
 			}
 		}
@@ -602,12 +602,12 @@ func isProductType(value any) bool {
 }
 
 // firstMapValue obtiene el primer mapa asociado a alguna de las claves especificadas.
-func firstMapValue(value any) any {
-	if list, ok := value.([]any); ok {
-		if len(list) == 0 {
+func firstMapValue(valor any) any {
+	if lista, valido := valor.([]any); valido {
+		if len(lista) == 0 {
 			return nil
 		}
-		return list[0]
+		return lista[0]
 	}
-	return value
+	return valor
 }

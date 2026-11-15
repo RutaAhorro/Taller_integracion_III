@@ -43,477 +43,477 @@ var (
 
 // AcuentaProducts usa el payload RSC y completa precios visibles; si no hay
 // RSC, parsea las tarjetas del HTML.
-func AcuentaProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
-	rscProducts := acuentaRSCProducts(site, body, responseURL)
-	if len(rscProducts) > 0 {
-		return mergeAcuentaVisiblePrices(site, body, responseURL, rscProducts)
+func AcuentaProducts(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+	productosRSC := acuentaRSCProducts(sitio, cuerpo, urlRespuesta)
+	if len(productosRSC) > 0 {
+		return mergeAcuentaVisiblePrices(sitio, cuerpo, urlRespuesta, productosRSC)
 	}
-	return acuentaCards(site, body, responseURL)
+	return acuentaCards(sitio, cuerpo, urlRespuesta)
 }
 
 // AcuentaProduct elige la ficha solicitada dentro de los productos.
-func AcuentaProduct(site catalog.Site, body []byte, requested string, responseURL *url.URL) *domain.Product {
-	return SelectProductByURL(AcuentaProducts(site, body, responseURL), requested, responseURL)
+func AcuentaProduct(sitio catalog.Site, cuerpo []byte, solicitado string, urlRespuesta *url.URL) *domain.Product {
+	return SelectProductByURL(AcuentaProducts(sitio, cuerpo, urlRespuesta), solicitado, urlRespuesta)
 }
 
 // ===== Extracción HTML DOM =====
 
 // acuentaCards extrae productos a partir de las tarjetas del catálogo HTML de Acuenta.
-func acuentaCards(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
-	linkSelector := site.Selector("card_link")
-	if linkSelector == "" {
+func acuentaCards(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+	selectorEnlace := sitio.Selector("card_link")
+	if selectorEnlace == "" {
 		return nil
 	}
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
 		return nil
 	}
-	var products []domain.Product
-	seenURLs := map[string]struct{}{}
-	document.Find(linkSelector).Each(func(_ int, link *goquery.Selection) {
-		href, _ := link.Attr("href")
-		if href == "" {
+	var productos []domain.Product
+	urlsVistas := map[string]struct{}{}
+	documento.Find(selectorEnlace).Each(func(_ int, elemento *goquery.Selection) {
+		enlace, _ := elemento.Attr("href")
+		if enlace == "" {
 			return
 		}
-		productURL := ResolveURL(responseURL, href)
-		if _, ok := seenURLs[productURL]; ok {
+		urlProducto := ResolveURL(urlRespuesta, enlace)
+		if _, valido := urlsVistas[urlProducto]; valido {
 			return
 		}
-		seenURLs[productURL] = struct{}{}
+		urlsVistas[urlProducto] = struct{}{}
 
-		card := acuentaCardFromLink(link)
-		if card.Length() == 0 {
+		tarjeta := acuentaCardFromLink(elemento)
+		if tarjeta.Length() == 0 {
 			return
 		}
-		name := normalize.Texto(allText(link))
-		text := normalize.Texto(allText(card))
-		if name == nil || text == nil {
+		nombre := normalize.Texto(allText(elemento))
+		texto := normalize.Texto(allText(tarjeta))
+		if nombre == nil || texto == nil {
 			return
 		}
-		current, normal, promotion := acuentaPricesFromText(*text)
-		if current == nil || normal == nil {
+		actual, normal, promocion := acuentaPricesFromText(*texto)
+		if actual == nil || normal == nil {
 			return
 		}
 
-		image := firstAttr(card, site.Selector("image"), "src")
-		if image == "" {
-			image = firstAttr(card, site.Selector("image"), "data-src")
+		imagen := firstAttr(tarjeta, sitio.Selector("image"), "src")
+		if imagen == "" {
+			imagen = firstAttr(tarjeta, sitio.Selector("image"), "data-src")
 		}
-		var imageURL *string
-		if image != "" {
-			value := ResolveURL(responseURL, image)
-			imageURL = &value
+		var urlImagen *string
+		if imagen != "" {
+			valor := ResolveURL(urlRespuesta, imagen)
+			urlImagen = &valor
 		}
-		var offer *float64
-		if *current < *normal {
-			offer = current
+		var oferta *float64
+		if *actual < *normal {
+			oferta = actual
 		}
-		sku := acuentaSKUFromURL(site, productURL)
-		products = append(products, domain.Product{
-			Producto:          *name,
-			Precio:            current,
+		sku := acuentaSKUFromURL(sitio, urlProducto)
+		productos = append(productos, domain.Product{
+			Producto:          *nombre,
+			Precio:            actual,
 			PrecioNormal:      normal,
-			PrecioOferta:      offer,
+			PrecioOferta:      oferta,
 			SKU:               sku,
-			Marca:             acuentaBrandFromText(*text, site.List("brands")),
-			FormatoCrudo:      FormatFromText(*name, acuentaFormatPattern),
-			MecanicaPromocion: promotion,
-			URLProducto:       &productURL,
-			Imagen:            imageURL,
+			Marca:             acuentaBrandFromText(*texto, sitio.List("brands")),
+			FormatoCrudo:      FormatFromText(*nombre, acuentaFormatPattern),
+			MecanicaPromocion: promocion,
+			URLProducto:       &urlProducto,
+			Imagen:            urlImagen,
 		})
 	})
-	return products
+	return productos
 }
 
 // mergeAcuentaVisiblePrices sincroniza precios visibles en el DOM de Acuenta.
-func mergeAcuentaVisiblePrices(site catalog.Site, body []byte, responseURL *url.URL, products []domain.Product) []domain.Product {
-	linkSelector := site.Selector("card_link")
-	if linkSelector == "" {
-		return products
+func mergeAcuentaVisiblePrices(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL, productos []domain.Product) []domain.Product {
+	selectorEnlace := sitio.Selector("card_link")
+	if selectorEnlace == "" {
+		return productos
 	}
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
-		return products
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
+		return productos
 	}
-	byURL := make(map[string]int, len(products))
-	for index, product := range products {
-		if product.URLProducto != nil {
-			byURL[*product.URLProducto] = index
+	porURL := make(map[string]int, len(productos))
+	for indice, producto := range productos {
+		if producto.URLProducto != nil {
+			porURL[*producto.URLProducto] = indice
 		}
 	}
-	document.Find(linkSelector).Each(func(_ int, link *goquery.Selection) {
-		href, _ := link.Attr("href")
-		if href == "" {
+	documento.Find(selectorEnlace).Each(func(_ int, elemento *goquery.Selection) {
+		enlace, _ := elemento.Attr("href")
+		if enlace == "" {
 			return
 		}
-		productURL := ResolveURL(responseURL, href)
-		index, ok := byURL[productURL]
-		if !ok {
+		urlProducto := ResolveURL(urlRespuesta, enlace)
+		indice, valido := porURL[urlProducto]
+		if !valido {
 			return
 		}
-		card := acuentaCardFromLink(link)
-		if card.Length() == 0 {
+		tarjeta := acuentaCardFromLink(elemento)
+		if tarjeta.Length() == 0 {
 			return
 		}
-		text := normalize.Texto(allText(card))
-		if text == nil {
+		texto := normalize.Texto(allText(tarjeta))
+		if texto == nil {
 			return
 		}
-		current, normal, promotion := acuentaPricesFromText(*text)
-		if current == nil || normal == nil {
+		actual, normal, promocion := acuentaPricesFromText(*texto)
+		if actual == nil || normal == nil {
 			return
 		}
-		product := &products[index]
-		if *current < *normal {
-			product.Precio = current
-			product.PrecioNormal = normal
-			product.PrecioOferta = current
-			if product.MecanicaPromocion == nil {
-				product.MecanicaPromocion = domain.StringPtr(site.Setting("promotion"))
+		producto := &productos[indice]
+		if *actual < *normal {
+			producto.Precio = actual
+			producto.PrecioNormal = normal
+			producto.PrecioOferta = actual
+			if producto.MecanicaPromocion == nil {
+				producto.MecanicaPromocion = domain.StringPtr(sitio.Setting("promotion"))
 			}
 		}
-		if promotion != nil {
-			product.MecanicaPromocion = promotion
+		if promocion != nil {
+			producto.MecanicaPromocion = promocion
 		}
 	})
-	return products
+	return productos
 }
 
 // acuentaCardFromLink sube desde el enlace hasta el contenedor que muestra un
 // precio.
-func acuentaCardFromLink(link *goquery.Selection) *goquery.Selection {
-	card := link.Parent()
-	for card.Length() > 0 && !strings.Contains(allText(card), "$") {
-		card = card.Parent()
+func acuentaCardFromLink(enlace *goquery.Selection) *goquery.Selection {
+	tarjeta := enlace.Parent()
+	for tarjeta.Length() > 0 && !strings.Contains(allText(tarjeta), "$") {
+		tarjeta = tarjeta.Parent()
 	}
-	return card
+	return tarjeta
 }
 
 // ===== Extracción React Server Components (RSC) =====
 
 // acuentaRSCProducts procesa el flujo React Server Components (RSC) de Acuenta.
-func acuentaRSCProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
-	text := string(body)
-	promotionPrices := acuentaPromotionPrices(text)
-	eanReferences := map[string]string{}
-	for _, match := range acuentaEANReference.FindAllStringSubmatch(text, -1) {
-		eanReferences[match[1]] = match[2]
+func acuentaRSCProducts(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+	texto := string(cuerpo)
+	preciosPromocion := acuentaPromotionPrices(texto)
+	referenciasEAN := map[string]string{}
+	for _, coincidencia := range acuentaEANReference.FindAllStringSubmatch(texto, -1) {
+		referenciasEAN[coincidencia[1]] = coincidencia[2]
 	}
 
-	var products []domain.Product
-	seenSKUs := map[string]struct{}{}
-	for _, match := range acuentaSKUPattern.FindAllStringSubmatchIndex(text, -1) {
-		sku := text[match[2]:match[3]]
-		if _, ok := seenSKUs[sku]; ok {
+	var productos []domain.Product
+	skusVistos := map[string]struct{}{}
+	for _, coincidencia := range acuentaSKUPattern.FindAllStringSubmatchIndex(texto, -1) {
+		sku := texto[coincidencia[2]:coincidencia[3]]
+		if _, valido := skusVistos[sku]; valido {
 			continue
 		}
-		end := match[1] + site.Limit("rsc_window")
-		if end > len(text) {
-			end = len(text)
+		fin := coincidencia[1] + sitio.Limit("rsc_window")
+		if fin > len(texto) {
+			fin = len(texto)
 		}
-		window := text[match[0]:end]
+		ventana := texto[coincidencia[0]:fin]
 
-		slugMatch := acuentaSlugPattern.FindStringSubmatch(window)
-		priceMatch := acuentaPriceKey.FindStringSubmatch(window)
-		if len(slugMatch) < 2 || len(priceMatch) < 2 {
+		coincidenciaSlug := acuentaSlugPattern.FindStringSubmatch(ventana)
+		coincidenciaPrecio := acuentaPriceKey.FindStringSubmatch(ventana)
+		if len(coincidenciaSlug) < 2 || len(coincidenciaPrecio) < 2 {
 			continue
 		}
-		slug := slugMatch[1]
-		normalPrice := normalize.PrecioCLP(priceMatch[1])
-		if normalPrice == nil {
+		slug := coincidenciaSlug[1]
+		precioNormal := normalize.PrecioCLP(coincidenciaPrecio[1])
+		if precioNormal == nil {
 			continue
 		}
 
-		var name *string
-		if nameMatch := acuentaNamePattern.FindStringSubmatch(window); len(nameMatch) >= 2 {
-			name = normalize.Texto(nameMatch[1])
+		var nombre *string
+		if coincidenciaNombre := acuentaNamePattern.FindStringSubmatch(ventana); len(coincidenciaNombre) >= 2 {
+			nombre = normalize.Texto(coincidenciaNombre[1])
 		}
-		if name == nil || !acuentaNameMatchesSlug(site, *name, slug) {
-			name = acuentaNameFromSlug(slug)
+		if nombre == nil || !acuentaNameMatchesSlug(sitio, *nombre, slug) {
+			nombre = acuentaNameFromSlug(slug)
 		}
-		if name == nil {
+		if nombre == nil {
 			continue
 		}
 
 		var ean *string
-		if eanField := acuentaEANField.FindStringSubmatch(window); len(eanField) >= 2 {
-			eanValues := acuentaDigits.FindAllString(eanField[1], -1)
-			if len(eanValues) == 0 {
-				if reference := acuentaEANRefPattern.FindStringSubmatch(eanField[1]); len(reference) >= 2 {
-					if value, ok := eanReferences[reference[1]]; ok {
-						eanValues = []string{value}
+		if campoEAN := acuentaEANField.FindStringSubmatch(ventana); len(campoEAN) >= 2 {
+			valoresEAN := acuentaDigits.FindAllString(campoEAN[1], -1)
+			if len(valoresEAN) == 0 {
+				if referencia := acuentaEANRefPattern.FindStringSubmatch(campoEAN[1]); len(referencia) >= 2 {
+					if valor, valido := referenciasEAN[referencia[1]]; valido {
+						valoresEAN = []string{valor}
 					}
 				}
 			}
-			if len(eanValues) > 0 {
-				ean = normalize.EAN(eanValues[0])
+			if len(valoresEAN) > 0 {
+				ean = normalize.EAN(valoresEAN[0])
 			}
 		}
 
-		promotionRef := ""
-		if promotionMatch := acuentaPromotionRef.FindStringSubmatch(window); len(promotionMatch) >= 2 {
-			promotionRef = promotionMatch[1]
+		referenciaPromocion := ""
+		if coincidenciaPromocion := acuentaPromotionRef.FindStringSubmatch(ventana); len(coincidenciaPromocion) >= 2 {
+			referenciaPromocion = coincidenciaPromocion[1]
 		}
-		currentPrice := normalPrice
-		if value, ok := promotionPrices[promotionRef]; ok {
-			currentPrice = value
+		precioActual := precioNormal
+		if valor, valido := preciosPromocion[referenciaPromocion]; valido {
+			precioActual = valor
 		}
 
-		image := acuentaImageFromRSC(site, text, sku)
-		if image == "" {
-			image = acuentaResolveImageReference(text, window)
+		imagen := acuentaImageFromRSC(sitio, texto, sku)
+		if imagen == "" {
+			imagen = acuentaResolveImageReference(texto, ventana)
 		}
-		if image == "" {
-			image = acuentaImageFromSKU(site, sku)
+		if imagen == "" {
+			imagen = acuentaImageFromSKU(sitio, sku)
 		}
-		imageURL := acuentaCanonicalImageURL(image)
+		urlImagen := acuentaCanonicalImageURL(imagen)
 
-		productURL := ResolveURL(responseURL, "/p/"+slug)
-		var stock *bool
-		if stockMatch := acuentaStockPattern.FindStringSubmatch(window); len(stockMatch) >= 2 {
-			if quantity, err := strconv.Atoi(stockMatch[1]); err == nil {
-				stock = domain.BoolPtr(quantity > 0)
+		urlProducto := ResolveURL(urlRespuesta, "/p/"+slug)
+		var existencias *bool
+		if coincidenciaStock := acuentaStockPattern.FindStringSubmatch(ventana); len(coincidenciaStock) >= 2 {
+			if cantidad, errorObtenido := strconv.Atoi(coincidenciaStock[1]); errorObtenido == nil {
+				existencias = domain.BoolPtr(cantidad > 0)
 			}
 		}
-		var brand *string
-		if brandMatch := acuentaBrandPattern.FindStringSubmatch(window); len(brandMatch) >= 2 {
-			brand = normalize.Texto(brandMatch[1])
+		var marca *string
+		if coincidenciaMarca := acuentaBrandPattern.FindStringSubmatch(ventana); len(coincidenciaMarca) >= 2 {
+			marca = normalize.Texto(coincidenciaMarca[1])
 		}
-		var offer *float64
-		if *currentPrice < *normalPrice {
-			offer = currentPrice
+		var oferta *float64
+		if *precioActual < *precioNormal {
+			oferta = precioActual
 		}
-		var mechanics *string
-		if promotionRef != "" {
-			mechanics = domain.StringPtr(site.Setting("promotion"))
+		var mecanicas *string
+		if referenciaPromocion != "" {
+			mecanicas = domain.StringPtr(sitio.Setting("promotion"))
 		}
-		seenSKUs[sku] = struct{}{}
-		products = append(products, domain.Product{
-			Producto:          *name,
-			Precio:            currentPrice,
-			PrecioNormal:      normalPrice,
-			PrecioOferta:      offer,
+		skusVistos[sku] = struct{}{}
+		productos = append(productos, domain.Product{
+			Producto:          *nombre,
+			Precio:            precioActual,
+			PrecioNormal:      precioNormal,
+			PrecioOferta:      oferta,
 			EanGtin:           ean,
 			SKU:               &sku,
-			Marca:             brand,
-			FormatoCrudo:      FormatFromText(*name, acuentaFormatPattern),
-			MecanicaPromocion: mechanics,
-			EnStock:           stock,
-			URLProducto:       &productURL,
-			Imagen:            imageURL,
+			Marca:             marca,
+			FormatoCrudo:      FormatFromText(*nombre, acuentaFormatPattern),
+			MecanicaPromocion: mecanicas,
+			EnStock:           existencias,
+			URLProducto:       &urlProducto,
+			Imagen:            urlImagen,
 		})
 	}
-	return products
+	return productos
 }
 
 // acuentaPromotionPrices extrae precios promocionales desde respuestas RSC de Acuenta.
-func acuentaPromotionPrices(text string) map[string]*float64 {
-	starts := acuentaReferenceStart.FindAllStringSubmatchIndex(text, -1)
-	references := map[string]string{}
-	for index, match := range starts {
-		key := text[match[2]:match[3]]
-		end := len(text)
-		if index+1 < len(starts) {
-			end = starts[index+1][0]
+func acuentaPromotionPrices(texto string) map[string]*float64 {
+	inicios := acuentaReferenceStart.FindAllStringSubmatchIndex(texto, -1)
+	referencias := map[string]string{}
+	for indice, coincidencia := range inicios {
+		clave := texto[coincidencia[2]:coincidencia[3]]
+		fin := len(texto)
+		if indice+1 < len(inicios) {
+			fin = inicios[indice+1][0]
 		}
-		references[key] = text[match[1]:end]
+		referencias[clave] = texto[coincidencia[1]:fin]
 	}
 
-	promotionPrices := map[string]*float64{}
-	for reference, data := range references {
-		typeMatch := acuentaPromotionType.FindStringSubmatch(data)
-		if len(typeMatch) < 2 || typeMatch[1] != "specialPrice" {
+	preciosPromocion := map[string]*float64{}
+	for referencia, datos := range referencias {
+		coincidenciaTipo := acuentaPromotionType.FindStringSubmatch(datos)
+		if len(coincidenciaTipo) < 2 || coincidenciaTipo[1] != "specialPrice" {
 			continue
 		}
-		conditionsMatch := acuentaConditions.FindStringSubmatch(data)
-		if len(conditionsMatch) < 2 {
+		coincidenciasCondiciones := acuentaConditions.FindStringSubmatch(datos)
+		if len(coincidenciasCondiciones) < 2 {
 			continue
 		}
-		conditions := references[conditionsMatch[1]]
-		if conditions == "" {
+		condiciones := referencias[coincidenciasCondiciones[1]]
+		if condiciones == "" {
 			continue
 		}
-		var prices []float64
-		for _, conditionRef := range acuentaConditionRef.FindAllStringSubmatch(conditions, -1) {
-			conditionData := references[conditionRef[1]]
-			priceMatch := acuentaPriceKey.FindStringSubmatch(conditionData)
-			if len(priceMatch) < 2 {
+		var precios []float64
+		for _, referenciaCondicion := range acuentaConditionRef.FindAllStringSubmatch(condiciones, -1) {
+			datosCondicion := referencias[referenciaCondicion[1]]
+			coincidenciaPrecio := acuentaPriceKey.FindStringSubmatch(datosCondicion)
+			if len(coincidenciaPrecio) < 2 {
 				continue
 			}
-			if price := normalize.PrecioCLP(priceMatch[1]); price != nil {
-				prices = append(prices, *price)
+			if precio := normalize.PrecioCLP(coincidenciaPrecio[1]); precio != nil {
+				precios = append(precios, *precio)
 			}
 		}
-		if len(prices) == 0 {
+		if len(precios) == 0 {
 			continue
 		}
-		minimum := prices[0]
-		for _, price := range prices[1:] {
-			if price < minimum {
-				minimum = price
+		minimo := precios[0]
+		for _, precio := range precios[1:] {
+			if precio < minimo {
+				minimo = precio
 			}
 		}
-		value := minimum
-		promotionPrices[reference] = &value
+		valor := minimo
+		preciosPromocion[referencia] = &valor
 	}
-	return promotionPrices
+	return preciosPromocion
 }
 
 // ===== Extracción de Imágenes =====
 
 // acuentaImageFromRSC localiza la imagen del producto en el payload RSC.
-func acuentaImageFromRSC(site catalog.Site, text, sku string) string {
-	pattern := regexp.MustCompile(
-		`(?i)` + regexp.QuoteMeta(site.Setting("image_base")) +
+func acuentaImageFromRSC(sitio catalog.Site, texto, sku string) string {
+	patron := regexp.MustCompile(
+		`(?i)` + regexp.QuoteMeta(sitio.Setting("image_base")) +
 			regexp.QuoteMeta(sku) +
 			`[^"\s]*?\.(?:jpe?g|png|webp)\](?:\\u0026|&)sink`,
 	)
-	match := pattern.FindString(text)
-	return strings.ReplaceAll(match, `\u0026`, "&")
+	coincidencia := patron.FindString(texto)
+	return strings.ReplaceAll(coincidencia, `\u0026`, "&")
 }
 
 // acuentaResolveImageReference resuelve referencias a imágenes anidadas en RSC.
-func acuentaResolveImageReference(text, window string) string {
-	referenceMatch := acuentaPhotosRef.FindStringSubmatch(window)
-	if len(referenceMatch) < 2 {
+func acuentaResolveImageReference(texto, ventana string) string {
+	coincidenciaReferencia := acuentaPhotosRef.FindStringSubmatch(ventana)
+	if len(coincidenciaReferencia) < 2 {
 		return ""
 	}
-	pattern := regexp.MustCompile(
-		regexp.QuoteMeta(referenceMatch[1]) + `:\[\\?"(https?://[^"\\]+)`,
+	patron := regexp.MustCompile(
+		regexp.QuoteMeta(coincidenciaReferencia[1]) + `:\[\\?"(https?://[^"\\]+)`,
 	)
-	match := pattern.FindStringSubmatch(text)
-	if len(match) < 2 {
+	coincidencia := patron.FindStringSubmatch(texto)
+	if len(coincidencia) < 2 {
 		return ""
 	}
-	return strings.ReplaceAll(match[1], `\u0026`, "&")
+	return strings.ReplaceAll(coincidencia[1], `\u0026`, "&")
 }
 
 // acuentaImageFromSKU construye la URL canónica de imagen desde el SKU.
-func acuentaImageFromSKU(site catalog.Site, sku string) string {
-	return site.Setting("image_base") + sku + site.Setting("image_suffix")
+func acuentaImageFromSKU(sitio catalog.Site, sku string) string {
+	return sitio.Setting("image_base") + sku + sitio.Setting("image_suffix")
 }
 
 // acuentaCanonicalImageURL normaliza y estandariza la URL de una imagen.
-func acuentaCanonicalImageURL(value string) *string {
-	if value == "" {
+func acuentaCanonicalImageURL(valor string) *string {
+	if valor == "" {
 		return nil
 	}
-	value = strings.ReplaceAll(value, `\u0026`, "&")
-	var builder strings.Builder
-	for index := 0; index < len(value); index++ {
-		character := value[index]
-		if (character >= 'a' && character <= 'z') ||
-			(character >= 'A' && character <= 'Z') ||
-			(character >= '0' && character <= '9') ||
-			strings.ContainsRune(":/?=&.%_-~", rune(character)) {
-			builder.WriteByte(character)
+	valor = strings.ReplaceAll(valor, `\u0026`, "&")
+	var constructor strings.Builder
+	for indice := 0; indice < len(valor); indice++ {
+		caracter := valor[indice]
+		if (caracter >= 'a' && caracter <= 'z') ||
+			(caracter >= 'A' && caracter <= 'Z') ||
+			(caracter >= '0' && caracter <= '9') ||
+			strings.ContainsRune(":/?=&.%_-~", rune(caracter)) {
+			constructor.WriteByte(caracter)
 			continue
 		}
-		fmt.Fprintf(&builder, "%%%02X", character)
+		fmt.Fprintf(&constructor, "%%%02X", caracter)
 	}
-	result := builder.String()
-	return &result
+	resultado := constructor.String()
+	return &resultado
 }
 
 // ===== Normalización y Slugs =====
 
 // acuentaNameMatchesSlug verifica concordancia entre el nombre y el slug de la URL.
-func acuentaNameMatchesSlug(site catalog.Site, name, slug string) bool {
-	nameTokens := acuentaTokens(site, name)
-	slugTokens := acuentaTokens(site, slug)
-	intersection := 0
-	for token := range nameTokens {
-		if _, ok := slugTokens[token]; ok {
-			intersection++
+func acuentaNameMatchesSlug(sitio catalog.Site, nombre, slug string) bool {
+	tokensNombre := acuentaTokens(sitio, nombre)
+	tokensSlug := acuentaTokens(sitio, slug)
+	interseccion := 0
+	for token := range tokensNombre {
+		if _, valido := tokensSlug[token]; valido {
+			interseccion++
 		}
 	}
-	return intersection >= site.Limit("name_min_intersection")
+	return interseccion >= sitio.Limit("name_min_intersection")
 }
 
 // acuentaTokens segmenta una cadena en palabras clave para comparación.
-func acuentaTokens(site catalog.Site, value string) map[string]struct{} {
-	tokens := map[string]struct{}{}
-	for _, match := range acuentaWordPattern.FindAllString(value, -1) {
-		token := strings.ToLower(match)
-		if len([]rune(token)) >= site.Limit("token_min_length") {
-			tokens[token] = struct{}{}
+func acuentaTokens(sitio catalog.Site, valor string) map[string]struct{} {
+	fichas := map[string]struct{}{}
+	for _, coincidencia := range acuentaWordPattern.FindAllString(valor, -1) {
+		token := strings.ToLower(coincidencia)
+		if len([]rune(token)) >= sitio.Limit("token_min_length") {
+			fichas[token] = struct{}{}
 		}
 	}
-	return tokens
+	return fichas
 }
 
 // acuentaNameFromSlug infiere el nombre del producto basándose en el slug de la URL.
 func acuentaNameFromSlug(slug string) *string {
-	readable := acuentaTrailingDigits.ReplaceAllString(slug, "")
-	return normalize.Texto(TitleCase(strings.ReplaceAll(readable, "-", " ")))
+	legible := acuentaTrailingDigits.ReplaceAllString(slug, "")
+	return normalize.Texto(TitleCase(strings.ReplaceAll(legible, "-", " ")))
 }
 
 // ===== Extracción de Precios y Marca =====
 
 // acuentaPricesFromText extrae valores de precio normal y oferta desde un texto.
-func acuentaPricesFromText(text string) (*float64, *float64, *string) {
-	if multi := acuentaMultiPrice.FindStringSubmatchIndex(text); multi != nil {
-		var prefixAmounts []float64
-		for _, match := range acuentaAmountPattern.FindAllStringSubmatch(text[:multi[0]], -1) {
-			if amount := normalize.PrecioCLP(match[1]); amount != nil {
-				prefixAmounts = append(prefixAmounts, *amount)
+func acuentaPricesFromText(texto string) (*float64, *float64, *string) {
+	if multiple := acuentaMultiPrice.FindStringSubmatchIndex(texto); multiple != nil {
+		var montosPrefijo []float64
+		for _, coincidencia := range acuentaAmountPattern.FindAllStringSubmatch(texto[:multiple[0]], -1) {
+			if monto := normalize.PrecioCLP(coincidencia[1]); monto != nil {
+				montosPrefijo = append(montosPrefijo, *monto)
 			}
 		}
-		var current *float64
-		if len(prefixAmounts) > 0 {
-			current = &prefixAmounts[len(prefixAmounts)-1]
+		var actual *float64
+		if len(montosPrefijo) > 0 {
+			actual = &montosPrefijo[len(montosPrefijo)-1]
 		} else {
-			current = normalize.PrecioCLP(text[multi[4]:multi[5]])
+			actual = normalize.PrecioCLP(texto[multiple[4]:multiple[5]])
 		}
-		if current != nil {
-			promotion := text[multi[0]:multi[1]]
-			return current, current, &promotion
+		if actual != nil {
+			promocion := texto[multiple[0]:multiple[1]]
+			return actual, actual, &promocion
 		}
 	}
 
-	var amounts []float64
-	for _, match := range acuentaAmountPattern.FindAllStringSubmatch(text, -1) {
-		if amount := normalize.PrecioCLP(match[1]); amount != nil {
-			amounts = append(amounts, *amount)
+	var montos []float64
+	for _, coincidencia := range acuentaAmountPattern.FindAllStringSubmatch(texto, -1) {
+		if monto := normalize.PrecioCLP(coincidencia[1]); monto != nil {
+			montos = append(montos, *monto)
 		}
 	}
-	if len(amounts) == 0 {
+	if len(montos) == 0 {
 		return nil, nil, nil
 	}
-	current := amounts[0]
-	normal := current
-	if len(amounts) > 1 {
-		normal = amounts[1]
+	actual := montos[0]
+	normal := actual
+	if len(montos) > 1 {
+		normal = montos[1]
 	}
-	if normal < current {
-		normal = current
+	if normal < actual {
+		normal = actual
 	}
-	return &current, &normal, nil
+	return &actual, &normal, nil
 }
 
 // acuentaBrandFromText extrae la marca comercial desde la descripción o ficha.
-func acuentaBrandFromText(text string, brands []string) *string {
-	for _, brand := range brands {
-		pattern := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(brand) + `\b`)
-		if match := pattern.FindString(text); match != "" {
-			return normalize.Texto(match)
+func acuentaBrandFromText(texto string, marcas []string) *string {
+	for _, marca := range marcas {
+		patron := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(marca) + `\b`)
+		if coincidencia := patron.FindString(texto); coincidencia != "" {
+			return normalize.Texto(coincidencia)
 		}
 	}
 	return nil
 }
 
 // acuentaSKUFromURL extrae el identificador SKU numérico de la URL del producto.
-func acuentaSKUFromURL(site catalog.Site, productURL string) *string {
-	slug := lastPathSegment(productURL)
-	prefix := site.Setting("sku_prefix")
-	if match := acuentaTrailingDigits.FindString(slug); match != "" {
-		value := prefix + strings.TrimPrefix(match, "-")
-		return &value
+func acuentaSKUFromURL(sitio catalog.Site, urlProducto string) *string {
+	slug := lastPathSegment(urlProducto)
+	prefijo := sitio.Setting("sku_prefix")
+	if coincidencia := acuentaTrailingDigits.FindString(slug); coincidencia != "" {
+		valor := prefijo + strings.TrimPrefix(coincidencia, "-")
+		return &valor
 	}
-	value := prefix + slug
-	runes := []rune(value)
-	if len(runes) > site.Limit("sku_max_length") {
-		value = string(runes[:site.Limit("sku_max_length")])
+	valor := prefijo + slug
+	runas := []rune(valor)
+	if len(runas) > sitio.Limit("sku_max_length") {
+		valor = string(runas[:sitio.Limit("sku_max_length")])
 	}
-	return &value
+	return &valor
 }

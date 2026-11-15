@@ -19,268 +19,268 @@ var liderFormatPattern = regexp.MustCompile(`(?i)\b\d+(?:[.,]\d+)?\s*(?:kg|grs?|
 // ===== Extracción Principal =====
 
 // LiderProducts intenta __NEXT_DATA__ y cae a las tarjetas del HTML.
-func LiderProducts(site catalog.Site, body []byte, responseURL *url.URL) []domain.Product {
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
+func LiderProducts(sitio catalog.Site, cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
 		return nil
 	}
-	if products, found := liderNextDataProducts(site, document, responseURL); found {
-		return products
+	if productos, encontrado := liderNextDataProducts(sitio, documento, urlRespuesta); encontrado {
+		return productos
 	}
-	return liderCards(site, document, responseURL)
+	return liderCards(sitio, documento, urlRespuesta)
 }
 
 // LiderProduct reconstruye una ficha /ip/. Prueba, en orden, JSON-LD, el objeto
 // de producto de __NEXT_DATA__ y las tarjetas del HTML. Sólo acepta un
 // candidato cuya URL coincida con la solicitada (o el único disponible).
-func LiderProduct(site catalog.Site, body []byte, requested string, responseURL *url.URL) *domain.Product {
-	if products := ExtractJSONLDProducts(site, body, responseURL); len(products) > 0 {
-		if selected := SelectProductByURL(products, requested, responseURL); selected != nil {
-			if resolved := ResolveURL(responseURL, *selected.URLProducto); site.ValidateProductURL(resolved) == nil {
-				selected.URLProducto = &resolved
-				return selected
+func LiderProduct(sitio catalog.Site, cuerpo []byte, solicitado string, urlRespuesta *url.URL) *domain.Product {
+	if productos := ExtractJSONLDProducts(sitio, cuerpo, urlRespuesta); len(productos) > 0 {
+		if seleccionado := SelectProductByURL(productos, solicitado, urlRespuesta); seleccionado != nil {
+			if resuelto := ResolveURL(urlRespuesta, *seleccionado.URLProducto); sitio.ValidateProductURL(resuelto) == nil {
+				seleccionado.URLProducto = &resuelto
+				return seleccionado
 			}
 		}
 	}
 
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
 		return nil
 	}
-	if payload, ok := liderNextDataPayload(site, document); ok {
-		var products []domain.Product
-		for _, value := range walkJSON(payload) {
-			item, ok := value.(map[string]any)
-			if !ok {
+	if carga, valido := liderNextDataPayload(sitio, documento); valido {
+		var productos []domain.Product
+		for _, valor := range walkJSON(carga) {
+			elemento, valido := valor.(map[string]any)
+			if !valido {
 				continue
 			}
-			if product, ok := liderProductFromItem(site, item, responseURL); ok {
-				products = append(products, product)
+			if producto, valido := liderProductFromItem(sitio, elemento, urlRespuesta); valido {
+				productos = append(productos, producto)
 			}
 		}
-		if selected := SelectProductByURL(products, requested, responseURL); selected != nil {
-			return selected
+		if seleccionado := SelectProductByURL(productos, solicitado, urlRespuesta); seleccionado != nil {
+			return seleccionado
 		}
 	}
-	return SelectProductByURL(liderCards(site, document, responseURL), requested, responseURL)
+	return SelectProductByURL(liderCards(sitio, documento, urlRespuesta), solicitado, urlRespuesta)
 }
 
 // ===== Extracción __NEXT_DATA__ =====
 
 // liderNextDataProducts extrae productos desde el bloque __NEXT_DATA__ en Lider.
-func liderNextDataProducts(site catalog.Site, document *goquery.Document, responseURL *url.URL) ([]domain.Product, bool) {
-	payload, ok := liderNextDataPayload(site, document)
-	if !ok {
+func liderNextDataProducts(sitio catalog.Site, documento *goquery.Document, urlRespuesta *url.URL) ([]domain.Product, bool) {
+	carga, valido := liderNextDataPayload(sitio, documento)
+	if !valido {
 		return nil, false
 	}
 
-	props, _ := payload["props"].(map[string]any)
-	pageProps, _ := props["pageProps"].(map[string]any)
-	initialData, _ := pageProps["initialData"].(map[string]any)
-	searchResult, _ := initialData["searchResult"].(map[string]any)
-	itemStacks, ok := searchResult["itemStacks"].([]any)
-	if !ok {
+	propiedades, _ := carga["props"].(map[string]any)
+	propiedadesPagina, _ := propiedades["pageProps"].(map[string]any)
+	datosIniciales, _ := propiedadesPagina["initialData"].(map[string]any)
+	resultadoBusqueda, _ := datosIniciales["searchResult"].(map[string]any)
+	pilasElementos, valido := resultadoBusqueda["itemStacks"].([]any)
+	if !valido {
 		return nil, false
 	}
 
-	products := make([]domain.Product, 0)
-	for _, rawStack := range itemStacks {
-		stack, ok := rawStack.(map[string]any)
-		if !ok {
+	productos := make([]domain.Product, 0)
+	for _, pilaCruda := range pilasElementos {
+		pila, valido := pilaCruda.(map[string]any)
+		if !valido {
 			continue
 		}
-		items, ok := stack["items"].([]any)
-		if !ok {
+		elementos, valido := pila["items"].([]any)
+		if !valido {
 			continue
 		}
-		for _, rawItem := range items {
-			item, ok := rawItem.(map[string]any)
-			if !ok {
+		for _, elementoCrudo := range elementos {
+			elemento, valido := elementoCrudo.(map[string]any)
+			if !valido {
 				continue
 			}
-			if product, ok := liderProductFromItem(site, item, responseURL); ok {
-				products = append(products, product)
+			if producto, valido := liderProductFromItem(sitio, elemento, urlRespuesta); valido {
+				productos = append(productos, producto)
 			}
 		}
 	}
-	return products, true
+	return productos, true
 }
 
 // liderNextDataPayload parsea el contenido JSON de __NEXT_DATA__.
-func liderNextDataPayload(site catalog.Site, document *goquery.Document) (map[string]any, bool) {
-	selector := site.Selector("next_data")
+func liderNextDataPayload(sitio catalog.Site, documento *goquery.Document) (map[string]any, bool) {
+	selector := sitio.Selector("next_data")
 	if selector == "" {
 		return nil, false
 	}
-	script := document.Find(selector).First()
-	if script.Length() == 0 {
+	guion := documento.Find(selector).First()
+	if guion.Length() == 0 {
 		return nil, false
 	}
-	var payload map[string]any
-	decoder := json.NewDecoder(strings.NewReader(script.Text()))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	var carga map[string]any
+	decodificador := json.NewDecoder(strings.NewReader(guion.Text()))
+	decodificador.UseNumber()
+	if errorObtenido := decodificador.Decode(&carga); errorObtenido != nil {
 		return nil, false
 	}
-	return payload, true
+	return carga, true
 }
 
 // liderProductFromItem mapea un ítem del JSON de Lider a domain.Product.
-func liderProductFromItem(site catalog.Site, item map[string]any, responseURL *url.URL) (domain.Product, bool) {
-	name := normalize.Texto(item["name"])
-	productCode := normalize.EAN(item["usItemId"])
-	currentPrice := normalize.PrecioCLP(item["price"])
-	if name == nil || productCode == nil || currentPrice == nil {
+func liderProductFromItem(sitio catalog.Site, elemento map[string]any, urlRespuesta *url.URL) (domain.Product, bool) {
+	nombre := normalize.Texto(elemento["name"])
+	codigoProducto := normalize.EAN(elemento["usItemId"])
+	precioActual := normalize.PrecioCLP(elemento["price"])
+	if nombre == nil || codigoProducto == nil || precioActual == nil {
 		return domain.Product{}, false
 	}
 
-	priceInfo, _ := item["priceInfo"].(map[string]any)
-	normalPrice := normalize.PrecioCLP(firstValue(priceInfo, "wasPrice"))
-	if normalPrice == nil {
-		normalPrice = normalize.PrecioCLP(firstValue(priceInfo, "itemPrice"))
+	informacionPrecio, _ := elemento["priceInfo"].(map[string]any)
+	precioNormal := normalize.PrecioCLP(firstValue(informacionPrecio, "wasPrice"))
+	if precioNormal == nil {
+		precioNormal = normalize.PrecioCLP(firstValue(informacionPrecio, "itemPrice"))
 	}
-	if normalPrice == nil {
-		normalPrice = currentPrice
+	if precioNormal == nil {
+		precioNormal = precioActual
 	}
 
-	canonical, ok := item["canonicalUrl"].(string)
-	if !ok || canonical == "" {
+	canonica, valido := elemento["canonicalUrl"].(string)
+	if !valido || canonica == "" {
 		return domain.Product{}, false
 	}
-	productURL := ResolveURL(responseURL, canonical)
-	if err := site.ValidateProductURL(productURL); err != nil {
+	urlProducto := ResolveURL(urlRespuesta, canonica)
+	if errorObtenido := sitio.ValidateProductURL(urlProducto); errorObtenido != nil {
 		return domain.Product{}, false
 	}
 
-	var image *string
-	imageInfo, _ := item["imageInfo"].(map[string]any)
-	if thumbnail, ok := imageInfo["thumbnailUrl"].(string); ok && thumbnail != "" {
-		value := ResolveURL(responseURL, thumbnail)
-		image = &value
+	var imagen *string
+	informacionImagen, _ := elemento["imageInfo"].(map[string]any)
+	if miniatura, valido := informacionImagen["thumbnailUrl"].(string); valido && miniatura != "" {
+		valor := ResolveURL(urlRespuesta, miniatura)
+		imagen = &valor
 	}
 
-	var inStock *bool
-	if outOfStock, ok := item["isOutOfStock"].(bool); ok {
-		value := !outOfStock
-		inStock = &value
+	var conStock *bool
+	if sinStock, valido := elemento["isOutOfStock"].(bool); valido {
+		valor := !sinStock
+		conStock = &valor
 	}
 
-	sku := normalize.Texto(item["sku"])
+	sku := normalize.Texto(elemento["sku"])
 	if sku == nil {
-		sku = productCode
+		sku = codigoProducto
 	}
-	var offer *float64
-	var mechanics *string
-	if *currentPrice < *normalPrice {
-		offer = currentPrice
-		mechanics = domain.StringPtr(site.Setting("promotion"))
+	var oferta *float64
+	var mecanicas *string
+	if *precioActual < *precioNormal {
+		oferta = precioActual
+		mecanicas = domain.StringPtr(sitio.Setting("promotion"))
 	}
 	return domain.Product{
-		Producto:          *name,
-		Precio:            currentPrice,
-		PrecioNormal:      normalPrice,
-		PrecioOferta:      offer,
-		EanGtin:           productCode,
+		Producto:          *nombre,
+		Precio:            precioActual,
+		PrecioNormal:      precioNormal,
+		PrecioOferta:      oferta,
+		EanGtin:           codigoProducto,
 		SKU:               sku,
-		Marca:             normalize.Texto(item["brand"]),
-		FormatoCrudo:      FormatFromText(*name, liderFormatPattern),
-		MecanicaPromocion: mechanics,
-		EnStock:           inStock,
-		URLProducto:       &productURL,
-		Imagen:            image,
+		Marca:             normalize.Texto(elemento["brand"]),
+		FormatoCrudo:      FormatFromText(*nombre, liderFormatPattern),
+		MecanicaPromocion: mecanicas,
+		EnStock:           conStock,
+		URLProducto:       &urlProducto,
+		Imagen:            imagen,
 	}, true
 }
 
 // ===== Extracción Tarjetas HTML =====
 
 // liderCards extrae productos a partir de las tarjetas del catálogo HTML de Lider.
-func liderCards(site catalog.Site, document *goquery.Document, responseURL *url.URL) []domain.Product {
-	cards := document.Find(site.Selector("product_card"))
-	if cards.Length() == 0 {
-		cards = document.Find(site.Selector("product_card_fallback"))
+func liderCards(sitio catalog.Site, documento *goquery.Document, urlRespuesta *url.URL) []domain.Product {
+	tarjetas := documento.Find(sitio.Selector("product_card"))
+	if tarjetas.Length() == 0 {
+		tarjetas = documento.Find(sitio.Selector("product_card_fallback"))
 	}
 
-	var products []domain.Product
-	cards.Each(func(_ int, card *goquery.Selection) {
-		name := normalize.Texto(allText(card.Find(site.Selector("card_title"))))
-		href := firstAttr(card, site.Selector("product_link"), "href")
-		if name == nil || href == "" {
+	var productos []domain.Product
+	tarjetas.Each(func(_ int, tarjeta *goquery.Selection) {
+		nombre := normalize.Texto(allText(tarjeta.Find(sitio.Selector("card_title"))))
+		enlace := firstAttr(tarjeta, sitio.Selector("product_link"), "href")
+		if nombre == nil || enlace == "" {
 			return
 		}
-		productURL := ResolveURL(responseURL, href)
-		if err := site.ValidateProductURL(productURL); err != nil {
+		urlProducto := ResolveURL(urlRespuesta, enlace)
+		if errorObtenido := sitio.ValidateProductURL(urlProducto); errorObtenido != nil {
 			return
 		}
 
-		priceBlock := card.Find(site.Selector("price_block")).First()
-		currentPrice := normalize.PrecioCLP(firstText(priceBlock, site.Selector("price_current")))
-		if currentPrice == nil {
+		bloquePrecio := tarjeta.Find(sitio.Selector("price_block")).First()
+		precioActual := normalize.PrecioCLP(firstText(bloquePrecio, sitio.Selector("price_current")))
+		if precioActual == nil {
 			return
 		}
-		normalPrice := normalize.PrecioCLP(firstText(priceBlock, site.Selector("price_normal")))
-		if normalPrice == nil {
-			normalPrice = currentPrice
+		precioNormal := normalize.PrecioCLP(firstText(bloquePrecio, sitio.Selector("price_normal")))
+		if precioNormal == nil {
+			precioNormal = precioActual
 		}
 
-		rawCode := card.AttrOr("data-dca-id", "")
-		if rawCode == "" {
-			rawCode = lastPathSegment(productURL)
+		codigoCrudo := tarjeta.AttrOr("data-dca-id", "")
+		if codigoCrudo == "" {
+			codigoCrudo = lastPathSegment(urlProducto)
 		}
-		productCode := normalize.EAN(rawCode)
-		sku := firstNonNilString(productCode, nonEmptyStringPtr(card.AttrOr("data-item-id", "")))
+		codigoProducto := normalize.EAN(codigoCrudo)
+		sku := firstNonNilString(codigoProducto, nonEmptyStringPtr(tarjeta.AttrOr("data-item-id", "")))
 
-		image := firstAttr(card, site.Selector("image"), "src")
-		if image == "" {
-			image = firstAttr(card, "img", "data-src")
+		imagen := firstAttr(tarjeta, sitio.Selector("image"), "src")
+		if imagen == "" {
+			imagen = firstAttr(tarjeta, "img", "data-src")
 		}
-		if image == "" {
-			image = firstAttr(card, "img", "src")
+		if imagen == "" {
+			imagen = firstAttr(tarjeta, "img", "src")
 		}
-		var imageURL *string
-		if image != "" {
-			value := ResolveURL(responseURL, image)
-			imageURL = &value
+		var urlImagen *string
+		if imagen != "" {
+			valor := ResolveURL(urlRespuesta, imagen)
+			urlImagen = &valor
 		}
 
-		cardText := strings.ToLower(allText(card))
-		var inStock *bool
+		textoTarjeta := strings.ToLower(allText(tarjeta))
+		var conStock *bool
 		switch {
-		case containsAny(cardText, site.List("stock_in")):
-			inStock = domain.BoolPtr(true)
-		case containsAny(cardText, site.List("stock_out")):
-			inStock = domain.BoolPtr(false)
+		case containsAny(textoTarjeta, sitio.List("stock_in")):
+			conStock = domain.BoolPtr(true)
+		case containsAny(textoTarjeta, sitio.List("stock_out")):
+			conStock = domain.BoolPtr(false)
 		}
 
-		var offer *float64
-		var mechanics *string
-		if *currentPrice < *normalPrice {
-			offer = currentPrice
-			mechanics = domain.StringPtr(site.Setting("promotion"))
+		var oferta *float64
+		var mecanicas *string
+		if *precioActual < *precioNormal {
+			oferta = precioActual
+			mecanicas = domain.StringPtr(sitio.Setting("promotion"))
 		}
-		products = append(products, domain.Product{
-			Producto:          *name,
-			Precio:            currentPrice,
-			PrecioNormal:      normalPrice,
-			PrecioOferta:      offer,
-			EanGtin:           productCode,
+		productos = append(productos, domain.Product{
+			Producto:          *nombre,
+			Precio:            precioActual,
+			PrecioNormal:      precioNormal,
+			PrecioOferta:      oferta,
+			EanGtin:           codigoProducto,
 			SKU:               sku,
-			Marca:             normalize.Texto(firstText(card, site.Selector("brand"))),
-			FormatoCrudo:      FormatFromText(*name, liderFormatPattern),
-			MecanicaPromocion: mechanics,
-			EnStock:           inStock,
-			URLProducto:       &productURL,
-			Imagen:            imageURL,
+			Marca:             normalize.Texto(firstText(tarjeta, sitio.Selector("brand"))),
+			FormatoCrudo:      FormatFromText(*nombre, liderFormatPattern),
+			MecanicaPromocion: mecanicas,
+			EnStock:           conStock,
+			URLProducto:       &urlProducto,
+			Imagen:            urlImagen,
 		})
 	})
-	return products
+	return productos
 }
 
 // ===== Utilidades =====
 
 // containsAny determina si una cadena contiene alguna de las subcadenas indicadas.
-func containsAny(text string, values []string) bool {
-	for _, value := range values {
-		if value != "" && strings.Contains(text, value) {
+func containsAny(texto string, valores []string) bool {
+	for _, valor := range valores {
+		if valor != "" && strings.Contains(texto, valor) {
 			return true
 		}
 	}

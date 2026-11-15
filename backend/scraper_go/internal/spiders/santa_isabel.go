@@ -17,18 +17,18 @@ type SantaIsabel struct {
 }
 
 // NewSantaIsabel construye el spider de Santa Isabel con el catálogo embebido.
-func NewSantaIsabel(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel {
-	return newSantaIsabel(mustSite(SantaIsabelName), fetcher, categoryDir, maxPages, logger)
+func NewSantaIsabel(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *SantaIsabel {
+	return newSantaIsabel(mustSite(SantaIsabelName), obtenedor, directorioCategorias, maxPaginas, registrador)
 }
 
 // newSantaIsabel instancia el spider específico de santa_isabel usando el catálogo central.
-func newSantaIsabel(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *SantaIsabel {
-	return &SantaIsabel{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
-		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {
-			return extract.SantaIsabelProducts(site, body, responseURL)
+func newSantaIsabel(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *SantaIsabel {
+	return &SantaIsabel{baseSpider: newBaseSpider(obtenedor, directorioCategorias, maxPaginas, registrador, sitio, spiderConfig{
+		extractProducts: func(cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+			return extract.SantaIsabelProducts(sitio, cuerpo, urlRespuesta)
 		},
-		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
-			return extract.SantaIsabelProduct(site, body, requested, responseURL)
+		extractProduct: func(cuerpo []byte, urlRespuesta *url.URL, solicitado string) *domain.Product {
+			return extract.SantaIsabelProduct(sitio, cuerpo, solicitado, urlRespuesta)
 		},
 	})}
 }

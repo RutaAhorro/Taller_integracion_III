@@ -44,12 +44,12 @@ type Job struct {
 
 // StringPtr devuelve un puntero a una copia del valor, para los campos
 // opcionales del contrato.
-func StringPtr(value string) *string {
-	return &value
+func StringPtr(valor string) *string {
+	return &valor
 }
 
 // BoolPtr devuelve un puntero a una copia del valor, para los campos
 // opcionales del contrato.
-func BoolPtr(value bool) *bool {
-	return &value
+func BoolPtr(valor bool) *bool {
+	return &valor
 }

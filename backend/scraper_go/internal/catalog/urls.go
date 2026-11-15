@@ -9,50 +9,50 @@ import (
 
 // ValidateCategoryURL comprueba que la URL sea HTTPS del sitio y cumpla las
 // restricciones de path declaradas para categorías.
-func (sitio Site) ValidateCategoryURL(rawURL string) error {
-	return sitio.validate(rawURL, sitio.CategoryURL)
+func (sitio Site) ValidateCategoryURL(urlCruda string) error {
+	return sitio.validate(urlCruda, sitio.CategoryURL)
 }
 
 // ValidateProductURL comprueba que la URL sea HTTPS del sitio y cumpla las
 // restricciones de path declaradas para fichas de producto.
-func (sitio Site) ValidateProductURL(rawURL string) error {
-	return sitio.validate(rawURL, sitio.ProductURL)
+func (sitio Site) ValidateProductURL(urlCruda string) error {
+	return sitio.validate(urlCruda, sitio.ProductURL)
 }
 
 // ===== Validación Interna =====
 
 // validate comprueba un esquema HTTPS, host permitido y segmentos de ruta.
-func (sitio Site) validate(rawURL string, rule URLRule) error {
-	message := rule.Message
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return errors.New(message)
+func (sitio Site) validate(urlCruda string, regla URLRule) error {
+	mensaje := regla.Message
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return errors.New(mensaje)
 	}
-	if parsed.Scheme != "https" {
-		return fmt.Errorf("%s", message)
+	if analizada.Scheme != "https" {
+		return fmt.Errorf("%s", mensaje)
 	}
-	if _, ok := sitio.hosts[strings.ToLower(parsed.Hostname())]; !ok {
-		return fmt.Errorf("%s", message)
+	if _, valido := sitio.hosts[strings.ToLower(analizada.Hostname())]; !valido {
+		return fmt.Errorf("%s", mensaje)
 	}
-	if rule.Prefix != "" && !strings.HasPrefix(parsed.Path, rule.Prefix) {
-		return errors.New(message)
+	if regla.Prefix != "" && !strings.HasPrefix(analizada.Path, regla.Prefix) {
+		return errors.New(mensaje)
 	}
-	if rule.Suffix != "" && !strings.HasSuffix(strings.TrimRight(parsed.Path, "/"), rule.Suffix) {
-		return errors.New(message)
+	if regla.Suffix != "" && !strings.HasSuffix(strings.TrimRight(analizada.Path, "/"), regla.Suffix) {
+		return errors.New(mensaje)
 	}
-	if rule.MinSegments > 0 && len(nonEmptySegments(parsed.Path)) < rule.MinSegments {
-		return errors.New(message)
+	if regla.MinSegments > 0 && len(nonEmptySegments(analizada.Path)) < regla.MinSegments {
+		return errors.New(mensaje)
 	}
 	return nil
 }
 
 // nonEmptySegments descompone la ruta en segmentos descartando componentes vacíos.
-func nonEmptySegments(path string) []string {
-	var segments []string
-	for _, segment := range strings.Split(path, "/") {
-		if segment != "" {
-			segments = append(segments, segment)
+func nonEmptySegments(ruta string) []string {
+	var segmentos []string
+	for _, segmento := range strings.Split(ruta, "/") {
+		if segmento != "" {
+			segmentos = append(segmentos, segmento)
 		}
 	}
-	return segments
+	return segmentos
 }

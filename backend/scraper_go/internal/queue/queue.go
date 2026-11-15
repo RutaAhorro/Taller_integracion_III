@@ -85,46 +85,46 @@ type Queue struct {
 
 // New valida la lease mínima de 10 s y completa los nombres y claves que no
 // vengan en Options.
-func New(client *redis.Client, opts Options) (*Queue, error) {
-	if opts.Lease < 10*time.Second {
+func New(cliente *redis.Client, opciones Options) (*Queue, error) {
+	if opciones.Lease < 10*time.Second {
 		return nil, fmt.Errorf("SCRAPER_LEASE_MS debe ser al menos 10000")
 	}
-	if opts.Stream == "" {
-		opts.Stream = DefaultStream
+	if opciones.Stream == "" {
+		opciones.Stream = DefaultStream
 	}
-	if opts.Group == "" {
-		opts.Group = DefaultGroup
+	if opciones.Group == "" {
+		opciones.Group = DefaultGroup
 	}
-	if opts.Consumer == "" {
-		hostname, _ := os.Hostname()
-		opts.Consumer = hostname + "-" + uuid.NewString()
+	if opciones.Consumer == "" {
+		nombreServidor, _ := os.Hostname()
+		opciones.Consumer = nombreServidor + "-" + uuid.NewString()
 	}
-	if opts.IndexKey == "" {
-		opts.IndexKey = JobIndex
+	if opciones.IndexKey == "" {
+		opciones.IndexKey = JobIndex
 	}
-	if opts.DeadLetter == "" {
-		opts.DeadLetter = DefaultDeadLetter
+	if opciones.DeadLetter == "" {
+		opciones.DeadLetter = DefaultDeadLetter
 	}
-	if opts.ClosedPrefix == "" {
-		opts.ClosedPrefix = JobClosedPrefix
+	if opciones.ClosedPrefix == "" {
+		opciones.ClosedPrefix = JobClosedPrefix
 	}
-	if opts.Block <= 0 {
-		opts.Block = time.Second
+	if opciones.Block <= 0 {
+		opciones.Block = time.Second
 	}
-	if opts.ClosedTTL <= 0 {
-		opts.ClosedTTL = 24 * time.Hour
+	if opciones.ClosedTTL <= 0 {
+		opciones.ClosedTTL = 24 * time.Hour
 	}
 	return &Queue{
-		client:       client,
-		stream:       opts.Stream,
-		group:        opts.Group,
-		consumer:     opts.Consumer,
-		lease:        opts.Lease,
-		block:        opts.Block,
-		closedTTL:    opts.ClosedTTL,
-		indexKey:     opts.IndexKey,
-		deadLetter:   opts.DeadLetter,
-		closedPrefix: opts.ClosedPrefix,
+		client:       cliente,
+		stream:       opciones.Stream,
+		group:        opciones.Group,
+		consumer:     opciones.Consumer,
+		lease:        opciones.Lease,
+		block:        opciones.Block,
+		closedTTL:    opciones.ClosedTTL,
+		indexKey:     opciones.IndexKey,
+		deadLetter:   opciones.DeadLetter,
+		closedPrefix: opciones.ClosedPrefix,
 		cursor:       "0-0",
 		renewScript:  redis.NewScript(renewScriptSource),
 		ackScript:    redis.NewScript(ackScriptSource),
@@ -152,10 +152,10 @@ func (cola *Queue) Group() string {
 
 // EnsureGroup crea el grupo de consumo si no existe. Es seguro llamarlo en
 // cada arranque.
-func (cola *Queue) EnsureGroup(ctx context.Context) error {
-	err := cola.client.XGroupCreateMkStream(ctx, cola.stream, cola.group, "0").Err()
-	if err != nil && !strings.Contains(err.Error(), "BUSYGROUP") {
-		return err
+func (cola *Queue) EnsureGroup(contexto context.Context) error {
+	errorObtenido := cola.client.XGroupCreateMkStream(contexto, cola.stream, cola.group, "0").Err()
+	if errorObtenido != nil && !strings.Contains(errorObtenido.Error(), "BUSYGROUP") {
+		return errorObtenido
 	}
 	return nil
 }
@@ -163,8 +163,8 @@ func (cola *Queue) EnsureGroup(ctx context.Context) error {
 // Receive reclama primero una lease vencida; si hay mensajes pendientes pero
 // todavía no vencidos, espera para no adelantar trabajo ajeno. Recién después
 // toma un mensaje nuevo.
-func (cola *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
-	messages, next, err := cola.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+func (cola *Queue) Receive(contexto context.Context) (*redis.XMessage, error) {
+	mensajes, siguiente, errorObtenido := cola.client.XAutoClaim(contexto, &redis.XAutoClaimArgs{
 		Stream:   cola.stream,
 		Group:    cola.group,
 		Consumer: cola.consumer,
@@ -172,140 +172,140 @@ func (cola *Queue) Receive(ctx context.Context) (*redis.XMessage, error) {
 		Start:    cola.cursor,
 		Count:    1,
 	}).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return nil, err
+	if errorObtenido != nil && !errors.Is(errorObtenido, redis.Nil) {
+		return nil, errorObtenido
 	}
-	if next != "" {
-		cola.cursor = next
+	if siguiente != "" {
+		cola.cursor = siguiente
 	}
-	if len(messages) > 0 {
-		return &messages[0], nil
+	if len(mensajes) > 0 {
+		return &mensajes[0], nil
 	}
 
-	pending, err := cola.client.XPending(ctx, cola.stream, cola.group).Result()
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return nil, err
+	pendiente, errorObtenido := cola.client.XPending(contexto, cola.stream, cola.group).Result()
+	if errorObtenido != nil && !errors.Is(errorObtenido, redis.Nil) {
+		return nil, errorObtenido
 	}
-	if pending != nil && pending.Count > 0 {
+	if pendiente != nil && pendiente.Count > 0 {
 		return nil, nil
 	}
 
-	streams, err := cola.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+	flujos, errorObtenido := cola.client.XReadGroup(contexto, &redis.XReadGroupArgs{
 		Group:    cola.group,
 		Consumer: cola.consumer,
 		Streams:  []string{cola.stream, ">"},
 		Count:    1,
 		Block:    cola.block,
 	}).Result()
-	if errors.Is(err, redis.Nil) {
+	if errors.Is(errorObtenido, redis.Nil) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if len(streams) == 0 || len(streams[0].Messages) == 0 {
+	if len(flujos) == 0 || len(flujos[0].Messages) == 0 {
 		return nil, nil
 	}
-	return &streams[0].Messages[0], nil
+	return &flujos[0].Messages[0], nil
 }
 
 // Renew extiende la lease sólo si este consumidor sigue siendo el dueño del
 // mensaje. Devuelve false cuando otro consumidor ya lo reclamó.
-func (cola *Queue) Renew(ctx context.Context, messageID string) (bool, error) {
-	result, err := cola.renewScript.Run(ctx, cola.client, []string{cola.stream}, cola.group, messageID, cola.consumer).Int64()
-	if err != nil {
-		return false, err
+func (cola *Queue) Renew(contexto context.Context, mensajeID string) (bool, error) {
+	resultado, errorObtenido := cola.renewScript.Run(contexto, cola.client, []string{cola.stream}, cola.group, mensajeID, cola.consumer).Int64()
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	return result == 1, nil
+	return resultado == 1, nil
 }
 
 // ===== Confirmación y Heartbeat =====
 
 // Ack confirma el mensaje. Si reason no está vacío, primero copia el payload
 // al dead-letter; en ambos casos limpia el índice y marca el trabajo cerrado.
-func (cola *Queue) Ack(ctx context.Context, messageID, rawJob, workID, reason string) (bool, error) {
-	keys := []string{cola.stream, cola.indexKey, cola.deadLetter, cola.closedPrefix + workID}
-	result, err := cola.ackScript.Run(
-		ctx, cola.client, keys,
-		cola.group, messageID, cola.consumer, rawJob, reason, workID,
+func (cola *Queue) Ack(contexto context.Context, mensajeID, trabajoCrudo, trabajoID, motivo string) (bool, error) {
+	claves := []string{cola.stream, cola.indexKey, cola.deadLetter, cola.closedPrefix + trabajoID}
+	resultado, errorObtenido := cola.ackScript.Run(
+		contexto, cola.client, claves,
+		cola.group, mensajeID, cola.consumer, trabajoCrudo, motivo, trabajoID,
 		int64(cola.closedTTL/time.Second),
 	).Int64()
-	if err != nil {
-		return false, err
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	return result == 1, nil
+	return resultado == 1, nil
 }
 
 // HasMessage indica si el trabajo todavía tiene un mensaje pendiente en el
 // stream. El recolector lo usa para no borrar un spool con entrega en curso.
-func (cola *Queue) HasMessage(ctx context.Context, workID string) (bool, error) {
-	messageID, err := cola.client.HGet(ctx, cola.indexKey, workID).Result()
-	if errors.Is(err, redis.Nil) {
+func (cola *Queue) HasMessage(contexto context.Context, trabajoID string) (bool, error) {
+	mensajeID, errorObtenido := cola.client.HGet(contexto, cola.indexKey, trabajoID).Result()
+	if errors.Is(errorObtenido, redis.Nil) {
 		return false, nil
 	}
-	if err != nil {
-		return false, err
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	messages, err := cola.client.XRange(ctx, cola.stream, messageID, messageID).Result()
-	if err != nil {
-		return false, err
+	mensajes, errorObtenido := cola.client.XRange(contexto, cola.stream, mensajeID, mensajeID).Result()
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	return len(messages) > 0, nil
+	return len(mensajes) > 0, nil
 }
 
 // Heartbeat renueva la lease mientras el trabajo está en curso. El canal lost
 // se cierra si otro consumidor tomó el mensaje; el worker debe abandonar el
 // trabajo sin hacer ACK.
-func (cola *Queue) Heartbeat(parent context.Context, messageID string) (
+func (cola *Queue) Heartbeat(padre context.Context, mensajeID string) (
 	context.Context,
 	context.CancelFunc,
 	<-chan struct{},
 	error,
 ) {
-	ctx, cancel := context.WithCancel(parent)
-	lost := make(chan struct{})
-	var once sync.Once
-	markLost := func() {
-		once.Do(func() { close(lost) })
-		cancel()
+	contexto, cancelar := context.WithCancel(padre)
+	perdido := make(chan struct{})
+	var unaVez sync.Once
+	marcarPerdido := func() {
+		unaVez.Do(func() { close(perdido) })
+		cancelar()
 	}
 
-	ok, err := cola.Renew(ctx, messageID)
-	if err != nil {
-		cancel()
-		return ctx, cancel, lost, err
+	valido, errorObtenido := cola.Renew(contexto, mensajeID)
+	if errorObtenido != nil {
+		cancelar()
+		return contexto, cancelar, perdido, errorObtenido
 	}
-	if !ok {
-		markLost()
-		return ctx, cancel, lost, nil
+	if !valido {
+		marcarPerdido()
+		return contexto, cancelar, perdido, nil
 	}
 
 	go func() {
-		ticker := time.NewTicker(cola.lease / 3)
-		defer ticker.Stop()
+		temporizador := time.NewTicker(cola.lease / 3)
+		defer temporizador.Stop()
 		for {
 			select {
-			case <-ctx.Done():
+			case <-contexto.Done():
 				return
-			case <-ticker.C:
-				ok, err := cola.Renew(ctx, messageID)
-				if err != nil || !ok {
-					markLost()
+			case <-temporizador.C:
+				valido, errorObtenido := cola.Renew(contexto, mensajeID)
+				if errorObtenido != nil || !valido {
+					marcarPerdido()
 					return
 				}
 			}
 		}
 	}()
 
-	return ctx, cancel, lost, nil
+	return contexto, cancelar, perdido, nil
 }
 
 // ===== Utilidades =====
 
 // IsLost informa si el canal de pérdida de lease ya se cerró.
-func IsLost(lost <-chan struct{}) bool {
+func IsLost(perdido <-chan struct{}) bool {
 	select {
-	case <-lost:
+	case <-perdido:
 		return true
 	default:
 		return false

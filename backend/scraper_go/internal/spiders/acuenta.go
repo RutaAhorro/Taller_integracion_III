@@ -17,18 +17,18 @@ type Acuenta struct {
 }
 
 // NewAcuenta construye el spider de A Cuenta con el catálogo embebido.
-func NewAcuenta(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta {
-	return newAcuenta(mustSite(AcuentaName), fetcher, categoryDir, maxPages, logger)
+func NewAcuenta(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Acuenta {
+	return newAcuenta(mustSite(AcuentaName), obtenedor, directorioCategorias, maxPaginas, registrador)
 }
 
 // newAcuenta instancia el spider específico de acuenta usando el catálogo central.
-func newAcuenta(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Acuenta {
-	return &Acuenta{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
-		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {
-			return extract.AcuentaProducts(site, body, responseURL)
+func newAcuenta(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Acuenta {
+	return &Acuenta{baseSpider: newBaseSpider(obtenedor, directorioCategorias, maxPaginas, registrador, sitio, spiderConfig{
+		extractProducts: func(cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+			return extract.AcuentaProducts(sitio, cuerpo, urlRespuesta)
 		},
-		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
-			return extract.AcuentaProduct(site, body, requested, responseURL)
+		extractProduct: func(cuerpo []byte, urlRespuesta *url.URL, solicitado string) *domain.Product {
+			return extract.AcuentaProduct(sitio, cuerpo, solicitado, urlRespuesta)
 		},
 	})}
 }

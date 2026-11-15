@@ -82,38 +82,38 @@ type CategoryFrom struct {
 
 // Default devuelve el catálogo embebido. Un fallo aquí es un error de build.
 func Default() Catalog {
-	catalog, err := parse(embedded)
-	if err != nil {
-		panic(fmt.Sprintf("catálogo de spiders inválido: %v", err))
+	catalogo, errorObtenido := parse(embedded)
+	if errorObtenido != nil {
+		panic(fmt.Sprintf("catálogo de spiders inválido: %v", errorObtenido))
 	}
-	return catalog
+	return catalogo
 }
 
 // FromEnv carga el catálogo embebido o el archivo indicado por
 // SCRAPER_SPIDERS_FILE. Devuelve error para que el arranque falle rápido.
 func FromEnv() (Catalog, error) {
-	path := strings.TrimSpace(os.Getenv(FileEnv))
-	if path == "" {
+	ruta := strings.TrimSpace(os.Getenv(FileEnv))
+	if ruta == "" {
 		return parse(embedded)
 	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return Catalog{}, fmt.Errorf("leer %s: %w", FileEnv, err)
+	cuerpo, errorObtenido := os.ReadFile(ruta)
+	if errorObtenido != nil {
+		return Catalog{}, fmt.Errorf("leer %s: %w", FileEnv, errorObtenido)
 	}
-	catalog, err := parse(body)
-	if err != nil {
-		return Catalog{}, fmt.Errorf("%s: %w", path, err)
+	catalogo, errorObtenido := parse(cuerpo)
+	if errorObtenido != nil {
+		return Catalog{}, fmt.Errorf("%s: %w", ruta, errorObtenido)
 	}
-	return catalog, nil
+	return catalogo, nil
 }
 
 // ===== Búsqueda y Accesores =====
 
 // Get busca un sitio por nombre.
-func (catalogo Catalog) Get(name string) (Site, bool) {
-	for _, site := range catalogo.Sites {
-		if site.Name == name {
-			return site, true
+func (catalogo Catalog) Get(nombre string) (Site, bool) {
+	for _, sitio := range catalogo.Sites {
+		if sitio.Name == nombre {
+			return sitio, true
 		}
 	}
 	return Site{}, false
@@ -121,36 +121,36 @@ func (catalogo Catalog) Get(name string) (Site, bool) {
 
 // Names devuelve los nombres en el orden del catálogo.
 func (catalogo Catalog) Names() []string {
-	names := make([]string, 0, len(catalogo.Sites))
-	for _, site := range catalogo.Sites {
-		names = append(names, site.Name)
+	nombres := make([]string, 0, len(catalogo.Sites))
+	for _, sitio := range catalogo.Sites {
+		nombres = append(nombres, sitio.Name)
 	}
-	return names
+	return nombres
 }
 
 // ===== Decodificación =====
 
 // parse deserializa la especificación JSON de spiders y valida su estructura.
-func parse(body []byte) (Catalog, error) {
-	var catalog Catalog
-	if err := json.Unmarshal(body, &catalog); err != nil {
-		return Catalog{}, err
+func parse(cuerpo []byte) (Catalog, error) {
+	var catalogo Catalog
+	if errorObtenido := json.Unmarshal(cuerpo, &catalogo); errorObtenido != nil {
+		return Catalog{}, errorObtenido
 	}
-	if len(catalog.Sites) == 0 {
+	if len(catalogo.Sites) == 0 {
 		return Catalog{}, fmt.Errorf("el catálogo no declara sitios")
 	}
-	seen := make(map[string]struct{}, len(catalog.Sites))
-	for index := range catalog.Sites {
-		site := &catalog.Sites[index]
-		if err := site.prepare(); err != nil {
-			return Catalog{}, fmt.Errorf("sitio %q: %w", site.Name, err)
+	vistos := make(map[string]struct{}, len(catalogo.Sites))
+	for indice := range catalogo.Sites {
+		sitio := &catalogo.Sites[indice]
+		if errorObtenido := sitio.prepare(); errorObtenido != nil {
+			return Catalog{}, fmt.Errorf("sitio %q: %w", sitio.Name, errorObtenido)
 		}
-		if _, duplicate := seen[site.Name]; duplicate {
-			return Catalog{}, fmt.Errorf("nombre de sitio duplicado %q", site.Name)
+		if _, duplicado := vistos[sitio.Name]; duplicado {
+			return Catalog{}, fmt.Errorf("nombre de sitio duplicado %q", sitio.Name)
 		}
-		seen[site.Name] = struct{}{}
+		vistos[sitio.Name] = struct{}{}
 	}
-	return catalog, nil
+	return catalogo, nil
 }
 
 // ===== Inicialización de Sitio =====
@@ -176,23 +176,23 @@ func (sitio *Site) prepare() error {
 		return fmt.Errorf("faltan mensajes de validación de URL")
 	}
 	sitio.hosts = make(map[string]struct{}, len(sitio.AllowedHosts))
-	for _, host := range sitio.AllowedHosts {
-		sitio.hosts[strings.ToLower(strings.TrimSpace(host))] = struct{}{}
+	for _, servidor := range sitio.AllowedHosts {
+		sitio.hosts[strings.ToLower(strings.TrimSpace(servidor))] = struct{}{}
 	}
 	sitio.compiled = make(map[string]*regexp.Regexp, len(sitio.Patterns))
-	for name, pattern := range sitio.Patterns {
-		compiled, err := regexp.Compile(pattern)
-		if err != nil {
-			return fmt.Errorf("patrón %q inválido: %w", name, err)
+	for nombre, patron := range sitio.Patterns {
+		compilado, errorObtenido := regexp.Compile(patron)
+		if errorObtenido != nil {
+			return fmt.Errorf("patrón %q inválido: %w", nombre, errorObtenido)
 		}
-		sitio.compiled[name] = compiled
+		sitio.compiled[nombre] = compilado
 	}
 	if sitio.CategoryFrom.IDPattern != "" {
-		compiled, err := regexp.Compile(sitio.CategoryFrom.IDPattern)
-		if err != nil {
-			return fmt.Errorf("category_from.id_pattern inválido: %w", err)
+		compilado, errorObtenido := regexp.Compile(sitio.CategoryFrom.IDPattern)
+		if errorObtenido != nil {
+			return fmt.Errorf("category_from.id_pattern inválido: %w", errorObtenido)
 		}
-		sitio.compiled["category_id"] = compiled
+		sitio.compiled["category_id"] = compilado
 	}
 	switch sitio.Pagination.Mode {
 	case "", "none":
@@ -211,26 +211,26 @@ func (sitio *Site) prepare() error {
 }
 
 // Regexp devuelve un patrón compilado del sitio.
-func (sitio Site) Regexp(name string) *regexp.Regexp {
-	return sitio.compiled[name]
+func (sitio Site) Regexp(nombre string) *regexp.Regexp {
+	return sitio.compiled[nombre]
 }
 
 // Setting devuelve un valor de texto del sitio.
-func (sitio Site) Setting(name string) string {
-	return sitio.Settings[name]
+func (sitio Site) Setting(nombre string) string {
+	return sitio.Settings[nombre]
 }
 
 // Limit devuelve un límite numérico del sitio.
-func (sitio Site) Limit(name string) int {
-	return sitio.Limits[name]
+func (sitio Site) Limit(nombre string) int {
+	return sitio.Limits[nombre]
 }
 
 // List devuelve una lista de valores del sitio.
-func (sitio Site) List(name string) []string {
-	return sitio.Lists[name]
+func (sitio Site) List(nombre string) []string {
+	return sitio.Lists[nombre]
 }
 
 // Selector devuelve un selector CSS del sitio.
-func (sitio Site) Selector(name string) string {
-	return sitio.Selectors[name]
+func (sitio Site) Selector(nombre string) string {
+	return sitio.Selectors[nombre]
 }

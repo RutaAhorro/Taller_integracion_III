@@ -20,251 +20,251 @@ var renderDataPattern = regexp.MustCompile(`window\.__renderData\s*=\s*("(?:\\.|
 // ===== Extracción Principal =====
 
 // SantaIsabelProducts usa window.__renderData y, si no existe, JSON-LD.
-func SantaIsabelProducts(site catalog.Site, body []byte, baseURL *url.URL) []domain.Product {
-	if products := SantaIsabelRenderData(site, body, baseURL); len(products) > 0 {
-		return products
+func SantaIsabelProducts(sitio catalog.Site, cuerpo []byte, urlBase *url.URL) []domain.Product {
+	if productos := SantaIsabelRenderData(sitio, cuerpo, urlBase); len(productos) > 0 {
+		return productos
 	}
-	return SantaIsabelJSONLD(site, body, baseURL)
+	return SantaIsabelJSONLD(sitio, cuerpo, urlBase)
 }
 
 // SantaIsabelProduct elige la ficha solicitada dentro de los productos.
-func SantaIsabelProduct(site catalog.Site, body []byte, requested string, responseURL *url.URL) *domain.Product {
-	return SelectProductByURL(SantaIsabelProducts(site, body, responseURL), requested, responseURL)
+func SantaIsabelProduct(sitio catalog.Site, cuerpo []byte, solicitado string, urlRespuesta *url.URL) *domain.Product {
+	return SelectProductByURL(SantaIsabelProducts(sitio, cuerpo, urlRespuesta), solicitado, urlRespuesta)
 }
 
 // SantaIsabelRenderData conserva el parser anterior a 2026 como respaldo de
 // rollback.
-func SantaIsabelRenderData(site catalog.Site, body []byte, baseURL *url.URL) []domain.Product {
-	match := renderDataPattern.FindSubmatch(body)
-	if len(match) < 2 {
+func SantaIsabelRenderData(sitio catalog.Site, cuerpo []byte, urlBase *url.URL) []domain.Product {
+	coincidencia := renderDataPattern.FindSubmatch(cuerpo)
+	if len(coincidencia) < 2 {
 		return nil
 	}
-	var renderData string
-	if err := json.Unmarshal(match[1], &renderData); err != nil {
+	var datosRender string
+	if errorObtenido := json.Unmarshal(coincidencia[1], &datosRender); errorObtenido != nil {
 		return nil
 	}
 
-	var payload map[string]any
-	decoder := json.NewDecoder(strings.NewReader(renderData))
-	decoder.UseNumber()
-	if err := decoder.Decode(&payload); err != nil {
+	var carga map[string]any
+	decodificador := json.NewDecoder(strings.NewReader(datosRender))
+	decodificador.UseNumber()
+	if errorObtenido := decodificador.Decode(&carga); errorObtenido != nil {
 		return nil
 	}
-	plp, _ := payload["plp"].(map[string]any)
-	plpProducts, _ := plp["plp_products"].(map[string]any)
-	rawProducts, _ := plpProducts["products"].([]any)
+	plp, _ := carga["plp"].(map[string]any)
+	productosPLP, _ := plp["plp_products"].(map[string]any)
+	productosCrudos, _ := productosPLP["products"].([]any)
 
-	var products []domain.Product
-	for _, rawProduct := range rawProducts {
-		product, ok := rawProduct.(map[string]any)
-		if !ok {
+	var productos []domain.Product
+	for _, productoCrudo := range productosCrudos {
+		producto, valido := productoCrudo.(map[string]any)
+		if !valido {
 			continue
 		}
-		name := normalize.Texto(product["productName"])
-		item := firstMap(product["items"])
-		if name == nil || item == nil {
+		nombre := normalize.Texto(producto["productName"])
+		elemento := firstMap(producto["items"])
+		if nombre == nil || elemento == nil {
 			continue
 		}
-		seller := santaIsabelSeller(item["sellers"], site.Setting("seller"))
-		if seller == nil {
+		vendedor := santaIsabelSeller(elemento["sellers"], sitio.Setting("seller"))
+		if vendedor == nil {
 			continue
 		}
 
-		offer, _ := seller["commertialOffer"].(map[string]any)
-		if offer == nil {
-			offer = map[string]any{}
+		oferta, _ := vendedor["commertialOffer"].(map[string]any)
+		if oferta == nil {
+			oferta = map[string]any{}
 		}
-		price := normalize.PrecioCLP(offer["Price"])
-		if price == nil {
+		precio := normalize.PrecioCLP(oferta["Price"])
+		if precio == nil {
 			continue
 		}
-		normalPrice := firstNonZeroPrice(offer, "ListPrice", "PriceWithoutDiscount")
-		if normalPrice == nil {
-			normalPrice = price
+		precioNormal := firstNonZeroPrice(oferta, "ListPrice", "PriceWithoutDiscount")
+		if precioNormal == nil {
+			precioNormal = precio
 		}
-		var offerPrice *float64
-		if *price < *normalPrice {
-			offerPrice = price
-		}
-
-		var inStock *bool
-		if quantity := numberValue(offer["AvailableQuantity"]); quantity != nil {
-			value := *quantity > 0
-			inStock = &value
+		var precioOferta *float64
+		if *precio < *precioNormal {
+			precioOferta = precio
 		}
 
-		var image *string
-		images, _ := item["images"].([]any)
-		if len(images) > 0 {
-			if first, ok := images[0].(map[string]any); ok {
-				if imageURL, ok := first["imageUrl"].(string); ok {
-					image = &imageURL
+		var conStock *bool
+		if cantidad := numberValue(oferta["AvailableQuantity"]); cantidad != nil {
+			valor := *cantidad > 0
+			conStock = &valor
+		}
+
+		var imagen *string
+		imagenes, _ := elemento["images"].([]any)
+		if len(imagenes) > 0 {
+			if primero, valido := imagenes[0].(map[string]any); valido {
+				if urlImagen, valido := primero["imageUrl"].(string); valido {
+					imagen = &urlImagen
 				}
 			}
 		}
 
-		slug, _ := product["linkText"].(string)
-		reference := ""
+		slug, _ := producto["linkText"].(string)
+		referencia := ""
 		if slug != "" {
-			reference = "/" + slug + site.Setting("product_suffix")
+			referencia = "/" + slug + sitio.Setting("product_suffix")
 		}
-		productURL := ResolveURL(baseURL, reference)
+		urlProducto := ResolveURL(urlBase, referencia)
 
-		var promotionNames []string
-		teasers, _ := offer["teasers"].([]any)
-		for _, rawTeaser := range teasers {
-			teaser, ok := rawTeaser.(map[string]any)
-			if !ok {
+		var nombresPromociones []string
+		avances, _ := oferta["teasers"].([]any)
+		for _, avanceCrudo := range avances {
+			avance, valido := avanceCrudo.(map[string]any)
+			if !valido {
 				continue
 			}
-			if promotion, ok := teaser["name"].(string); ok && promotion != "" {
-				promotionNames = append(promotionNames, promotion)
+			if promocion, valido := avance["name"].(string); valido && promocion != "" {
+				nombresPromociones = append(nombresPromociones, promocion)
 			}
 		}
 
-		format := joinValueStrings(item["unitMultiplier"], item["measurementUnit"])
+		formato := joinValueStrings(elemento["unitMultiplier"], elemento["measurementUnit"])
 
-		var mechanics *string
-		if len(promotionNames) > 0 {
-			value := strings.Join(promotionNames, site.Setting("promotion_separator"))
-			mechanics = &value
+		var mecanicas *string
+		if len(nombresPromociones) > 0 {
+			valor := strings.Join(nombresPromociones, sitio.Setting("promotion_separator"))
+			mecanicas = &valor
 		}
 
-		products = append(products, domain.Product{
-			Producto:          *name,
-			Precio:            price,
-			PrecioNormal:      normalPrice,
-			PrecioOferta:      offerPrice,
-			EanGtin:           normalize.EAN(item["ean"]),
-			SKU:               firstTruthyString(item["itemId"], product["productId"]),
-			Marca:             normalize.Texto(product["brand"]),
-			FormatoCrudo:      format,
-			MecanicaPromocion: mechanics,
-			EnStock:           inStock,
-			URLProducto:       &productURL,
-			Imagen:            image,
+		productos = append(productos, domain.Product{
+			Producto:          *nombre,
+			Precio:            precio,
+			PrecioNormal:      precioNormal,
+			PrecioOferta:      precioOferta,
+			EanGtin:           normalize.EAN(elemento["ean"]),
+			SKU:               firstTruthyString(elemento["itemId"], producto["productId"]),
+			Marca:             normalize.Texto(producto["brand"]),
+			FormatoCrudo:      formato,
+			MecanicaPromocion: mecanicas,
+			EnStock:           conStock,
+			URLProducto:       &urlProducto,
+			Imagen:            imagen,
 		})
 	}
-	return products
+	return productos
 }
 
 // SantaIsabelJSONLD lee el ItemList schema.org que publica el sitio desde 2026.
-func SantaIsabelJSONLD(site catalog.Site, body []byte, baseURL *url.URL) []domain.Product {
-	selector := site.Selector("json_ld")
+func SantaIsabelJSONLD(sitio catalog.Site, cuerpo []byte, urlBase *url.URL) []domain.Product {
+	selector := sitio.Selector("json_ld")
 	if selector == "" {
 		return nil
 	}
-	document, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
-	if err != nil {
+	documento, errorObtenido := goquery.NewDocumentFromReader(bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
 		return nil
 	}
 
-	var products []domain.Product
-	seen := make(map[string]struct{})
-	document.Find(selector).Each(func(_ int, selection *goquery.Selection) {
-		var data any
-		decoder := json.NewDecoder(strings.NewReader(selection.Text()))
-		decoder.UseNumber()
-		if err := decoder.Decode(&data); err != nil {
+	var productos []domain.Product
+	vistos := make(map[string]struct{})
+	documento.Find(selector).Each(func(_ int, seleccion *goquery.Selection) {
+		var datos any
+		decodificador := json.NewDecoder(strings.NewReader(seleccion.Text()))
+		decodificador.UseNumber()
+		if errorObtenido := decodificador.Decode(&datos); errorObtenido != nil {
 			return
 		}
-		for _, value := range walkJSON(data) {
-			entry, ok := value.(map[string]any)
-			if !ok {
+		for _, valor := range walkJSON(datos) {
+			entrada, valido := valor.(map[string]any)
+			if !valido {
 				continue
 			}
-			typeValue, _ := entry["@type"].(string)
-			if typeValue != "Product" {
+			valorTipo, _ := entrada["@type"].(string)
+			if valorTipo != "Product" {
 				continue
 			}
-			name := normalize.Texto(entry["name"])
-			if name == nil {
-				continue
-			}
-
-			offer := schemaOffer(entry)
-			price := firstPrice(offer, "price")
-			if price == nil {
-				price = firstPrice(entry, "price")
-			}
-			if price == nil {
+			nombre := normalize.Texto(entrada["name"])
+			if nombre == nil {
 				continue
 			}
 
-			normalPrice := firstPrice(offer, "listPrice", "priceWithoutDiscount")
-			var offerPrice *float64
-			if normalPrice != nil && *normalPrice > *price {
-				offerPrice = price
+			oferta := schemaOffer(entrada)
+			precio := firstPrice(oferta, "price")
+			if precio == nil {
+				precio = firstPrice(entrada, "price")
+			}
+			if precio == nil {
+				continue
+			}
+
+			precioNormal := firstPrice(oferta, "listPrice", "priceWithoutDiscount")
+			var precioOferta *float64
+			if precioNormal != nil && *precioNormal > *precio {
+				precioOferta = precio
 			} else {
-				normalPrice = price
+				precioNormal = precio
 			}
 
-			rawURL, _ := entry["url"].(string)
-			var productURL *string
-			if rawURL != "" {
-				resolved := ResolveURL(baseURL, rawURL)
-				productURL = &resolved
+			urlCruda, _ := entrada["url"].(string)
+			var urlProducto *string
+			if urlCruda != "" {
+				resuelto := ResolveURL(urlBase, urlCruda)
+				urlProducto = &resuelto
 			}
-			key := strings.ToLower(*name)
-			if productURL != nil {
-				key += "|" + *productURL
+			clave := strings.ToLower(*nombre)
+			if urlProducto != nil {
+				clave += "|" + *urlProducto
 			}
-			if _, duplicate := seen[key]; duplicate {
+			if _, duplicado := vistos[clave]; duplicado {
 				continue
 			}
-			seen[key] = struct{}{}
+			vistos[clave] = struct{}{}
 
-			var image *string
-			switch value := entry["image"].(type) {
+			var imagen *string
+			switch valorImagen := entrada["image"].(type) {
 			case string:
-				image = &value
+				imagen = &valorImagen
 			case []any:
-				if len(value) > 0 {
-					if first, ok := value[0].(string); ok {
-						image = &first
+				if len(valorImagen) > 0 {
+					if primero, valido := valorImagen[0].(string); valido {
+						imagen = &primero
 					}
 				}
 			}
-			var brand any = entry["brand"]
-			if brandMap, ok := brand.(map[string]any); ok {
-				brand = brandMap["name"]
+			var marca any = entrada["brand"]
+			if mapaMarcas, valido := marca.(map[string]any); valido {
+				marca = mapaMarcas["name"]
 			}
-			sku := firstTruthyString(entry["sku"], entry["productID"], entry["productId"], entry["mpn"])
+			sku := firstTruthyString(entrada["sku"], entrada["productID"], entrada["productId"], entrada["mpn"])
 			if sku == nil {
-				sku = normalize.SKUFromURL(rawURL)
+				sku = normalize.SKUFromURL(urlCruda)
 			}
 
-			products = append(products, domain.Product{
-				Producto:          *name,
-				Precio:            price,
-				PrecioNormal:      normalPrice,
-				PrecioOferta:      offerPrice,
-				EanGtin:           normalize.EAN(firstValue(entry, "gtin", "gtin8", "gtin12", "gtin13", "ean")),
+			productos = append(productos, domain.Product{
+				Producto:          *nombre,
+				Precio:            precio,
+				PrecioNormal:      precioNormal,
+				PrecioOferta:      precioOferta,
+				EanGtin:           normalize.EAN(firstValue(entrada, "gtin", "gtin8", "gtin12", "gtin13", "ean")),
 				SKU:               sku,
-				Marca:             normalize.Texto(brand),
-				EnStock:           stockValue(offer["availability"]),
-				URLProducto:       productURL,
-				Imagen:            image,
-				MecanicaPromocion: normalize.Texto(firstValue(offer, "promotion", "promotionMechanic", "description")),
+				Marca:             normalize.Texto(marca),
+				EnStock:           stockValue(oferta["availability"]),
+				URLProducto:       urlProducto,
+				Imagen:            imagen,
+				MecanicaPromocion: normalize.Texto(firstValue(oferta, "promotion", "promotionMechanic", "description")),
 			})
 		}
 	})
-	return products
+	return productos
 }
 
 // ===== Vendedores y Precios =====
 
 // santaIsabelSeller recupera los datos del vendedor predeterminado en Santa Isabel.
-func santaIsabelSeller(value any, sellerName string) map[string]any {
-	sellers, _ := value.([]any)
-	for _, rawSeller := range sellers {
-		seller, ok := rawSeller.(map[string]any)
-		if !ok {
+func santaIsabelSeller(valor any, nombreVendedor string) map[string]any {
+	vendedores, _ := valor.([]any)
+	for _, vendedorCrudo := range vendedores {
+		vendedor, valido := vendedorCrudo.(map[string]any)
+		if !valido {
 			continue
 		}
-		name, _ := seller["sellerName"].(string)
-		if strings.EqualFold(name, sellerName) {
-			return seller
+		nombre, _ := vendedor["sellerName"].(string)
+		if strings.EqualFold(nombre, nombreVendedor) {
+			return vendedor
 		}
 	}
 	return nil
@@ -273,116 +273,116 @@ func santaIsabelSeller(value any, sellerName string) map[string]any {
 // ===== Utilidades y Tipos Dinámicos =====
 
 // firstMap retorna el primer submapa válido encontrado en una lista heterogénea.
-func firstMap(value any) map[string]any {
-	values, _ := value.([]any)
-	for _, raw := range values {
-		if mapped, ok := raw.(map[string]any); ok {
-			return mapped
+func firstMap(valor any) map[string]any {
+	valores, _ := valor.([]any)
+	for _, crudo := range valores {
+		if mapeado, valido := crudo.(map[string]any); valido {
+			return mapeado
 		}
 	}
 	return nil
 }
 
 // firstNonZeroPrice obtiene el primer valor de precio numérico superior a cero.
-func firstNonZeroPrice(data map[string]any, keys ...string) *float64 {
-	for _, key := range keys {
-		if price := normalize.PrecioCLP(data[key]); price != nil && *price != 0 {
-			return price
+func firstNonZeroPrice(datos map[string]any, claves ...string) *float64 {
+	for _, clave := range claves {
+		if precio := normalize.PrecioCLP(datos[clave]); precio != nil && *precio != 0 {
+			return precio
 		}
 	}
 	return nil
 }
 
 // firstTruthyString obtiene la primera cadena de texto no vacía.
-func firstTruthyString(values ...any) *string {
-	for _, value := range values {
-		if !isTruthy(value) {
+func firstTruthyString(valores ...any) *string {
+	for _, valor := range valores {
+		if !isTruthy(valor) {
 			continue
 		}
-		text := valueString(value)
-		if text == "" {
+		texto := valueString(valor)
+		if texto == "" {
 			continue
 		}
-		return &text
+		return &texto
 	}
 	return nil
 }
 
 // isTruthy evalúa si un valor booleano o de texto representa una afirmación positiva.
-func isTruthy(value any) bool {
-	switch typed := value.(type) {
+func isTruthy(valor any) bool {
+	switch tipado := valor.(type) {
 	case nil:
 		return false
 	case string:
-		return typed != ""
+		return tipado != ""
 	case bool:
-		return typed
+		return tipado
 	case json.Number:
-		number, err := typed.Float64()
-		return err == nil && number != 0
+		numero, errorObtenido := tipado.Float64()
+		return errorObtenido == nil && numero != 0
 	case float64:
-		return typed != 0
+		return tipado != 0
 	case float32:
-		return typed != 0
+		return tipado != 0
 	case int:
-		return typed != 0
+		return tipado != 0
 	case int64:
-		return typed != 0
+		return tipado != 0
 	default:
 		return true
 	}
 }
 
 // numberValue convierte un valor numérico genérico o string a float64.
-func numberValue(value any) *float64 {
-	var number float64
-	switch typed := value.(type) {
+func numberValue(valor any) *float64 {
+	var numero float64
+	switch tipado := valor.(type) {
 	case nil:
 		return nil
 	case json.Number:
-		parsed, err := typed.Float64()
-		if err != nil {
+		analizada, errorObtenido := tipado.Float64()
+		if errorObtenido != nil {
 			return nil
 		}
-		number = parsed
+		numero = analizada
 	case float64:
-		number = typed
+		numero = tipado
 	case float32:
-		number = float64(typed)
+		numero = float64(tipado)
 	case int:
-		number = float64(typed)
+		numero = float64(tipado)
 	case int64:
-		number = float64(typed)
+		numero = float64(tipado)
 	case bool:
-		if typed {
-			number = 1
+		if tipado {
+			numero = 1
 		}
 	case string:
-		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
-		if err != nil {
+		analizada, errorObtenido := strconv.ParseFloat(strings.TrimSpace(tipado), 64)
+		if errorObtenido != nil {
 			return nil
 		}
-		number = parsed
+		numero = analizada
 	default:
 		return nil
 	}
-	return &number
+	return &numero
 }
 
 // joinValueStrings une una colección de elementos de texto usando un separador.
-func joinValueStrings(values ...any) *string {
-	var parts []string
-	for _, value := range values {
-		if value != nil {
-			parts = append(parts, valueString(value))
+func joinValueStrings(valores ...any) *string {
+	var partes []string
+	for _, valor := range valores {
+		if valor != nil {
+			partes = append(partes, valueString(valor))
 		}
 	}
-	if len(parts) == 0 {
+	if len(partes) == 0 {
 		return nil
 	}
-	text := strings.Join(parts, " ")
-	if text == "" {
+	texto := strings.Join(partes, " ")
+	if texto == "" {
 		return nil
 	}
-	return &text
+	return &texto
 }

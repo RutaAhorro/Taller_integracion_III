@@ -27,12 +27,12 @@ var ErrStoragePressure = errors.New("spool sin espacio de reserva; se conserva p
 
 // EnsureCapacity exige que quede el espacio de reserva más el espacio extra
 // que se va a escribir.
-func EnsureCapacity(directory string, minFree, extra int64) error {
-	free, err := FreeBytes(directory)
-	if err != nil {
-		return err
+func EnsureCapacity(directorio string, minimoLibre, extra int64) error {
+	libre, errorObtenido := FreeBytes(directorio)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	if free < minFree+extra {
+	if libre < minimoLibre+extra {
 		return ErrStoragePressure
 	}
 	return nil
@@ -40,52 +40,52 @@ func EnsureCapacity(directory string, minFree, extra int64) error {
 
 // FreeBytes devuelve el espacio disponible para el usuario, no el tamaño
 // total del volumen.
-func FreeBytes(directory string) (int64, error) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(directory, &stat); err != nil {
-		return 0, err
+func FreeBytes(directorio string) (int64, error) {
+	var infoArchivo syscall.Statfs_t
+	if errorObtenido := syscall.Statfs(directorio, &infoArchivo); errorObtenido != nil {
+		return 0, errorObtenido
 	}
-	return int64(stat.Bavail) * int64(stat.Bsize), nil
+	return int64(infoArchivo.Bavail) * int64(infoArchivo.Bsize), nil
 }
 
 // ===== Limpieza de Spools =====
 
 // CleanupSpool borra un spool sólo si ningún proceso mantiene el flock de
 // ejecución. Devuelve false si está bloqueado o ya no existe.
-func CleanupSpool(stateDir, workID string) (bool, error) {
-	parsed, err := uuid.Parse(workID)
-	if err != nil {
+func CleanupSpool(directorioEstado, trabajoID string) (bool, error) {
+	analizada, errorObtenido := uuid.Parse(trabajoID)
+	if errorObtenido != nil {
 		return false, nil
 	}
-	directory := filepath.Join(stateDir, parsed.String())
-	info, err := os.Lstat(directory)
-	if errors.Is(err, os.ErrNotExist) {
+	directorio := filepath.Join(directorioEstado, analizada.String())
+	informacion, errorObtenido := os.Lstat(directorio)
+	if errors.Is(errorObtenido, os.ErrNotExist) {
 		return false, nil
 	}
-	if err != nil {
-		return false, err
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+	if informacion.Mode()&os.ModeSymlink != 0 || !informacion.IsDir() {
 		return false, nil
 	}
 
-	lockPath := filepath.Join(directory, "execution.lock")
-	lock, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return false, err
+	rutaBloqueo := filepath.Join(directorio, "execution.lock")
+	bloqueo, errorObtenido := os.OpenFile(rutaBloqueo, os.O_CREATE|os.O_RDWR, 0o600)
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	defer lock.Close()
+	defer bloqueo.Close()
 
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+	if errorObtenido := syscall.Flock(int(bloqueo.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); errorObtenido != nil {
+		if errors.Is(errorObtenido, syscall.EWOULDBLOCK) || errors.Is(errorObtenido, syscall.EAGAIN) {
 			return false, nil
 		}
-		return false, err
+		return false, errorObtenido
 	}
-	defer syscall.Flock(int(lock.Fd()), syscall.LOCK_UN) //nolint:errcheck
+	defer syscall.Flock(int(bloqueo.Fd()), syscall.LOCK_UN) //nolint:errcheck
 
-	if err := os.RemoveAll(directory); err != nil {
-		return false, err
+	if errorObtenido := os.RemoveAll(directorio); errorObtenido != nil {
+		return false, errorObtenido
 	}
 	return true, nil
 }
@@ -109,18 +109,18 @@ type Collector struct {
 // NewCollector construye el recolector que retira spools terminales según la
 // retención y la presión de disco.
 func NewCollector(
-	stateDir string,
-	minFree int64,
-	retention time.Duration,
-	timeout time.Duration,
-	logger *slog.Logger,
+	directorioEstado string,
+	minimoLibre int64,
+	retencion time.Duration,
+	tiempoEspera time.Duration,
+	registrador *slog.Logger,
 ) *Collector {
 	return &Collector{
-		stateDir:  stateDir,
-		minFree:   minFree,
-		retention: retention,
-		timeout:   timeout,
-		logger:    logger,
+		stateDir:  directorioEstado,
+		minFree:   minimoLibre,
+		retention: retencion,
+		timeout:   tiempoEspera,
+		logger:    registrador,
 	}
 }
 
@@ -128,121 +128,121 @@ func NewCollector(
 // trabajos terminales que ya no tienen mensaje pendiente. Los fallidos se
 // conservan durante la retención salvo que haya presión de disco. Devuelve
 // cuántos spools eliminó.
-func (recolector *Collector) Collect(ctx context.Context, api *controlscraping.Client, queue *queue.Queue, limit int) (int, error) {
+func (recolector *Collector) Collect(contexto context.Context, api *controlscraping.Client, cola *queue.Queue, limite int) (int, error) {
 	if recolector.retention < 0 {
 		return 0, fmt.Errorf("SCRAPER_FAILED_RETENTION_SECONDS no puede ser negativo")
 	}
-	if limit <= 0 {
-		limit = 20
+	if limite <= 0 {
+		limite = 20
 	}
-	entries, err := os.ReadDir(recolector.stateDir)
-	if err != nil {
-		return 0, err
+	entradas, errorObtenido := os.ReadDir(recolector.stateDir)
+	if errorObtenido != nil {
+		return 0, errorObtenido
 	}
-	pressure, err := recolector.isPressure()
-	if err != nil {
-		return 0, err
+	presion, errorObtenido := recolector.isPressure()
+	if errorObtenido != nil {
+		return 0, errorObtenido
 	}
 
-	var names []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	var nombres []string
+	for _, entrada := range entradas {
+		if !entrada.IsDir() {
 			continue
 		}
-		name := entry.Name()
-		if _, err := uuid.Parse(name); err != nil {
+		nombre := entrada.Name()
+		if _, errorObtenido := uuid.Parse(nombre); errorObtenido != nil {
 			continue
 		}
-		names = append(names, name)
+		nombres = append(nombres, nombre)
 	}
-	sort.Strings(names)
-	if len(names) == 0 {
+	sort.Strings(nombres)
+	if len(nombres) == 0 {
 		return 0, nil
 	}
-	start := 0
-	for index, name := range names {
-		if name > recolector.cursor {
-			start = index
+	inicio := 0
+	for indice, nombre := range nombres {
+		if nombre > recolector.cursor {
+			inicio = indice
 			break
 		}
 	}
 
-	deadline := time.Now().Add(recolector.timeout)
-	removed := 0
-	processed := 0
-	for offset := 0; offset < len(names) && processed < limit; offset++ {
-		if time.Now().After(deadline) {
+	fechaLimite := time.Now().Add(recolector.timeout)
+	eliminado := 0
+	procesados := 0
+	for desplazamiento := 0; desplazamiento < len(nombres) && procesados < limite; desplazamiento++ {
+		if time.Now().After(fechaLimite) {
 			break
 		}
-		workID := names[(start+offset)%len(names)]
-		recolector.cursor = workID
-		processed++
+		trabajoID := nombres[(inicio+desplazamiento)%len(nombres)]
+		recolector.cursor = trabajoID
+		procesados++
 
-		status, err := api.GetWork(ctx, workID)
-		if err != nil {
-			return removed, err
+		estado, errorObtenido := api.GetWork(contexto, trabajoID)
+		if errorObtenido != nil {
+			return eliminado, errorObtenido
 		}
-		state, _ := status["estado"].(string)
-		if state != "completado" && state != "fallido" {
+		estadoTrabajo, _ := estado["estado"].(string)
+		if estadoTrabajo != "completado" && estadoTrabajo != "fallido" {
 			continue
 		}
-		hasMessage, err := queue.HasMessage(ctx, workID)
-		if err != nil {
-			return removed, err
+		tieneMensaje, errorObtenido := cola.HasMessage(contexto, trabajoID)
+		if errorObtenido != nil {
+			return eliminado, errorObtenido
 		}
-		if hasMessage {
+		if tieneMensaje {
 			continue
 		}
-		if state == "fallido" && !pressure {
-			finished, ok := status["finalizado_el"].(string)
-			if !ok || finished == "" {
+		if estadoTrabajo == "fallido" && !presion {
+			terminado, valido := estado["finalizado_el"].(string)
+			if !valido || terminado == "" {
 				continue
 			}
-			finishedAt, err := parseTimestamp(finished)
-			if err != nil {
+			terminadoEn, errorObtenido := parseTimestamp(terminado)
+			if errorObtenido != nil {
 				continue
 			}
-			if time.Since(finishedAt) < recolector.retention {
+			if time.Since(terminadoEn) < recolector.retention {
 				continue
 			}
 		}
-		wasRemoved, err := CleanupSpool(recolector.stateDir, workID)
-		if err != nil {
-			return removed, err
+		fueEliminado, errorObtenido := CleanupSpool(recolector.stateDir, trabajoID)
+		if errorObtenido != nil {
+			return eliminado, errorObtenido
 		}
-		if !wasRemoved {
+		if !fueEliminado {
 			continue
 		}
-		removed++
-		if state == "fallido" {
+		eliminado++
+		if estadoTrabajo == "fallido" {
 			recolector.logger.Warn("worker_failed_spool_removed",
-				"trabajo_id", workID,
-				"storage_pressure", pressure,
+				"trabajo_id", trabajoID,
+				"storage_pressure", presion,
 			)
 		}
-		pressure, err = recolector.isPressure()
-		if err != nil {
-			return removed, err
+		presion, errorObtenido = recolector.isPressure()
+		if errorObtenido != nil {
+			return eliminado, errorObtenido
 		}
 	}
-	return removed, nil
+	return eliminado, nil
 }
 
 // isPressure comprueba si el espacio libre en disco es menor al umbral de seguridad.
 func (recolector *Collector) isPressure() (bool, error) {
-	free, err := FreeBytes(recolector.stateDir)
-	if err != nil {
-		return false, err
+	libre, errorObtenido := FreeBytes(recolector.stateDir)
+	if errorObtenido != nil {
+		return false, errorObtenido
 	}
-	return free < recolector.minFree, nil
+	return libre < recolector.minFree, nil
 }
 
 // parseTimestamp convierte la marca de tiempo de un nombre de archivo a time.Time.
-func parseTimestamp(value string) (time.Time, error) {
-	for _, layout := range []string{time.RFC3339Nano, time.RFC3339} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			return parsed, nil
+func parseTimestamp(valor string) (time.Time, error) {
+	for _, disposicion := range []string{time.RFC3339Nano, time.RFC3339} {
+		if analizada, errorObtenido := time.Parse(disposicion, valor); errorObtenido == nil {
+			return analizada, nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("fecha inválida: %q", value)
+	return time.Time{}, fmt.Errorf("fecha inválida: %q", valor)
 }

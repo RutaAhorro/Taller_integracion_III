@@ -17,18 +17,18 @@ type Cugat struct {
 }
 
 // NewCugat construye el spider de Cugat con el catálogo embebido.
-func NewCugat(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat {
-	return newCugat(mustSite(CugatName), fetcher, categoryDir, maxPages, logger)
+func NewCugat(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Cugat {
+	return newCugat(mustSite(CugatName), obtenedor, directorioCategorias, maxPaginas, registrador)
 }
 
 // newCugat instancia el spider específico de cugat usando el catálogo central.
-func newCugat(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Cugat {
-	return &Cugat{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
-		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {
-			return extract.CugatProducts(site, body, responseURL)
+func newCugat(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Cugat {
+	return &Cugat{baseSpider: newBaseSpider(obtenedor, directorioCategorias, maxPaginas, registrador, sitio, spiderConfig{
+		extractProducts: func(cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+			return extract.CugatProducts(sitio, cuerpo, urlRespuesta)
 		},
-		extractProduct: func(body []byte, responseURL *url.URL, _ string) *domain.Product {
-			return extract.CugatProduct(site, body, responseURL)
+		extractProduct: func(cuerpo []byte, urlRespuesta *url.URL, _ string) *domain.Product {
+			return extract.CugatProduct(sitio, cuerpo, urlRespuesta)
 		},
 	})}
 }

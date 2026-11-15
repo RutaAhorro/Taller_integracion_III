@@ -23,27 +23,27 @@ const (
 )
 
 // Build construye el spider correspondiente al parser declarado en el catálogo.
-func Build(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (Spider, error) {
-	switch site.Parser {
+func Build(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) (Spider, error) {
+	switch sitio.Parser {
 	case "jumbo":
-		return newJumbo(site, fetcher, categoryDir, maxPages, logger), nil
+		return newJumbo(sitio, obtenedor, directorioCategorias, maxPaginas, registrador), nil
 	case "santa_isabel":
-		return newSantaIsabel(site, fetcher, categoryDir, maxPages, logger), nil
+		return newSantaIsabel(sitio, obtenedor, directorioCategorias, maxPaginas, registrador), nil
 	case "cugat":
-		return newCugat(site, fetcher, categoryDir, maxPages, logger), nil
+		return newCugat(sitio, obtenedor, directorioCategorias, maxPaginas, registrador), nil
 	case "acuenta":
-		return newAcuenta(site, fetcher, categoryDir, maxPages, logger), nil
+		return newAcuenta(sitio, obtenedor, directorioCategorias, maxPaginas, registrador), nil
 	case "lider":
-		return newLider(site, fetcher, categoryDir, maxPages, logger), nil
+		return newLider(sitio, obtenedor, directorioCategorias, maxPaginas, registrador), nil
 	default:
-		return nil, fmt.Errorf("parser desconocido %q", site.Parser)
+		return nil, fmt.Errorf("parser desconocido %q", sitio.Parser)
 	}
 }
 
 // IsKnown indica si el nombre pertenece al catálogo de spiders.
-func IsKnown(name string) bool {
-	_, ok := catalog.Default().Get(name)
-	return ok
+func IsKnown(nombre string) bool {
+	_, valido := catalog.Default().Get(nombre)
+	return valido
 }
 
 // Names devuelve los nombres del catálogo en orden estable.
@@ -60,13 +60,13 @@ type Emitter func(domain.Item) error
 // Fetcher permite probar los spiders sin red y deja la puerta abierta para
 // extraer el motor de fetch a otro servicio más adelante.
 type Fetcher interface {
-	Fetch(ctx context.Context, rawURL string) (*crawler.Response, error)
+	Fetch(contexto context.Context, urlCruda string) (*crawler.Response, error)
 }
 
 // Spider es el contrato mínimo de una cadena: nombre y ejecución de un Job.
 type Spider interface {
 	Name() string
-	Run(ctx context.Context, job domain.Job, emit Emitter) error
+	Run(contexto context.Context, trabajo domain.Job, emitir Emitter) error
 }
 
 // ===== Registro =====
@@ -77,36 +77,36 @@ type Registry struct {
 }
 
 // NewRegistry construye el registro con el catálogo embebido.
-func NewRegistry(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Registry {
-	registry, err := NewRegistryFromCatalog(catalog.Default(), fetcher, categoryDir, maxPages, logger)
-	if err != nil {
-		panic(err)
+func NewRegistry(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Registry {
+	registro, errorObtenido := NewRegistryFromCatalog(catalog.Default(), obtenedor, directorioCategorias, maxPaginas, registrador)
+	if errorObtenido != nil {
+		panic(errorObtenido)
 	}
-	return registry
+	return registro
 }
 
 // NewRegistryFromEnv construye el registro con el catálogo indicado por
 // SCRAPER_SPIDERS_FILE, si existe. Falla al arrancar si la configuración no es
 // válida.
-func NewRegistryFromEnv(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (*Registry, error) {
-	sites, err := catalog.FromEnv()
-	if err != nil {
-		return nil, err
+func NewRegistryFromEnv(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) (*Registry, error) {
+	sitios, errorObtenido := catalog.FromEnv()
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	return NewRegistryFromCatalog(sites, fetcher, categoryDir, maxPages, logger)
+	return NewRegistryFromCatalog(sitios, obtenedor, directorioCategorias, maxPaginas, registrador)
 }
 
 // NewRegistryFromCatalog construye todos los spiders declarados en el catálogo.
-func NewRegistryFromCatalog(sites catalog.Catalog, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) (*Registry, error) {
-	registry := &Registry{spiders: make(map[string]Spider, len(sites.Sites))}
-	for _, site := range sites.Sites {
-		spider, err := Build(site, fetcher, categoryDir, maxPages, logger)
-		if err != nil {
-			return nil, err
+func NewRegistryFromCatalog(sitios catalog.Catalog, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) (*Registry, error) {
+	registro := &Registry{spiders: make(map[string]Spider, len(sitios.Sites))}
+	for _, sitio := range sitios.Sites {
+		spider, errorObtenido := Build(sitio, obtenedor, directorioCategorias, maxPaginas, registrador)
+		if errorObtenido != nil {
+			return nil, errorObtenido
 		}
-		registry.Register(spider)
+		registro.Register(spider)
 	}
-	return registry, nil
+	return registro, nil
 }
 
 // Register añade o reemplaza un spider en el registro.
@@ -115,7 +115,7 @@ func (registro *Registry) Register(spider Spider) {
 }
 
 // Get devuelve el spider con ese nombre y si existe.
-func (registro *Registry) Get(name string) (Spider, bool) {
-	spider, ok := registro.spiders[name]
-	return spider, ok
+func (registro *Registry) Get(nombre string) (Spider, bool) {
+	spider, valido := registro.spiders[nombre]
+	return spider, valido
 }

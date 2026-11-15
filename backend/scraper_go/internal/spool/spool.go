@@ -36,57 +36,57 @@ type Spool struct {
 
 // Open abre o crea el spool de un trabajo. La comprobación de capacidad se
 // hace antes de SQLite para no llenar el volumen con un archivo nuevo.
-func Open(workID, stateDir string, minFree int64) (*Spool, error) {
-	parsed, err := uuid.Parse(workID)
-	if err != nil {
-		return nil, fmt.Errorf("trabajo_id inválido: %w", err)
+func Open(trabajoID, directorioEstado string, minimoLibre int64) (*Spool, error) {
+	analizada, errorObtenido := uuid.Parse(trabajoID)
+	if errorObtenido != nil {
+		return nil, fmt.Errorf("trabajo_id inválido: %w", errorObtenido)
 	}
-	workID = parsed.String()
-	directory := filepath.Join(stateDir, workID)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return nil, err
+	trabajoID = analizada.String()
+	directorio := filepath.Join(directorioEstado, trabajoID)
+	if errorObtenido := os.MkdirAll(directorio, 0o700); errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if err := os.Chmod(directory, 0o700); err != nil {
-		return nil, err
+	if errorObtenido := os.Chmod(directorio, 0o700); errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if err := storage.EnsureCapacity(directory, minFree, 0); err != nil {
-		return nil, err
+	if errorObtenido := storage.EnsureCapacity(directorio, minimoLibre, 0); errorObtenido != nil {
+		return nil, errorObtenido
 	}
 
-	path := filepath.Join(directory, "outbox.sqlite")
-	dsn := "file:" + filepath.ToSlash(path) +
+	ruta := filepath.Join(directorio, "outbox.sqlite")
+	cadenaConexion := "file:" + filepath.ToSlash(ruta) +
 		"?_pragma=busy_timeout(30000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)"
-	db, err := sql.Open("sqlite", dsn)
-	if err != nil {
-		return nil, err
+	baseDatos, errorObtenido := sql.Open("sqlite", cadenaConexion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	db.SetMaxOpenConns(1)
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, err
+	baseDatos.SetMaxOpenConns(1)
+	if errorObtenido := baseDatos.Ping(); errorObtenido != nil {
+		_ = baseDatos.Close()
+		return nil, errorObtenido
 	}
 
-	result := &Spool{workID: workID, directory: directory, minFree: minFree, db: db}
-	if err := result.initialize(); err != nil {
-		_ = db.Close()
-		return nil, err
+	resultado := &Spool{workID: trabajoID, directory: directorio, minFree: minimoLibre, db: baseDatos}
+	if errorObtenido := resultado.initialize(); errorObtenido != nil {
+		_ = baseDatos.Close()
+		return nil, errorObtenido
 	}
-	return result, nil
+	return resultado, nil
 }
 
 // ===== Inicialización =====
 
 // initialize prepara el esquema de tablas e índices del almacén SQLite local.
 func (spool *Spool) initialize() error {
-	if _, err := spool.db.Exec(`
+	if _, errorObtenido := spool.db.Exec(`
 		CREATE TABLE IF NOT EXISTS items (
 			id INTEGER PRIMARY KEY, fingerprint TEXT UNIQUE NOT NULL,
 			market TEXT, product TEXT NOT NULL, batch_id TEXT);
 		CREATE TABLE IF NOT EXISTS batches (
 			id TEXT PRIMARY KEY, payload TEXT NOT NULL, delivered INTEGER NOT NULL DEFAULT 0);
 		CREATE TABLE IF NOT EXISTS progress (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
-	`); err != nil {
-		return err
+	`); errorObtenido != nil {
+		return errorObtenido
 	}
 	return os.Chmod(filepath.Join(spool.directory, "outbox.sqlite"), 0o600)
 }
@@ -107,39 +107,39 @@ func (spool *Spool) Close() error {
 
 // Add guarda un producto antes de enviarlo. Si el mismo producto ya está en
 // el spool, la huella UNIQUE evita duplicarlo.
-func (spool *Spool) Add(product domain.Product, market *string) error {
-	data, err := json.Marshal(product)
-	if err != nil {
-		return err
+func (spool *Spool) Add(producto domain.Product, mercado *string) error {
+	datos, errorObtenido := json.Marshal(producto)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	if err := storage.EnsureCapacity(spool.directory, spool.minFree, int64(len(data))*4); err != nil {
-		return err
+	if errorObtenido := storage.EnsureCapacity(spool.directory, spool.minFree, int64(len(datos))*4); errorObtenido != nil {
+		return errorObtenido
 	}
 
-	fingerprint := productFingerprint(market, data)
+	huella := productFingerprint(mercado, datos)
 
-	var marketArg any
-	if market != nil {
-		marketArg = *market
+	var argumentoMercado any
+	if mercado != nil {
+		argumentoMercado = *mercado
 	}
-	_, err = spool.db.Exec(
+	_, errorObtenido = spool.db.Exec(
 		"INSERT OR IGNORE INTO items(fingerprint, market, product) VALUES (?, ?, ?)",
-		fingerprint, marketArg, string(data),
+		huella, argumentoMercado, string(datos),
 	)
-	return err
+	return errorObtenido
 }
 
 // ===== Huellas de Producto =====
 
 // productFingerprint genera un hash SHA-256 para garantizar idempotencia en productos.
-func productFingerprint(market *string, data []byte) string {
-	hasher := sha256.New()
-	if market != nil {
-		hasher.Write([]byte(*market))
+func productFingerprint(mercado *string, datos []byte) string {
+	calculadorHash := sha256.New()
+	if mercado != nil {
+		calculadorHash.Write([]byte(*mercado))
 	}
-	hasher.Write([]byte{0})
-	hasher.Write(data)
-	return hex.EncodeToString(hasher.Sum(nil))
+	calculadorHash.Write([]byte{0})
+	calculadorHash.Write(datos)
+	return hex.EncodeToString(calculadorHash.Sum(nil))
 }
 
 // ===== Conteo =====
@@ -148,36 +148,36 @@ func productFingerprint(market *string, data []byte) string {
 // lo usa para no declarar completado un trabajo que terminó con cero
 // elementos, incluso si el crawl no devolvió un error explícito.
 func (spool *Spool) Count() (int, error) {
-	var count int
-	err := spool.db.QueryRow("SELECT count(*) FROM items").Scan(&count)
-	return count, err
+	var cantidad int
+	errorObtenido := spool.db.QueryRow("SELECT count(*) FROM items").Scan(&cantidad)
+	return cantidad, errorObtenido
 }
 
 // ===== Sellado de Lotes =====
 
 // Seal agrupa los items pendientes por supermercado. Nunca mezcla mercados en
 // un mismo lote y conserva el payload exacto que se enviará.
-func (spool *Spool) Seal(batchSize int) error {
-	if batchSize < 1 || batchSize > 1000 {
+func (spool *Spool) Seal(tamanoLote int) error {
+	if tamanoLote < 1 || tamanoLote > 1000 {
 		return fmt.Errorf("el tamaño de lote debe estar entre 1 y 1000")
 	}
 	for {
-		market, found, err := spool.firstUnbatchedMarket()
-		if err != nil {
-			return err
+		mercado, encontrado, errorObtenido := spool.firstUnbatchedMarket()
+		if errorObtenido != nil {
+			return errorObtenido
 		}
-		if !found {
+		if !encontrado {
 			return nil
 		}
-		rows, err := spool.unbatchedRows(market, batchSize)
-		if err != nil {
-			return err
+		filas, errorObtenido := spool.unbatchedRows(mercado, tamanoLote)
+		if errorObtenido != nil {
+			return errorObtenido
 		}
-		if len(rows) == 0 {
+		if len(filas) == 0 {
 			return nil
 		}
-		if err := spool.persistBatch(market, rows); err != nil {
-			return err
+		if errorObtenido := spool.persistBatch(mercado, filas); errorObtenido != nil {
+			return errorObtenido
 		}
 	}
 }
@@ -192,50 +192,50 @@ type itemRow struct {
 
 // firstUnbatchedMarket identifica el primer supermercado con productos pendientes de entrega.
 func (spool *Spool) firstUnbatchedMarket() (sql.NullString, bool, error) {
-	var market sql.NullString
-	err := spool.db.QueryRow(
+	var mercado sql.NullString
+	errorObtenido := spool.db.QueryRow(
 		"SELECT market FROM items WHERE batch_id IS NULL ORDER BY id LIMIT 1",
-	).Scan(&market)
-	if errors.Is(err, sql.ErrNoRows) {
+	).Scan(&mercado)
+	if errors.Is(errorObtenido, sql.ErrNoRows) {
 		return sql.NullString{}, false, nil
 	}
-	if err != nil {
-		return sql.NullString{}, false, err
+	if errorObtenido != nil {
+		return sql.NullString{}, false, errorObtenido
 	}
-	return market, true, nil
+	return mercado, true, nil
 }
 
 // unbatchedRows extrae las filas aún no entregadas de un supermercado dado.
-func (spool *Spool) unbatchedRows(market sql.NullString, batchSize int) ([]itemRow, error) {
+func (spool *Spool) unbatchedRows(mercado sql.NullString, tamanoLote int) ([]itemRow, error) {
 	var (
-		rows *sql.Rows
-		err  error
+		filas         *sql.Rows
+		errorObtenido error
 	)
-	if market.Valid {
-		rows, err = spool.db.Query(
+	if mercado.Valid {
+		filas, errorObtenido = spool.db.Query(
 			"SELECT id, product FROM items WHERE batch_id IS NULL AND market = ? ORDER BY id LIMIT ?",
-			market.String, batchSize,
+			mercado.String, tamanoLote,
 		)
 	} else {
-		rows, err = spool.db.Query(
+		filas, errorObtenido = spool.db.Query(
 			"SELECT id, product FROM items WHERE batch_id IS NULL AND market IS NULL ORDER BY id LIMIT ?",
-			batchSize,
+			tamanoLote,
 		)
 	}
-	if err != nil {
-		return nil, err
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	defer rows.Close()
+	defer filas.Close()
 
-	result := make([]itemRow, 0, batchSize)
-	for rows.Next() {
-		var row itemRow
-		if err := rows.Scan(&row.id, &row.product); err != nil {
-			return nil, err
+	resultado := make([]itemRow, 0, tamanoLote)
+	for filas.Next() {
+		var fila itemRow
+		if errorObtenido := filas.Scan(&fila.id, &fila.product); errorObtenido != nil {
+			return nil, errorObtenido
 		}
-		result = append(result, row)
+		resultado = append(resultado, fila)
 	}
-	return result, rows.Err()
+	return resultado, filas.Err()
 }
 
 // ===== Persistencia de Lotes =====
@@ -247,85 +247,85 @@ type batchPayload struct {
 }
 
 // persistBatch actualiza el estado de entrega de las filas procesadas en SQLite.
-func (spool *Spool) persistBatch(market sql.NullString, rows []itemRow) error {
+func (spool *Spool) persistBatch(mercado sql.NullString, filas []itemRow) error {
 	var extra int64
-	products := make([]json.RawMessage, 0, len(rows))
-	for _, row := range rows {
-		extra += int64(len(row.product)) * 2
-		products = append(products, json.RawMessage(row.product))
+	productos := make([]json.RawMessage, 0, len(filas))
+	for _, fila := range filas {
+		extra += int64(len(fila.product)) * 2
+		productos = append(productos, json.RawMessage(fila.product))
 	}
-	if err := storage.EnsureCapacity(spool.directory, spool.minFree, extra); err != nil {
-		return err
-	}
-
-	var supermarket *string
-	if market.Valid {
-		value := market.String
-		supermarket = &value
-	}
-	payload, err := json.Marshal(batchPayload{Products: products, Supermarket: supermarket})
-	if err != nil {
-		return err
+	if errorObtenido := storage.EnsureCapacity(spool.directory, spool.minFree, extra); errorObtenido != nil {
+		return errorObtenido
 	}
 
-	batchID := uuid.NewString()
-	tx, err := spool.db.Begin()
-	if err != nil {
-		return err
+	var supermercado *string
+	if mercado.Valid {
+		valor := mercado.String
+		supermercado = &valor
 	}
-	if _, err := tx.Exec("INSERT INTO batches(id, payload) VALUES (?, ?)", batchID, string(payload)); err != nil {
-		_ = tx.Rollback()
-		return err
+	carga, errorObtenido := json.Marshal(batchPayload{Products: productos, Supermarket: supermercado})
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	for _, row := range rows {
-		if _, err := tx.Exec("UPDATE items SET batch_id = ? WHERE id = ?", batchID, row.id); err != nil {
-			_ = tx.Rollback()
-			return err
+
+	loteID := uuid.NewString()
+	transaccion, errorObtenido := spool.db.Begin()
+	if errorObtenido != nil {
+		return errorObtenido
+	}
+	if _, errorObtenido := transaccion.Exec("INSERT INTO batches(id, payload) VALUES (?, ?)", loteID, string(carga)); errorObtenido != nil {
+		_ = transaccion.Rollback()
+		return errorObtenido
+	}
+	for _, fila := range filas {
+		if _, errorObtenido := transaccion.Exec("UPDATE items SET batch_id = ? WHERE id = ?", loteID, fila.id); errorObtenido != nil {
+			_ = transaccion.Rollback()
+			return errorObtenido
 		}
 	}
-	return tx.Commit()
+	return transaccion.Commit()
 }
 
 // ===== Reenvío de Lotes =====
 
 // Replay envía los lotes pendientes en orden. Se consulta un lote por vez
 // para no cargar en memoria todo el catálogo si la API estuvo caída.
-func (spool *Spool) Replay(ctx context.Context, client *controlscraping.Client) error {
+func (spool *Spool) Replay(contexto context.Context, cliente *controlscraping.Client) error {
 	for {
-		if err := ctx.Err(); err != nil {
-			return err
+		if errorObtenido := contexto.Err(); errorObtenido != nil {
+			return errorObtenido
 		}
 		var (
-			batchID string
-			payload []byte
+			loteID string
+			carga  []byte
 		)
-		err := spool.db.QueryRow(
+		errorObtenido := spool.db.QueryRow(
 			"SELECT id, payload FROM batches WHERE delivered = 0 ORDER BY rowid LIMIT 1",
-		).Scan(&batchID, &payload)
-		if errors.Is(err, sql.ErrNoRows) {
+		).Scan(&loteID, &carga)
+		if errors.Is(errorObtenido, sql.ErrNoRows) {
 			return nil
 		}
-		if err != nil {
-			return err
+		if errorObtenido != nil {
+			return errorObtenido
 		}
 
-		var batch batchPayload
-		if err := json.Unmarshal(payload, &batch); err != nil {
-			return fmt.Errorf("lote %s inválido: %w", batchID, err)
+		var lote batchPayload
+		if errorObtenido := json.Unmarshal(carga, &lote); errorObtenido != nil {
+			return fmt.Errorf("lote %s inválido: %w", loteID, errorObtenido)
 		}
-		products := make([]domain.Product, 0, len(batch.Products))
-		for _, raw := range batch.Products {
-			var product domain.Product
-			if err := json.Unmarshal(raw, &product); err != nil {
-				return fmt.Errorf("producto del lote %s inválido: %w", batchID, err)
+		productos := make([]domain.Product, 0, len(lote.Products))
+		for _, crudo := range lote.Products {
+			var producto domain.Product
+			if errorObtenido := json.Unmarshal(crudo, &producto); errorObtenido != nil {
+				return fmt.Errorf("producto del lote %s inválido: %w", loteID, errorObtenido)
 			}
-			products = append(products, product)
+			productos = append(productos, producto)
 		}
-		if _, err := client.IngestBatch(ctx, products, batch.Supermarket, spool.workID, batchID); err != nil {
-			return err
+		if _, errorObtenido := cliente.IngestBatch(contexto, productos, lote.Supermarket, spool.workID, loteID); errorObtenido != nil {
+			return errorObtenido
 		}
-		if _, err := spool.db.Exec("UPDATE batches SET delivered = 1 WHERE id = ?", batchID); err != nil {
-			return err
+		if _, errorObtenido := spool.db.Exec("UPDATE batches SET delivered = 1 WHERE id = ?", loteID); errorObtenido != nil {
+			return errorObtenido
 		}
 	}
 }
@@ -333,20 +333,20 @@ func (spool *Spool) Replay(ctx context.Context, client *controlscraping.Client) 
 // ===== Progreso =====
 
 // Progress lee una clave de progreso; devuelve 0 si todavía no existe.
-func (spool *Spool) Progress(key string) (int, error) {
-	var value int
-	err := spool.db.QueryRow("SELECT value FROM progress WHERE key = ?", key).Scan(&value)
-	if errors.Is(err, sql.ErrNoRows) {
+func (spool *Spool) Progress(clave string) (int, error) {
+	var valor int
+	errorObtenido := spool.db.QueryRow("SELECT value FROM progress WHERE key = ?", clave).Scan(&valor)
+	if errors.Is(errorObtenido, sql.ErrNoRows) {
 		return 0, nil
 	}
-	return value, err
+	return valor, errorObtenido
 }
 
 // SetProgress guarda o reemplaza una clave de progreso del trabajo.
-func (spool *Spool) SetProgress(key string, value int) error {
-	_, err := spool.db.Exec(
+func (spool *Spool) SetProgress(clave string, valor int) error {
+	_, errorObtenido := spool.db.Exec(
 		"INSERT INTO progress(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-		key, value,
+		clave, valor,
 	)
-	return err
+	return errorObtenido
 }

@@ -17,18 +17,18 @@ type Lider struct {
 }
 
 // NewLider construye el spider de Lider con el catálogo embebido.
-func NewLider(fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider {
-	return newLider(mustSite(LiderName), fetcher, categoryDir, maxPages, logger)
+func NewLider(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Lider {
+	return newLider(mustSite(LiderName), obtenedor, directorioCategorias, maxPaginas, registrador)
 }
 
 // newLider instancia el spider específico de lider usando el catálogo central.
-func newLider(site catalog.Site, fetcher Fetcher, categoryDir string, maxPages int, logger *slog.Logger) *Lider {
-	return &Lider{baseSpider: newBaseSpider(fetcher, categoryDir, maxPages, logger, site, spiderConfig{
-		extractProducts: func(body []byte, responseURL *url.URL) []domain.Product {
-			return extract.LiderProducts(site, body, responseURL)
+func newLider(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Lider {
+	return &Lider{baseSpider: newBaseSpider(obtenedor, directorioCategorias, maxPaginas, registrador, sitio, spiderConfig{
+		extractProducts: func(cuerpo []byte, urlRespuesta *url.URL) []domain.Product {
+			return extract.LiderProducts(sitio, cuerpo, urlRespuesta)
 		},
-		extractProduct: func(body []byte, responseURL *url.URL, requested string) *domain.Product {
-			return extract.LiderProduct(site, body, requested, responseURL)
+		extractProduct: func(cuerpo []byte, urlRespuesta *url.URL, solicitado string) *domain.Product {
+			return extract.LiderProduct(sitio, cuerpo, solicitado, urlRespuesta)
 		},
 	})}
 }
