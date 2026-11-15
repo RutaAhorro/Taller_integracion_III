@@ -7,7 +7,6 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -111,7 +110,7 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 			OR (
 				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(?)
 			)
-		)`, pq.Array(marcasPropiasPorMarca), pq.Array(marcasPropiasPorTitulo))
+		)`, marcasPropiasPorMarca, marcasPropiasPorTitulo)
 	}
 	return consulta
 }

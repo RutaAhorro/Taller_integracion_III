@@ -289,11 +289,11 @@ func (manejador *ProductoHandler) ObtenerDetalleProducto(contexto *gin.Context) 
 // leerBoolOpcional extrae y analiza un parámetro booleano opcional desde los parámetros de consulta.
 // Retorna nil si el parámetro está ausente o no contiene un valor booleano válido ("true", "false", "1", "0").
 func leerBoolOpcional(contexto *gin.Context, nombreParametro string) *bool {
-	textoMarcasBlancas := contexto.Query(nombreParametro)
-	if textoMarcasBlancas == "" {
+	textoParametro := contexto.Query(nombreParametro)
+	if textoParametro == "" {
 		return nil
 	}
-	valorBooleano, errorObtenido := strconv.ParseBool(textoMarcasBlancas)
+	valorBooleano, errorObtenido := strconv.ParseBool(textoParametro)
 	if errorObtenido != nil {
 		return nil
 	}
