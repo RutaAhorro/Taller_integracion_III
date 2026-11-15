@@ -1,98 +1,123 @@
-// Gestiona mensajes y solicitudes del chat; la migración al contrato del Gateway sigue en SUP-253.
+// Envía consultas al asistente por el Gateway; no simula recetas ni guardados en listas.
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 
-// TODO SUP-253: el backend ya no expone /chat/gemini; migrar a /api/v1/chat.
-const IA_API_URL = (import.meta.env.VITE_IA_URL || 'http://localhost:8002').replace(/\/$/, '');
+const API_URL = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 
-export type MessageType = 'welcome' | 'text' | 'processing' | 'rich-recipe' | 'out-of-stock';
+export type MessageType = 'welcome' | 'text' | 'processing' | 'error';
 
 export type Message = {
   id: string;
   role: 'user' | 'assistant';
   type: MessageType;
   content?: string;
-  step?: number;
-  query?: string;
 };
 
 const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.';
-const ERROR_CONEXION = 'Lo siento, hay problemas de conexión con mis servicios en este momento.';
+const ERROR_CONEXION = 'No se pudo contactar al asistente. Revisa la conexión e intenta nuevamente.';
+const ERROR_SESION = 'Tu sesión expiró o no es válida. Vuelve a iniciar sesión para consultar al asistente.';
 
-let nextId = 0;
-const newId = () => `${Date.now()}-${nextId++}`;
+let siguienteIdentificador = 0;
+const nuevoIdentificador = () => `${Date.now()}-${siguienteIdentificador++}`;
+const mensajeBienvenida = (): Message => ({ id: nuevoIdentificador(), role: 'assistant', type: 'welcome' });
 
-const welcomeMessage = (): Message => ({ id: newId(), role: 'assistant', type: 'welcome' });
+function mensajeErrorHTTP(estado: number): string {
+  if (estado === 401) return ERROR_SESION;
+  if (estado === 403) return 'No tienes permiso para consultar al asistente.';
+  if (estado === 404) return 'El asistente no está habilitado en este entorno. Intenta más tarde.';
+  if (estado === 422) return 'El mensaje no es válido. Revisa su contenido o reduce su longitud.';
+  if (estado === 429) return 'Hay demasiadas solicitudes. Espera un momento antes de volver a intentar.';
+  return ERROR_IA;
+}
 
 export function useChatbot() {
-  const { isGuest, user } = useAuth();
+  const { isGuest } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [messages, setMessages] = useState<Message[]>(() => [welcomeMessage()]);
+  const [messages, setMessages] = useState<Message[]>(() => [mensajeBienvenida()]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const solicitudActiva = useRef<AbortController | null>(null);
 
-  // Mantiene visible el último mensaje.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
 
-  const handleSend = async (text: string) => {
+  // Salir del chat cancela la espera, sin aplicar respuestas sobre una vista desmontada.
+  useEffect(() => () => solicitudActiva.current?.abort(), []);
+
+  const handleSend = async (texto: string) => {
+    const mensaje = texto.trim();
+    if (!mensaje || solicitudActiva.current) return;
     if (isGuest) {
       setShowAuthModal(true);
       return;
     }
-    if (!text.trim() || isProcessing) return;
 
-    const processingId = newId();
-    const setStep = (step: number) =>
-      setMessages((prev) => prev.map((mensaje) => (mensaje.id === processingId ? { ...mensaje, step } : mensaje)));
-    // Reemplaza el indicador de "procesando" por la respuesta final.
-    const reply = (content: string) =>
-      setMessages((prev) => [
-        ...prev.filter((mensaje) => mensaje.id !== processingId),
-        { id: newId(), role: 'assistant', type: 'text', content },
+    // El ref bloquea también dos envíos que ocurran antes del siguiente render.
+    const controlador = new AbortController();
+    solicitudActiva.current = controlador;
+    const identificadorEspera = nuevoIdentificador();
+    const responder = (contenido: string, tipo: 'text' | 'error') => {
+      if (controlador.signal.aborted) return;
+      setMessages((anteriores) => [
+        ...anteriores.filter((anterior) => anterior.id !== identificadorEspera),
+        { id: nuevoIdentificador(), role: 'assistant', type: tipo, content: contenido },
       ]);
+      if (tipo === 'error') setInputValue(mensaje);
+    };
 
-    setMessages((prev) => [
-      ...prev,
-      { id: newId(), role: 'user', type: 'text', content: text },
-      { id: processingId, role: 'assistant', type: 'processing', step: 2 },
+    setMessages((anteriores) => [
+      ...anteriores,
+      { id: nuevoIdentificador(), role: 'user', type: 'text', content: mensaje },
+      { id: identificadorEspera, role: 'assistant', type: 'processing' },
     ]);
     setInputValue('');
     setIsProcessing(true);
 
     try {
-      const response = await fetch(`${IA_API_URL}/chat/gemini`, {
+      const respuesta = await fetch(`${API_URL}/chat`, {
         method: 'POST',
+        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mensaje: text }),
+        body: JSON.stringify({ mensaje }),
+        signal: controlador.signal,
       });
-      // Un error HTTP no es una respuesta del asistente, aunque incluya JSON.
-      if (!response.ok) {
-        reply(ERROR_IA);
+      if (controlador.signal.aborted) return;
+      if (!respuesta.ok) {
+        if (respuesta.status === 401) setShowAuthModal(true);
+        responder(mensajeErrorHTTP(respuesta.status), 'error');
         return;
       }
-      const data = await response.json();
 
-      if (data?.error || typeof data?.explicacion !== 'string' || !data.explicacion.trim()) {
-        reply(ERROR_IA);
-      } else {
-        setStep(3);
-        reply(data.explicacion);
+      const datos: unknown = await respuesta.json().catch(() => null);
+      if (
+        !datos || typeof datos !== 'object' ||
+        !('respuesta' in datos) || typeof datos.respuesta !== 'string' ||
+        !datos.respuesta.trim() || ('error' in datos && datos.error)
+      ) {
+        responder(ERROR_IA, 'error');
+        return;
       }
-    } catch (error) {
-      console.error('Excepción al contactar la API:', error);
-      reply(ERROR_CONEXION);
+      responder(datos.respuesta, 'text');
+    } catch {
+      if (!controlador.signal.aborted) responder(ERROR_CONEXION, 'error');
     } finally {
-      setIsProcessing(false);
+      if (solicitudActiva.current === controlador) {
+        solicitudActiva.current = null;
+        setIsProcessing(false);
+      }
     }
   };
 
-  const handleClear = () => setMessages([welcomeMessage()]);
+  const handleClear = () => {
+    solicitudActiva.current?.abort();
+    solicitudActiva.current = null;
+    setIsProcessing(false);
+    setMessages([mensajeBienvenida()]);
+  };
 
   return {
-    user,
     messages,
     inputValue,
     setInputValue,
