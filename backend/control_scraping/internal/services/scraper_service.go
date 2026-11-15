@@ -11,6 +11,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
 )
 
+// ===== Errores y contratos del servicio =====
+
 // Errores de negocio para el microservicio de scraping
 var (
 	ErrTrabajoNoEncontrado   = errors.New("trabajo de scraping no encontrado")
@@ -40,6 +42,7 @@ type ScraperService interface {
 	IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error)
 }
 
+// scraperService coordina la lógica de trabajos y la entrega de lotes a Catálogo.
 type scraperService struct {
 	trabajos domain.TrabajoRepository
 	ingesta  domain.IngestaRepository
@@ -54,6 +57,8 @@ func NewScraperService(trabajos domain.TrabajoRepository, ingesta domain.Ingesta
 	}
 	return servicio
 }
+
+// ===== Ciclo de vida y consulta de trabajos =====
 
 // IniciarTrabajo registra el arranque de una araña de scraping y retorna su DTO
 func (servicio *scraperService) IniciarTrabajo(ctx context.Context, input domain.IniciarTrabajoDTO) (*domain.TrabajoScraperDTO, error) {
@@ -165,6 +170,8 @@ func (servicio *scraperService) ObtenerCadena(ctx context.Context, cadenaID int,
 	return cadena, nil
 }
 
+// ===== Validación e ingesta de productos =====
+
 // IngestarProductos valida la sucursal, el lote y persiste los productos y capturas de precios
 func (servicio *scraperService) IngestarProductos(ctx context.Context, trabajoIDStr *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
 	if servicio.entregas != nil {
@@ -250,6 +257,9 @@ func (servicio *scraperService) IngestarProductos(ctx context.Context, trabajoID
 	return resultado, nil
 }
 
+// ===== Adaptación de respuestas y nombres de catálogo =====
+
+// mapearTrabajoDTO convierte el modelo persistido al contrato HTTP del trabajo.
 func (servicio *scraperService) mapearTrabajoDTO(trabajo *domain.TrabajoScraper, cadenaNombre string) *domain.TrabajoScraperDTO {
 	var duracion *float64
 	if trabajo.FinalizadoEl != nil {
@@ -282,6 +292,7 @@ func (servicio *scraperService) nombreTrabajo(ctx context.Context, trabajo *doma
 	return servicio.nombreCadena(ctx, trabajo.CadenaID)
 }
 
+// nombreCadena consulta a Catálogo con un límite para resolver trabajos históricos.
 func (servicio *scraperService) nombreCadena(ctx context.Context, cadenaID int) string {
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()

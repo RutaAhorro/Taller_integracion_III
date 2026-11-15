@@ -19,6 +19,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 )
 
+// ===== Repositorio simulado para las pruebas =====
+
 // mockScraperRepository implementa la interfaz ScraperRepository para pruebas unitarias
 type mockScraperRepository struct {
 	trabajos   map[uuid.UUID]*domain.TrabajoScraper
@@ -27,6 +29,7 @@ type mockScraperRepository struct {
 	err        error
 }
 
+// newMockScraperRepository crea los mapas vacíos requeridos por el servicio simulado.
 func newMockScraperRepository() *mockScraperRepository {
 	return &mockScraperRepository{
 		trabajos:   make(map[uuid.UUID]*domain.TrabajoScraper),
@@ -35,6 +38,7 @@ func newMockScraperRepository() *mockScraperRepository {
 	}
 }
 
+// CrearTrabajo conserva el trabajo recibido para que las pruebas consulten su estado.
 func (repositorioSimulado *mockScraperRepository) CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error {
 	if repositorioSimulado.err != nil {
 		return repositorioSimulado.err
@@ -43,6 +47,7 @@ func (repositorioSimulado *mockScraperRepository) CrearTrabajo(ctx context.Conte
 	return nil
 }
 
+// ObtenerTrabajoPorID recupera un trabajo guardado o informa que no existe.
 func (repositorioSimulado *mockScraperRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
 	if repositorioSimulado.err != nil {
 		return nil, repositorioSimulado.err
@@ -54,6 +59,7 @@ func (repositorioSimulado *mockScraperRepository) ObtenerTrabajoPorID(ctx contex
 	return trabajo, nil
 }
 
+// FinalizarTrabajo actualiza los campos de cierre del trabajo simulado.
 func (repositorioSimulado *mockScraperRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
 	if repositorioSimulado.err != nil {
 		return nil, repositorioSimulado.err
@@ -75,6 +81,7 @@ func (repositorioSimulado *mockScraperRepository) FinalizarTrabajo(ctx context.C
 	return trabajo, nil
 }
 
+// ObtenerCadena busca por ID o nombre y crea una cadena simulada si hace falta.
 func (repositorioSimulado *mockScraperRepository) ObtenerCadena(ctx context.Context, cadenaID int, nombreCadena string) (*domain.CadenaSupermercado, error) {
 	if repositorioSimulado.err != nil {
 		return nil, repositorioSimulado.err
@@ -103,6 +110,7 @@ func (repositorioSimulado *mockScraperRepository) ObtenerCadena(ctx context.Cont
 	return nil, nil
 }
 
+// ObtenerSucursal recupera o crea la sucursal usada por las pruebas de ingesta.
 func (repositorioSimulado *mockScraperRepository) ObtenerSucursal(ctx context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error) {
 	if repositorioSimulado.err != nil {
 		return nil, repositorioSimulado.err
@@ -125,6 +133,7 @@ func (repositorioSimulado *mockScraperRepository) ObtenerSucursal(ctx context.Co
 	return sucursal, nil
 }
 
+// IngestarLote simula una ingesta exitosa con contadores coherentes.
 func (repositorioSimulado *mockScraperRepository) IngestarLote(ctx context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
 	if repositorioSimulado.err != nil {
 		return nil, repositorioSimulado.err
@@ -147,6 +156,7 @@ func (repositorioSimulado *mockScraperRepository) IngestarLote(ctx context.Conte
 	}, nil
 }
 
+// IncrementarElementos actualiza el contador del trabajo simulado.
 func (repositorioSimulado *mockScraperRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
 	if repositorioSimulado.err != nil {
 		return repositorioSimulado.err
@@ -157,10 +167,9 @@ func (repositorioSimulado *mockScraperRepository) IncrementarElementos(ctx conte
 	return nil
 }
 
-// -------------------------------------------------------------
-// Pruebas unitarias de ScraperService
-// -------------------------------------------------------------
+// ===== Pruebas unitarias del servicio =====
 
+// TestScraperService_IniciarTrabajo_Exitoso comprueba la creación de un trabajo válido.
 func TestScraperService_IniciarTrabajo_Exitoso(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
@@ -189,6 +198,7 @@ func TestScraperService_IniciarTrabajo_Exitoso(prueba *testing.T) {
 	}
 }
 
+// TestScraperService_FinalizarTrabajo_Validaciones comprueba estados válidos e inválidos.
 func TestScraperService_FinalizarTrabajo_Validaciones(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	service := services.NewScraperService(mockRepo, mockRepo)
@@ -242,6 +252,7 @@ func TestScraperService_FinalizarTrabajo_Validaciones(prueba *testing.T) {
 	}
 }
 
+// TestScraperService_IngestarProductos_LimitesYValidaciones comprueba lotes vacíos y válidos.
 func TestScraperService_IngestarProductos_LimitesYValidaciones(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	service := services.NewScraperService(mockRepo, mockRepo)
@@ -275,6 +286,7 @@ func TestScraperService_IngestarProductos_LimitesYValidaciones(prueba *testing.T
 	}
 }
 
+// TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada rechaza fuentes apagadas.
 func TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
@@ -301,6 +313,7 @@ func TestScraperService_IngestaDirectaPorSucursalFuenteDeshabilitada(prueba *tes
 	}
 }
 
+// TestScraperService_IngestaDirectaFuenteDeshabilitada rechaza ingesta de una fuente apagada.
 func TestScraperService_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
@@ -321,10 +334,9 @@ func TestScraperService_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 	}
 }
 
-// -------------------------------------------------------------
-// Pruebas de integración HTTP de ScraperHandler
-// -------------------------------------------------------------
+// ===== Pruebas HTTP del handler =====
 
+// TestScraperHandler_EndpointsHTTP comprueba el ciclo HTTP de un trabajo.
 func TestScraperHandler_EndpointsHTTP(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -417,14 +429,14 @@ func TestScraperHandler_EndpointsHTTP(prueba *testing.T) {
 	}
 }
 
+// stringPtr devuelve un puntero al valor entregado para construir DTO de prueba.
 func stringPtr(valor string) *string {
 	return &valor
 }
 
-// -------------------------------------------------------------
-// SUP-243: Control respeta el flag de fuente habilitada
-// -------------------------------------------------------------
+// ===== Reglas de habilitación de fuentes =====
 
+// TestScraperService_IniciarTrabajo_FuenteDeshabilitada impide iniciar una fuente apagada.
 func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
@@ -444,6 +456,7 @@ func TestScraperService_IniciarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	}
 }
 
+// TestScraperService_ObtenerCadena devuelve la cadena activa resuelta por ID.
 func TestScraperService_ObtenerCadena(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	mockRepo.cadenas["jumbo"] = &domain.CadenaSupermercado{
@@ -463,6 +476,7 @@ func TestScraperService_ObtenerCadena(prueba *testing.T) {
 	}
 }
 
+// TestScraperService_ObtenerCadena_NoEncontrada traduce la ausencia a error de dominio.
 func TestScraperService_ObtenerCadena_NoEncontrada(prueba *testing.T) {
 	mockRepo := newMockScraperRepository()
 	service := services.NewScraperService(mockRepo, mockRepo)
@@ -472,6 +486,7 @@ func TestScraperService_ObtenerCadena_NoEncontrada(prueba *testing.T) {
 	}
 }
 
+// TestScraperHandler_IngestaDirectaFuenteDeshabilitada verifica el rechazo HTTP de fuentes apagadas.
 func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -492,6 +507,7 @@ func TestScraperHandler_IngestaDirectaFuenteDeshabilitada(prueba *testing.T) {
 	}
 }
 
+// TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada impide encolar una fuente apagada.
 func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -515,6 +531,7 @@ func TestScraperHandler_EjecutarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	}
 }
 
+// TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada verifica el 404 al no resolver la cadena.
 func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -537,6 +554,7 @@ func TestScraperHandler_EjecutarTrabajo_CadenaNoEncontrada(prueba *testing.T) {
 	}
 }
 
+// TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada verifica la respuesta de inicio HTTP.
 func TestScraperHandler_IniciarTrabajo_FuenteDeshabilitada(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 

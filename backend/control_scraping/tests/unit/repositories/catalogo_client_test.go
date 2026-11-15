@@ -17,6 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// ===== Contratos HTTP con Catálogo =====
+
+// TestCatalogoClientContract verifica rutas, headers y respuestas válidas del cliente.
 func TestCatalogoClientContract(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
 	id := uuid.New()
@@ -62,6 +65,7 @@ func TestCatalogoClientContract(prueba *testing.T) {
 	}
 }
 
+// TestCatalogoClientObtenerCadenaPropagaEstado conserva el estado de activación recibido.
 func TestCatalogoClientObtenerCadenaPropagaEstado(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
 	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
@@ -87,6 +91,9 @@ func TestCatalogoClientObtenerCadenaPropagaEstado(prueba *testing.T) {
 	}
 }
 
+// ===== Fallos, timeouts y validación de configuración =====
+
+// TestCatalogoClientFailuresAndNoRetry comprueba que los errores no filtren datos ni reintenten.
 func TestCatalogoClientFailuresAndNoRetry(prueba *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -120,6 +127,7 @@ func TestCatalogoClientFailuresAndNoRetry(prueba *testing.T) {
 	}
 }
 
+// TestCatalogoClientTimeoutAndCancellation distingue timeout y cancelación del contexto.
 func TestCatalogoClientTimeoutAndCancellation(prueba *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(respuestaHTTP http.ResponseWriter, peticion *http.Request) {
 		io.Copy(io.Discard, peticion.Body)
@@ -140,6 +148,7 @@ func TestCatalogoClientTimeoutAndCancellation(prueba *testing.T) {
 	}
 }
 
+// TestCatalogoClientInvalidConfiguration rechaza orígenes, tokens y timeouts inválidos.
 func TestCatalogoClientInvalidConfiguration(prueba *testing.T) {
 	for _, origin := range []string{"", "ftp://catalogo", "http://user:secret@catalogo", "http://catalogo/path", "http://catalogo?token=secret", "http://catalogo#fragment"} {
 		if _, err := repositories.NewCatalogoClient(origin, strings.Repeat("t", 32), time.Second); err == nil {

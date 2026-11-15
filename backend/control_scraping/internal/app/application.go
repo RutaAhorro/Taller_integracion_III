@@ -27,6 +27,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// ===== Carga y validación de dependencias =====
+
 // openScrapingDatabase carga y abre la conexión PostgreSQL propia de Control.
 func openScrapingDatabase(ctx context.Context) (*gorm.DB, error) {
 	configuracion, err := database.Load()
@@ -66,6 +68,8 @@ func NewRedisClientFromEnvironment() (*redis.Client, error) {
 	}
 	return clienteRedis, nil
 }
+
+// ===== Composición HTTP y rutas =====
 
 // NewApplication compone el router y los loops de coordinación con sus dependencias.
 func NewApplication(baseDatos *gorm.DB, clienteRedis *redis.Client) (*gin.Engine, *control.Module, error) {
@@ -125,6 +129,8 @@ func NewApplication(baseDatos *gorm.DB, clienteRedis *redis.Client) (*gin.Engine
 
 	return router, coordinacion, nil
 }
+
+// ===== Endpoints de salud =====
 
 // RootHandler godoc
 // @Summary      Muestra mensaje de bienvenida
@@ -213,6 +219,8 @@ func writeHealth(contextoHTTP *gin.Context, baseDatos *gorm.DB, clienteRedis *re
 func LivenessHandler(contextoHTTP *gin.Context) {
 	contextoHTTP.JSON(http.StatusOK, gin.H{"status": "ok", "service": "control-scraping"})
 }
+
+// ===== Inicio y apagado del servicio =====
 
 // @title           Control de Scraping
 // @version         1.0

@@ -22,6 +22,8 @@ import (
 	"gorm.io/gorm"
 )
 
+// ===== Dependencias simuladas para probes =====
+
 // healthConnector permite controlar la respuesta de Ping sin abrir una base real.
 type healthConnector struct {
 	failed atomic.Bool
@@ -85,6 +87,8 @@ func probeDatabase(prueba *testing.T, conector *healthConnector) *gorm.DB {
 	}
 	return baseDatos
 }
+
+// ===== Contratos de readiness y diagnóstico =====
 
 // TestHealthRedisTimeoutDoesNotRemoveReadiness verifica que Redis sólo sea diagnóstico.
 func TestHealthRedisTimeoutDoesNotRemoveReadiness(prueba *testing.T) {

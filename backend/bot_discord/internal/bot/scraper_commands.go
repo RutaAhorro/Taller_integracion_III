@@ -221,6 +221,8 @@ func handleScrapeStart(sesionDiscord *discordgo.Session, interaccion *discordgo.
 	go monitorJobAndNotify(sesionDiscord, interaccion.ChannelID, trabajoID, nombreCadena, usuarioID)
 }
 
+// ===== Configuración de cadenas disponibles =====
+
 // cadenaScraper identifica la fuente y el spider usados por las opciones del bot.
 type cadenaScraper struct {
 	cadenaID     int
@@ -274,15 +276,17 @@ func nombreCadenaScraper(cadenaID int, nombrePredeterminado string) string {
 	return nombrePredeterminado
 }
 
+// ===== Creación y ejecución de trabajos =====
+
 // crearTrabajoScraper registra un trabajo y valida la respuesta de Control.
 func crearTrabajoScraper(cadenaID int, usuarioID string) (string, error) {
-	payload, errorObtenido := json.Marshal(map[string]interface{}{
+	cuerpoJSON, errorObtenido := json.Marshal(map[string]interface{}{
 		"cadena_id": cadenaID, "disparado_por_usuario_id": usuarioID,
 	})
 	if errorObtenido != nil {
 		return "", fmt.Errorf("no se pudo serializar la creación: %w", errorObtenido)
 	}
-	respuestaHTTP, errorObtenido := enviarPOSTScraper(obtenerURLBaseScraper(), bytes.NewReader(payload))
+	respuestaHTTP, errorObtenido := enviarPOSTScraper(obtenerURLBaseScraper(), bytes.NewReader(cuerpoJSON))
 	if errorObtenido != nil {
 		return "", fmt.Errorf("falló la comunicación con Control: %w", errorObtenido)
 	}
@@ -299,13 +303,13 @@ func crearTrabajoScraper(cadenaID int, usuarioID string) (string, error) {
 
 // ejecutarTrabajoScraper encola un spider en el trabajo previamente creado.
 func ejecutarTrabajoScraper(trabajoID, nombreSpider string) error {
-	payload, errorObtenido := json.Marshal(map[string]string{"spider": nombreSpider})
+	cuerpoJSON, errorObtenido := json.Marshal(map[string]string{"spider": nombreSpider})
 	if errorObtenido != nil {
 		return fmt.Errorf("no se pudo serializar la ejecución: %w", errorObtenido)
 	}
 	respuestaHTTP, errorObtenido := enviarPOSTScraper(
 		fmt.Sprintf("%s/%s/ejecutar", obtenerURLBaseScraper(), trabajoID),
-		bytes.NewReader(payload),
+		bytes.NewReader(cuerpoJSON),
 	)
 	if errorObtenido != nil {
 		return fmt.Errorf("falló la comunicación con Control: %w", errorObtenido)
@@ -332,6 +336,8 @@ func botonesComoComponentes(botones []discordgo.Button) []discordgo.MessageCompo
 	}
 	return componentes
 }
+
+// ===== Seguimiento y consulta del estado =====
 
 // monitorJobAndNotify consulta periódicamente el trabajo y notifica su resultado.
 func monitorJobAndNotify(sesionDiscord *discordgo.Session, canalID, trabajoID, nombreCadena, usuarioID string) {

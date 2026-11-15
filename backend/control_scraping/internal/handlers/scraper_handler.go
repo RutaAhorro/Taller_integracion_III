@@ -16,6 +16,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 )
 
+// ===== Tipos y dependencias del handler =====
+
 // ScraperHandler gestiona las peticiones HTTP del microservicio de scraping y bots
 type ScraperHandler struct {
 	service services.ScraperService
@@ -23,9 +25,10 @@ type ScraperHandler struct {
 	queue   *services.QueueService
 }
 
+// SetQueue conecta la cola durable que utiliza el endpoint de ejecución.
 func (manejador *ScraperHandler) SetQueue(queue *services.QueueService) { manejador.queue = queue }
 
-// NewScraperHandler inicializa una nueva instancia de ScraperHandler
+// NewScraperHandler inicializa el handler con el servicio y el cliente Redis opcional.
 func NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *ScraperHandler {
 	var client *redis.Client
 	if len(rdb) > 0 {
@@ -34,6 +37,7 @@ func NewScraperHandler(service services.ScraperService, rdb ...*redis.Client) *S
 	return &ScraperHandler{service: service, rdb: client}
 }
 
+// ejecutarScraperRequest describe los parámetros opcionales para encolar un spider.
 type ejecutarScraperRequest struct {
 	Spider      string  `json:"spider,omitempty"`
 	ProductoURL *string `json:"producto_url,omitempty"`
@@ -41,6 +45,8 @@ type ejecutarScraperRequest struct {
 	AddURL      *string `json:"add_url,omitempty"`
 	EnrichEAN   *bool   `json:"enrich_ean,omitempty"`
 }
+
+// ===== Ejecución y ciclo de vida de trabajos =====
 
 // EjecutarTrabajo godoc
 // @Summary      Encola un trabajo para ejecución
@@ -219,6 +225,8 @@ func (manejador *ScraperHandler) IniciarTrabajo(contextoHTTP *gin.Context) {
 	contextoHTTP.JSON(http.StatusCreated, trabajo)
 }
 
+// ===== Ingesta y consulta de trabajos =====
+
 // FinalizarTrabajo godoc
 // @Summary      Finaliza una sesión de scraping
 // @Description  Marca el término del trabajo como completado o fallido, registrando métricas y errores
@@ -300,6 +308,8 @@ func (manejador *ScraperHandler) ObtenerTrabajo(contextoHTTP *gin.Context) {
 	contextoHTTP.JSON(http.StatusOK, trabajo)
 }
 
+// ===== Recepción de lotes de productos =====
+
 // IngestarProductosConTrabajo godoc
 // @Summary      Registra y entrega un lote con trabajo a Catálogo
 // @Description  Conserva la entrega durable en Control, usa una clave estable en Catálogo y confirma el contador una sola vez.
@@ -372,6 +382,9 @@ func (manejador *ScraperHandler) IngestarProductosDirecto(contextoHTTP *gin.Cont
 	contextoHTTP.JSON(http.StatusOK, resultado)
 }
 
+// ===== Validación y respuestas de ingesta =====
+
+// manejarErrorIngesta traduce fallos de dominio y de Catálogo a respuestas HTTP.
 func (manejador *ScraperHandler) manejarErrorIngesta(contextoHTTP *gin.Context, err error) {
 	if manejador.responderErrorCatalogo(contextoHTTP, err) {
 		return
@@ -403,6 +416,7 @@ func (manejador *ScraperHandler) manejarErrorIngesta(contextoHTTP *gin.Context, 
 	}
 }
 
+// prepararLote asigna una clave idempotente y limita el tamaño de la petición.
 func prepararLote(contextoHTTP *gin.Context, input *domain.IngestaLoteDTO) bool {
 	key := contextoHTTP.GetHeader("Idempotency-Key")
 	id := uuid.New()
@@ -420,6 +434,7 @@ func prepararLote(contextoHTTP *gin.Context, input *domain.IngestaLoteDTO) bool 
 	return true
 }
 
+// responderErrorCatalogo traduce errores de disponibilidad de Catálogo a HTTP.
 func (manejador *ScraperHandler) responderErrorCatalogo(contextoHTTP *gin.Context, err error) bool {
 	status, code := 0, ""
 	if errors.Is(err, services.ErrCatalogoNoDisponible) {
