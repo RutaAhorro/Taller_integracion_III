@@ -106,9 +106,9 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 	}
 	if filtro.SoloMarcasBlancas != nil && *filtro.SoloMarcasBlancas {
 		consulta = consulta.Where(`(
-			pc.marca_cruda ILIKE ANY(?)
+			pc.marca_cruda ILIKE ANY(ARRAY[?])
 			OR (
-				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(?)
+				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(ARRAY[?])
 			)
 		)`, marcasPropiasPorMarca, marcasPropiasPorTitulo)
 	}
