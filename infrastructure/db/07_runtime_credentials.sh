@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sólo inicialización de un volumen nuevo. Para uno existente, ejecutar
 # expresamente tras 06_propiedad_permisos.sql con el operador PostgreSQL.
-# El entrypoint puede ejecutar o sourcear este archivo (ConfigMap 0644).
+# El entrypoint puede ejecutar o sourcear este archivo (ConfigMap 0755).
 # El subshell evita modificar sus opciones/variables cuando se sourcea.
 (
 set -euo pipefail

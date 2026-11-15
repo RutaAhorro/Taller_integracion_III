@@ -67,4 +67,5 @@ spec:
           claimName: db-pvc
       - configMap:
           name: db-init-scripts
+          defaultMode: 0755
         name: db-init
