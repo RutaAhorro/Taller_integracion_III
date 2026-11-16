@@ -179,20 +179,26 @@ func manejarInteraccion(sesionDiscord *discordgo.Session, interaccion *discordgo
 
 // iniciarScraping interpreta la selección y solicita la ejecución a Control.
 func iniciarScraping(sesionDiscord *discordgo.Session, interaccion *discordgo.InteractionCreate) {
-	sesionDiscord.InteractionRespond(interaccion.Interaction, &discordgo.InteractionResponse{
+	if errorObtenido := sesionDiscord.InteractionRespond(interaccion.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseDeferredChannelMessageWithSource,
-	})
+	}); errorObtenido != nil {
+		log.Printf("No se pudo diferir la interacción de scraping: %v", errorObtenido)
+		return
+	}
 	partesID := strings.SplitN(strings.TrimPrefix(interaccion.MessageComponentData().CustomID, "scrape_"), "_", 2)
 	if len(partesID) != 2 {
+		responderSeguimiento(sesionDiscord, interaccion, "❌ No se reconoció la opción de scraping seleccionada.")
 		return
 	}
 	var cadenaID int
 	if _, errorObtenido := fmt.Sscanf(partesID[0], "%d", &cadenaID); errorObtenido != nil {
 		log.Printf("No se pudo interpretar el identificador de cadena %q: %v", partesID[0], errorObtenido)
+		responderSeguimiento(sesionDiscord, interaccion, "❌ No se pudo interpretar la cadena seleccionada.")
 		return
 	}
 	if interaccion.Member == nil || interaccion.Member.User == nil {
 		log.Printf("La interacción de scraping no contiene un miembro de Discord")
+		responderSeguimiento(sesionDiscord, interaccion, "❌ No se pudo identificar tu usuario de Discord para iniciar el scraping.")
 		return
 	}
 	usuarioID := interaccion.Member.User.ID
@@ -210,14 +216,16 @@ func iniciarScraping(sesionDiscord *discordgo.Session, interaccion *discordgo.In
 		responderSeguimiento(sesionDiscord, interaccion, fmt.Sprintf("❌ No se pudo iniciar el scraper %s: %v", partesID[1], errorObtenido))
 		return
 	}
-	sesionDiscord.FollowupMessageCreate(interaccion.Interaction, true, &discordgo.WebhookParams{
+	if _, errorObtenido := sesionDiscord.FollowupMessageCreate(interaccion.Interaction, true, &discordgo.WebhookParams{
 		Content: fmt.Sprintf("🚀 **¡Scraping de %s iniciado!**\nID del trabajo: `%s`\nLa araña `%s` está recolectando productos.", nombreCadena, trabajoID, partesID[1]),
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{Components: []discordgo.MessageComponent{
 				discordgo.Button{Label: "Actualizar Estado", Style: discordgo.SecondaryButton, CustomID: "refresh_" + trabajoID, Emoji: &discordgo.ComponentEmoji{Name: "🔄"}},
 			}},
 		},
-	})
+	}); errorObtenido != nil {
+		log.Printf("No se pudo enviar la confirmación del scraping %s: %v", trabajoID, errorObtenido)
+	}
 	go monitorearTrabajoYNotificar(sesionDiscord, interaccion.ChannelID, trabajoID, nombreCadena, usuarioID)
 }
 
@@ -257,13 +265,29 @@ func iniciarTrabajosMasivos(sesionDiscord *discordgo.Session, interaccion *disco
 		})
 		go monitorearTrabajoYNotificar(sesionDiscord, interaccion.ChannelID, trabajoID, cadena.nombreCadena, usuarioID)
 	}
+	parametrosRespuesta := crearRespuestaScrapingMasivo(trabajosExitosos)
+	if _, errorObtenido := sesionDiscord.FollowupMessageCreate(interaccion.Interaction, true, parametrosRespuesta); errorObtenido != nil {
+		log.Printf("No se pudo enviar el resultado del scraping masivo: %v", errorObtenido)
+	}
+}
+
+// crearRespuestaScrapingMasivo omite componentes cuando ningún trabajo se inició.
+func crearRespuestaScrapingMasivo(trabajosExitosos []discordgo.Button) *discordgo.WebhookParams {
+	if len(trabajosExitosos) == 0 {
+		return &discordgo.WebhookParams{
+			Content: "❌ No se pudo iniciar ningún trabajo de scraping. Control puede no estar disponible; inténtalo nuevamente más tarde.",
+		}
+	}
 	contenido := fmt.Sprintf("🚀 **¡Scraping masivo iniciado!**\nSe iniciaron `%d` trabajos. Usa los botones para revisar su estado.", len(trabajosExitosos))
-	sesionDiscord.FollowupMessageCreate(interaccion.Interaction, true, &discordgo.WebhookParams{
+	if len(trabajosExitosos) == 1 {
+		contenido = "🚀 **¡Scraping iniciado!**\nSe inició `1` trabajo. Usa el botón para revisar su estado."
+	}
+	return &discordgo.WebhookParams{
 		Content: contenido,
 		Components: []discordgo.MessageComponent{
 			discordgo.ActionsRow{Components: botonesComoComponentes(trabajosExitosos)},
 		},
-	})
+	}
 }
 
 // nombreCadenaScraper obtiene el nombre legible de la cadena elegida.
