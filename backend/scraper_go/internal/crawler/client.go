@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/temoto/robotstxt"
 )
 
@@ -113,29 +114,30 @@ type Client struct {
 // New construye el cliente y aplica valores seguros a los campos de Options
 // que lleguen en cero.
 func New(opciones Options) *Client {
+	configuracionPredeterminada := config.Default()
 	if opciones.Timeout <= 0 {
-		opciones.Timeout = 30 * time.Second
+		opciones.Timeout = configuracionPredeterminada.DownloadTimeout
 	}
 	if opciones.MaxSize <= 0 {
-		opciones.MaxSize = 5 * 1024 * 1024
+		opciones.MaxSize = configuracionPredeterminada.MaxDownloadSize
 	}
 	if opciones.MaxRetries < 0 {
 		opciones.MaxRetries = 0
 	}
 	if opciones.RobotsCacheTTL <= 0 {
-		opciones.RobotsCacheTTL = time.Hour
+		opciones.RobotsCacheTTL = configuracionPredeterminada.RobotsCacheTTL
 	}
 	if opciones.RobotsFailureTTL <= 0 {
-		opciones.RobotsFailureTTL = 10 * time.Minute
+		opciones.RobotsFailureTTL = configuracionPredeterminada.RobotsFailureTTL
 	}
 	if opciones.RobotsMaxBytes <= 0 {
-		opciones.RobotsMaxBytes = 512 * 1024
+		opciones.RobotsMaxBytes = configuracionPredeterminada.RobotsMaxBytes
 	}
 	if opciones.BackoffMin <= 0 {
-		opciones.BackoffMin = 10 * time.Millisecond
+		opciones.BackoffMin = configuracionPredeterminada.BackoffMin
 	}
 	if opciones.BackoffMax <= 0 {
-		opciones.BackoffMax = 120 * time.Second
+		opciones.BackoffMax = configuracionPredeterminada.BackoffMax
 	}
 	if opciones.Logger == nil {
 		opciones.Logger = slog.Default()

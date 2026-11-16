@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
@@ -21,6 +22,32 @@ func (araña arañaDePrueba) Name() string { return araña.nombre }
 
 // Run no realiza extracción porque estas pruebas solo validan la selección.
 func (arañaDePrueba) Run(context.Context, domain.Job, spiders.Emitter) error { return nil }
+
+func TestNewRechazaConfiguracionInvalida(prueba *testing.T) {
+	casos := map[string]func(*config.Config){
+		"configuración vacía": func(configuracion *config.Config) {
+			*configuracion = config.Config{}
+		},
+		"sin intentos de crawl": func(configuracion *config.Config) {
+			configuracion.CrawlAttempts = 0
+		},
+		"sin intervalo de consulta": func(configuracion *config.Config) {
+			configuracion.PollInterval = 0
+		},
+		"sin intervalo de reintento": func(configuracion *config.Config) {
+			configuracion.RetryInterval = 0
+		},
+	}
+	for nombre, mutar := range casos {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			configuracion := config.Default()
+			mutar(&configuracion)
+			if _, errorObtenido := New(configuracion, nil, nil, nil, nil); errorObtenido == nil {
+				prueba.Fatal("New aceptó una configuración inválida")
+			}
+		})
+	}
+}
 
 func TestParseJobValidaContraRegistroConfigurado(prueba *testing.T) {
 	sitioJumbo, existe := catalog.Default().Get(spiders.JumboName)

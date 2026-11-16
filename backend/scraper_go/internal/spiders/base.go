@@ -215,7 +215,7 @@ func urlString(valor *url.URL) string {
 // mustSite devuelve el sitio embebido o entra en pánico si el catálogo está
 // roto (error de build, no de ejecución).
 func mustSite(nombre string) catalog.Site {
-	sitio, valido := catalog.Default().Get(nombre)
+	sitio, valido := defaultCatalog().Get(nombre)
 	if !valido {
 		panic("catálogo sin sitio " + nombre)
 	}

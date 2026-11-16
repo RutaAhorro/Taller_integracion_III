@@ -95,7 +95,10 @@ func run() error {
 	}
 	clienteAPI := controlscraping.New(configuracion.APIURL, configuracion.Token, configuracion.APITimeout)
 
-	trabajadorScraper := worker.New(configuracion, clienteAPI, clienteCola, registro, registrador)
+	trabajadorScraper, errorObtenido := worker.New(configuracion, clienteAPI, clienteCola, registro, registrador)
+	if errorObtenido != nil {
+		return errorObtenido
+	}
 	if errorObtenido := trabajadorScraper.Run(contexto); errorObtenido != nil && !errors.Is(errorObtenido, context.Canceled) {
 		return errorObtenido
 	}

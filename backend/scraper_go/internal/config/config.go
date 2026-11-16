@@ -14,6 +14,15 @@ import (
 // SCRAPER_MAX_PAGES.
 const DefaultMaxPages = 100
 
+// ===== Valores Compartidos =====
+
+const (
+	// DefaultQueueName identifica el stream de trabajos del scraper.
+	DefaultQueueName = "scraper:jobs:stream"
+	// DefaultQueueGroup identifica el grupo de consumidores del scraper.
+	DefaultQueueGroup = "scraper-workers"
+)
+
 // ===== Estructura de Configuración =====
 
 // Config concentra las variables de entorno del worker.
@@ -69,8 +78,8 @@ func Default() Config {
 		FailedRetention: 24 * time.Hour,
 		APITimeout:      30 * time.Second,
 		BatchSize:       100,
-		QueueName:       "scraper:jobs:stream",
-		Group:           "scraper-workers",
+		QueueName:       DefaultQueueName,
+		Group:           DefaultQueueGroup,
 		CategoryDir:     "/app/research",
 		LogLevel:        slog.LevelInfo,
 		UserAgent:       "TallerIntegracionIII/1.0 (contacto del proyecto)",

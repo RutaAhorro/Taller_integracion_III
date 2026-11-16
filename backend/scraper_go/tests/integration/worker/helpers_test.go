@@ -253,13 +253,16 @@ func newHarness(prueba *testing.T, spider spiders.Spider, mutate func(*config.Co
 
 	registry := spiders.NewRegistry(nil, prueba.TempDir(), 100, quietLogger())
 	registry.Register(spider)
-	arnes.worker = worker.New(
+	arnes.worker, err = worker.New(
 		cfg,
 		controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout),
 		arnes.queue,
 		registry,
 		quietLogger(),
 	)
+	if err != nil {
+		prueba.Fatalf("worker.New() error = %v", err)
+	}
 	return arnes
 }
 

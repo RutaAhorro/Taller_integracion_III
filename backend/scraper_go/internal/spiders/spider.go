@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
@@ -20,6 +21,11 @@ const (
 	CugatName       = "cugat_rsc"
 	AcuentaName     = "acuenta_rsc"
 	LiderName       = "lider_rsc"
+)
+
+var (
+	catalogoEmbutidoUnaVez sync.Once
+	catalogoEmbutido       catalog.Catalog
 )
 
 // Build construye el spider correspondiente al parser declarado en el catálogo.
@@ -42,13 +48,21 @@ func Build(sitio catalog.Site, obtenedor Fetcher, directorioCategorias string, m
 
 // IsKnown indica si el nombre pertenece al catálogo de spiders.
 func IsKnown(nombre string) bool {
-	_, valido := catalog.Default().Get(nombre)
+	_, valido := defaultCatalog().Get(nombre)
 	return valido
 }
 
 // Names devuelve los nombres del catálogo en orden estable.
 func Names() []string {
-	return catalog.Default().Names()
+	return defaultCatalog().Names()
+}
+
+// defaultCatalog parsea una vez el catálogo embebido usado por los spiders integrados.
+func defaultCatalog() catalog.Catalog {
+	catalogoEmbutidoUnaVez.Do(func() {
+		catalogoEmbutido = catalog.Default()
+	})
+	return catalogoEmbutido
 }
 
 // ===== Contratos =====
@@ -78,7 +92,7 @@ type Registry struct {
 
 // NewRegistry construye el registro con el catálogo embebido.
 func NewRegistry(obtenedor Fetcher, directorioCategorias string, maxPaginas int, registrador *slog.Logger) *Registry {
-	registro, errorObtenido := NewRegistryFromCatalog(catalog.Default(), obtenedor, directorioCategorias, maxPaginas, registrador)
+	registro, errorObtenido := NewRegistryFromCatalog(defaultCatalog(), obtenedor, directorioCategorias, maxPaginas, registrador)
 	if errorObtenido != nil {
 		panic(errorObtenido)
 	}

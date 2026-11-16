@@ -50,15 +50,18 @@ type Worker struct {
 
 // ===== Constructor =====
 
-// New construye el worker y las dependencias derivadas de la configuración:
-// el cliente que usa el recolector y el recolector de spools.
+// New valida la configuración y construye el worker con sus dependencias
+// derivadas: el cliente de recolección y el recolector de spools.
 func New(
 	configuracion config.Config,
 	api *controlscraping.Client,
 	clienteCola *queue.Queue,
 	registro *spiders.Registry,
 	registrador *slog.Logger,
-) *Worker {
+) (*Worker, error) {
+	if errorObtenido := configuracion.Validate(); errorObtenido != nil {
+		return nil, fmt.Errorf("configuración inválida: %w", errorObtenido)
+	}
 	if registrador == nil {
 		registrador = slog.Default()
 	}
@@ -80,7 +83,7 @@ func New(
 			registrador,
 		),
 		logger: registrador,
-	}
+	}, nil
 }
 
 // ===== Bucle Principal =====

@@ -13,13 +13,15 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 )
 
 // ===== Constantes del Stream =====
 
 const (
-	DefaultStream     = "scraper:jobs:stream"
-	DefaultGroup      = "scraper-workers"
+	DefaultStream     = config.DefaultQueueName
+	DefaultGroup      = config.DefaultQueueGroup
 	JobIndex          = "scraper:jobs:index"
 	JobClosedPrefix   = "scraper:jobs:closed:"
 	DefaultDeadLetter = "scraper:jobs:dead"
@@ -86,14 +88,15 @@ type Queue struct {
 // New valida la lease mínima de 10 s y completa los nombres y claves que no
 // vengan en Options.
 func New(cliente *redis.Client, opciones Options) (*Queue, error) {
+	configuracionPredeterminada := config.Default()
 	if opciones.Lease < 10*time.Second {
 		return nil, fmt.Errorf("SCRAPER_LEASE_MS debe ser al menos 10000")
 	}
 	if opciones.Stream == "" {
-		opciones.Stream = DefaultStream
+		opciones.Stream = configuracionPredeterminada.QueueName
 	}
 	if opciones.Group == "" {
-		opciones.Group = DefaultGroup
+		opciones.Group = configuracionPredeterminada.Group
 	}
 	if opciones.Consumer == "" {
 		nombreServidor, _ := os.Hostname()
@@ -109,10 +112,10 @@ func New(cliente *redis.Client, opciones Options) (*Queue, error) {
 		opciones.ClosedPrefix = JobClosedPrefix
 	}
 	if opciones.Block <= 0 {
-		opciones.Block = time.Second
+		opciones.Block = configuracionPredeterminada.QueueBlock
 	}
 	if opciones.ClosedTTL <= 0 {
-		opciones.ClosedTTL = 24 * time.Hour
+		opciones.ClosedTTL = configuracionPredeterminada.QueueClosedTTL
 	}
 	return &Queue{
 		client:       cliente,
