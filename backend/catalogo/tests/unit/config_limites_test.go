@@ -16,6 +16,7 @@ var variablesDeLimites = []string{
 	"CATALOGO_IDLE_TIMEOUT", "CATALOGO_SHUTDOWN_TIMEOUT", "CATALOGO_STARTUP_TIMEOUT",
 	"CATALOGO_READINESS_TIMEOUT", "CATALOGO_DEFAULT_PAGE_SIZE", "CATALOGO_MAX_PAGE_SIZE",
 	"CATALOGO_MAX_SEARCH_LENGTH", "CATALOGO_MAX_BATCH_PRODUCTOS", "CATALOGO_MAX_BODY_BYTES",
+	"CATALOGO_MAX_PRODUCTOS_CONSULTA", "CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA",
 	"CATALOGO_CORS_ALLOWED_ORIGINS", "CORS_ALLOWED_ORIGINS",
 }
 
@@ -51,7 +52,8 @@ func TestLimitesPredeterminadosConservanLosValoresAnteriores(prueba *testing.T) 
 	}
 	if configuracion.DefaultPageSize != 20 || configuracion.MaxPageSize != 100 ||
 		configuracion.MaxSearchLength != 100 || configuracion.MaxBatchProductos != 1000 ||
-		configuracion.MaxBodyBytes != 8<<20 {
+		configuracion.MaxBodyBytes != 8<<20 || configuracion.MaxProductosConsulta != 1000 ||
+		configuracion.AntiguedadMaximaDisponibilidad != 48*time.Hour {
 		prueba.Fatalf("límites por defecto incorrectos: %+v", configuracion)
 	}
 }
@@ -65,6 +67,8 @@ func TestLimitesSePuedenConfigurar(prueba *testing.T) {
 	prueba.Setenv("CATALOGO_MAX_SEARCH_LENGTH", "64")
 	prueba.Setenv("CATALOGO_MAX_BATCH_PRODUCTOS", "250")
 	prueba.Setenv("CATALOGO_MAX_BODY_BYTES", "4096")
+	prueba.Setenv("CATALOGO_MAX_PRODUCTOS_CONSULTA", "75")
+	prueba.Setenv("CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "36h")
 	configuracion, errorCarga := config.Load()
 	if errorCarga != nil {
 		prueba.Fatal(errorCarga)
@@ -72,7 +76,8 @@ func TestLimitesSePuedenConfigurar(prueba *testing.T) {
 	if configuracion.ReadinessTimeout != 750*time.Millisecond || configuracion.ShutdownTimeout != time.Minute ||
 		configuracion.DefaultPageSize != 12 || configuracion.MaxPageSize != 48 ||
 		configuracion.MaxSearchLength != 64 || configuracion.MaxBatchProductos != 250 ||
-		configuracion.MaxBodyBytes != 4096 {
+		configuracion.MaxBodyBytes != 4096 || configuracion.MaxProductosConsulta != 75 ||
+		configuracion.AntiguedadMaximaDisponibilidad != 36*time.Hour {
 		prueba.Fatalf("no se aplicaron los valores configurados: %+v", configuracion)
 	}
 }
@@ -91,6 +96,9 @@ func TestLimitesInvalidosImpidenArrancar(prueba *testing.T) {
 		{"CATALOGO_MAX_SEARCH_LENGTH", "cien"},
 		{"CATALOGO_MAX_BATCH_PRODUCTOS", "0"},
 		{"CATALOGO_MAX_BODY_BYTES", "-1"},
+		{"CATALOGO_MAX_PRODUCTOS_CONSULTA", "0"},
+		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "0s"},
+		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "48"},
 		{"CATALOGO_DEFAULT_PAGE_SIZE", "101"}, // supera CATALOGO_MAX_PAGE_SIZE por defecto
 	} {
 		prueba.Run(caso.variable+"="+caso.valor, func(subprueba *testing.T) {

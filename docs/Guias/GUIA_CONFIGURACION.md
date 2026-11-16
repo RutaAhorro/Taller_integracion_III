@@ -36,7 +36,7 @@ Al trabajar con microservicios independientes, las variables compartidas constit
 
 | Nombre | Servicio Dueño | Servicios Consumidores | Propósito y formato requerido | Valor por defecto en Compose / local |
 | --- | --- | --- | --- | --- |
-| `CATALOGO_INTERNAL_TOKEN` | Catálogo (`/internal/v1/*`) | Control de scraping | Autoriza la ingesta durable de lotes de productos y precios directamente a Catálogo. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `SCRAPING_SERVICE_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${CATALOGO_INTERNAL_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
+| `CATALOGO_INTERNAL_TOKEN` | Catálogo (`/internal/v1/*`) | Control de scraping, IA conversacional, Motor de rutas | Autoriza la ingesta durable de lotes de productos y precios, y la consulta interna de disponibilidad de productos. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `SCRAPING_SERVICE_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${CATALOGO_INTERNAL_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
 | `SCRAPING_SERVICE_TOKEN` | Control de scraping (`/api/v1/scraper/*`) | Scraper Go (`scraper_worker`), Bot de Discord (`bot_discord`) | Autoriza la ejecución de trabajos de scraping y el envío de resultados hacia Control. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `CATALOGO_INTERNAL_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${SCRAPING_SERVICE_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
 
 ### 3. Broker y colas
