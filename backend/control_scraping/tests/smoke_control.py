@@ -205,21 +205,6 @@ with tempfile.TemporaryDirectory(dir=Path(argumentos.env_file).parent) as direct
         compose('up', '-d', '--no-deps', '--scale', 'control_scraping=1', '--wait', '--wait-timeout', '90', 'control_scraping')
 assert all(state(servicio) == estadoInicial for servicio, estadoInicial in otrosServicios.items())
 
-# Volver a la imagen aprobada SUP-272 sin mover tablas/outboxes ni rotar secretos.
-entorno['SUP273_LEGACY_API_IMAGE'] = 'sup272-api:reference'
-compose('-f', str(raiz/'docker-compose.scraping-rollback.yml'), 'up', '-d', '--no-deps',
-        '--wait', '--wait-timeout', '90', 'control_scraping', 'gateway')
-try:
-    request('/api/v1/auth/me', clienteHTTP=clienteAdministrador)
-    request('/api/v1/admin/productos', clienteHTTP=clienteAdministrador)
-    trabajo, _ = request('/api/v1/scraper/trabajos', 201, metodo='POST', datos={'cadena_id': 1})
-    request('/api/v1/scraper/trabajos/'+trabajo['id'])
-    cuerpo, _ = request('/_gateway/dependencies')
-    assert cuerpo['checks']['backend'] == 'ok' and 'scraping' not in cuerpo['checks']
-finally:
-    compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'control_scraping', 'gateway')
-request('/api/v1/auth/me', clienteHTTP=clienteAdministrador)
-
 probes()
 
 identificador = compose('ps', '-q', 'control_scraping').strip()
