@@ -69,7 +69,7 @@ No mezclar `localhost` y `127.0.0.1` al probar cookies entre orígenes.
 | --- | --- |
 | `VITE_API_URL` | Base de la API **incluyendo `/api/v1`**; `/api/v1` dentro de Compose/Ingress o URL absoluta del Gateway para Vite local |
 | `VITE_GOOGLE_CLIENT_ID` | ID público del cliente OAuth; no es una clave privada |
-| `VITE_IA_URL` | URL directa usada actualmente por el hook del chatbot; integración pendiente, no necesaria para el catálogo |
+| `VITE_IA_URL` | Variable heredada; el chat ya no la utiliza. No configurar acceso directo a IA para este flujo |
 
 En Vite se leen al arrancar/compilar. La imagen de producción genera placeholders
 y `entrypoint.sh` los sustituye por las variables del contenedor antes de arrancar
@@ -90,18 +90,30 @@ La fuente de verdad es `src/app/router.tsx`, con constantes en
 | `/onboarding`, `/profile`, `/planes` | Requieren sesión; no implican preferencias persistidas o pagos integrados |
 | `/listas` | Requiere sesión; CRUD de listas si el motor está disponible. Artículos en solo lectura |
 | `/admin`, `/admin/metricas` | Solo rol admin; usuarios, fuentes y métricas según endpoints disponibles |
-| `/chat` | Vista previa con aviso visible de no disponibilidad hasta SUP-253; el cliente conserva `/chat/gemini`, un endpoint retirado. No es un chat integrado |
+| `/chat` | Chat básico mediante `POST /api/v1/chat` del Gateway y cookie de sesión. Requiere IA habilitada en el entorno; receta → lista sigue pendiente |
 | `/colaborador` | Colaborador/admin; aviso de misiones no disponibles |
 | `/route`, `/history` | Requieren sesión; avisos de cálculo e historial aún no integrados |
 | `/terminos` | Página pública de términos |
 
-Las vistas pendientes usan `FeatureUnavailable`, excepto el chat, que conserva su interfaz con un aviso visible de integración pendiente; no generan resultados simulados.
+Las vistas pendientes usan `FeatureUnavailable`. El chat muestra únicamente la
+respuesta del servicio o un error explícito, sin simular etapas del procesamiento
+ni confirmaciones de guardado.
 La portada es informativa: sus textos, productos y cifras ilustrativas provienen
 de `src/data/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
 El catálogo funcional no usa esos ejemplos. Sus cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
 representan la cobertura completa ni las facetas de una búsqueda. El filtro
 «Marcas blancas» está deshabilitado hasta disponer de clasificación en el backend.
 El carrito temporal del catálogo **no se sincroniza con las listas**.
+
+El chat envía `{"mensaje":"..."}` a `${VITE_API_URL}/chat` con
+`credentials: 'include'` y lee el campo `respuesta` del contrato actual de IA.
+No envía tokens de servicio ni claves del proveedor desde el navegador. Los
+campos de productos recibidos no se convierten automáticamente en artículos:
+los IDs y las cantidades de envases requieren el
+[contrato de artículos](../../docs/Contratos/CONTRATO_ARTICULOS_LISTA.md).
+La respuesta estructurada de recetas (SUP-325), la confirmación editable
+(SUP-329) y la persistencia de artículos/lotes (SUP-241/SUP-318) siguen pendientes.
+La conexión básica no acredita que receta → lista esté terminada.
 
 Antes de modificar o retirar `landing.json`, consultar el
 [contrato de la landing informativa](../../docs/Contratos/CONTRATO_LANDING_INFORMATIVA.md):
@@ -149,6 +161,78 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
   un operador autorizado, sin cambiar validaciones ni falsificar el usuario local.
 
 ## Comprobaciones
+
+### Chat básico por Gateway (SUP-253)
+
+#### Preparar el entorno local
+
+Usar el entorno integrado de SUP-278. En `.env` de la raíz, conservar los
+secretos existentes y configurar:
+
+```dotenv
+IA_URL=http://ia-conversacional:8002
+```
+
+Identidad e IA deben recibir el mismo `JWT_SECRET`. IA necesita las claves de
+proveedor y Catálogo disponible para una respuesta real. No generar otra clave
+JWT solo para IA ni copiar secretos a variables `VITE_*`. Desde la raíz:
+
+```bash
+docker compose up -d --build ia_conversacional gateway frontend
+docker compose ps ia_conversacional gateway frontend
+curl -i -X POST http://localhost:8082/api/v1/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"mensaje":"Busco leche"}'
+```
+
+Sin cookie, esa petición debe responder **401**: comprueba ruta y autenticación,
+no una recomendación del proveedor. Un **404** apunta a la ruta/configuración;
+un **502/504**, a disponibilidad o tiempo de espera del upstream. Consultar los
+logs locales de Gateway e IA sin publicar secretos:
+
+```bash
+docker compose logs --tail=50 gateway ia_conversacional
+```
+
+El frontend de Compose usa `VITE_API_URL=/api/v1`. Si se usa Vite fuera de
+Docker, mantener `VITE_API_URL=http://localhost:8082/api/v1` en `.env.local`,
+reiniciar Vite y usar un origen permitido por CORS. No usar `VITE_IA_URL`.
+
+#### Recorrido en navegador
+
+Abrir `http://localhost:3000/chat` y DevTools → Red:
+
+1. **Invitado:** intentar enviar una consulta. Aparece el aviso de inicio de
+   sesión y no se hace un POST de chat.
+2. **Con sesión:** entrar con una cuenta registrada, volver a `/chat` y enviar
+   «Busco leche por menos de $2.000». Debe salir un único POST al Gateway,
+   `/api/v1/chat`, con `mensaje` y cookie. Nunca a `/chat/gemini` ni al puerto
+   8002 desde el navegador.
+3. **Respuesta:** si hay un 200 con `respuesta`, comparar ese texto con el
+   mensaje mostrado. Sin coincidencias o sin catálogo, mostrar el texto que
+   realmente devuelve IA; no inventar productos, precios ni un éxito genérico.
+4. **Espera:** con red lenta, no se pueden enviar consultas simultáneas por
+   botón, Enter o sugerencias. El indicador solo dice que se está consultando;
+   no afirma haber completado pasos internos del servidor.
+5. **Error de red:** bloquear solo `*/api/v1/chat` en DevTools y enviar.
+   Debe aparecer un error, desaparecer la espera y conservarse el texto para
+   reintentar. Retirar el bloqueo y enviar otra vez.
+6. **Sesión vencida:** con `auth_user` todavía en Local Storage, eliminar solo
+   la cookie `jwt` y enviar. El 401 debe mostrar el aviso de sesión y permitir
+   ir al login; no debe presentarse como respuesta válida del asistente.
+7. **Vaciar durante la espera:** pulsar «Vaciar chat». Se conserva solo la
+   bienvenida y una respuesta tardía no repuebla la conversación. Se puede
+   iniciar otra consulta. Cancelar la espera del navegador no garantiza cancelar
+   trabajo que el proveedor ya haya recibido.
+8. **Límites de alcance:** no aparece una confirmación ficticia de ingredientes
+   agregados al carrito/lista ni se genera una ruta.
+
+Las pruebas locales automatizadas usan respuestas HTTP controladas y no consumen
+cuota del proveedor. Registrar navegador, entorno, resultado y cualquier bloqueo
+de Catálogo/IA al hacer la prueba real. Esta guía no acredita por sí sola que
+el chat esté desplegado o validado en el clúster.
+
+### Inicio de sesión
 
 Tras iniciar sesión por contraseña o Google, `/login` redirige a `/admin` si el
 usuario devuelto por Identidad tiene rol `admin`; las demás cuentas van al
