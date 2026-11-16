@@ -1,3 +1,5 @@
+// Package middleware agrupa los middlewares HTTP de Catálogo. Este archivo
+// valida el token de servicio de las rutas internas.
 package middleware
 
 import (
@@ -8,8 +10,10 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ===== Token de servicio =====
+
 // RequireInternalToken protege las rutas /internal/v1/* con el token de
-// servicio de Catálogo. No usa JWT ni headers de identidad: la comparación se
+// servicio que reciba. No usa JWT ni headers de identidad: la comparación se
 // hace en tiempo constante y cualquier petición de navegador (Origin) se
 // rechaza antes de llegar al handler.
 func RequireInternalToken(token string) gin.HandlerFunc {

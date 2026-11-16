@@ -1,3 +1,5 @@
+// Package domain define los datos y contratos del catálogo. Este archivo agrupa
+// los DTO, estados y la interfaz de la consulta interna de disponibilidad.
 package domain
 
 import (
@@ -65,7 +67,8 @@ type ProductoDisponibilidadDTO struct {
 }
 
 // ProductoDisponibilidadRegistro representa la fila que devuelve la consulta
-// por lote. La captura puede faltar si el producto nunca tuvo precios.
+// por lote. La captura puede faltar si el producto nunca tuvo precios y el
+// stock es puntero porque NULL significa que el scraper no lo confirmó.
 type ProductoDisponibilidadRegistro struct {
 	ProductoID   string
 	Nombre       string
@@ -76,7 +79,7 @@ type ProductoDisponibilidadRegistro struct {
 	Sucursal     string
 	Unidad       string
 	URLImagen    string
-	EnStock      bool
+	EnStock      *bool
 	PrecioNormal *float64
 	PrecioOferta *float64
 	CapturadoEl  *time.Time
@@ -86,5 +89,5 @@ type ProductoDisponibilidadRegistro struct {
 // de disponibilidad. La implementación vive en repositories y sólo lee tablas
 // del dominio Catálogo.
 type DisponibilidadRepository interface {
-	ConsultarPorIDs(ctx context.Context, productoIDs []string) ([]ProductoDisponibilidadRegistro, error)
+	ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]ProductoDisponibilidadRegistro, error)
 }

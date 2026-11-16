@@ -23,22 +23,22 @@ import (
 // del adaptador HTTP. Registra llamadas para comprobar que un lote inválido no
 // llega a la base.
 type repositorioDisponibilidadHTTP struct {
-	registros []domain.ProductoDisponibilidadRegistro
-	err       error
-	calls     int
-	ids       []string
+	registros     []domain.ProductoDisponibilidadRegistro
+	errorConsulta error
+	llamadas      int
+	idsRecibidos  []string
 }
 
 func (repositorio *repositorioDisponibilidadHTTP) ConsultarPorIDs(_ context.Context, productoIDs []string) ([]domain.ProductoDisponibilidadRegistro, error) {
-	repositorio.calls++
-	repositorio.ids = append([]string(nil), productoIDs...)
-	if repositorio.err != nil {
-		return nil, repositorio.err
+	repositorio.llamadas++
+	repositorio.idsRecibidos = append([]string(nil), productoIDs...)
+	if repositorio.errorConsulta != nil {
+		return nil, repositorio.errorConsulta
 	}
 	return repositorio.registros, nil
 }
 
-// NuevoRouterDisponibilidadHTTP arma sólo la ruta interna para aislar la prueba
+// nuevoRouterDisponibilidadHTTP arma sólo la ruta interna para aislar la prueba
 // de las rutas públicas y del Gateway.
 func nuevoRouterDisponibilidadHTTP(repositorio *repositorioDisponibilidadHTTP, token string, maxProductos, maxBodyBytes int, ahora time.Time) *gin.Engine {
 	gin.SetMode(gin.TestMode)
@@ -76,8 +76,8 @@ func TestDisponibilidadHTTPExigeTokenDeServicio(prueba *testing.T) {
 			peticion.Header.Set("Origin", caso.origen)
 			respuesta := httptest.NewRecorder()
 			enrutador.ServeHTTP(respuesta, peticion)
-			if respuesta.Code != caso.estado || repositorio.calls != caso.llamadas {
-				subprueba.Fatalf("estado=%d llamadas=%d cuerpo=%s", respuesta.Code, repositorio.calls, respuesta.Body.String())
+			if respuesta.Code != caso.estado || repositorio.llamadas != caso.llamadas {
+				subprueba.Fatalf("estado=%d llamadas=%d cuerpo=%s", respuesta.Code, repositorio.llamadas, respuesta.Body.String())
 			}
 		})
 	}
@@ -114,8 +114,8 @@ func TestDisponibilidadHTTPValidaCuerpo(prueba *testing.T) {
 			if respuesta.Code != caso.estado {
 				subprueba.Fatalf("estado=%d; esperado=%d cuerpo=%s", respuesta.Code, caso.estado, respuesta.Body.String())
 			}
-			if repositorio.calls != 0 {
-				subprueba.Fatalf("un cuerpo inválido consultó la base: %v", repositorio.ids)
+			if repositorio.llamadas != 0 {
+				subprueba.Fatalf("un cuerpo inválido consultó la base: %v", repositorio.idsRecibidos)
 			}
 		})
 	}
@@ -132,8 +132,8 @@ func TestDisponibilidadHTTPRechazaCuerpoExcesivo(prueba *testing.T) {
 	peticion.Header.Set("Authorization", "Bearer "+token)
 	respuesta := httptest.NewRecorder()
 	enrutador.ServeHTTP(respuesta, peticion)
-	if respuesta.Code != http.StatusRequestEntityTooLarge || repositorio.calls != 0 {
-		prueba.Fatalf("estado=%d llamadas=%d cuerpo=%s", respuesta.Code, repositorio.calls, respuesta.Body.String())
+	if respuesta.Code != http.StatusRequestEntityTooLarge || repositorio.llamadas != 0 {
+		prueba.Fatalf("estado=%d llamadas=%d cuerpo=%s", respuesta.Code, repositorio.llamadas, respuesta.Body.String())
 	}
 }
 
@@ -150,23 +150,25 @@ func TestDisponibilidadHTTPDevuelveEstados(prueba *testing.T) {
 	inexistenteID := "00000000-0000-4000-8000-000000000003"
 	precioNormal := 1290.0
 	precioOferta := 990.0
+	enStockVerdadero := true
+	enStockFalso := false
 
 	repositorio := &repositorioDisponibilidadHTTP{registros: []domain.ProductoDisponibilidadRegistro{
 		{
 			ProductoID: disponibleID, Nombre: "Leche entera 1 L", Marca: "Colún", Categoria: "Lácteos",
 			Supermercado: "Lider", SucursalID: 1, Sucursal: "Lider Ñuñoa", Unidad: "1 L",
-			URLImagen: "https://imagen", EnStock: true,
+			URLImagen: "https://imagen", EnStock: &enStockVerdadero,
 			PrecioNormal: &precioNormal, PrecioOferta: &precioOferta, CapturadoEl: &fresco,
 		},
 		{
 			ProductoID: sinStockID, Nombre: "Arroz 1 kg", Marca: "Tucapel", Categoria: "Despensa",
 			Supermercado: "Santa Isabel", SucursalID: 3, Sucursal: "Santa Isabel Ñuñoa", Unidad: "1 kg",
-			EnStock: false, PrecioNormal: &precioNormal, CapturadoEl: &fresco,
+			EnStock: &enStockFalso, PrecioNormal: &precioNormal, CapturadoEl: &fresco,
 		},
 		{
 			ProductoID: vencidoID, Nombre: "Aceite 1 L", Marca: "Chef", Categoria: "Despensa",
 			Supermercado: "Jumbo", SucursalID: 2, Sucursal: "Jumbo Centro", Unidad: "1 L",
-			EnStock: true, PrecioNormal: &precioNormal, CapturadoEl: &viejo,
+			EnStock: &enStockVerdadero, PrecioNormal: &precioNormal, CapturadoEl: &viejo,
 		},
 	}}
 	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, bytesPorCuerpoDePrueba, momento)
@@ -211,7 +213,7 @@ func TestDisponibilidadHTTPDevuelveEstados(prueba *testing.T) {
 // transforme en 500 genérico sin filtrar el detalle interno.
 func TestDisponibilidadHTTPOcultaErrorDePersistencia(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
-	repositorio := &repositorioDisponibilidadHTTP{err: errors.New("secret SQL productos_crudos")}
+	repositorio := &repositorioDisponibilidadHTTP{errorConsulta: errors.New("secret SQL productos_crudos")}
 	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, bytesPorCuerpoDePrueba, time.Now())
 	cuerpo := `{"producto_ids":["00000000-0000-4000-8000-000000000001"]}`
 	peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(cuerpo))
@@ -226,7 +228,7 @@ func TestDisponibilidadHTTPOcultaErrorDePersistencia(prueba *testing.T) {
 }
 
 // TestDisponibilidadHTTPNoSeRegistraSinToken confirma el modo lector: sin
-// CATALOGO_INTERNAL_TOKEN la ruta interna no existe.
+// CATALOGO_CONSULTA_TOKEN la ruta de consulta no existe.
 func TestDisponibilidadHTTPNoSeRegistraSinToken(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	enrutador := gin.New()

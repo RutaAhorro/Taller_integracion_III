@@ -1,3 +1,5 @@
+// Package repositories implementa las consultas SQL del catálogo. Este archivo
+// lee en lote la disponibilidad y la captura más reciente de cada producto.
 package repositories
 
 import (
@@ -24,13 +26,13 @@ func NewDisponibilidadRepository(db *gorm.DB) domain.DisponibilidadRepository {
 // ConsultarPorIDs obtiene en una sola consulta los productos solicitados y su
 // captura de precio más reciente. La lectura usa la PK de productos_crudos y el
 // índice (producto_crudo_id, capturado_el DESC) de capturas_precios.
-func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(ctx context.Context, productoIDs []string) ([]domain.ProductoDisponibilidadRegistro, error) {
+func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]domain.ProductoDisponibilidadRegistro, error) {
 	registros := []domain.ProductoDisponibilidadRegistro{}
 	if len(productoIDs) == 0 {
 		return registros, nil
 	}
 
-	consulta := repositorio.db.WithContext(ctx).
+	consulta := repositorio.db.WithContext(contexto).
 		Table("scraper.productos_crudos pc").
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
@@ -52,7 +54,7 @@ func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(ctx context.Con
 			ss.nombre AS sucursal,
 			COALESCE(pc.formato_crudo, '') AS unidad,
 			COALESCE(pc.url_imagen, '') AS url_imagen,
-			COALESCE(pc.en_stock, true) AS en_stock,
+			pc.en_stock,
 			cp.precio_normal,
 			cp.precio_oferta,
 			cp.capturado_el

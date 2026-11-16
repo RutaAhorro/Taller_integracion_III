@@ -1,3 +1,5 @@
+// Package services contiene la lógica de negocio del catálogo. Este archivo
+// valida los lotes de disponibilidad y aplica la regla de vigencia de capturas.
 package services
 
 import (
@@ -28,7 +30,7 @@ type LimitesDisponibilidad struct {
 
 // DisponibilidadService define la lógica de negocio de la consulta interna.
 type DisponibilidadService interface {
-	Consultar(ctx context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error)
+	Consultar(contexto context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error)
 }
 
 // disponibilidadService implementa la validación del lote y la regla de
@@ -62,13 +64,13 @@ func NewDisponibilidadService(repositorio domain.DisponibilidadRepository, limit
 // por cada ID solicitado. Los IDs válidos que no existen se informan como
 // "no_encontrado"; una captura vencida se informa como "desconocido" y sin
 // precios para no presentar datos antiguos como vigentes.
-func (servicio *disponibilidadService) Consultar(ctx context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error) {
+func (servicio *disponibilidadService) Consultar(contexto context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error) {
 	idsNormalizados, errorValidacion := servicio.normalizarYValidar(productoIDs)
 	if errorValidacion != nil {
 		return nil, errorValidacion
 	}
 
-	registros, errorConsulta := servicio.repositorio.ConsultarPorIDs(ctx, idsNormalizados)
+	registros, errorConsulta := servicio.repositorio.ConsultarPorIDs(contexto, idsNormalizados)
 	if errorConsulta != nil {
 		return nil, errorConsulta
 	}
@@ -115,8 +117,9 @@ func (servicio *disponibilidadService) normalizarYValidar(productoIDs []string) 
 }
 
 // construirItem aplica la regla de vigencia y arma la respuesta de un producto.
-// La captura se compara contra el umbral configurado; si falta o está vencida,
-// no se publica stock ni precio.
+// Una captura ausente, futura o más antigua que el umbral no se publica como
+// vigente. Si el scraper no confirmó el stock, el estado es desconocido aunque
+// el precio siga vigente.
 func (servicio *disponibilidadService) construirItem(productoID string, registro domain.ProductoDisponibilidadRegistro, encontrado bool) domain.DisponibilidadItemDTO {
 	if !encontrado {
 		return domain.DisponibilidadItemDTO{
@@ -148,23 +151,29 @@ func (servicio *disponibilidadService) construirItem(productoID string, registro
 	}
 
 	antiguedad := servicio.ahora().UTC().Sub(registro.CapturadoEl.UTC())
-	if antiguedad > servicio.limites.AntiguedadMaxima {
+	if antiguedad < 0 || antiguedad > servicio.limites.AntiguedadMaxima {
 		item.EstadoProducto = domain.EstadoProductoDesconocido
 		item.EstadoPrecio = domain.EstadoPrecioVencido
 		return item
 	}
 
-	enStock := registro.EnStock
-	item.EnStock = &enStock
 	item.EstadoPrecio = domain.EstadoPrecioVigente
+	item.Producto.PrecioNormal = registro.PrecioNormal
+	item.Producto.PrecioOferta = registro.PrecioOferta
+	item.Producto.Precio = precioEfectivo(registro.PrecioNormal, registro.PrecioOferta)
+
+	if registro.EnStock == nil {
+		item.EstadoProducto = domain.EstadoProductoDesconocido
+		return item
+	}
+
+	enStock := *registro.EnStock
+	item.EnStock = &enStock
 	if enStock {
 		item.EstadoProducto = domain.EstadoProductoDisponible
 	} else {
 		item.EstadoProducto = domain.EstadoProductoSinStock
 	}
-	item.Producto.PrecioNormal = registro.PrecioNormal
-	item.Producto.PrecioOferta = registro.PrecioOferta
-	item.Producto.Precio = precioEfectivo(registro.PrecioNormal, registro.PrecioOferta)
 	return item
 }
 
