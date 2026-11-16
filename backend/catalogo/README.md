@@ -43,6 +43,8 @@ go run ./cmd/catalogo
 | `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
 | `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
 | `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en el cuerpo JSON de la ingesta; más allá responde 413 |
+| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en `/internal/v1/productos/disponibilidad` |
+| `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
 los límites, enteros positivos. Un valor inválido impide arrancar con un mensaje
@@ -93,16 +95,18 @@ en cabeceras arbitrarias.
 | GET | `/_catalogo/ready` | Público | Sonda de preparación (readiness); verifica PostgreSQL con timeout de 2 s (503 si falla) |
 | GET | `/health` | Público | Alias de preparación equivalente a `/_catalogo/ready` |
 
-### API interna de ingesta
+### API interna de ingesta y disponibilidad
 
 Rutas privadas bajo el prefijo `/internal/v1` destinadas a la coordinación de
-scraping. No se exponen a través del Gateway ni en Ingress público:
+scraping y a la consulta de disponibilidad de Listas e IA. No se exponen a
+través del Gateway ni en Ingress público:
 
 | Método | Ruta | Payload JSON | Descripción |
 | --- | --- | --- | --- |
 | POST | `/internal/v1/cadenas/resolver` | `{"cadena_id": int, "nombre": string}` | Resuelve o registra una cadena con lock transaccional |
 | POST | `/internal/v1/sucursales/resolver` | `{"cadena_id": int, "sucursal_id": *int, "codigo_sucursal": *string}` | Resuelve o registra una sucursal para la cadena |
 | POST | `/internal/v1/ingestas` | `{"sucursal_id": int, "lote_id": string, "productos": [...]}` | Persistencia atómica de 1 a 1000 productos y capturas de precio |
+| POST | `/internal/v1/productos/disponibilidad` | `{"producto_ids": ["uuid", ...]}` | Consulta en lote de existencia, stock, precio, sucursal y captura más reciente |
 
 ## Ingesta interna y token privado
 
@@ -124,6 +128,77 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    caracteres (generable con `openssl rand -hex 32`), privada y estrictamente
    distinta de `JWT_SECRET`. En Kubernetes se inyecta desde el Secret
    `catalogo-internal-secret` (clave `token`).
+
+## Consulta interna de disponibilidad (SUP-312)
+
+Listas e IA consultan esta ruta para verificar un producto antes de guardarlo o
+mostrarlo. No se publica en el Gateway: sólo responde en la red interna de los
+servicios y exige el mismo `CATALOGO_INTERNAL_TOKEN` de la ingesta.
+
+```http
+POST /internal/v1/productos/disponibilidad
+Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>
+Content-Type: application/json
+
+{
+  "producto_ids": [
+    "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+    "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+  ]
+}
+```
+
+- Acepta entre 1 y `CATALOGO_MAX_PRODUCTOS_CONSULTA` IDs (1000 por defecto).
+- Deduplica los IDs y conserva el orden de la primera aparición.
+- Lee siempre la captura más reciente de `scraper.capturas_precios`.
+- Una captura con antigüedad mayor a
+  `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` (48 h por defecto) no se presenta
+  como vigente.
+
+```json
+{
+  "productos": [
+    {
+      "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+      "estado_producto": "disponible",
+      "en_stock": true,
+      "capturado_el": "2026-11-16T10:00:00Z",
+      "estado_precio": "vigente",
+      "producto": {
+        "nombre": "Leche entera 1 L",
+        "marca": "Colún",
+        "categoria": "Lácteos",
+        "supermercado": "Lider",
+        "sucursal_id": 1,
+        "sucursal": "Lider Ñuñoa",
+        "unidad": "1 L",
+        "precio": 990,
+        "precio_normal": 1290,
+        "precio_oferta": 990,
+        "url_imagen": "https://..."
+      }
+    }
+  ]
+}
+```
+
+`estado_producto` puede ser:
+
+| Valor | Significado | `en_stock` | Precio |
+| --- | --- | --- | --- |
+| `disponible` | Existe y la captura vigente indica stock | `true` | Sí |
+| `sin_stock` | Existe y la captura vigente indica sin stock | `false` | Sí, si la captura es vigente |
+| `no_encontrado` | El UUID no existe en `productos_crudos` | `null` | `null` |
+| `desconocido` | Existe, pero no hay captura o superó el umbral | `null` | `null` |
+
+`estado_precio` puede ser `vigente`, `vencido` o `sin_captura`. Para
+`desconocido` se conservan los datos descriptivos del producto y `capturado_el`,
+pero no se publican stock ni precios. Para `no_encontrado`, `producto` es `null`.
+
+Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
+`400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,
+`413` para cuerpos mayores a `CATALOGO_MAX_BODY_BYTES` y
+`500 catalogo_internal_error` sin detalle SQL.
 
 ## Base de datos y permisos (rol `app_catalogo`)
 
