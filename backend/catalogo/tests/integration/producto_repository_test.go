@@ -212,14 +212,17 @@ func TestListar_FiltroSoloMarcasBlancas(prueba *testing.T) {
 	}
 
 	consultaSQL := consultas.String()
-	if !strings.Contains(consultaSQL, "pc.marca_cruda ILIKE ANY(ARRAY[") {
-		prueba.Errorf("Listar no aplicó arreglo válido ANY(ARRAY[...]) en pc.marca_cruda. SQL: %s", consultaSQL)
+	if !strings.Contains(consultaSQL, "pc.marca_cruda ILIKE ANY(") {
+		prueba.Errorf("Listar no aplicó filtro de marcas blancas con ILIKE ANY( en pc.marca_cruda. SQL: %s", consultaSQL)
+	}
+	if strings.Contains(consultaSQL, "ARRAY[(") {
+		prueba.Errorf("Listar generó arreglo de filas ARRAY[( que es inválido en Postgres. SQL: %s", consultaSQL)
 	}
 	if !strings.Contains(consultaSQL, "COALESCE(pc.marca_cruda, '') = ''") {
 		prueba.Errorf("Listar no aplicó COALESCE para contemplar marcas NULL o vacías en pc.marca_cruda. SQL: %s", consultaSQL)
 	}
-	if !strings.Contains(consultaSQL, "pc.titulo_crudo ILIKE ANY(ARRAY[") {
-		prueba.Errorf("Listar no aplicó respaldo por título crudo con arreglo válido ANY(ARRAY[...]). SQL: %s", consultaSQL)
+	if !strings.Contains(consultaSQL, "pc.titulo_crudo ILIKE ANY(") {
+		prueba.Errorf("Listar no aplicó respaldo por título crudo con ILIKE ANY(. SQL: %s", consultaSQL)
 	}
 	if !strings.Contains(consultaSQL, "%great value%") || !strings.Contains(consultaSQL, "%lider%") {
 		prueba.Errorf("Listar no incluye términos esperados de marcas blancas. SQL: %s", consultaSQL)

@@ -7,6 +7,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -106,11 +107,11 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 	}
 	if filtro.SoloMarcasBlancas != nil && *filtro.SoloMarcasBlancas {
 		consulta = consulta.Where(`(
-			pc.marca_cruda ILIKE ANY(ARRAY[?])
+			pc.marca_cruda ILIKE ANY(?)
 			OR (
-				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(ARRAY[?])
+				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(?)
 			)
-		)`, marcasPropiasPorMarca, marcasPropiasPorTitulo)
+		)`, pq.Array(marcasPropiasPorMarca), pq.Array(marcasPropiasPorTitulo))
 	}
 	return consulta
 }
