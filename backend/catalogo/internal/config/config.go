@@ -17,7 +17,8 @@ type Config struct {
 	ListenAddr         string
 	DatabaseURL        string
 	JWTSecret          string
-	InternalToken      string
+	InternalToken      string // token de escritura para la ingesta interna
+	ConsultaToken      string // token de sólo lectura para disponibilidad
 	CORSAllowedOrigins []string
 	MaxOpenConns       int
 	MaxIdleConns       int
@@ -68,6 +69,7 @@ func Load() (Config, error) {
 		DatabaseURL:   os.Getenv("DB_URL"),
 		JWTSecret:     os.Getenv("JWT_SECRET"),
 		InternalToken: os.Getenv("CATALOGO_INTERNAL_TOKEN"),
+		ConsultaToken: os.Getenv("CATALOGO_CONSULTA_TOKEN"),
 	}
 	if configuracion.DatabaseURL == "" {
 		return Config{}, errors.New("DB_URL es obligatorio")
@@ -78,6 +80,11 @@ func Load() (Config, error) {
 	tokenInterno := configuracion.InternalToken
 	if tokenInterno != "" && (len(tokenInterno) < 32 || strings.ContainsAny(tokenInterno, " \t\r\n") || tokenInterno == configuracion.JWTSecret) {
 		return Config{}, errors.New("CATALOGO_INTERNAL_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET")
+	}
+	tokenConsulta := configuracion.ConsultaToken
+	if tokenConsulta != "" && (len(tokenConsulta) < 32 || strings.ContainsAny(tokenConsulta, " \t\r\n") ||
+		tokenConsulta == configuracion.JWTSecret || tokenConsulta == tokenInterno) {
+		return Config{}, errors.New("CATALOGO_CONSULTA_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET y CATALOGO_INTERNAL_TOKEN")
 	}
 
 	// --- CORS: primero la variable propia del servicio, luego la genérica ---

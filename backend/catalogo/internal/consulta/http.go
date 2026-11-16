@@ -1,6 +1,6 @@
 // Package consulta expone la consulta interna de disponibilidad que usan Listas
-// e IA. Vive fuera de /api/v1 para que el Gateway no la publique y comparte el
-// token de servicio de la ingesta.
+// e IA. Vive fuera de /api/v1 para que el Gateway no la publique y exige un
+// token de sólo lectura distinto del token de ingesta.
 package consulta
 
 import (
@@ -27,25 +27,25 @@ type Config struct {
 // Register monta POST /internal/v1/productos/disponibilidad sobre el router ya
 // construido. El token se valida en tiempo constante y se rechaza cualquier
 // petición con Origin de navegador.
-func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
-	if cfg.Token == "" || cfg.Service == nil {
+func Register(enrutador *gin.Engine, configuracion Config, logger *slog.Logger) {
+	if configuracion.Token == "" || configuracion.Service == nil {
 		return
 	}
-	if cfg.MaxBodyBytes < 1 {
+	if configuracion.MaxBodyBytes < 1 {
 		panic("consulta.Config.MaxBodyBytes debe ser positivo")
 	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 
-	group := enrutador.Group("/internal/v1", middleware.RequireInternalToken(cfg.Token))
-	group.POST("/productos/disponibilidad", func(contexto *gin.Context) {
-		var consulta domain.ConsultaDisponibilidadDTO
-		if !decodificarCuerpo(contexto, &consulta, cfg.MaxBodyBytes) {
+	grupo := enrutador.Group("/internal/v1", middleware.RequireInternalToken(configuracion.Token))
+	grupo.POST("/productos/disponibilidad", func(contexto *gin.Context) {
+		var solicitud domain.ConsultaDisponibilidadDTO
+		if !decodificarCuerpo(contexto, &solicitud, configuracion.MaxBodyBytes) {
 			return
 		}
 
-		respuesta, errorConsulta := cfg.Service.Consultar(contexto.Request.Context(), consulta.ProductoIDs)
+		respuesta, errorConsulta := configuracion.Service.Consultar(contexto.Request.Context(), solicitud.ProductoIDs)
 		if errorConsulta != nil {
 			responderError(contexto, errorConsulta, logger)
 			return

@@ -25,7 +25,8 @@ go run ./cmd/catalogo
 | --- | --- | --- |
 | `DB_URL` | Obligatoria | Conexión PostgreSQL con usuario `app_catalogo` |
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
-| `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer para `/internal/v1/*`. Vacía activa el modo sólo lectura |
+| `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer de escritura para la ingesta interna. Vacía deshabilita `/internal/v1/ingestas` y las rutas de resolución |
+| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad`. Vacía deshabilita la consulta |
 | `PORT` | `8080` (ejemplo `8083`) | Puerto de escucha HTTP |
 | `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas. Si está vacía se usa `CORS_ALLOWED_ORIGINS`. Vacías ambas, se rechazan las peticiones con `Origin` |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
@@ -42,7 +43,7 @@ go run ./cmd/catalogo
 | `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
 | `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
 | `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
-| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en el cuerpo JSON de la ingesta; más allá responde 413 |
+| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en los cuerpos JSON internos; más allá responde 413 |
 | `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en `/internal/v1/productos/disponibilidad` |
 | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
 
@@ -112,9 +113,11 @@ través del Gateway ni en Ingress público:
 
 Las operaciones de `/internal/v1` aplican las siguientes reglas:
 
-1. **Autenticación en tiempo constante:** requieren la cabecera
-   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>`. La comparación es segura
-   frente a ataques de temporización (`subtle.ConstantTimeCompare`).
+1. **Autenticación en tiempo constante:** la ingesta exige
+   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>` y la consulta de
+   disponibilidad exige `Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>`. La
+   comparación es segura frente a ataques de temporización
+   (`subtle.ConstantTimeCompare`).
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
@@ -122,22 +125,25 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    por defecto, HTTP 413 si se supera), rechazo de campos JSON desconocidos
    (`DisallowUnknownFields`), rechazo de contenido extra tras el cierre del JSON
    y lote acotado de 1 a `CATALOGO_MAX_BATCH_PRODUCTOS` productos (1000 por defecto).
-4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío, el servidor
-   no registra las rutas internas y opera únicamente como lector.
-5. **Seguridad del token:** debe ser una cadena aleatoria de al menos 32
-   caracteres (generable con `openssl rand -hex 32`), privada y estrictamente
-   distinta de `JWT_SECRET`. En Kubernetes se inyecta desde el Secret
-   `catalogo-internal-secret` (clave `token`).
+4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío no se registra
+   la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registra la
+   consulta. Cada ruta depende sólo de su propio token.
+5. **Seguridad de los tokens:** ambos deben ser cadenas aleatorias de al menos
+   32 caracteres (generables con `openssl rand -hex 32`), privadas,
+   estrictamente distintas de `JWT_SECRET` y distintas entre sí. En Kubernetes
+   se inyectan desde el Secret `catalogo-internal-secret` (claves `token` y
+   `consulta-token`).
 
 ## Consulta interna de disponibilidad (SUP-312)
 
 Listas e IA consultan esta ruta para verificar un producto antes de guardarlo o
 mostrarlo. No se publica en el Gateway: sólo responde en la red interna de los
-servicios y exige el mismo `CATALOGO_INTERNAL_TOKEN` de la ingesta.
+servicios y exige `CATALOGO_CONSULTA_TOKEN`, un token de sólo lectura distinto
+del token de ingesta.
 
 ```http
 POST /internal/v1/productos/disponibilidad
-Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>
+Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>
 Content-Type: application/json
 
 {
@@ -154,6 +160,10 @@ Content-Type: application/json
 - Una captura con antigüedad mayor a
   `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` (48 h por defecto) no se presenta
   como vigente.
+- Una captura con fecha futura se trata como no vigente, para no confiar en un
+  reloj desfasado o en un dato erróneo.
+- Si `en_stock` es `NULL`, el scraper no confirmó el stock: se informa
+  `estado_producto: "desconocido"` y `en_stock: null`, sin asumir disponibilidad.
 
 ```json
 {
@@ -189,11 +199,13 @@ Content-Type: application/json
 | `disponible` | Existe y la captura vigente indica stock | `true` | Sí |
 | `sin_stock` | Existe y la captura vigente indica sin stock | `false` | Sí, si la captura es vigente |
 | `no_encontrado` | El UUID no existe en `productos_crudos` | `null` | `null` |
-| `desconocido` | Existe, pero no hay captura o superó el umbral | `null` | `null` |
+| `desconocido` | Existe, pero no hay captura vigente o el scraper no confirmó el stock | `null` | `null` sin captura vigente; vigente si sólo falta el stock |
 
 `estado_precio` puede ser `vigente`, `vencido` o `sin_captura`. Para
-`desconocido` se conservan los datos descriptivos del producto y `capturado_el`,
-pero no se publican stock ni precios. Para `no_encontrado`, `producto` es `null`.
+`desconocido` se conservan los datos descriptivos del producto y `capturado_el`.
+Si la captura falta, está vencida o tiene fecha futura, no se publican precios
+(`sin_captura` o `vencido`). Si sólo falta el stock, el precio vigente se
+conserva y `en_stock` queda `null`. Para `no_encontrado`, `producto` es `null`.
 
 Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,

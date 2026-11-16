@@ -74,7 +74,7 @@ func run(log *slog.Logger) error {
 		ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken, MaxProductos: cfg.MaxBatchProductos, MaxBodyBytes: cfg.MaxBodyBytes})
 	consulta.Register(enrutador, consulta.Config{
 		Service:      disponibilidadService,
-		Token:        cfg.InternalToken,
+		Token:        cfg.ConsultaToken,
 		MaxBodyBytes: cfg.MaxBodyBytes,
 	}, log)
 	httpServer := &http.Server{

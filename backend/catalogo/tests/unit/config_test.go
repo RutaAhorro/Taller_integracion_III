@@ -1,6 +1,7 @@
 package unit_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -76,5 +77,33 @@ func TestInternalTokenConfiguration(prueba *testing.T) {
 	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", "")
 	if cfg, err := config.Load(); err != nil || cfg.InternalToken != "" {
 		prueba.Fatal("modo lector no disponible", err)
+	}
+}
+
+func TestConsultaTokenConfiguration(prueba *testing.T) {
+	prueba.Setenv("DB_URL", "postgres://test-only")
+	prueba.Setenv("JWT_SECRET", strings.Repeat("j", 32))
+	prueba.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("i", 32))
+
+	for _, token := range []string{
+		"short",
+		strings.Repeat("j", 32),        // igual a JWT_SECRET
+		strings.Repeat("i", 32),        // igual a CATALOGO_INTERNAL_TOKEN
+		strings.Repeat("c", 31) + "\n", // contiene espacio
+	} {
+		prueba.Setenv("CATALOGO_CONSULTA_TOKEN", token)
+		if _, err := config.Load(); err == nil {
+			prueba.Errorf("se aceptó token de consulta inválido: %q", token)
+		}
+	}
+
+	prueba.Setenv("CATALOGO_CONSULTA_TOKEN", strings.Repeat("c", 32))
+	if cfg, err := config.Load(); err != nil || cfg.ConsultaToken != strings.Repeat("c", 32) {
+		prueba.Fatal("token de consulta válido rechazado", err)
+	}
+
+	prueba.Setenv("CATALOGO_CONSULTA_TOKEN", "")
+	if cfg, err := config.Load(); err != nil || cfg.ConsultaToken != "" {
+		prueba.Fatal("la consulta debe poder quedar deshabilitada", err)
 	}
 }
