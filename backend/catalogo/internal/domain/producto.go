@@ -4,19 +4,20 @@ import "time"
 
 // FiltroProductosDTO define los criterios de filtrado, paginación y ordenamiento para el catálogo de productos.
 type FiltroProductosDTO struct {
-	Query        string   `json:"q" form:"q"`
-	Page         int      `json:"page" form:"page"`
-	Limit        int      `json:"limit" form:"limit"`
-	Categoria    string   `json:"categoria" form:"categoria"`
-	Supermercado string   `json:"supermercado" form:"supermercado"`
-	Marca        string   `json:"marca" form:"marca"`
-	PrecioMin    *float64 `json:"precio_min" form:"precio_min"`
-	PrecioMax    *float64 `json:"precio_max" form:"precio_max"`
-	EnOferta     *bool    `json:"en_oferta" form:"en_oferta"`
-	SKU          string   `json:"sku" form:"sku"`
-	EnStock      *bool    `json:"en_stock" form:"en_stock"`
-	SortBy       string   `json:"sort_by" form:"sort_by"`
-	Order        string   `json:"order" form:"order"`
+	Query             string   `json:"q" form:"q"`
+	Page              int      `json:"page" form:"page"`
+	Limit             int      `json:"limit" form:"limit"`
+	Categoria         string   `json:"categoria" form:"categoria"`
+	Supermercado      string   `json:"supermercado" form:"supermercado"`
+	Marca             string   `json:"marca" form:"marca"`
+	PrecioMin         *float64 `json:"precio_min" form:"precio_min"`
+	PrecioMax         *float64 `json:"precio_max" form:"precio_max"`
+	EnOferta          *bool    `json:"en_oferta" form:"en_oferta"`
+	SKU               string   `json:"sku" form:"sku"`
+	EnStock           *bool    `json:"en_stock" form:"en_stock"`
+	SoloMarcasBlancas *bool    `json:"solo_marcas_blancas" form:"solo_marcas_blancas"`
+	SortBy            string   `json:"sort_by" form:"sort_by"`
+	Order             string   `json:"order" form:"order"`
 }
 
 // ProductoDTO representa el objeto de producto enriquecido para el catálogo de cara a la UI y clientes de la API.

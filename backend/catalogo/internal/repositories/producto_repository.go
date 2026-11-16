@@ -7,6 +7,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +18,54 @@ type gormProductoRepository struct {
 // NewProductoRepository inicializa el repositorio de productos con GORM
 func NewProductoRepository(db *gorm.DB) domain.ProductoRepository {
 	return &gormProductoRepository{db: db}
+}
+
+// ===== Marcas propias =====
+
+// marcasPropiasPorMarca lista los patrones de marcas propias de las cadenas
+// chilenas que se buscan en marca_cruda.
+var marcasPropiasPorMarca = []string{
+	"%lider%",
+	"%líder%",
+	"%great value%",
+	"%a cuenta%",
+	"%acuenta%",
+	"%ekono%",
+	"%seleccion%",
+	"%selección%",
+	"%jumbo%",
+	"%cuisine & co%",
+	"%cuisine&co%",
+	"%santa isabel%",
+	"%maxima%",
+	"%máxima%",
+	"%tottus%",
+	"%precio uno%",
+	"%unimarc%",
+	"%merkat%",
+	"%nuestra cocina%",
+	"%cugat%",
+}
+
+// marcasPropiasPorTitulo es un subconjunto más estricto para productos sin marca:
+// excluye términos que también son palabras comunes en los títulos (por ejemplo "jumbo",
+// "seleccion" o "maxima").
+var marcasPropiasPorTitulo = []string{
+	"%great value%",
+	"%cuisine & co%",
+	"%cuisine&co%",
+	"%a cuenta%",
+	"%acuenta%",
+	"%santa isabel%",
+	"%precio uno%",
+	"%merkat%",
+	"%nuestra cocina%",
+	"%lider%",
+	"%líder%",
+	"%tottus%",
+	"%unimarc%",
+	"%ekono%",
+	"%cugat%",
 }
 
 // consultaBase centraliza los JOINs y los filtros comunes de Listar y ListarParaAdmin.
@@ -55,6 +104,14 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 		} else {
 			consulta = consulta.Where("(cp.precio_oferta IS NULL OR cp.precio_oferta >= cp.precio_normal)")
 		}
+	}
+	if filtro.SoloMarcasBlancas != nil && *filtro.SoloMarcasBlancas {
+		consulta = consulta.Where(`(
+			pc.marca_cruda ILIKE ANY(?)
+			OR (
+				COALESCE(pc.marca_cruda, '') = '' AND pc.titulo_crudo ILIKE ANY(?)
+			)
+		)`, pq.Array(marcasPropiasPorMarca), pq.Array(marcasPropiasPorTitulo))
 	}
 	return consulta
 }

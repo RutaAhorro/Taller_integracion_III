@@ -33,15 +33,16 @@ func NewProductoHandler(service services.ProductoService) *ProductoHandler {
 // @Param        categoria     query     string  false  "Filtrar por categoría"
 // @Param        supermercado  query     string  false  "Filtrar por supermercado o cadena"
 // @Param        marca         query     string  false  "Filtrar por marca"
-// @Param        en_stock      query     bool    false  "Filtrar por disponibilidad de stock"
-// @Param        precio_min    query     number  false  "Precio mínimo"
-// @Param        precio_max    query     number  false  "Precio máximo"
-// @Param        en_oferta     query     bool    false  "Filtrar solo productos en oferta"
-// @Param        sort_by       query     string  false  "Criterio de ordenamiento (precio, nombre, marca)"
-// @Param        order         query     string  false  "Dirección del orden (asc, desc)"
-// @Success      200           {object}  domain.PaginaProductosDTO
-// @Failure      400           {object}  map[string]interface{}
-// @Failure      500           {object}  map[string]interface{}
+// @Param        en_stock            query     bool    false  "Filtrar por disponibilidad de stock"
+// @Param        precio_min          query     number  false  "Precio mínimo"
+// @Param        precio_max          query     number  false  "Precio máximo"
+// @Param        en_oferta           query     bool    false  "Filtrar solo productos en oferta"
+// @Param        solo_marcas_blancas query     bool    false  "Filtrar solo productos de marcas blancas o propias"
+// @Param        sort_by             query     string  false  "Criterio de ordenamiento (precio, nombre, marca)"
+// @Param        order               query     string  false  "Dirección del orden (asc, desc)"
+// @Success      200                 {object}  domain.PaginaProductosDTO
+// @Failure      400                 {object}  map[string]interface{}
+// @Failure      500                 {object}  map[string]interface{}
 // @Router       /api/v1/productos [get]
 func (manejador *ProductoHandler) ObtenerProductos(contexto *gin.Context) {
 	var filtro domain.FiltroProductosDTO
@@ -88,6 +89,8 @@ func (manejador *ProductoHandler) ObtenerProductos(contexto *gin.Context) {
 		}
 	}
 
+	filtro.SoloMarcasBlancas = leerBoolOpcional(contexto, "solo_marcas_blancas")
+
 	filtro.SortBy = contexto.Query("sort_by")
 	filtro.Order = contexto.Query("order")
 
@@ -121,17 +124,18 @@ func (manejador *ProductoHandler) ObtenerProductos(contexto *gin.Context) {
 // @Param        supermercado  query     string  false  "Filtrar por supermercado o cadena"
 // @Param        marca         query     string  false  "Filtrar por marca"
 // @Param        sku           query     string  false  "Filtrar por SKU"
-// @Param        en_stock      query     bool    false  "Filtrar por disponibilidad de stock"
-// @Param        precio_min    query     number  false  "Precio mínimo"
-// @Param        precio_max    query     number  false  "Precio máximo"
-// @Param        en_oferta     query     bool    false  "Filtrar solo productos en oferta"
-// @Param        sort_by       query     string  false  "Criterio de ordenamiento (precio, nombre, marca, sku, fecha)"
-// @Param        order         query     string  false  "Dirección del orden (asc, desc)"
-// @Success      200           {object}  domain.PaginaProductosAdminDTO
-// @Failure      400           {object}  middleware.RespuestaError
-// @Failure      401           {object}  middleware.RespuestaError
-// @Failure      403           {object}  middleware.RespuestaError
-// @Failure      500           {object}  middleware.RespuestaError
+// @Param        en_stock            query     bool    false  "Filtrar por disponibilidad de stock"
+// @Param        precio_min          query     number  false  "Precio mínimo"
+// @Param        precio_max          query     number  false  "Precio máximo"
+// @Param        en_oferta           query     bool    false  "Filtrar solo productos en oferta"
+// @Param        solo_marcas_blancas query     bool    false  "Filtrar solo productos de marcas blancas o propias"
+// @Param        sort_by             query     string  false  "Criterio de ordenamiento (precio, nombre, marca, sku, fecha)"
+// @Param        order               query     string  false  "Dirección del orden (asc, desc)"
+// @Success      200                 {object}  domain.PaginaProductosAdminDTO
+// @Failure      400                 {object}  middleware.RespuestaError
+// @Failure      401                 {object}  middleware.RespuestaError
+// @Failure      403                 {object}  middleware.RespuestaError
+// @Failure      500                 {object}  middleware.RespuestaError
 // @Router       /api/v1/admin/productos [get]
 func (manejador *ProductoHandler) ObtenerProductosAdmin(contexto *gin.Context) {
 	var filtro domain.FiltroProductosDTO
@@ -178,6 +182,8 @@ func (manejador *ProductoHandler) ObtenerProductosAdmin(contexto *gin.Context) {
 			filtro.EnOferta = &enOferta
 		}
 	}
+
+	filtro.SoloMarcasBlancas = leerBoolOpcional(contexto, "solo_marcas_blancas")
 
 	filtro.SortBy = contexto.Query("sort_by")
 	filtro.Order = contexto.Query("order")
@@ -278,4 +284,18 @@ func (manejador *ProductoHandler) ObtenerDetalleProducto(contexto *gin.Context) 
 	}
 
 	contexto.JSON(http.StatusOK, producto)
+}
+
+// leerBoolOpcional extrae y analiza un parámetro booleano opcional desde los parámetros de consulta.
+// Retorna nil si el parámetro está ausente o no contiene un valor booleano válido ("true", "false", "1", "0").
+func leerBoolOpcional(contexto *gin.Context, nombreParametro string) *bool {
+	textoParametro := contexto.Query(nombreParametro)
+	if textoParametro == "" {
+		return nil
+	}
+	valorBooleano, errorObtenido := strconv.ParseBool(textoParametro)
+	if errorObtenido != nil {
+		return nil
+	}
+	return &valorBooleano
 }

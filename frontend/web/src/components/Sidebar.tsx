@@ -271,8 +271,7 @@ export function SideBar({
                 <li key={destacado.id}>
                   <FilterButton
                     icon={destacado.icon}
-                    label={destacado.id === 'marcas' ? `${destacado.label} (no disponible)` : destacado.label}
-                    disabled={destacado.id === 'marcas'}
+                    label={destacado.label}
                     active={activeCategory === destacado.id}
                     onClick={() => handleCategoryClick(activeCategory === destacado.id ? '' : destacado.id)}
                   />
