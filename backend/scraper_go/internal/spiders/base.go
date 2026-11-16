@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
@@ -45,7 +46,7 @@ func newBaseSpider(
 	configuracion spiderConfig,
 ) baseSpider {
 	if maxPaginas <= 0 {
-		maxPaginas = 1
+		maxPaginas = config.DefaultMaxPages
 	}
 	if registrador == nil {
 		registrador = slog.Default()

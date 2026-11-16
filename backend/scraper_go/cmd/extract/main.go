@@ -66,9 +66,6 @@ func run() error {
 	flag.Var(&urls, "url", "URL de categoría o de producto (se puede repetir)")
 	flag.Parse()
 
-	if !spiders.IsKnown(*nombreSpider) {
-		return fmt.Errorf("spider inválido %q; usa uno de: %s", *nombreSpider, strings.Join(spiders.Names(), ", "))
-	}
 	if *maxPaginas < 1 {
 		return fmt.Errorf("-max-pages debe ser mayor que cero")
 	}
@@ -132,7 +129,7 @@ func run() error {
 	}
 	spider, valido := registro.Get(*nombreSpider)
 	if !valido {
-		return fmt.Errorf("spider no registrado: %s", *nombreSpider)
+		return fmt.Errorf("spider no registrado en el catálogo configurado: %s", *nombreSpider)
 	}
 
 	contexto, parada := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

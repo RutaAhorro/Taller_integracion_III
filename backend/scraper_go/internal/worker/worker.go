@@ -413,7 +413,10 @@ func (trabajador *Worker) parseJob(crudo string) (domain.Job, error) {
 	if spider == "" {
 		spider = spiders.JumboName
 	}
-	if !spiders.IsKnown(spider) {
+	if trabajador.registry == nil {
+		return domain.Job{}, fmt.Errorf("registro de spiders no configurado")
+	}
+	if _, valido := trabajador.registry.Get(spider); !valido {
 		return domain.Job{}, fmt.Errorf("spider inválido: %s", spider)
 	}
 	if carga.ProductID != "" && carga.ProductURL == "" {
