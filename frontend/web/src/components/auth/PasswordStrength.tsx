@@ -27,12 +27,12 @@ export function PasswordStrength({ password }: { password: string }) {
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
       <div className="flex gap-1.5">
-        {Array.from({ length: 4 }).map((_, i) => (
+        {Array.from({ length: 4 }).map((_, indice) => (
           <span
-            key={i}
+            key={indice}
             className={cn(
               "h-1.5 flex-1 rounded-full transition-colors duration-300",
-              active && i < score ? level.color : "bg-border",
+              active && indice < score ? level.color : "bg-border",
             )}
           />
         ))}

@@ -12,9 +12,9 @@ interface AuthContextType {
   isLoading: boolean;
   isLoggingOut: boolean;
   error: string | null;
-  login: (payload: LoginPayload) => Promise<boolean>;
+  login: (payload: LoginPayload) => Promise<Usuario | null>;
   register: (payload: RegisterPayload) => Promise<boolean>;
-  googleLogin: (idToken: string) => Promise<boolean>;
+  googleLogin: (idToken: string) => Promise<Usuario | null>;
   logout: () => Promise<void>;
 }
 
@@ -65,36 +65,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   // Envuelve una llamada de autenticación con el manejo común de carga y error.
-  const run = async (action: () => Promise<void>, networkError = 'Error de red.') => {
+  const run = async <Resultado,>(action: () => Promise<Resultado>, networkError = 'Error de red.'): Promise<Resultado | null> => {
     setIsLoading(true);
     setError(null);
     try {
-      await action();
-      return true;
+      return await action();
     } catch (err) {
       setError(err instanceof Error && err.message ? err.message : networkError);
-      return false;
+      return null;
     } finally {
       setIsLoading(false);
     }
   };
 
-  const login = (payload: LoginPayload) =>
+  // Devuelve la identidad recién validada, nunca la recuperada de localStorage.
+  const autenticar = (ruta: string, cuerpo: unknown, mensajeError: string) =>
     run(async () => {
-      const result = await postAuth('/auth/login', payload, 'Error al iniciar sesión');
-      setUser(result.usuario ?? result);
+      const result = await postAuth(ruta, cuerpo, mensajeError);
+      const usuario: Usuario = result.usuario ?? result;
+      if (!usuario?.id) throw new Error('Respuesta de autenticación inválida.');
+      setUser(usuario);
+      return usuario;
     });
 
-  const register = (payload: RegisterPayload) =>
-    run(async () => {
+  const login = (payload: LoginPayload) =>
+    autenticar('/auth/login', payload, 'Error al iniciar sesión');
+
+  const register = async (payload: RegisterPayload) =>
+    Boolean(await run(async () => {
       await postAuth('/auth/register', payload, 'Error al crear la cuenta');
-    });
+      return true;
+    }));
 
   const googleLogin = (idToken: string) =>
-    run(async () => {
-      const result = await postAuth('/auth/google', { id_token: idToken }, 'Error en Google Login');
-      setUser(result.usuario ?? result);
-    }, 'Error de red en Google Login.');
+    autenticar('/auth/google', { id_token: idToken }, 'Error en Google Login');
 
   // Expira la cookie HttpOnly en Identidad antes de salir. Los cierres simultáneos comparten petición.
   const logout = useCallback((): Promise<void> => {

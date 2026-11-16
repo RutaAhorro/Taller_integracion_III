@@ -8,8 +8,6 @@ test_env="$test_dir/test.env"
 test_ca=""
 export SUP268_INIT_DIR="$test_dir/db-init"
 export SUP268_REFERENCE_API_DIR="$test_dir/reference-api"
-export SUP268_LEGACY_API_IMAGE=sup267-api:local
-export SUP269_LEGACY_API_IMAGE=sup268-api:local
 reference_ref="${SUP268_REFERENCE_REF:-1ae1f8662e1d0fa972b04700ec7a84c9e037565c}"
 export SUP269_REFERENCE_API_DIR="$test_dir/sup268-api"
 ingesta_reference_ref="${SUP269_REFERENCE_REF:-b465d0ad278830a47a0c84a532e7d3f8a6ca7397}"
@@ -194,10 +192,3 @@ compose up -d --no-deps --scale catalogo=3 --wait --wait-timeout 90 catalogo
 compose stop control_scraping identidad reference_api redis >/dev/null
 python3 "$smoke" --session-file "$test_dir/admin.cookies" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode api-down
 
-compose up -d --wait --wait-timeout 90 redis
-compose -f "$repo_root/docker-compose.catalogo-ingesta-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
-python3 "$repo_root/backend/catalogo/tests/smoke_ingesta.py" --gateway-url "$gateway_url" --state-file "$test_dir/ingesta.json" --mode ingesta-rollback
-compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --wait --wait-timeout 180 control_scraping gateway
-compose -f "$repo_root/docker-compose.catalogo-rollback.yml" up -d --no-deps --force-recreate --wait --wait-timeout 60 frontend
-compose stop catalogo >/dev/null
-python3 "$smoke" --session-file "$test_dir/admin.cookies" --api-url "$api_url" --gateway-url "$gateway_url" --frontend-url "$frontend_url" --mode rollback

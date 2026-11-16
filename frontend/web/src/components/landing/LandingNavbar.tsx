@@ -11,8 +11,8 @@ export function LandingNavbar() {
   // Cierra con Escape y bloquea el desplazamiento del fondo durante la apertura.
   useEffect(() => {
     if (!menuOpen) return;
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMenuOpen(false);
+    const handleKey = (evento: KeyboardEvent) => {
+      if (evento.key === "Escape") setMenuOpen(false);
     };
     document.addEventListener("keydown", handleKey);
     document.body.style.overflow = "hidden";
@@ -36,10 +36,10 @@ export function LandingNavbar() {
         </Link>
 
         <ul className="hidden md:flex gap-8 list-none flex-1 justify-center">
-          {landingData.navigation.map((l) => (
-            <li key={l.href}>
-              <a href={l.href} className="relative py-[10px] text-[0.875rem] font-bold text-foreground no-underline transition-colors duration-200 hover:text-[var(--brand)] group">
-                {l.label}
+          {landingData.navigation.map((enlace) => (
+            <li key={enlace.href}>
+              <a href={enlace.href} className="relative py-[10px] text-[0.875rem] font-bold text-foreground no-underline transition-colors duration-200 hover:text-[var(--brand)] group">
+                {enlace.label}
                 <span className="absolute left-0 bottom-0 w-0 h-[2px] bg-[var(--brand)] rounded-sm transition-all duration-250 ease-out group-hover:w-full"></span>
               </a>
             </li>
@@ -76,14 +76,14 @@ export function LandingNavbar() {
 
       {menuOpen && (
         <div className="flex flex-col gap-1 p-4 border-t-2 border-border bg-card absolute top-[76px] left-0 w-full shadow-[0_15px_25px_-5px_rgb(0_0_0/0.15)] z-40 md:hidden">
-          {landingData.navigation.map((l) => (
+          {landingData.navigation.map((enlace) => (
             <a
-              key={l.href}
-              href={l.href}
+              key={enlace.href}
+              href={enlace.href}
               className="text-foreground font-bold no-underline min-h-[44px] flex items-center px-2 rounded-[var(--radius)] hover:bg-muted transition-colors"
               onClick={() => setMenuOpen(false)}
             >
-              {l.label}
+              {enlace.label}
             </a>
           ))}
           <Link

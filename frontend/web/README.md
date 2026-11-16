@@ -150,6 +150,48 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
 
 ## Comprobaciones
 
+Tras iniciar sesión por contraseña o Google, `/login` redirige a `/admin` si el
+usuario devuelto por Identidad tiene rol `admin`; las demás cuentas van al
+catálogo. No se asignan permisos por correo. Para probar una promoción de rol,
+cerrar sesión e iniciar nuevamente, y comprobar `rol` en la respuesta de login.
+La redirección no sustituye la autorización del backend.
+
+Para comprobar que una sesión local antigua no bloquea el formulario:
+
+1. Iniciar sesión con una cuenta registrada y permanecer en `/dashboard`.
+2. En DevTools, eliminar solo la cookie `jwt`, conservando `auth_user` en Local
+   Storage. No pasar por una página protegida que pueda limpiar la sesión.
+3. Entrar directamente a `/login`: debe aparecer el formulario, sin redirección.
+4. Repetir el acceso con contraseña y, si está configurado, con Google. Solo
+   tras una autenticación exitosa debe navegar según el rol recién recibido.
+   Un rechazo debe mantener el formulario y mostrar el error.
+
+Las pruebas automatizadas cubren el usuario local antiguo, la identidad devuelta
+por ambos métodos y el destino por rol; no sustituyen esta comprobación de
+cookies en el navegador.
+
+### Panel de usuarios y fuentes (SUP-255)
+
+Probar con el frontend actualizado y una cuenta administradora en la misma BD
+que utiliza la API. Usar otra cuenta de prueba para los cambios; no desactivar
+ni degradar al administrador con el que se realiza la comprobación.
+
+- En `/admin?section=users`, buscar la cuenta de prueba, cambiar su rol y su
+  estado activo, y recargar para verificar persistencia. Restaurar los valores
+  originales. El rol propio y la desactivación propia deben estar bloqueados.
+- En `/admin?section=sources`, deshabilitar una fuente local de prueba, recargar,
+  verificar el estado y habilitarla nuevamente. Durante el guardado se bloquean
+  los cambios simultáneos y se aplica la respuesta de Catálogo.
+- Con DevTools, ralentizar la red para ver la carga; bloquear la solicitud de
+  usuarios o fuentes para verificar el error y «Reintentar» al retirar el bloqueo.
+  Un fallo no debe presentarse como un listado vacío exitoso.
+- Con una cuenta registrada, abrir `/admin`: no debe mostrar el panel. Los
+  endpoints administrativos deben rechazar peticiones sin permisos (`401/403`).
+
+La redirección de admin ya fue confirmada manualmente por la autora. Las pruebas
+automatizadas cubren los clientes, los rechazos y las carreras de carga/guardado
+de fuentes; no reemplazan el recorrido anterior contra la BD local.
+
 Desde `frontend/web`:
 
 ```bash
@@ -188,6 +230,25 @@ Con frontend, Gateway e Identidad ejecutándose y la base API configurada:
 5. Retirar el bloqueo y volver a pulsar Cerrar Sesión, disponible en el menú del
    catálogo incluso sin usuario local, para expirar la cookie que pudo quedar.
 6. Comprobar también «Continuar como invitado»: espera el cierre y abre el catálogo.
+
+### Comprobar filtros móviles (SUP-372)
+
+En Chrome o Edge, abrir DevTools (`F12`) y activar la barra de dispositivos
+(`Ctrl+Shift+M`). Elegir «Responsive» y probar anchos de 360 y 390 px:
+
+1. Entrar a `/dashboard`: el botón «Abrir filtros» debe estar visible.
+2. Abrir el panel, elegir una categoría y volver a abrirlo: la selección se conserva.
+3. Elegir un supermercado disponible y comprobar que se conserva al reabrir.
+4. Pulsar «Limpiar filtros»: se restablecen búsqueda, categoría y supermercado.
+5. Cerrar con la X, pulsando fuera y con Escape. La búsqueda y navegación siguen accesibles.
+6. Con teclado, abrir el panel y recorrerlo con Tab/Shift+Tab: el foco permanece
+   dentro. Al cerrar, vuelve al botón de apertura; el panel cerrado no recibe foco.
+7. Repetir en escritorio: el panel empieza cerrado y el foco no salta a «Cerrar
+   filtros» al cargar. Abrirlo con el botón y comprobar el mismo recorrido de
+   teclado. Verificar que no aparece desplazamiento horizontal.
+
+La emulación permite comprobar tamaño e interacción, pero no sustituye una
+prueba en un teléfono real. Registrar el navegador, ancho y resultado observado.
 
 ## Referencias
 

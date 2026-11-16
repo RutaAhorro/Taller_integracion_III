@@ -219,6 +219,7 @@ try:
 finally:
     compose('up', '-d', '--no-deps', '--wait', '--wait-timeout', '90', 'control_scraping', 'gateway')
 request('/api/v1/auth/me', clienteHTTP=clienteAdministrador)
+
 probes()
 
 identificador = compose('ps', '-q', 'control_scraping').strip()

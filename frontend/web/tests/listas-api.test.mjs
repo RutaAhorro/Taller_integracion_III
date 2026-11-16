@@ -10,10 +10,10 @@ const { outputText } = ts.transpileModule(source.replace('import.meta.env.VITE_A
 });
 const { listasApi } = await import(`data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`);
 
-test('CRUD usa Gateway y cookie, mantiene los datos de la API y acepta DELETE 204', async t => {
+test('CRUD usa Gateway y cookie, mantiene los datos de la API y acepta DELETE 204', async prueba => {
   const lista = { id: 'lista-1', nombre: 'Semana', estado: 'activa', total_articulos: 0 };
   const calls = [];
-  t.mock.method(globalThis, 'fetch', async (url, init) => {
+  prueba.mock.method(globalThis, 'fetch', async (url, init) => {
     calls.push({ url, ...init });
     if (init.method === 'DELETE') return new Response(null, { status: 204 });
     const body = init.method ? lista : url.endsWith('/lista-1') ? { ...lista, articulos: [] } : { listas: [lista] };
@@ -31,25 +31,25 @@ test('CRUD usa Gateway y cookie, mantiene los datos de la API y acepta DELETE 20
   assert.equal(calls[3].method, 'PUT');
 });
 
-test('propaga errores reales sin reemplazarlos por éxito o datos simulados', async t => {
+test('propaga errores reales sin reemplazarlos por éxito o datos simulados', async prueba => {
   for (const [status, body, expected] of [
     [401, {}, /sesión expiró/],
     [404, { mensaje: 'La lista no existe.' }, /La lista no existe/],
     [409, { mensaje: 'Alcanzaste el máximo de 100 listas.' }, /máximo de 100/],
     [422, { mensaje: 'Datos inválidos.' }, /Datos inválidos/],
   ]) {
-    const mock = t.mock.method(globalThis, 'fetch', async () => Response.json(body, { status }));
+    const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json(body, { status }));
     await assert.rejects(listasApi.crear('Semana'), expected);
     mock.mock.restore();
   }
-  t.mock.method(globalThis, 'fetch', async () => new Response('<html>Bad gateway</html>', { status: 502 }));
+  prueba.mock.method(globalThis, 'fetch', async () => new Response('<html>Bad gateway</html>', { status: 502 }));
   await assert.rejects(listasApi.listar(), /No se pudo completar/);
 });
 
-test('permite cancelar una lectura al salir o cambiar de lista', async t => {
+test('permite cancelar una lectura al salir o cambiar de lista', async prueba => {
   const controller = new AbortController();
   controller.abort();
-  t.mock.method(globalThis, 'fetch', async (_url, init) => {
+  prueba.mock.method(globalThis, 'fetch', async (_url, init) => {
     assert.equal(init.signal, controller.signal);
     init.signal.throwIfAborted();
   });

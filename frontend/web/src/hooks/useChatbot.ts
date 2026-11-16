@@ -46,11 +46,11 @@ export function useChatbot() {
 
     const processingId = newId();
     const setStep = (step: number) =>
-      setMessages((prev) => prev.map((m) => (m.id === processingId ? { ...m, step } : m)));
+      setMessages((prev) => prev.map((mensaje) => (mensaje.id === processingId ? { ...mensaje, step } : mensaje)));
     // Reemplaza el indicador de "procesando" por la respuesta final.
     const reply = (content: string) =>
       setMessages((prev) => [
-        ...prev.filter((m) => m.id !== processingId),
+        ...prev.filter((mensaje) => mensaje.id !== processingId),
         { id: newId(), role: 'assistant', type: 'text', content },
       ]);
 

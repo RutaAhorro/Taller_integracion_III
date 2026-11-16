@@ -1,4 +1,5 @@
 // Centraliza las rutas usadas por navegación, enlaces y controles de acceso.
+import { normalizeRole, ROLE_ADMIN } from '@/lib/roles';
 export const ROUTES = {
   HOME: '/',
   CATALOGO: '/dashboard',
@@ -16,3 +17,8 @@ export const ROUTES = {
   PLANES: '/planes',
   TERMINOS: '/terminos',
 } as const;
+
+// Usar únicamente con el rol recibido tras una autenticación exitosa.
+export function rutaTrasAutenticacion(rol?: string | null) {
+  return normalizeRole(rol) === ROLE_ADMIN ? ROUTES.ADMIN : ROUTES.CATALOGO;
+}

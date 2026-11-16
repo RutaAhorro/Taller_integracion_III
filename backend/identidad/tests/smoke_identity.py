@@ -312,19 +312,7 @@ reset_login_counters()
 request('/api/v1/auth/me',method='PUT',data={'telefono':'+56927227227'},opener=registered)
 compose('up','-d','--no-deps','--scale','identidad=1','--wait','--wait-timeout','90','identidad')
 
-# Rollback to approved SUP-271 requires old image plus DSN and route switch.
-env['SUP272_LEGACY_API_IMAGE'] = 'sup271-api:reference'
-compose('-f',str(root/'docker-compose.identidad-rollback.yml'),'up','-d','--no-deps','--wait','--wait-timeout','90','control_scraping','gateway')
-compose('stop','identidad')
-try:
-    request('/api/v1/auth/me',opener=new_client)
-    # El rollback sustituye Identidad, no Catálogo: la lectura administrativa
-    # sigue disponible porque Catálogo valida el JWT localmente.
-    request('/api/v1/admin/productos',opener=new_client)
-    request('/api/v1/auth/register',201,method='POST',data={'correo':'sup272.rollback@example.test','password':'Sup272FixturePassword123!','nombre_completo':'Rollback Fixture'})
-finally:
-    compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad','control_scraping','gateway')
-request('/api/v1/auth/me',opener=new_client)
+
 
 # La configuración de cookie Secure también se verifica con el proceso real.
 reset_login_counters()

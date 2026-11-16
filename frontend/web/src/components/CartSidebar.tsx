@@ -53,7 +53,7 @@ export function CartSidebar() {
                       src={product.image || '/placeholder.svg'} 
                       alt={product.name ? `Imagen de ${product.name}` : 'Imagen de producto'}
                       loading="lazy"
-                      onError={(e) => { e.currentTarget.src = '/placeholder.svg'; }}
+                      onError={(evento) => { evento.currentTarget.src = '/placeholder.svg'; }}
                       className="h-full w-full object-contain"
                     />
                   </div>

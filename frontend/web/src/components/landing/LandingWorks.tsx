@@ -3,9 +3,9 @@ import { Search, Map, PiggyBank } from "lucide-react";
 import landingData from '@/data/landing.json';
 
 export function LandingHowItWorks() {
-  const getIcon = (i: number) => {
-    if (i === 0) return <Search size={18} aria-hidden="true" />;
-    if (i === 1) return <Map size={18} aria-hidden="true" />;
+  const getIcon = (indice: number) => {
+    if (indice === 0) return <Search size={18} aria-hidden="true" />;
+    if (indice === 1) return <Map size={18} aria-hidden="true" />;
     return <PiggyBank size={18} aria-hidden="true" />;
   };
 
@@ -22,18 +22,18 @@ export function LandingHowItWorks() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[1.75rem]">
-          {landingData.steps.map((s, index) => {
+          {landingData.steps.map((paso, index) => {
             const numBgClass = index === 0 ? 'bg-[var(--landing-olive-soft)] border-[var(--landing-olive)] text-[#5E7250]' : index === 1 ? 'bg-[var(--landing-amber-soft)] border-[var(--landing-amber)]' : 'bg-[var(--landing-malva-soft)] border-[var(--landing-malva)]';
             return (
-            <div key={s.title} className="bg-card border-2 border-border rounded-[var(--radius)] p-[2rem_1.75rem] shadow-[6px_6px_0_var(--color-border)] transition-all duration-[0.25s] ease-in hover:-translate-x-[2px] hover:-translate-y-[2px] hover:shadow-[10px_10px_0_var(--color-border)]">
+            <div key={paso.title} className="bg-card border-2 border-border rounded-[var(--radius)] p-[2rem_1.75rem] shadow-[6px_6px_0_var(--color-border)] transition-all duration-[0.25s] ease-in hover:-translate-x-[2px] hover:-translate-y-[2px] hover:shadow-[10px_10px_0_var(--color-border)]">
               <div className="flex items-center gap-3 mb-[1.25rem]">
                 <div className={`w-[52px] h-[52px] rounded-[calc(var(--radius)-2px)] border-2 flex items-center justify-center font-['Fraunces'] text-[1.75rem] font-bold text-[var(--brand-dark)] shrink-0 ${numBgClass}`}>
-                  {s.num}
+                  {paso.num}
                 </div>
                 <span className="text-[var(--brand-dark)] opacity-50">{getIcon(index)}</span>
               </div>
-              <h3 className="font-bold text-[1.0625rem] text-foreground mb-[0.5rem]">{s.title}</h3>
-              <p className="text-[0.875rem] text-muted-foreground leading-[1.6]">{s.desc}</p>
+              <h3 className="font-bold text-[1.0625rem] text-foreground mb-[0.5rem]">{paso.title}</h3>
+              <p className="text-[0.875rem] text-muted-foreground leading-[1.6]">{paso.desc}</p>
             </div>
             );
           })}

@@ -126,47 +126,13 @@ vacíos). **Cambiar solo esas variables no basta:** el Control de scraping actua
 no implementa catálogo ni autenticación, así que esas rutas responderían 404. El
 orden es obligatorio: primero la imagen histórica de la API, después Gateway.
 
-### Rollback de Catálogo (SUP-268) en Compose
+### Rollbacks hacia el monolito histórico (Sprint 2)
 
-1. **Restaurar la imagen histórica de la API.** Fijar una imagen verificada
-   anterior a SUP-268 (con el lector de productos), por digest y no por un tag
-   mutable, y levantarla junto con Gateway usando el override
-   `docker-compose.catalogo-rollback.yml`. Mantener el mismo proyecto y `.env`:
+Los procedimientos de rollback con overrides de Compose (`docker-compose.catalogo-rollback.yml` e
+`docker-compose.identidad-rollback.yml`) formaron parte de la verificación de migración
+durante el Sprint 2 y fueron retirados en SUP-355 tras consolidarse la arquitectura
+desacoplada en microservicios independientes.
 
-   ```bash
-   export SUP268_LEGACY_API_IMAGE='<imagen-pre-SUP268-verificada@sha256:...>'
-   docker compose -f docker-compose.yml -f docker-compose.catalogo-rollback.yml \
-     up -d --wait control_scraping gateway
-   ```
-
-   El override reemplaza la imagen de `control_scraping`, le devuelve el DSN con
-   acceso a las tablas de Catálogo y deja Gateway con `BACKEND_URL` y
-   `CATALOGO_URL`/`IDENTIDAD_URL`/`SCRAPING_URL` vacíos. `--wait` exige que
-   la API histórica esté sana antes de dar por terminado el paso.
-2. **Recrear los clientes que fijan la IP de Gateway** (Nginx del frontend):
-
-   ```bash
-   docker compose -f docker-compose.yml -f docker-compose.catalogo-rollback.yml \
-     up -d --no-deps --force-recreate --wait frontend
-   ```
-
-3. **Verificar** productos, login y administración a través de Gateway
-   (`http://127.0.0.1:8082`) y `/_gateway/dependencies` antes de continuar.
-4. **Detener Catálogo** solo después de esa verificación:
-   `docker compose stop catalogo`.
-
-No se requieren migraciones ni borrar volúmenes. Para volver a activar Catálogo,
-retirar el override, reconstruir la imagen actual de Control y recrear Gateway y
-los clientes que hayan fijado su IP.
-
-### Rollback de Identidad (SUP-272) en Compose
-
-Mismo orden, con `docker-compose.identidad-rollback.yml` y una imagen aprobada de
-SUP-271 en `SUP272_LEGACY_API_IMAGE`: primero la API histórica con ambos DSN,
-después Gateway con `IDENTIDAD_URL` vacío. En el despliegue normal, Identidad se
-alcanza por el alias `identidad-upstream` en la red aislada `identidad_edge`, con
-IP fija de Gateway; Identidad confía únicamente en esa IP para preservar la
-trazabilidad del cliente.
 
 ### Rollback en Kubernetes
 
