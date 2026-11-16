@@ -8,6 +8,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/app"
 )
 
+// ===== Inicio del proceso =====
+
 // main inicia la aplicación y termina con error si el servicio no puede arrancar.
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, nil)))

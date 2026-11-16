@@ -13,9 +13,12 @@ import (
 	"gorm.io/gorm/logger"
 )
 
+// Config reúne la configuración de conexión propia de Control de scraping.
 type Config struct {
 	ScrapingURL string
 }
+
+// ===== Carga y validación de configuración =====
 
 // No hay fallback a DB_URL ni al administrador de PostgreSQL.
 func Load() (Config, error) {
@@ -35,6 +38,9 @@ func Load() (Config, error) {
 	return configuracion, nil
 }
 
+// ===== Apertura y cierre de conexiones =====
+
+// Open configura el pool PostgreSQL del servicio y confirma que puede conectarse.
 func Open(contexto context.Context, cadenaConexion string) (*gorm.DB, error) {
 	baseDatos, errorObtenido := gorm.Open(postgres.Open(cadenaConexion), &gorm.Config{
 		DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent),
@@ -57,6 +63,7 @@ func Open(contexto context.Context, cadenaConexion string) (*gorm.DB, error) {
 	return baseDatos, nil
 }
 
+// Close cierra el pool SQL asociado a la conexión GORM cuando existe.
 func Close(baseDatos *gorm.DB) {
 	if baseDatos != nil {
 		if baseDatosSQL, errorObtenido := baseDatos.DB(); errorObtenido == nil {

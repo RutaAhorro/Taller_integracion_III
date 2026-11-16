@@ -3,11 +3,14 @@ package repositories
 import (
 	"context"
 	"errors"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 	"time"
 )
+
+// ===== Publicación recuperable en Redis Streams =====
 
 const JobStream = "scraper:jobs:stream"
 const JobIndex = "scraper:jobs:index"
@@ -22,11 +25,13 @@ redis.call('HSET', KEYS[2], ARGV[1], id)
 return id
 `)
 
+// jobPublisher publica outboxes activos en Redis Streams con protección idempotente.
 type jobPublisher struct {
 	clienteRedis *redis.Client
 	baseDatos    *gorm.DB
 }
 
+// NewJobPublisher crea el publicador con límites de red para Redis.
 func NewJobPublisher(clienteRedis *redis.Client, baseDatos *gorm.DB) *jobPublisher {
 	var cliente *redis.Client
 	if clienteRedis != nil {
@@ -41,12 +46,15 @@ func NewJobPublisher(clienteRedis *redis.Client, baseDatos *gorm.DB) *jobPublish
 	return &jobPublisher{clienteRedis: cliente, baseDatos: baseDatos}
 }
 
+// Close libera el cliente Redis dedicado del publicador si fue configurado.
 func (publicador *jobPublisher) Close() error {
 	if publicador.clienteRedis != nil {
 		return publicador.clienteRedis.Close()
 	}
 	return nil
 }
+
+// Publicar confirma que el trabajo sigue activo y lo publica idempotentemente en Redis.
 func (publicador *jobPublisher) Publicar(contexto context.Context, ejecucion domain.Ejecucion) error {
 	if publicador.clienteRedis == nil {
 		return errors.New("Redis no está disponible")

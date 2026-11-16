@@ -4,12 +4,15 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+// ===== Límites de petición y acceso de origen =====
 
 // Mismo máximo que Catálogo; no corta lotes válidos ni permite requests infinitos.
 func BoundedRequest() gin.HandlerFunc {
@@ -22,6 +25,7 @@ func BoundedRequest() gin.HandlerFunc {
 	}
 }
 
+// CORS limita los orígenes web permitidos y resuelve solicitudes de preflight.
 func CORS(origenes []string) gin.HandlerFunc {
 	permitido := map[string]bool{}
 	for _, origen := range origenes {
@@ -50,8 +54,11 @@ func CORS(origenes []string) gin.HandlerFunc {
 	}
 }
 
+// ===== Identificación y observabilidad =====
+
 var patronIDPeticion = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
+// Observe asigna un ID de petición seguro y registra el resultado HTTP sin datos sensibles.
 func Observe(registrador *slog.Logger) gin.HandlerFunc {
 	if registrador == nil {
 		registrador = slog.Default()

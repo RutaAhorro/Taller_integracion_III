@@ -4,6 +4,10 @@ package control
 import (
 	"context"
 	"errors"
+	"os"
+	"sync"
+	"time"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/handlers"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/repositories"
@@ -12,11 +16,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
-	"os"
-	"sync"
-	"time"
 )
 
+// ===== Composición del módulo =====
+
+// Module agrupa dependencias y procesos de fondo de la coordinación de scraping.
 type Module struct {
 	baseDatos     *gorm.DB
 	manejador     *handlers.ScraperHandler
@@ -27,6 +31,7 @@ type Module struct {
 	grupoEspera   sync.WaitGroup
 }
 
+// New valida credenciales y compone repositorios, servicios y handlers del módulo.
 func New(baseDatos *gorm.DB, clienteRedis *redis.Client) (*Module, error) {
 	token := os.Getenv("CATALOGO_INTERNAL_TOKEN")
 	tokenServicio := os.Getenv("SCRAPING_SERVICE_TOKEN")
@@ -54,6 +59,11 @@ func New(baseDatos *gorm.DB, clienteRedis *redis.Client) (*Module, error) {
 	return &Module{baseDatos: baseDatos, manejador: manejador, autenticacion: middleware.RequireServiceToken(tokenServicio), cola: cola, cerrar: publicador.Close, recuperar: servicio.(interface{ Recuperar(context.Context) }).Recuperar}, nil
 }
 
+// ===== Validación de almacenamiento =====
+
+// VerifyStorage comprueba tablas y permisos necesarios antes de aceptar tráfico.
+// UPDATE y DELETE se verifican porque la coordinación actualiza entregas y depura
+// outboxes al cerrar trabajos; sin esos permisos no puede completar el flujo durable.
 func (modulo *Module) VerifyStorage(contexto context.Context) error {
 	filas, errorObtenido := modulo.baseDatos.WithContext(contexto).Raw("SELECT cadena_nombre FROM scraper.trabajos_scraper LIMIT 0").Rows()
 	if errorObtenido != nil {
@@ -80,6 +90,8 @@ func (modulo *Module) VerifyStorage(contexto context.Context) error {
 	}
 	return nil
 }
+
+// ===== Ciclo de vida y rutas =====
 
 // Sólo main inicia los loops; construir el router no crea goroutines.
 func (modulo *Module) Start(contexto context.Context) {
@@ -129,6 +141,7 @@ func (modulo *Module) Wait(contexto context.Context) error {
 	}
 }
 
+// RegisterRoutes monta las rutas de scraping protegidas por autenticación de servicio.
 func (modulo *Module) RegisterRoutes(grupo *gin.RouterGroup) {
 	routes.RegistrarRutasScraper(grupo, modulo.manejador, modulo.autenticacion)
 }

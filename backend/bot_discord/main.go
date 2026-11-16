@@ -7,6 +7,8 @@ import (
 	"github.com/equipo/bot_discord/internal/bot"
 )
 
+// ===== Inicio del proceso =====
+
 // main delega la ejecución al paquete del bot.
 func main() {
 	if errorObtenido := bot.Run(); errorObtenido != nil {

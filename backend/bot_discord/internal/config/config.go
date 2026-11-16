@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+// ===== Límites y valores predeterminados =====
+
 const (
 	timeoutHTTPDefecto       = 15 * time.Second
 	timeoutCabeceraDefecto   = 5 * time.Second
@@ -41,6 +43,8 @@ type Configuracion struct {
 	MaximoFallosMonitor    int
 	RetrasoDebounceReviews time.Duration
 }
+
+// ===== Carga y validación de configuración =====
 
 // Cargar lee y valida una sola vez las variables del proceso.
 func Cargar() (Configuracion, error) {
@@ -89,6 +93,8 @@ func Cargar() (Configuracion, error) {
 	}
 	return configuracion, nil
 }
+
+// ===== Validadores y valores auxiliares =====
 
 // validarURLScraper exige una URL pública del contrato HTTP configurado.
 func validarURLScraper(valor string) error {

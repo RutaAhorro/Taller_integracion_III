@@ -17,12 +17,16 @@ import (
 	"github.com/google/uuid"
 )
 
+// catalogoClient implementa las llamadas internas de Control hacia Catálogo.
 type catalogoClient struct {
 	origen  string
 	token   string
 	cliente *http.Client
 }
 
+// ===== Configuración y llamadas HTTP a Catálogo =====
+
+// NewCatalogoClient valida el origen y credenciales y limita los reintentos HTTP.
 func NewCatalogoClient(origen, token string, tiempoEspera time.Duration) (domain.IngestaRepository, error) {
 	direccion, errorObtenido := url.Parse(origen)
 	if errorObtenido != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") || direccion.Hostname() == "" ||
@@ -50,6 +54,7 @@ func NewCatalogoClient(origen, token string, tiempoEspera time.Duration) (domain
 	}}, nil
 }
 
+// call ejecuta una operación interna y normaliza errores sin exponer detalles del upstream.
 func (clienteCatalogo *catalogoClient) call(contexto context.Context, ruta string, carga, resultado any) (bool, error) {
 	datos, errorObtenido := json.Marshal(carga)
 	if errorObtenido != nil {
@@ -99,12 +104,15 @@ func (clienteCatalogo *catalogoClient) call(contexto context.Context, ruta strin
 	return true, nil
 }
 
+// requestIDKey identifica el valor de trazabilidad guardado en un contexto.
 type requestIDKey struct{}
 
+// WithRequestID agrega al contexto el identificador de trazabilidad de la petición.
 func WithRequestID(contexto context.Context, identificador string) context.Context {
 	return context.WithValue(contexto, requestIDKey{}, identificador)
 }
 
+// ObtenerCadena resuelve en Catálogo la cadena asociada a una ingesta.
 func (clienteCatalogo *catalogoClient) ObtenerCadena(contexto context.Context, cadenaID int, nombre string) (*domain.CadenaSupermercado, error) {
 	var resultado domain.CadenaSupermercado
 	encontrado, errorObtenido := clienteCatalogo.call(contexto, "cadenas/resolver", map[string]any{"cadena_id": cadenaID, "nombre": nombre}, &resultado)
@@ -113,6 +121,8 @@ func (clienteCatalogo *catalogoClient) ObtenerCadena(contexto context.Context, c
 	}
 	return &resultado, nil
 }
+
+// ObtenerSucursal resuelve en Catálogo la sucursal asociada a una ingesta.
 func (clienteCatalogo *catalogoClient) ObtenerSucursal(contexto context.Context, cadenaID int, sucursalID *int, codigo *string) (*domain.SucursalSupermercado, error) {
 	var resultado domain.SucursalSupermercado
 	encontrado, errorObtenido := clienteCatalogo.call(contexto, "sucursales/resolver", map[string]any{"cadena_id": cadenaID, "sucursal_id": sucursalID, "codigo_sucursal": codigo}, &resultado)
@@ -121,6 +131,8 @@ func (clienteCatalogo *catalogoClient) ObtenerSucursal(contexto context.Context,
 	}
 	return &resultado, nil
 }
+
+// IngestarLote envía los productos a Catálogo y valida sus contadores de respuesta.
 func (clienteCatalogo *catalogoClient) IngestarLote(contexto context.Context, trabajoID *uuid.UUID, sucursalID int, productos []domain.ProductoScrapeadoDTO) (*domain.IngestaResultadoDTO, error) {
 	var resultado domain.IngestaResultadoDTO
 	carga := map[string]any{"sucursal_id": sucursalID, "productos": productos}

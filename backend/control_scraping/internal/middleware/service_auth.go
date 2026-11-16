@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ===== Validación de credenciales de servicio =====
+
 // ValidarTokenServicio exige un secreto propio para worker y bot: debe ser largo,
 // sin espacios y distinto del token interno que Control usa ante Catálogo.
 func ValidarTokenServicio(token, tokenCatalogo string) error {
@@ -20,6 +22,8 @@ func ValidarTokenServicio(token, tokenCatalogo string) error {
 	}
 	return nil
 }
+
+// ===== Protección de rutas =====
 
 // RequireServiceToken protege /api/v1/scraper: el Gateway es público, así que
 // sólo los clientes de servicio (worker y bot) con el Bearer correcto pasan.

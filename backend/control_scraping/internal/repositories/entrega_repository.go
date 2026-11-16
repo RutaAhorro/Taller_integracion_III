@@ -4,20 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"time"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
-	"time"
 )
 
+// ===== Persistencia de entregas durables =====
+
+// entregaRepository implementa la persistencia SQL de lotes de ingesta.
 type entregaRepository struct{ baseDatos *gorm.DB }
 
+// NewEntregaRepository crea el repositorio SQL de lotes recibidos.
 func NewEntregaRepository(baseDatos *gorm.DB) domain.EntregaRepository {
 	return &entregaRepository{baseDatos}
 }
 
+// Obtener recupera una entrega por su identificador idempotente.
 func (repositorio *entregaRepository) Obtener(contexto context.Context, identificador uuid.UUID) (*domain.Entrega, error) {
 	var entrega domain.Entrega
 	errorObtenido := repositorio.baseDatos.WithContext(contexto).First(&entrega, "id = ?", identificador).Error
@@ -26,6 +32,8 @@ func (repositorio *entregaRepository) Obtener(contexto context.Context, identifi
 	}
 	return &entrega, errorObtenido
 }
+
+// Registrar inserta una entrega una sola vez y valida la huella de su contenido.
 func (repositorio *entregaRepository) Registrar(contexto context.Context, entrega *domain.Entrega) (*domain.Entrega, error) {
 	var resultado domain.Entrega
 	errorObtenido := repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
@@ -64,6 +72,8 @@ func (repositorio *entregaRepository) Registrar(contexto context.Context, entreg
 	return &resultado, errorObtenido
 }
 
+// ===== Adquisición, confirmación y reintentos =====
+
 // La lease dura más que los tres HTTP internos (máximo 20s cada uno).
 // Confirmar es idempotente incluso si un proceso muere y otro toma la lease.
 func (repositorio *entregaRepository) Adquirir(contexto context.Context, identificador *uuid.UUID) (*domain.Entrega, error) {
@@ -90,11 +100,15 @@ func (repositorio *entregaRepository) Adquirir(contexto context.Context, identif
 	}
 	return &entrega, errorObtenido
 }
+
+// FijarSucursal persiste la primera sucursal resuelta para la entrega.
 func (repositorio *entregaRepository) FijarSucursal(contexto context.Context, identificador uuid.UUID, sucursal int) (int, error) {
 	var fila struct{ SucursalID int }
 	errorObtenido := repositorio.baseDatos.WithContext(contexto).Raw(`UPDATE scraper.entregas_ingesta SET sucursal_id = COALESCE(sucursal_id,?) WHERE id = ? RETURNING sucursal_id`, sucursal, identificador).Scan(&fila).Error
 	return fila.SucursalID, errorObtenido
 }
+
+// Confirmar registra el resultado y actualiza contadores de forma transaccional.
 func (repositorio *entregaRepository) Confirmar(contexto context.Context, entrega *domain.Entrega, resultado domain.IngestaResultadoDTO) error {
 	codificado, errorObtenido := json.Marshal(resultado)
 	if errorObtenido != nil {
@@ -122,6 +136,8 @@ func (repositorio *entregaRepository) Confirmar(contexto context.Context, entreg
  confirmado_el=now(), lease_hasta=NULL, lease_token=NULL, ultimo_error=NULL WHERE id=?`, string(codificado), entrega.ID).Error
 	})
 }
+
+// Reprogramar libera la lease y define el siguiente intento o el estado terminal.
 func (repositorio *entregaRepository) Reprogramar(contexto context.Context, entrega *domain.Entrega, codigo string, permanente bool) error {
 	estado := "pendiente"
 	if permanente || entrega.Intentos >= 10 {

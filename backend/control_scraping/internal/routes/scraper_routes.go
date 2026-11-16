@@ -6,6 +6,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/handlers"
 )
 
+// ===== Registro de rutas de scraping =====
+
 // RegistrarRutasScraper configura los endpoints de ingesta de datos y ciclo de vida de arañas
 // bajo el prefijo /api/v1/scraper. auth se aplica a todo el grupo (token de servicio).
 func RegistrarRutasScraper(grupoRutas *gin.RouterGroup, manejadorScraper *handlers.ScraperHandler, autenticacion ...gin.HandlerFunc) {

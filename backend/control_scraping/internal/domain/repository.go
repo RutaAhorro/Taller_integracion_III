@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// ===== Contratos de persistencia y comunicación =====
+
 // TrabajoRepository es la persistencia propia de coordinación de scraping.
 type TrabajoRepository interface {
 	CrearTrabajo(contexto context.Context, trabajo *TrabajoScraper) error

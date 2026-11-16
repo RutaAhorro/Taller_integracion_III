@@ -12,8 +12,12 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ===== Persistencia del ciclo de vida de trabajos =====
+
+// gormTrabajoRepository implementa la persistencia SQL del ciclo de vida de trabajos.
 type gormTrabajoRepository struct{ baseDatos *gorm.DB }
 
+// NewTrabajoRepository crea el repositorio GORM de trabajos de scraping.
 func NewTrabajoRepository(baseDatos *gorm.DB) domain.TrabajoRepository {
 	return &gormTrabajoRepository{baseDatos: baseDatos}
 }

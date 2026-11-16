@@ -8,12 +8,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ===== Formato de errores HTTP =====
+
 // RespuestaError representa la estructura estandarizada de respuestas de error en JSON para la API
 type RespuestaError struct {
 	Estado  int    `json:"estado"`            // Código numérico del estado HTTP (400, 404, 500, etc.)
 	Mensaje string `json:"mensaje"`           // Mensaje descriptivo amigable para el cliente
 	Detalle string `json:"detalle,omitempty"` // Información técnica u origen del error
 }
+
+// ===== Recuperación y rutas no encontradas =====
 
 // ErrorHandler es el middleware global que intercepta panics no controlados y errores del contexto
 func ErrorHandler() gin.HandlerFunc {
@@ -72,6 +76,8 @@ func MethodNotAllowedHandler() gin.HandlerFunc {
 		})
 	}
 }
+
+// ===== Emisión de errores desde handlers =====
 
 // ResponderError es una función utilitaria exportada para emitir errores estandarizados desde cualquier handler
 func ResponderError(contextoHTTP *gin.Context, estado int, mensaje string, errorObtenido error) {

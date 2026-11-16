@@ -251,21 +251,8 @@ func handlePullRequest(sesionDiscord *discordgo.Session, canalID string, cargaGi
 			}
 		}
 
-		// Extraer Labels
-		var etiquetas []string
-		if etiquetas, esValido := datosPR["labels"].([]interface{}); esValido {
-			for _, etiquetaActual := range etiquetas {
-				datosEtiqueta := etiquetaActual.(map[string]interface{})
-				nombre := datosEtiqueta["name"].(string)
-				etiquetas = append(etiquetas, "`"+nombre+"`")
-			}
-		}
-
 		mensaje := fmt.Sprintf("🛠️ **Nuevo Pull Request** por `%s`\n**Título**: %s\n**Link**: %s", autor, titulo, direccion)
-
-		if len(etiquetas) > 0 {
-			mensaje += fmt.Sprintf("\n**Etiquetas**: %s", strings.Join(etiquetas, ", "))
-		}
+		mensaje += formatearEtiquetasPullRequest(datosPR)
 
 		if len(usuariosAsignados) > 0 {
 			mensaje += fmt.Sprintf("\n**Asignados**: %s", strings.Join(usuariosAsignados, " "))
@@ -363,6 +350,29 @@ func mapGitHubToDiscord(usuarioGitHub string) string {
 }
 
 // ===== Notificaciones de revisiones y comentarios =====
+
+// formatearEtiquetasPullRequest crea la línea opcional de etiquetas de un PR.
+func formatearEtiquetasPullRequest(datosPR map[string]interface{}) string {
+	etiquetasCrudas, esValido := datosPR["labels"].([]interface{})
+	if !esValido {
+		return ""
+	}
+	var etiquetas []string
+	for _, etiquetaActual := range etiquetasCrudas {
+		datosEtiqueta, esValido := etiquetaActual.(map[string]interface{})
+		if !esValido {
+			continue
+		}
+		nombre, esValido := datosEtiqueta["name"].(string)
+		if esValido && nombre != "" {
+			etiquetas = append(etiquetas, "`"+nombre+"`")
+		}
+	}
+	if len(etiquetas) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("\n**Etiquetas**: %s", strings.Join(etiquetas, ", "))
+}
 
 // handlePullRequestReview notifica cuando alguien aprueba, rechaza o comenta un PR.
 func handlePullRequestReview(sesionDiscord *discordgo.Session, canalID string, cargaGitHub map[string]interface{}) {

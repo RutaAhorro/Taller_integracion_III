@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
+// ===== Modelos de catálogo =====
+
 // CadenaSupermercado mapea scraper.cadenas_supermercado
 type CadenaSupermercado struct {
 	ID                int       `gorm:"primaryKey;autoIncrement" json:"id"`
@@ -17,9 +19,12 @@ type CadenaSupermercado struct {
 	CreadoEl          time.Time `gorm:"default:now();not null" json:"creado_el"`
 }
 
+// TableName vincula la cadena con su tabla del esquema scraper.
 func (CadenaSupermercado) TableName() string {
 	return "scraper.cadenas_supermercado"
 }
+
+// ===== Modelos de sucursal y trabajo =====
 
 // SucursalSupermercado mapea scraper.sucursales_supermercado
 type SucursalSupermercado struct {
@@ -39,6 +44,7 @@ type SucursalSupermercado struct {
 	Cadena *CadenaSupermercado `gorm:"foreignKey:CadenaID;constraint:OnDelete:CASCADE" json:"-"`
 }
 
+// TableName vincula la sucursal con su tabla del esquema scraper.
 func (SucursalSupermercado) TableName() string {
 	return "scraper.sucursales_supermercado"
 }
@@ -57,6 +63,7 @@ type TrabajoScraper struct {
 	RegistroErrores       *string    `gorm:"type:text" json:"registro_errores,omitempty"`
 }
 
+// TableName vincula el trabajo de scraping con su tabla de coordinación.
 func (TrabajoScraper) TableName() string {
 	return "scraper.trabajos_scraper"
 }

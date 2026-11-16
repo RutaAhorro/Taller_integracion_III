@@ -6,13 +6,17 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
-	"github.com/google/uuid"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
+	"github.com/google/uuid"
 )
 
+// ===== Registro durable de lotes =====
+
+// ingestarDurable registra el lote una sola vez y lo procesa bajo una lease.
 func (servicio *scraperService) ingestarDurable(contexto context.Context, trabajoID *string, entrada domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
 	if len(entrada.Productos) == 0 {
 		return nil, ErrLoteVacio
@@ -66,6 +70,9 @@ func (servicio *scraperService) ingestarDurable(contexto context.Context, trabaj
 	return servicio.entregar(contexto, entrega)
 }
 
+// ===== Resolución, entrega y reintentos =====
+
+// entregar resuelve la sucursal, ingesta en Catálogo y confirma o reprograma el lote.
 func (servicio *scraperService) entregar(contexto context.Context, entrega *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
 	contexto = domain.ConLoteID(contexto, entrega.ID.String())
 	var entrada domain.IngestaLoteDTO

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/services"
 	"github.com/google/uuid"
@@ -10,11 +11,17 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+// ===== Registro y consulta del outbox de trabajos =====
+
+// ejecucionRepository implementa el outbox de trabajos mediante PostgreSQL.
 type ejecucionRepository struct{ baseDatos *gorm.DB }
 
+// NewEjecucionRepository crea el repositorio SQL de ejecuciones pendientes.
 func NewEjecucionRepository(baseDatos *gorm.DB) domain.EjecucionRepository {
 	return &ejecucionRepository{baseDatos}
 }
+
+// RegistrarEjecucion guarda de forma idempotente el payload durable del trabajo.
 func (repositorio *ejecucionRepository) RegistrarEjecucion(contexto context.Context, ejecucion domain.Ejecucion) error {
 	return repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		var trabajo domain.TrabajoScraper
@@ -40,6 +47,8 @@ func (repositorio *ejecucionRepository) RegistrarEjecucion(contexto context.Cont
 		return nil
 	})
 }
+
+// Pendientes retira outboxes terminales y obtiene ejecuciones listas para publicar.
 func (repositorio *ejecucionRepository) Pendientes(contexto context.Context) ([]domain.Ejecucion, error) {
 	// Retirar también outboxes terminales anteriores a este fix, en lotes acotados.
 	if errorObtenido := repositorio.baseDatos.WithContext(contexto).Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id IN (
@@ -53,6 +62,8 @@ func (repositorio *ejecucionRepository) Pendientes(contexto context.Context) ([]
  AND et.proxima_publicacion<=now() ORDER BY et.proxima_publicacion LIMIT 20`).Scan(&resultado).Error
 	return resultado, errorObtenido
 }
+
+// PosponerPublicacion programa el siguiente intento de publicación del trabajo.
 func (repositorio *ejecucionRepository) PosponerPublicacion(contexto context.Context, identificador uuid.UUID) error {
 	return repositorio.baseDatos.WithContext(contexto).Exec(`UPDATE scraper.entregas_trabajos SET proxima_publicacion=now()+interval '30 seconds' WHERE trabajo_id=?`, identificador).Error
 }
