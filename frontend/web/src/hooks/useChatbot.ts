@@ -4,8 +4,10 @@ import { useAuth } from '@/hooks/useAuth';
 
 const API_URL = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 
+// Distingue respuestas, errores y espera para no presentar fallos como resultados del asistente.
 export type MessageType = 'welcome' | 'text' | 'processing' | 'error';
 
+// Identifica cada mensaje para sustituir solo la espera correspondiente a su solicitud.
 export type Message = {
   id: string;
   role: 'user' | 'assistant';
@@ -18,9 +20,12 @@ const ERROR_CONEXION = 'No se pudo contactar al asistente. Revisa la conexión e
 const ERROR_SESION = 'Tu sesión expiró o no es válida. Vuelve a iniciar sesión para consultar al asistente.';
 
 let siguienteIdentificador = 0;
+// Combina fecha y secuencia para evitar IDs repetidos entre mensajes creados en el mismo milisegundo.
 const nuevoIdentificador = () => `${Date.now()}-${siguienteIdentificador++}`;
+// Crea una bienvenida nueva al iniciar o vaciar el chat, sin simular una respuesta del servicio.
 const mensajeBienvenida = (): Message => ({ id: nuevoIdentificador(), role: 'assistant', type: 'welcome' });
 
+// Diferencia errores HTTP para orientar el reintento; un 401 indica que la sesión ya no es válida.
 function mensajeErrorHTTP(estado: number): string {
   if (estado === 401) return ERROR_SESION;
   if (estado === 403) return 'No tienes permiso para consultar al asistente.';
@@ -30,6 +35,7 @@ function mensajeErrorHTTP(estado: number): string {
   return ERROR_IA;
 }
 
+// Centraliza conversación, sesión y solicitudes para mantener la vista separada del contrato HTTP.
 export function useChatbot() {
   const { isGuest } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -39,6 +45,7 @@ export function useChatbot() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const solicitudActiva = useRef<AbortController | null>(null);
 
+  // Mantiene visible el último mensaje al cambiar la conversación.
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
@@ -46,6 +53,7 @@ export function useChatbot() {
   // Salir del chat cancela la espera, sin aplicar respuestas sobre una vista desmontada.
   useEffect(() => () => solicitudActiva.current?.abort(), []);
 
+  // Envía una sola consulta con sesión y conserva el texto si falla para permitir su reintento.
   const handleSend = async (texto: string) => {
     const mensaje = texto.trim();
     if (!mensaje || solicitudActiva.current) return;
@@ -58,6 +66,7 @@ export function useChatbot() {
     const controlador = new AbortController();
     solicitudActiva.current = controlador;
     const identificadorEspera = nuevoIdentificador();
+    // Sustituye la espera por el resultado o error, ignorando respuestas de solicitudes canceladas.
     const responder = (contenido: string, tipo: 'text' | 'error') => {
       if (controlador.signal.aborted) return;
       setMessages((anteriores) => [
@@ -110,6 +119,7 @@ export function useChatbot() {
     }
   };
 
+  // Cancela la espera antes de reiniciar el chat para que una respuesta tardía no lo repueble.
   const handleClear = () => {
     solicitudActiva.current?.abort();
     solicitudActiva.current = null;
