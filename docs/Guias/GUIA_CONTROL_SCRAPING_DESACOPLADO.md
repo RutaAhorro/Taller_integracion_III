@@ -142,6 +142,21 @@ Gateway no tiene pool SQL. Las réplicas del worker conservan su política propi
 con un valor de `openssl rand -hex 32` distinto del token interno de Catálogo.
 Desplegar Control junto con worker y bot: una versión sin token recibe 401.
 
+Desde SUP-312, `catalogo-internal-secret` requiere dos claves: `token`
+(escritura, usada por la ingesta) y `consulta-token` (sólo lectura, usada por
+`/internal/v1/productos/disponibilidad`). Crearlo o actualizarlo con:
+
+```bash
+kubectl create secret generic catalogo-internal-secret \
+  --from-file=token=<archivo-ingesta> \
+  --from-file=consulta-token=<archivo-lectura> \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+`consulta-token` se inyecta como `optional: true`: si la clave falta, Catálogo
+arranca y la consulta de disponibilidad responde 404 hasta que se agregue. Cada
+valor debe ser distinto entre sí y de `JWT_SECRET` (mínimo 32 caracteres).
+
 **No retirar `Service/api`:** es el alias de Gateway que usan el bot y el worker.
 
 ## Validación
