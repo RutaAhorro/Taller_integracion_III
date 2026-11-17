@@ -14,7 +14,9 @@
 
 ## Índice breve generado
 
-3 archivos fuente, incluidos los de pruebas. Distribución:
-- `(raíz)`: 3 archivos.
+8 archivos fuente, incluidos los de pruebas. Distribución:
+- `(raíz)`: 1 archivos.
+- `internal`: 5 archivos.
+- `tests`: 2 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

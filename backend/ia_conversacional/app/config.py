@@ -121,6 +121,8 @@ FALLBACK_JITTER_MAX = _leer_env_float("IA_FALLBACK_JITTER_MAX", 0.5)
 # --------------------------------------------------------------------------
 CHAT_MAX_MENSAJE_LEN = _leer_env_int("IA_CHAT_MAX_MENSAJE_LEN", 1000)
 EXPLICACION_MAX_PRODUCTOS = _leer_env_int("IA_EXPLICACION_MAX_PRODUCTOS", 8)
+CHAT_RATE_LIMIT_REQUESTS = _leer_env_int("CHAT_RATE_LIMIT_REQUESTS", 10)
+CHAT_RATE_LIMIT_WINDOW_SECONDS = _leer_env_float("CHAT_RATE_LIMIT_WINDOW_SECONDS", 60.0)
 
 
 def obtener_origenes_cors() -> list[str]:
@@ -214,6 +216,10 @@ def validar_configuracion() -> None:
         raise RuntimeError("CHAT_MAX_MENSAJE_LEN debe ser mayor a 0.")
     if EXPLICACION_MAX_PRODUCTOS <= 0:
         raise RuntimeError("EXPLICACION_MAX_PRODUCTOS debe ser mayor a 0.")
+    if CHAT_RATE_LIMIT_REQUESTS <= 0:
+        raise RuntimeError("CHAT_RATE_LIMIT_REQUESTS debe ser mayor a 0.")
+    if CHAT_RATE_LIMIT_WINDOW_SECONDS <= 0:
+        raise RuntimeError("CHAT_RATE_LIMIT_WINDOW_SECONDS debe ser mayor a 0.")
 
     if CATALOGO_CACHE_TTL < 0:
         raise RuntimeError("CATALOGO_CACHE_TTL debe ser mayor o igual a 0.")

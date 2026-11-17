@@ -30,10 +30,10 @@
 
 ## Índice breve generado
 
-72 archivos fuente, incluidos los de pruebas. Distribución:
+70 archivos fuente, incluidos los de pruebas. Distribución:
 - `(raíz)`: 1 archivos.
 - `app`: 1 archivos.
-- `components`: 34 archivos.
+- `components`: 32 archivos.
 - `contexts`: 3 archivos.
 - `core`: 1 archivos.
 - `features`: 6 archivos.
