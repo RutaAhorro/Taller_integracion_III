@@ -1,4 +1,4 @@
-package main
+package integration_test
 
 import (
 	"net/http"
@@ -6,25 +6,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gin-gonic/gin"
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/app"
 )
 
 // Comprueba la composición real y que la API ya no aloje Identidad ni Catálogo.
-func TestModuleCompositionHTTP(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	t.Setenv("CATALOGO_INTERNAL_URL", "http://catalogo:8080")
-	t.Setenv("CATALOGO_INTERNAL_TOKEN", strings.Repeat("t", 32))
-	t.Setenv("SCRAPING_SERVICE_TOKEN", testServiceToken)
-	t.Setenv("CATALOGO_INGEST_TIMEOUT", "")
-	router, err := setupRouter()
-	if err != nil {
-		t.Fatal(err)
+func TestModuleCompositionHTTP(prueba *testing.T) {
+	prepareApplicationEnvironment(prueba)
+	enrutador, _, errorObtenido := app.NewApplication(nil, nil)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	token := "cookie-que-control-no-interpreta"
 
-	cases := []struct {
-		name, method, path, body, cookie string
-		status                           int
+	casos := []struct {
+		nombre, metodo, ruta, cuerpo, cookieSesion string
+		codigoEstado                               int
 	}{
 		{"liveness sin dependencias", "GET", "/_api/live", "", "", 200},
 		{"readiness sin bases", "GET", "/health", "", "", 503},
@@ -48,18 +44,18 @@ func TestModuleCompositionHTTP(t *testing.T) {
 		{"ingesta directa inválida", "POST", "/api/v1/scraper/productos", "{}", "", 400},
 		{"ejecución con ID inválido sin Redis", "POST", "/api/v1/scraper/trabajos/invalid/ejecutar", "{}", "", 400},
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+testServiceToken)
-			if tc.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "jwt", Value: tc.cookie})
+	for _, casoPrueba := range casos {
+		prueba.Run(casoPrueba.nombre, func(prueba *testing.T) {
+			peticion := httptest.NewRequest(casoPrueba.metodo, casoPrueba.ruta, strings.NewReader(casoPrueba.cuerpo))
+			peticion.Header.Set("Content-Type", "application/json")
+			peticion.Header.Set("Authorization", "Bearer "+testServiceToken)
+			if casoPrueba.cookieSesion != "" {
+				peticion.AddCookie(&http.Cookie{Name: "jwt", Value: casoPrueba.cookieSesion})
 			}
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, req)
-			if response.Code != tc.status {
-				t.Fatalf("HTTP %d; esperado %d: %s", response.Code, tc.status, response.Body)
+			respuesta := httptest.NewRecorder()
+			enrutador.ServeHTTP(respuesta, peticion)
+			if respuesta.Code != casoPrueba.codigoEstado {
+				prueba.Fatalf("HTTP %d; esperado %d: %s", respuesta.Code, casoPrueba.codigoEstado, respuesta.Body)
 			}
 
 		})

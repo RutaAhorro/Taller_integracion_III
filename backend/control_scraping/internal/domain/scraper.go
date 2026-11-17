@@ -2,6 +2,8 @@ package domain
 
 import "time"
 
+// ===== Contratos de trabajos y resultados =====
+
 // IniciarTrabajoDTO contiene los datos requeridos para registrar el inicio de una sesión de scraping.
 type IniciarTrabajoDTO struct {
 	CadenaID              int     `json:"cadena_id" binding:"required"`
@@ -31,6 +33,8 @@ type FinalizarTrabajoDTO struct {
 	RespuestasBloqueadas *int    `json:"respuestas_bloqueadas,omitempty"`
 	RegistroErrores      *string `json:"registro_errores,omitempty"`
 }
+
+// ===== Productos e ingesta =====
 
 // ProductoScrapeadoDTO representa cada item extraído por los spiders (Jumbo, Santa Isabel, etc.)
 // compatible con el formato normalizado del microservicio de scraping.
