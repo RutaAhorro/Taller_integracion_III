@@ -6,7 +6,11 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+// TimeoutSMTPPredeterminado acota cada envío por el transporte SMTP.
+const TimeoutSMTPPredeterminado = 30 * time.Second
 
 // Modos de envío de correo de Identidad (SUP-189).
 const (
@@ -26,62 +30,64 @@ const (
 type Correo struct {
 	Modo, Host, TLS, Usuario, Clave, Remitente string
 	Puerto                                     int
+	Timeout                                    time.Duration
 }
 
-// LoadCorreo lee sólo el correo, para que `identidad correo-prueba` no exija BD ni Redis.
+// LoadCorreo lee y valida sólo la configuración de correo; Load la incorpora al arrancar.
 // Sin IDENTIDAD_CORREO_MODO, hay SMTP cuando existen credenciales: así el Deployment
 // arranca con correo deshabilitado mientras el Secret identidad-smtp no exista.
 func LoadCorreo() (Correo, error) {
-	c := Correo{
+	configuracion := Correo{
+		Timeout:   TimeoutSMTPPredeterminado,
 		Modo:      strings.TrimSpace(os.Getenv("IDENTIDAD_CORREO_MODO")),
 		Host:      strings.TrimSpace(os.Getenv("SMTP_HOST")),
 		Usuario:   os.Getenv("SMTP_USER"),
 		Clave:     os.Getenv("SMTP_PASS"),
 		Remitente: strings.TrimSpace(os.Getenv("SMTP_FROM")),
 	}
-	if c.Modo == "" {
-		c.Modo = CorreoDeshabilitado
-		if c.Usuario != "" || c.Clave != "" {
-			c.Modo = CorreoSMTP
+	if configuracion.Modo == "" {
+		configuracion.Modo = CorreoDeshabilitado
+		if configuracion.Usuario != "" || configuracion.Clave != "" {
+			configuracion.Modo = CorreoSMTP
 		}
 	}
-	switch c.Modo {
+	switch configuracion.Modo {
 	case CorreoDeshabilitado, CorreoLog:
-		return Correo{Modo: c.Modo}, nil
+		return Correo{Modo: configuracion.Modo, Timeout: configuracion.Timeout}, nil
 	case CorreoSMTP:
 		// Continúa con las validaciones de SMTP más abajo.
 	default:
 		return Correo{}, errors.New("IDENTIDAD_CORREO_MODO debe ser smtp, log o deshabilitado")
 	}
-	if c.Host == "" || strings.ContainsAny(c.Host, " \t\r\n/@") {
+	if configuracion.Host == "" || strings.ContainsAny(configuracion.Host, " \t\r\n/@") {
 		return Correo{}, errors.New("SMTP_HOST requiere un nombre de servidor sin esquema ni espacios")
 	}
-	c.Puerto = 587
+	configuracion.Puerto = 587
 	if raw := strings.TrimSpace(os.Getenv("SMTP_PORT")); raw != "" {
-		n, err := strconv.Atoi(raw)
-		if err != nil || n < 1 || n > 65535 {
+		cantidad, err := strconv.Atoi(raw)
+		if err != nil || cantidad < 1 || cantidad > 65535 {
 			return Correo{}, errors.New("SMTP_PORT debe estar entre 1 y 65535")
 		}
-		c.Puerto = n
+		configuracion.Puerto = cantidad
 	}
-	c.TLS = strings.TrimSpace(os.Getenv("SMTP_TLS"))
-	if c.TLS == "" {
-		c.TLS = TLSStartTLS
-		if c.Puerto == 465 {
-			c.TLS = TLSImplicito
+	configuracion.TLS = strings.TrimSpace(os.Getenv("SMTP_TLS"))
+	if configuracion.TLS == "" {
+		configuracion.TLS = TLSStartTLS
+		if configuracion.Puerto == 465 {
+			configuracion.TLS = TLSImplicito
 		}
 	}
-	if c.TLS != TLSStartTLS && c.TLS != TLSImplicito {
+	if configuracion.TLS != TLSStartTLS && configuracion.TLS != TLSImplicito {
 		return Correo{}, errors.New("SMTP_TLS debe ser starttls o tls")
 	}
-	if c.Usuario == "" || c.Clave == "" || strings.ContainsAny(c.Usuario, "\r\n") {
+	if configuracion.Usuario == "" || configuracion.Clave == "" || strings.ContainsAny(configuracion.Usuario, "\r\n") {
 		return Correo{}, errors.New("SMTP_USER y SMTP_PASS son obligatorios en modo smtp")
 	}
-	if c.Remitente == "" {
-		c.Remitente = c.Usuario
+	if configuracion.Remitente == "" {
+		configuracion.Remitente = configuracion.Usuario
 	}
-	if _, err := mail.ParseAddress(c.Remitente); err != nil || strings.ContainsAny(c.Remitente, "\r\n") {
+	if _, err := mail.ParseAddress(configuracion.Remitente); err != nil || strings.ContainsAny(configuracion.Remitente, "\r\n") {
 		return Correo{}, errors.New("SMTP_FROM requiere una dirección de correo válida")
 	}
-	return c, nil
+	return configuracion, nil
 }

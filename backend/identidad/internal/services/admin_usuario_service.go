@@ -43,7 +43,7 @@ func NewAdminUsuarioService(usuarioRepo domain.AdminUsuarioRepository) AdminUsua
 }
 
 // Listar devuelve una página de cuentas con los filtros recibidos, sin exponer credenciales.
-func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
+func (servicio *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
 	if filtro.Rol != "" {
 		rol, err := normalizarRol(filtro.Rol)
 		if err != nil {
@@ -55,20 +55,20 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 		filtro.Page = 1
 	}
 	if filtro.Limit < 1 {
-		filtro.Limit = 20
+		filtro.Limit = domain.UsuariosAdminPorPagina
 	}
 	if filtro.Offset < 0 {
 		filtro.Offset = 0
 	}
 
-	usuarios, total, err := s.usuarioRepo.Listar(ctx, filtro)
+	usuarios, total, err := servicio.usuarioRepo.Listar(ctx, filtro)
 	if err != nil {
 		return nil, err
 	}
 
 	resultado := make([]domain.UsuarioAdminDTO, 0, len(usuarios))
-	for i := range usuarios {
-		resultado = append(resultado, mapearUsuarioAdmin(&usuarios[i]))
+	for indice := range usuarios {
+		resultado = append(resultado, mapearUsuarioAdmin(&usuarios[indice]))
 	}
 
 	totalPaginas := 0
@@ -87,8 +87,8 @@ func (s *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUs
 }
 
 // Metricas devuelve el total de cuentas y las activas para el panel.
-func (s *adminUsuarioService) Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error) {
-	total, activos, err := s.usuarioRepo.Contar(ctx)
+func (servicio *adminUsuarioService) Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error) {
+	total, activos, err := servicio.usuarioRepo.Contar(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +97,7 @@ func (s *adminUsuarioService) Metricas(ctx context.Context) (*domain.MetricasUsu
 
 // Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
 // del último admin y la auditoría se ejecutan juntas en el repositorio.
-func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
+func (servicio *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
 	id = strings.TrimSpace(id)
 	if _, err := uuid.Parse(id); err != nil {
 		return nil, ErrIDUsuarioInvalido
@@ -130,7 +130,7 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 	}
 
 	datos["actualizado_el"] = time.Now()
-	if err := s.usuarioRepo.ActualizarConGuarda(ctx, id, datos, actorID); err != nil {
+	if err := servicio.usuarioRepo.ActualizarConGuarda(ctx, id, datos, actorID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrUsuarioNoEncontrado
 		}
@@ -140,7 +140,7 @@ func (s *adminUsuarioService) Actualizar(ctx context.Context, id string, input d
 		return nil, err
 	}
 
-	actualizado, err := s.usuarioRepo.FindByID(ctx, id)
+	actualizado, err := servicio.usuarioRepo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}

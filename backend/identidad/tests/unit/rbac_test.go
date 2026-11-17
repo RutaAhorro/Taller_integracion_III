@@ -1,4 +1,4 @@
-package tests
+package unit_test
 
 import (
 	"net/http"
@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestRequireRole(t *testing.T) {
+func TestRequireRole(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	tests := []struct {
@@ -63,24 +63,24 @@ func TestRequireRole(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			r := gin.New()
-			r.Use(func(c *gin.Context) {
+		prueba.Run(tt.name, func(prueba *testing.T) {
+			peticion := gin.New()
+			peticion.Use(func(contexto *gin.Context) {
 				if tt.setContext {
-					c.Set("rol", tt.rolesContexto)
+					contexto.Set("rol", tt.rolesContexto)
 				}
-				c.Next()
+				contexto.Next()
 			})
-			r.GET("/test-protected", middleware.RequireRole(tt.rolesRequerido...), func(c *gin.Context) {
-				c.JSON(http.StatusOK, gin.H{"mensaje": "acceso concedido"})
+			peticion.GET("/test-protected", middleware.RequireRole(tt.rolesRequerido...), func(contexto *gin.Context) {
+				contexto.JSON(http.StatusOK, gin.H{"mensaje": "acceso concedido"})
 			})
 
 			req, _ := http.NewRequest(http.MethodGet, "/test-protected", nil)
-			w := httptest.NewRecorder()
-			r.ServeHTTP(w, req)
+			escritor := httptest.NewRecorder()
+			peticion.ServeHTTP(escritor, req)
 
-			if w.Code != tt.expectedStatus {
-				t.Errorf("se esperaba status %d, se obtuvo %d. Body: %s", tt.expectedStatus, w.Code, w.Body.String())
+			if escritor.Code != tt.expectedStatus {
+				prueba.Errorf("se esperaba status %d, se obtuvo %d. Body: %s", tt.expectedStatus, escritor.Code, escritor.Body.String())
 			}
 		})
 	}

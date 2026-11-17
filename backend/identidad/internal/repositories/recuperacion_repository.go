@@ -17,12 +17,12 @@ func NewRecuperacionRepository(db *gorm.DB) domain.RecuperacionRepository {
 	return &gormRecuperacionRepository{db: db}
 }
 
-func (r *gormRecuperacionRepository) SolicitudesRecientes(ctx context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
+func (repositorio *gormRecuperacionRepository) SolicitudesRecientes(ctx context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
 	var fila struct {
 		EnVentana int
 		EnEspera  bool
 	}
-	err := r.db.WithContext(ctx).Raw(`SELECT count(*) AS en_ventana,
+	err := repositorio.db.WithContext(ctx).Raw(`SELECT count(*) AS en_ventana,
             coalesce(bool_or(creado_el > now() - make_interval(secs => ?)), false) AS en_espera
         FROM api.tokens_recuperacion
         WHERE usuario_id = ? AND creado_el > now() - make_interval(secs => ?)`,
@@ -30,8 +30,8 @@ func (r *gormRecuperacionRepository) SolicitudesRecientes(ctx context.Context, u
 	return fila.EnVentana, fila.EnEspera, err
 }
 
-func (r *gormRecuperacionRepository) EmitirToken(ctx context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+func (repositorio *gormRecuperacionRepository) EmitirToken(ctx context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
+	return repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Sólo sirve el enlace más reciente: los anteriores pendientes quedan inutilizados.
 		if err := tx.Exec(`UPDATE api.tokens_recuperacion SET usado_el = now() WHERE usuario_id = ? AND usado_el IS NULL`, usuarioID).Error; err != nil {
 			return err

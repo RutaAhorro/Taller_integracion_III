@@ -2,6 +2,12 @@ package security
 
 import "golang.org/x/crypto/bcrypt"
 
+// Límites de la política vigente y del formato bcrypt; no se alteran en el barrido.
+const (
+	MinimoBytesPassword = 8
+	MaximoBytesPassword = 72
+)
+
 // HashPassword genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
 func HashPassword(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)

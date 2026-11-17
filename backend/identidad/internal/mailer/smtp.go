@@ -15,9 +15,6 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 )
 
-// plazoEnvio acota un envío cuyo contexto no trae deadline.
-const plazoEnvio = 30 * time.Second
-
 // SMTP envía por STARTTLS (587) o TLS implícito (465) y nunca autentica sin cifrado.
 type SMTP struct {
 	direccion, servidor string
@@ -26,6 +23,7 @@ type SMTP struct {
 	remitente           *mail.Address
 	cfgTLS              *tls.Config
 	ahora               func() time.Time
+	plazoEnvio          time.Duration
 }
 
 // ErrorSMTP nombra la etapa que falló: "conexion" apunta a salida bloqueada hacia el
@@ -35,43 +33,50 @@ type ErrorSMTP struct {
 	Err   error
 }
 
-func (e *ErrorSMTP) Error() string { return "smtp " + e.Etapa + ": " + e.Err.Error() }
-func (e *ErrorSMTP) Unwrap() error { return e.Err }
+func (errorSMTP *ErrorSMTP) Error() string {
+	return "smtp " + errorSMTP.Etapa + ": " + errorSMTP.Err.Error()
+}
+func (errorSMTP *ErrorSMTP) Unwrap() error { return errorSMTP.Err }
 
 func NuevoSMTP(cfg config.Correo) (*SMTP, error) {
+	plazoEnvio := cfg.Timeout
+	if plazoEnvio == 0 {
+		plazoEnvio = config.TimeoutSMTPPredeterminado
+	}
 	remitente, err := mail.ParseAddress(cfg.Remitente)
 	if err != nil {
 		return nil, errors.New("SMTP_FROM requiere una dirección de correo válida")
 	}
 	return &SMTP{
-		direccion: net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Puerto)),
-		servidor:  cfg.Host,
-		implicito: cfg.TLS == config.TLSImplicito,
-		usuario:   cfg.Usuario,
-		clave:     cfg.Clave,
-		remitente: remitente,
-		cfgTLS:    &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12},
-		ahora:     time.Now,
+		direccion:  net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Puerto)),
+		servidor:   cfg.Host,
+		implicito:  cfg.TLS == config.TLSImplicito,
+		usuario:    cfg.Usuario,
+		clave:      cfg.Clave,
+		remitente:  remitente,
+		cfgTLS:     &tls.Config{ServerName: cfg.Host, MinVersion: tls.VersionTLS12},
+		ahora:      time.Now,
+		plazoEnvio: plazoEnvio,
 	}, nil
 }
 
 // Enviar sigue el diálogo SMTP paso a paso; cada error nombra la etapa en que falló.
-func (s *SMTP) Enviar(ctx context.Context, m Mensaje) error {
-	para, err := validar(m)
+func (transporte *SMTP) Enviar(ctx context.Context, mensaje Mensaje) error {
+	para, err := validar(mensaje)
 	if err != nil {
 		return err
 	}
-	datos, err := construir(s.remitente, para, m, s.ahora())
+	datos, err := construir(transporte.remitente, para, mensaje, transporte.ahora())
 	if err != nil {
 		return err
 	}
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, plazoEnvio)
+		ctx, cancel = context.WithTimeout(ctx, transporte.plazoEnvio)
 		defer cancel()
 	}
 	var dialer net.Dialer
-	crudo, err := dialer.DialContext(ctx, "tcp", s.direccion)
+	crudo, err := dialer.DialContext(ctx, "tcp", transporte.direccion)
 	if err != nil {
 		return &ErrorSMTP{"conexion", err}
 	}
@@ -81,50 +86,50 @@ func (s *SMTP) Enviar(ctx context.Context, m Mensaje) error {
 	_ = crudo.SetDeadline(deadline)
 	defer context.AfterFunc(ctx, func() { _ = crudo.Close() })()
 	conn := crudo
-	if s.implicito {
-		seguro := tls.Client(conn, s.cfgTLS)
+	if transporte.implicito {
+		seguro := tls.Client(conn, transporte.cfgTLS)
 		if err := seguro.HandshakeContext(ctx); err != nil {
 			return &ErrorSMTP{"tls", err}
 		}
 		conn = seguro
 	}
-	c, err := smtp.NewClient(conn, s.servidor)
+	clienteSMTP, err := smtp.NewClient(conn, transporte.servidor)
 	if err != nil {
 		return &ErrorSMTP{"saludo", err}
 	}
-	defer c.Close()
-	if err := c.Hello(nombreLocal()); err != nil {
+	defer clienteSMTP.Close()
+	if err := clienteSMTP.Hello(nombreLocal()); err != nil {
 		return &ErrorSMTP{"saludo", err}
 	}
-	if !s.implicito {
-		if ok, _ := c.Extension("STARTTLS"); !ok {
+	if !transporte.implicito {
+		if ok, _ := clienteSMTP.Extension("STARTTLS"); !ok {
 			return &ErrorSMTP{"starttls", errors.New("el servidor no ofrece STARTTLS; no se envían credenciales sin cifrar")}
 		}
-		if err := c.StartTLS(s.cfgTLS); err != nil {
+		if err := clienteSMTP.StartTLS(transporte.cfgTLS); err != nil {
 			return &ErrorSMTP{"starttls", err}
 		}
 	}
-	if err := c.Auth(smtp.PlainAuth("", s.usuario, s.clave, s.servidor)); err != nil {
+	if err := clienteSMTP.Auth(smtp.PlainAuth("", transporte.usuario, transporte.clave, transporte.servidor)); err != nil {
 		return &ErrorSMTP{"autenticacion", err}
 	}
-	if err := c.Mail(s.remitente.Address); err != nil {
+	if err := clienteSMTP.Mail(transporte.remitente.Address); err != nil {
 		return &ErrorSMTP{"remitente", err}
 	}
-	if err := c.Rcpt(para.Address); err != nil {
+	if err := clienteSMTP.Rcpt(para.Address); err != nil {
 		return &ErrorSMTP{"destinatario", err}
 	}
-	w, err := c.Data()
+	escritor, err := clienteSMTP.Data()
 	if err != nil {
 		return &ErrorSMTP{"envio", err}
 	}
-	if _, err := w.Write(datos); err != nil {
+	if _, err := escritor.Write(datos); err != nil {
 		return &ErrorSMTP{"envio", err}
 	}
-	if err := w.Close(); err != nil {
+	if err := escritor.Close(); err != nil {
 		return &ErrorSMTP{"envio", err}
 	}
 	// El servidor ya aceptó el mensaje; un QUIT fallido no lo deshace.
-	_ = c.Quit()
+	_ = clienteSMTP.Quit()
 	return nil
 }
 

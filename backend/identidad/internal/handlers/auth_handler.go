@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"errors"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"net/http"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	middleware "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
+	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
@@ -13,36 +15,36 @@ import (
 
 // RegistroRequest DTO de entrada para la creación de cuenta
 type RegistroRequest struct {
-	Correo         string `json:"correo" binding:"required,email" example:"usuario.test@uct.cl"`
-	Password       string `json:"password" binding:"required" example:"PasswordSegura123!"`
-	NombreCompleto string `json:"nombre_completo" binding:"required" example:"Vicente Matu"`
+	Correo         string `json:"correo" binding:"required,email"`
+	Password       string `json:"password" binding:"required"`
+	NombreCompleto string `json:"nombre_completo" binding:"required"`
 }
 
 // RegistroResponse DTO de salida sin exponer credenciales
 type RegistroResponse struct {
-	ID             string `json:"id" example:"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"`
-	Correo         string `json:"correo" example:"usuario.test@uct.cl"`
-	NombreCompleto string `json:"nombre_completo" example:"Vicente Matu"`
-	Rol            string `json:"rol" example:"registrado"`
-	EstaActivo     bool   `json:"esta_activo" example:"true"`
-	Mensaje        string `json:"mensaje" example:"Usuario registrado con éxito."`
+	ID             string `json:"id"`
+	Correo         string `json:"correo"`
+	NombreCompleto string `json:"nombre_completo"`
+	Rol            string `json:"rol"`
+	EstaActivo     bool   `json:"esta_activo"`
+	Mensaje        string `json:"mensaje"`
 }
 
 // LoginRequest DTO de entrada para autenticación de usuario
 type LoginRequest struct {
-	Correo   string `json:"correo" binding:"required,email" example:"usuario.test@uct.cl"`
-	Password string `json:"password" binding:"required" example:"PasswordSegura123!"`
+	Correo   string `json:"correo" binding:"required,email"`
+	Password string `json:"password" binding:"required"`
 }
 
 // LoginResponse DTO con la información básica del usuario autenticado
 type LoginResponse struct {
-	ID             string  `json:"id" example:"a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d"`
-	Correo         string  `json:"correo" example:"usuario.test@uct.cl"`
-	NombreCompleto string  `json:"nombre_completo" example:"Vicente Matu"`
-	Rol            string  `json:"rol" example:"registrado"`
-	EstaActivo     bool    `json:"esta_activo" example:"true"`
-	URLAvatar      *string `json:"url_avatar,omitempty" example:"https://ejemplo.com/avatar.jpg"`
-	Mensaje        string  `json:"mensaje" example:"Inicio de sesión exitoso."`
+	ID             string  `json:"id"`
+	Correo         string  `json:"correo"`
+	NombreCompleto string  `json:"nombre_completo"`
+	Rol            string  `json:"rol"`
+	EstaActivo     bool    `json:"esta_activo"`
+	URLAvatar      *string `json:"url_avatar,omitempty"`
+	Mensaje        string  `json:"mensaje"`
 }
 
 func rolCanonico(rol string) string {
@@ -55,53 +57,40 @@ func rolCanonico(rol string) string {
 const (
 	cookieSesion = "jwt"
 	// Duración de la sesión: 24h, igual que la expiración del JWT.
-	duracionSesionSegundos = 86400
+	duracionSesionSegundos = int(config.DuracionSesion / time.Second)
 )
 
 // AuthHandler gestiona las peticiones HTTP del módulo de autenticación
 type AuthHandler struct {
 	authService  services.AuthService
 	secureCookie bool
+	claveJWT     string
 }
 
-// NewAuthHandler construye el handler inyectando el servicio de autenticación
-func NewAuthHandler(authService services.AuthService, secureCookie ...bool) *AuthHandler {
-	secure := len(secureCookie) > 0 && secureCookie[0]
-	return &AuthHandler{
-		authService:  authService,
-		secureCookie: secure,
-	}
+// NewAuthHandler recibe el servicio y la clave JWT ya validada al iniciar.
+func NewAuthHandler(servicio services.AuthService, cookieSegura bool, clave string) *AuthHandler {
+	return &AuthHandler{authService: servicio, secureCookie: cookieSegura, claveJWT: clave}
 }
 
 // emitirSesion firma el JWT y lo entrega en una cookie HttpOnly (no accesible
 // desde JavaScript, protege contra XSS). Responde el error y retorna false si falla.
-func (h *AuthHandler) emitirSesion(c *gin.Context, userID, rol, provider string) bool {
-	tokenString, err := security.GenerarToken(userID, rolCanonico(rol), provider)
+func (manejador *AuthHandler) emitirSesion(contexto *gin.Context, userID, rol, provider string) bool {
+	tokenString, err := security.GenerarToken(userID, rolCanonico(rol), provider, manejador.claveJWT)
 	if err != nil {
-		middleware.ResponderError(c, http.StatusInternalServerError, "Error generando token de autorización.", err)
+		httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error generando token de autorización.", err)
 		return false
 	}
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(cookieSesion, tokenString, duracionSesionSegundos, "/", "", h.secureCookie, true)
+	contexto.SetSameSite(http.SameSiteLaxMode)
+	contexto.SetCookie(cookieSesion, tokenString, duracionSesionSegundos, "/", "", manejador.secureCookie, true)
 	return true
 }
 
-// RegistrarUsuario godoc
-// @Summary      Registrar nuevo usuario con auto-login
-// @Description  Valida complejidad de contraseña, encripta con bcrypt, crea usuario y genera automáticamente cookie HttpOnly para inicio de sesión inmediato
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        payload body RegistroRequest true "Datos de registro"
-// @Success      201  {object}  RegistroResponse
-// @Failure      400  {object}  middleware.RespuestaError
-// @Failure      409  {object}  middleware.RespuestaError
-// @Failure      500  {object}  middleware.RespuestaError
-// @Router       /api/v1/auth/register [post]
-func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
+// RegistrarUsuario: registrar nuevo usuario con auto-login.
+// Valida complejidad de contraseña, encripta con bcrypt, crea usuario y genera automáticamente cookie HttpOnly para inicio de sesión inmediato.
+func (manejador *AuthHandler) RegistrarUsuario(contexto *gin.Context) {
 	var req RegistroRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		middleware.ResponderError(c, http.StatusBadRequest, "Datos de entrada inválidos o incompletos.", err)
+	if err := contexto.ShouldBindJSON(&req); err != nil {
+		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos o incompletos.", err)
 		return
 	}
 
@@ -111,73 +100,61 @@ func (h *AuthHandler) RegistrarUsuario(c *gin.Context) {
 		NombreCompleto: req.NombreCompleto,
 	}
 
-	creado, err := h.authService.Registrar(c.Request.Context(), dto)
+	creado, err := manejador.authService.Registrar(contexto.Request.Context(), dto)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrPasswordInvalido), errors.Is(err, services.ErrNombreInvalido):
-			middleware.ResponderError(c, http.StatusBadRequest, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrCorreoDuplicado):
-			middleware.ResponderError(c, http.StatusConflict, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusConflict, err.Error(), err)
 		default:
-			middleware.ResponderError(c, http.StatusInternalServerError, "Error interno procesando el registro.", err)
+			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno procesando el registro.", err)
 		}
 		return
 	}
 
 	// Auto-login tras el registro.
-	if !h.emitirSesion(c, creado.ID.String(), creado.Rol, "local") {
+	if !manejador.emitirSesion(contexto, creado.ID.String(), creado.Rol, "local") {
 		return
 	}
 
-	c.JSON(http.StatusCreated, RegistroResponse{
+	contexto.JSON(http.StatusCreated, RegistroResponse{
 		ID:             creado.ID.String(),
 		Correo:         creado.Correo,
 		NombreCompleto: creado.NombreCompleto,
 		Rol:            rolCanonico(creado.Rol),
 		EstaActivo:     creado.EstaActivo,
-		Mensaje:        creado.Mensaje,
+		Mensaje:        "Usuario registrado con éxito.",
 	})
 }
 
-// LoginUsuario godoc
-// @Summary      Inicio de sesión local de usuario
-// @Description  Verifica credenciales de acceso, valida cuenta activa y emite token JWT firmado
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        payload body LoginRequest true "Credenciales de acceso"
-// @Success      200  {object}  LoginResponse
-// @Failure      400  {object}  middleware.RespuestaError
-// @Failure      401  {object}  middleware.RespuestaError
-// @Failure      403  {object}  middleware.RespuestaError
-// @Failure      429  {object}  middleware.RespuestaError
-// @Failure      500  {object}  middleware.RespuestaError
-// @Router       /api/v1/auth/login [post]
-func (h *AuthHandler) LoginUsuario(c *gin.Context) {
+// LoginUsuario: inicio de sesión local de usuario.
+// Verifica credenciales de acceso, valida cuenta activa y emite token JWT firmado.
+func (manejador *AuthHandler) LoginUsuario(contexto *gin.Context) {
 	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		middleware.ResponderError(c, http.StatusBadRequest, "Datos de inicio de sesión inválidos o incompletos.", err)
+	if err := contexto.ShouldBindJSON(&req); err != nil {
+		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de inicio de sesión inválidos o incompletos.", err)
 		return
 	}
 
-	usuario, err := h.authService.LoginWithContext(c.Request.Context(), req.Correo, req.Password)
+	usuario, err := manejador.authService.LoginWithContext(contexto.Request.Context(), req.Correo, req.Password)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrCredencialesInvalidas):
-			middleware.ResponderError(c, http.StatusUnauthorized, "Credenciales incorrectas.", err)
+			httperrors.ResponderError(contexto, http.StatusUnauthorized, "Credenciales incorrectas.", err)
 		case errors.Is(err, services.ErrCuentaInactiva):
-			middleware.ResponderError(c, http.StatusForbidden, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusForbidden, err.Error(), err)
 		default:
-			middleware.ResponderError(c, http.StatusInternalServerError, "Error interno durante la autenticación.", err)
+			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación.", err)
 		}
 		return
 	}
 
-	if !h.emitirSesion(c, usuario.ID.String(), usuario.Rol, "local") {
+	if !manejador.emitirSesion(contexto, usuario.ID.String(), usuario.Rol, "local") {
 		return
 	}
 
-	c.JSON(http.StatusOK, LoginResponse{
+	contexto.JSON(http.StatusOK, LoginResponse{
 		ID:             usuario.ID.String(),
 		Correo:         usuario.Correo,
 		NombreCompleto: usuario.NombreCompleto,
@@ -188,34 +165,24 @@ func (h *AuthHandler) LoginUsuario(c *gin.Context) {
 	})
 }
 
-// CerrarSesion godoc
-// @Summary      Cerrar sesión
-// @Description  Elimina la cookie HttpOnly de sesión. Es idempotente: responde 204 aunque no exista sesión.
-// @Tags         auth
-// @Success      204
-// @Router       /api/v1/auth/logout [post]
-func (h *AuthHandler) CerrarSesion(c *gin.Context) {
+// CerrarSesion: cerrar sesión.
+// Elimina la cookie HttpOnly de sesión. Es idempotente: responde 204 aunque no exista sesión.
+func (manejador *AuthHandler) CerrarSesion(contexto *gin.Context) {
 	// La cookie es HttpOnly: solo el servidor puede borrarla. MaxAge negativo la
 	// expira con los mismos atributos con que se emitió.
-	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie(cookieSesion, "", -1, "/", "", h.secureCookie, true)
-	c.Status(http.StatusNoContent)
+	contexto.SetSameSite(http.SameSiteLaxMode)
+	contexto.SetCookie(cookieSesion, "", -1, "/", "", manejador.secureCookie, true)
+	contexto.Status(http.StatusNoContent)
 }
 
-// PerfilUsuario godoc
-// @Summary      Perfil del usuario autenticado
-// @Description  Endpoint protegido para verificar identidad y claims extraídos del token JWT
-// @Tags         auth
-// @Produce      json
-// @Success      200  {object}  map[string]interface{}
-// @Failure      401  {object}  middleware.RespuestaError
-// @Router       /api/v1/auth/me [get]
-func (h *AuthHandler) PerfilUsuario(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	rol, _ := c.Get("rol")
-	provider, _ := c.Get("provider")
+// PerfilUsuario: perfil del usuario autenticado.
+// Endpoint protegido para verificar identidad y claims extraídos del token JWT.
+func (manejador *AuthHandler) PerfilUsuario(contexto *gin.Context) {
+	userID, _ := contexto.Get("user_id")
+	rol, _ := contexto.Get("rol")
+	provider, _ := contexto.Get("provider")
 
-	c.JSON(http.StatusOK, gin.H{
+	contexto.JSON(http.StatusOK, gin.H{
 		"user_id":  userID,
 		"rol":      rol,
 		"provider": provider,
@@ -223,57 +190,46 @@ func (h *AuthHandler) PerfilUsuario(c *gin.Context) {
 	})
 }
 
-// ActualizarPerfil godoc
-// @Summary      Actualización parcial del perfil de usuario
-// @Description  Permite al usuario autenticado actualizar su nombre, correo, teléfono, dirección o contraseña. El ID se extrae directamente del token JWT (prevención IDOR).
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        payload body domain.ActualizarPerfilDTO true "Campos a actualizar"
-// @Success      200  {object}  domain.PerfilUsuarioDTO
-// @Failure      400  {object}  middleware.RespuestaError
-// @Failure      401  {object}  middleware.RespuestaError
-// @Failure      409  {object}  middleware.RespuestaError
-// @Failure      500  {object}  middleware.RespuestaError
-// @Router       /api/v1/auth/me [put]
-func (h *AuthHandler) ActualizarPerfil(c *gin.Context) {
+// ActualizarPerfil: actualización parcial del perfil de usuario.
+// Permite al usuario autenticado actualizar su nombre, correo, teléfono, dirección o contraseña. El ID se extrae directamente del token JWT (prevención IDOR).
+func (manejador *AuthHandler) ActualizarPerfil(contexto *gin.Context) {
 	// Prevención IDOR: Extraer identidad exclusivamente del contexto seguro inyectado por RequireAuth
-	userIDVal, exists := c.Get("user_id")
+	userIDVal, exists := contexto.Get("user_id")
 	if !exists {
-		middleware.ResponderError(c, http.StatusUnauthorized, "Acceso no autorizado.", errors.New("identificador de usuario no presente en sesión"))
+		httperrors.ResponderError(contexto, http.StatusUnauthorized, "Acceso no autorizado.", errors.New("identificador de usuario no presente en sesión"))
 		return
 	}
 
 	userID, ok := userIDVal.(string)
 	if !ok || userID == "" {
-		middleware.ResponderError(c, http.StatusUnauthorized, "Identificador de usuario inválido.", errors.New("formato de user_id erróneo"))
+		httperrors.ResponderError(contexto, http.StatusUnauthorized, "Identificador de usuario inválido.", errors.New("formato de user_id erróneo"))
 		return
 	}
 
 	var req domain.ActualizarPerfilDTO
-	if err := c.ShouldBindJSON(&req); err != nil {
-		middleware.ResponderError(c, http.StatusBadRequest, "Datos de entrada inválidos para actualización de perfil.", err)
+	if err := contexto.ShouldBindJSON(&req); err != nil {
+		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos para actualización de perfil.", err)
 		return
 	}
 
-	perfil, err := h.authService.ActualizarPerfil(c.Request.Context(), userID, req)
+	perfil, err := manejador.authService.ActualizarPerfil(contexto.Request.Context(), userID, req)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrPasswordInvalido), errors.Is(err, services.ErrCorreoInvalido), errors.Is(err, services.ErrNombreInvalido):
-			middleware.ResponderError(c, http.StatusBadRequest, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusBadRequest, err.Error(), err)
 		case errors.Is(err, services.ErrCorreoDuplicado):
-			middleware.ResponderError(c, http.StatusConflict, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusConflict, err.Error(), err)
 		case errors.Is(err, services.ErrUsuarioNoEncontrado):
-			middleware.ResponderError(c, http.StatusNotFound, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusNotFound, err.Error(), err)
 		case errors.Is(err, services.ErrReautenticacionRequerida):
-			middleware.ResponderError(c, http.StatusForbidden, err.Error(), err)
+			httperrors.ResponderError(contexto, http.StatusForbidden, err.Error(), err)
 		default:
-			middleware.ResponderError(c, http.StatusInternalServerError, "Error interno al actualizar perfil.", err)
+			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno al actualizar perfil.", err)
 		}
 		return
 	}
 
-	c.JSON(http.StatusOK, perfil)
+	contexto.JSON(http.StatusOK, perfil)
 }
 
 // GoogleLoginRequest DTO de entrada para autenticación con Google
@@ -281,44 +237,33 @@ type GoogleLoginRequest struct {
 	IDToken string `json:"id_token" binding:"required"`
 }
 
-// GoogleLoginUsuario godoc
-// @Summary      Inicio de sesión con Google
-// @Description  Valida el token de Google y aplica lógica find-or-create para la cuenta de usuario
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        payload body GoogleLoginRequest true "Token JWT de Google"
-// @Success      200  {object}  LoginResponse
-// @Failure      400  {object}  middleware.RespuestaError
-// @Failure      401  {object}  middleware.RespuestaError
-// @Failure      500  {object}  middleware.RespuestaError
-// @Failure      503  {object}  middleware.RespuestaError
-// @Router       /api/v1/auth/google [post]
-func (h *AuthHandler) GoogleLoginUsuario(c *gin.Context) {
+// GoogleLoginUsuario: inicio de sesión con Google.
+// Valida el token de Google y aplica lógica find-or-create para la cuenta de usuario.
+func (manejador *AuthHandler) GoogleLoginUsuario(contexto *gin.Context) {
 	var req GoogleLoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		middleware.ResponderError(c, http.StatusBadRequest, "El id_token de Google es obligatorio.", err)
+	if err := contexto.ShouldBindJSON(&req); err != nil {
+		httperrors.ResponderError(contexto, http.StatusBadRequest, "El id_token de Google es obligatorio.", err)
 		return
 	}
 
-	usuario, err := h.authService.GoogleLogin(c.Request.Context(), req.IDToken)
+	usuario, err := manejador.authService.GoogleLogin(contexto.Request.Context(), req.IDToken)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrCredencialesInvalidas), errors.Is(err, services.ErrCuentaInactiva):
-			middleware.ResponderError(c, http.StatusUnauthorized, "Autenticación con Google fallida.", err)
+			httperrors.ResponderError(contexto, http.StatusUnauthorized, "Autenticación con Google fallida.", err)
 		case errors.Is(err, services.ErrGoogleNoConfigurado):
-			middleware.ResponderError(c, http.StatusServiceUnavailable, "Autenticación con Google temporalmente no disponible.", err)
+			httperrors.ResponderError(contexto, http.StatusServiceUnavailable, "Autenticación con Google temporalmente no disponible.", err)
 		default:
-			middleware.ResponderError(c, http.StatusInternalServerError, "Error interno durante la autenticación con Google.", err)
+			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación con Google.", err)
 		}
 		return
 	}
 
-	if !h.emitirSesion(c, usuario.ID.String(), usuario.Rol, "google") {
+	if !manejador.emitirSesion(contexto, usuario.ID.String(), usuario.Rol, "google") {
 		return
 	}
 
-	c.JSON(http.StatusOK, LoginResponse{
+	contexto.JSON(http.StatusOK, LoginResponse{
 		ID:             usuario.ID.String(),
 		Correo:         usuario.Correo,
 		NombreCompleto: usuario.NombreCompleto,

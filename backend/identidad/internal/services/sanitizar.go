@@ -1,4 +1,5 @@
-package utils
+// Saneamiento de nombres de perfil antes de guardarlos.
+package services
 
 import (
 	"regexp"
@@ -6,6 +7,9 @@ import (
 )
 
 var caracteresNoPermitidos = regexp.MustCompile(`[^a-zA-Z0-9\sñÑáéíóúÁÉÍÓÚ\-]`)
+
+// maximoCaracteresNombre conserva la política vigente de los perfiles.
+const maximoCaracteresNombre = 100
 
 // SanitizarInputBusqueda limita nombres a 100 caracteres y filtra su alfabeto.
 // La seguridad SQL depende de consultas parametrizadas; HTML debe escaparse al mostrarlo.
@@ -15,8 +19,8 @@ func SanitizarInputBusqueda(input string) string {
 
 	// 2. Limitar la longitud máxima a 100 caracteres para evitar desbordamientos o consultas pesadas
 	runas := []rune(limpio)
-	if len(runas) > 100 {
-		limpio = string(runas[:100])
+	if len(runas) > maximoCaracteresNombre {
+		limpio = string(runas[:maximoCaracteresNombre])
 	}
 
 	// 3. Filtrar estrictamente caracteres: Permitir solo alfanuméricos, espacios, guiones y letras con tilde

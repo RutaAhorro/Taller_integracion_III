@@ -22,7 +22,7 @@ parser.add_argument('--gateway-url', required=True)
 args = parser.parse_args()
 assert args.project.startswith('sup268-'), 'Sólo recursos del harness aislado'
 root = Path(__file__).resolve().parents[3]
-env = {k: v for k, v in os.environ.items() if k not in {
+env = {clave: valor for clave, valor in os.environ.items() if clave not in {
     'DB_USER','DB_PASSWORD','DB_NAME','JWT_SECRET','GOOGLE_CLIENT_ID',
     'CATALOGO_CORS_ALLOWED_ORIGINS','GATEWAY_TRUSTED_PROXIES','CATALOGO_INTERNAL_TOKEN',
     'IDENTITY_DB_PASSWORD','SCRAPING_DB_PASSWORD','CATALOGO_DB_PASSWORD',
@@ -58,7 +58,7 @@ def request(path, status=200, method='GET', data=None, opener=None, headers=None
         data=json.dumps(data).encode() if data is not None else None,
         headers={'Content-Type':'application/json',**scraper_auth(path),**(headers or {})})
     try: response = (opener or client()).open(req,timeout=15)
-    except urllib.error.HTTPError as e: response = e
+    except urllib.error.HTTPError as error_http: response = error_http
     with response:
         body = response.read()
         assert response.status == status, (path,status,response.status,body.decode())
@@ -135,7 +135,7 @@ def token(claims, alg='HS256', secret=key):
     return (value+b'.'+base64.urlsafe_b64encode(hmac.new(secret,value,digest).digest()).rstrip(b'=')).decode()
 claims={'user_id':user_id,'rol':'registrado','provider':'local','exp':int(time.time())+3600}
 for value in [token(claims,secret=b'wrong-signature'),token(claims,'HS384'),token(claims,'HS512'),
-              token({k:v for k,v in claims.items() if k!='exp'}),token({**claims,'exp':int(time.time())-10}),
+              token({clave:valor for clave,valor in claims.items() if clave!='exp'}),token({**claims,'exp':int(time.time())-10}),
               token({**claims,'nbf':int(time.time())+7200}),'malformed-token']:
     request('/api/v1/auth/me',401,headers={'Cookie':'jwt='+value})
 request('/api/v1/admin/productos',403,headers={'Cookie':'jwt='+token(claims),'X-Role':'admin'})
@@ -160,7 +160,7 @@ email='sup272.race.'+uuid4().hex+'@example.test'
 def register_race(_):
     req=urllib.request.Request(args.gateway_url+'/api/v1/auth/register',method='POST',headers={'Content-Type':'application/json'},data=json.dumps({'correo':email,'password':'Sup272FixturePassword123!','nombre_completo':'Concurrent Fixture'}).encode())
     try: response=client().open(req,timeout=15)
-    except urllib.error.HTTPError as e: response=e
+    except urllib.error.HTTPError as error_http: response=error_http
     with response: return response.status,json.loads(response.read())
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool: results=list(pool.map(register_race,range(8)))
 assert sum(code==201 for code,_ in results)==1 and sum(code==409 for code,_ in results)==7, results
@@ -209,7 +209,7 @@ for value in ['203.0.113.10','invalid_string, 203.0.113.11']:
 keys=compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:login:*').split()
 gateway_id=compose('ps','-q','gateway').strip()
 gateway_inspect=json.loads(subprocess.run(['docker','inspect',gateway_id],check=True,text=True,stdout=subprocess.PIPE).stdout)[0]
-gateway_ips={v['IPAddress'] for v in gateway_inspect['NetworkSettings']['Networks'].values()}
+gateway_ips={valor['IPAddress'] for valor in gateway_inspect['NetworkSettings']['Networks'].values()}
 assert len(keys)==1 and keys[0].removeprefix('rate_limit:login:') not in gateway_ips, 'Todos los usuarios limitados como Gateway'
 ttl=int(compose('exec','-T','redis','redis-cli','PTTL',keys[0]))
 assert 0<ttl<=900000
@@ -227,7 +227,7 @@ passed += 1
 assert compose('exec','-T','redis','redis-cli','--raw','GET','rate_limit:login:203.0.113.99').strip() == ''
 api_id=compose('ps','-q','control_scraping').strip()
 api_inspect=json.loads(subprocess.run(['docker','inspect',api_id],check=True,text=True,stdout=subprocess.PIPE).stdout)[0]
-api_ips={v['IPAddress'] for v in api_inspect['NetworkSettings']['Networks'].values()}
+api_ips={valor['IPAddress'] for valor in api_inspect['NetworkSettings']['Networks'].values()}
 assert any(compose('exec','-T','redis','redis-cli','--raw','GET','rate_limit:login:'+ip).strip() == '1' for ip in api_ips)
 reset_login_counters()
 
@@ -236,7 +236,7 @@ for _ in range(5): request('/api/v1/auth/login',401,method='POST',data={'correo'
 request('/api/v1/auth/login',429,method='POST',data={'correo':'unknown@example.test','password':'WrongPassword123!'},base=frontend_url,headers={'X-Forwarded-For':'invalid_string, 203.0.113.77'})
 frontend_id=compose('ps','-q','frontend').strip()
 frontend_inspect=json.loads(subprocess.run(['docker','inspect',frontend_id],check=True,text=True,stdout=subprocess.PIPE).stdout)[0]
-frontend_ips={v['IPAddress'] for v in frontend_inspect['NetworkSettings']['Networks'].values()}
+frontend_ips={valor['IPAddress'] for valor in frontend_inspect['NetworkSettings']['Networks'].values()}
 keys=compose('exec','-T','redis','redis-cli','--raw','KEYS','rate_limit:login:*').split()
 assert len(keys)==1 and keys[0].removeprefix('rate_limit:login:') not in (gateway_ips | frontend_ips), 'Se limitó la IP de un proxy en lugar del navegador'
 reset_login_counters()
@@ -303,7 +303,7 @@ reset_login_counters()
 def concurrent_login(_):
     req=urllib.request.Request(args.gateway_url+'/api/v1/auth/login',method='POST',headers={'Content-Type':'application/json'},data=json.dumps({'correo':'unknown@example.test','password':'WrongPassword123!'}).encode())
     try: response=client().open(req,timeout=15)
-    except urllib.error.HTTPError as e: response=e
+    except urllib.error.HTTPError as error_http: response=error_http
     with response: response.read(); return response.status
 with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool: statuses=list(pool.map(concurrent_login,range(8)))
 assert statuses.count(401)==5 and statuses.count(429)==3, statuses

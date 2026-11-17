@@ -19,67 +19,20 @@ type gormUsuarioRepository struct {
 	db *gorm.DB
 }
 
-// errBaseDeDatosNoDisponible lo devuelve el repositorio cerrado que se usa
-// cuando el módulo se construye sin conexión (pruebas de límites HTTP). Nunca
-// se omite la revalidación: toda operación falla de forma cerrada.
-var errBaseDeDatosNoDisponible = errors.New("base de datos no configurada")
-
-// repositorioCerrado satisface las interfaces de usuario y de administración
-// sin tocar la base de datos. Mantiene el arranque de routers de prueba sin
-// conexión y garantiza que ninguna petición autenticada se autorice por
-// accidente cuando falta la revalidación en api.usuarios.
-type repositorioCerrado struct{}
-
-func (repositorioCerrado) FindByEmail(context.Context, string) (*domain.Usuario, error) {
-	return nil, errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) FindByID(context.Context, string) (*domain.Usuario, error) {
-	return nil, errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) Create(context.Context, *domain.Usuario) error {
-	return errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) Actualizar(context.Context, string, map[string]interface{}) error {
-	return errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) Listar(context.Context, domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
-	return nil, 0, errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) Contar(context.Context) (int64, int64, error) {
-	return 0, 0, errBaseDeDatosNoDisponible
-}
-
-func (repositorioCerrado) ActualizarConGuarda(context.Context, string, map[string]interface{}, string) error {
-	return errBaseDeDatosNoDisponible
-}
-
 // NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM.
-// Sin conexión devuelve un repositorio cerrado (fail-closed) en vez de nil, para
-// que RequireAuth siempre tenga un repositorio real que consultar.
 func NewUsuarioRepository(db *gorm.DB) domain.UsuarioRepository {
-	if db == nil {
-		return repositorioCerrado{}
-	}
 	return &gormUsuarioRepository{db: db}
 }
 
 // NewAdminUsuarioRepository expone las operaciones administrativas del mismo adaptador.
 func NewAdminUsuarioRepository(db *gorm.DB) domain.AdminUsuarioRepository {
-	if db == nil {
-		return repositorioCerrado{}
-	}
 	return &gormUsuarioRepository{db: db}
 }
 
 // FindByEmail consulta si existe un usuario por su dirección de correo electrónico
-func (r *gormUsuarioRepository) FindByEmail(ctx context.Context, email string) (*domain.Usuario, error) {
+func (repositorio *gormUsuarioRepository) FindByEmail(ctx context.Context, email string) (*domain.Usuario, error) {
 	var usuario domain.Usuario
-	err := r.db.WithContext(ctx).Where("correo = ?", email).First(&usuario).Error
+	err := repositorio.db.WithContext(ctx).Where("correo = ?", email).First(&usuario).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -90,9 +43,9 @@ func (r *gormUsuarioRepository) FindByEmail(ctx context.Context, email string) (
 }
 
 // FindByID consulta a un usuario por su clave primaria UUID
-func (r *gormUsuarioRepository) FindByID(ctx context.Context, id string) (*domain.Usuario, error) {
+func (repositorio *gormUsuarioRepository) FindByID(ctx context.Context, id string) (*domain.Usuario, error) {
 	var usuario domain.Usuario
-	err := r.db.WithContext(ctx).Where("id = ?", id).First(&usuario).Error
+	err := repositorio.db.WithContext(ctx).Where("id = ?", id).First(&usuario).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
@@ -104,19 +57,15 @@ func (r *gormUsuarioRepository) FindByID(ctx context.Context, id string) (*domai
 
 // Listar devuelve una página de cuentas de api.usuarios y el total de filas
 // que cumplen los filtros administrativos indicados.
-func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
-	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
+func (repositorio *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
+	query := repositorio.db.WithContext(ctx).Model(&domain.Usuario{})
 
 	if texto := strings.TrimSpace(filtro.Query); texto != "" {
 		patron := "%" + escaparPatronLike(strings.ToLower(texto)) + "%"
 		query = query.Where(`LOWER(correo) LIKE ? ESCAPE '!' OR LOWER(nombre_completo) LIKE ? ESCAPE '!'`, patron, patron)
 	}
 	if rol := strings.ToLower(strings.TrimSpace(filtro.Rol)); rol != "" {
-		if rol == domain.RolAdmin {
-			query = query.Where("LOWER(TRIM(rol)) IN ?", []string{domain.RolAdmin, domain.RolAdminLegacy})
-		} else {
-			query = query.Where("LOWER(TRIM(rol)) = ?", rol)
-		}
+		query = query.Where("LOWER(TRIM(rol)) = ?", rol)
 	}
 	if filtro.EstaActivo != nil {
 		query = query.Where("esta_activo = ?", *filtro.EstaActivo)
@@ -147,9 +96,9 @@ func (r *gormUsuarioRepository) Listar(ctx context.Context, filtro domain.Filtro
 
 // Contar devuelve el total de cuentas y cuántas están activas, en dos COUNT
 // simples que no exponen columnas sensibles ni cargan filas en memoria.
-func (r *gormUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
+func (repositorio *gormUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
 	var total, activos int64
-	query := r.db.WithContext(ctx).Model(&domain.Usuario{})
+	query := repositorio.db.WithContext(ctx).Model(&domain.Usuario{})
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
 		return 0, 0, err
 	}
@@ -160,13 +109,13 @@ func (r *gormUsuarioRepository) Contar(ctx context.Context) (int64, int64, error
 }
 
 // Create inserta un nuevo registro de usuario en la base de datos
-func (r *gormUsuarioRepository) Create(ctx context.Context, usuario *domain.Usuario) error {
-	return classifyWriteError(r.db.WithContext(ctx).Create(usuario).Error)
+func (repositorio *gormUsuarioRepository) Create(ctx context.Context, usuario *domain.Usuario) error {
+	return classifyWriteError(repositorio.db.WithContext(ctx).Create(usuario).Error)
 }
 
 // Actualizar aplica cambios parciales dinámicamente a la tabla api.usuarios usando GORM Updates
-func (r *gormUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
-	res := r.db.WithContext(ctx).
+func (repositorio *gormUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
+	res := repositorio.db.WithContext(ctx).
 		Model(&domain.Usuario{}).
 		Where("id = ?", id).
 		Updates(datos)
@@ -182,13 +131,13 @@ func (r *gormUsuarioRepository) Actualizar(ctx context.Context, id string, datos
 // ActualizarConGuarda aplica el cambio de estado/rol y su auditoría dentro de
 // una transacción. El advisory lock serializa las actualizaciones entre
 // instancias para que dos admins no puedan degradarse mutuamente a la vez.
-func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
+func (repositorio *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
 	actorUUID, err := uuid.Parse(strings.TrimSpace(actorID))
 	if err != nil {
 		return errors.New("actor de auditoría inválido")
 	}
 
-	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec("SELECT pg_advisory_xact_lock(?)", adminGuardLockKey).Error; err != nil {
 			return err
 		}
@@ -200,7 +149,7 @@ func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 
 		rolActual, _ := domain.NormalizarRol(usuario.Rol)
 		// Si no se está cambiando el rol, aprovechar la actualización para
-		// persistir el valor canónico (p. ej. "administrador" -> "admin").
+		// persistir el valor canónico (p. ej. " Admin" -> "admin").
 		if _, cambiaRol := datos["rol"]; !cambiaRol {
 			if canonico, ok := domain.NormalizarRol(usuario.Rol); ok && strings.TrimSpace(usuario.Rol) != canonico {
 				datos["rol"] = canonico
@@ -222,8 +171,8 @@ func (r *gormUsuarioRepository) ActualizarConGuarda(ctx context.Context, id stri
 		if dejaDeSerAdmin {
 			var otros int64
 			if err := tx.Model(&domain.Usuario{}).
-				Where("id <> ? AND LOWER(TRIM(rol)) IN ? AND esta_activo = ?",
-					id, []string{domain.RolAdmin, domain.RolAdminLegacy}, true).
+				Where("id <> ? AND LOWER(TRIM(rol)) = ? AND esta_activo = ?",
+					id, domain.RolAdmin, true).
 				Count(&otros).Error; err != nil {
 				return err
 			}

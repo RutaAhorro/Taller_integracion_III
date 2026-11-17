@@ -3,12 +3,15 @@ package security
 import (
 	"errors"
 	"fmt"
-	"os"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// maximoBytesJWT limita el formato recibido, no la duración del contrato.
+const maximoBytesJWT = 4096
 
 // JWTClaims define los datos del payload del token JWT centralizado
 type JWTClaims struct {
@@ -18,17 +21,9 @@ type JWTClaims struct {
 	jwt.RegisteredClaims
 }
 
-// getJWTSecret nunca usa claves de respaldo.
-func getJWTSecret() []byte {
-	secret := os.Getenv("JWT_SECRET")
-	if secret == "" {
-		return nil
-	}
-	return []byte(secret)
-}
-
-// GenerarToken emite un JWT firmado con HS256 conteniendo estrictamente user_id, rol, provider y expiración a 24 horas
-func GenerarToken(usuarioID, rol, provider string) (string, error) {
+// GenerarToken emite un JWT firmado con HS256 conteniendo estrictamente user_id, rol, provider y expiración a 24 horas.
+// La clave es la validada al arrancar: nunca se lee del entorno ni existe clave de respaldo.
+func GenerarToken(usuarioID, rol, provider, clave string) (string, error) {
 	if usuarioID == "" {
 		return "", errors.New("el usuarioID no puede estar vacío")
 	}
@@ -39,18 +34,17 @@ func GenerarToken(usuarioID, rol, provider string) (string, error) {
 		Rol:      rol,
 		Provider: provider,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(ahora.Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(ahora.Add(config.DuracionSesion)),
 			IssuedAt:  jwt.NewNumericDate(ahora),
 			NotBefore: jwt.NewNumericDate(ahora),
 		},
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	secret := getJWTSecret()
-	if len(secret) == 0 {
+	if clave == "" {
 		return "", errors.New("JWT_SECRET no configurado")
 	}
-	tokenString, err := token.SignedString(secret)
+	tokenString, err := token.SignedString([]byte(clave))
 	if err != nil {
 		return "", fmt.Errorf("error al firmar token JWT: %w", err)
 	}
@@ -59,14 +53,14 @@ func GenerarToken(usuarioID, rol, provider string) (string, error) {
 }
 
 // ValidarToken parsea y verifica la firma criptográfica y expiración del JWT
-func ValidarToken(tokenString string) (*jwt.Token, error) {
-	if len(tokenString) > 4096 {
+func ValidarToken(tokenString, clave string) (*jwt.Token, error) {
+	if len(tokenString) > maximoBytesJWT {
 		return nil, errors.New("token inválido")
 	}
-	secret := getJWTSecret()
-	if len(secret) == 0 {
+	if clave == "" {
 		return nil, errors.New("JWT_SECRET no configurado")
 	}
+	secret := []byte(clave)
 	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return secret, nil
 	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())

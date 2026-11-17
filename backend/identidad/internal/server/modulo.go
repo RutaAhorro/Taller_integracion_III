@@ -1,32 +1,32 @@
-// Package identity es la entrada pública del módulo de identidad.
-// Sus entidades, casos de uso y adaptadores permanecen privados.
-package identity
+// Armado del módulo de Identidad: repositorios, servicios y handlers.
+package server
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"log/slog"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/middleware"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/routes"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"google.golang.org/api/idtoken"
 	"gorm.io/gorm"
 )
 
 // Module arma Identidad completa (repositorios, servicios y handlers) y es lo
 // único que main y server ven del servicio.
 type Module struct {
-	handler      *handlers.AuthHandler
-	adminHandler *handlers.AdminUsuarioHandler
-	repo         domain.UsuarioRepository
-	redis        *redis.Client
+	handler       *handlers.AuthHandler
+	adminHandler  *handlers.AdminUsuarioHandler
+	repo          domain.UsuarioRepository
+	redis         *redis.Client
+	configuracion config.Config
 	// recuperacion emite tokens y despacha su correo (SUP-184). El endpoint que la
 	// expone (POST /auth/recuperar) es SUP-233.
 	recuperacion services.RecuperacionService
@@ -40,43 +40,30 @@ type Recuperacion struct {
 	Log            *slog.Logger
 }
 
-// New crea el módulo con la recuperación de contraseña apagada.
-func New(db *gorm.DB, rdb *redis.Client, secureCookie ...bool) *Module {
-	return NewConRecuperacion(db, rdb, Recuperacion{}, secureCookie...)
-}
-
-// NewConRecuperacion crea el módulo con recuperación de contraseña; es el que usa main.
-func NewConRecuperacion(db *gorm.DB, rdb *redis.Client, recuperacion Recuperacion, secureCookie ...bool) *Module {
-	repo := repositories.NewUsuarioRepository(db)
-	adminRepo := repositories.NewAdminUsuarioRepository(db)
+// NewModule arma el módulo con una instantánea validada del arranque.
+func NewModule(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuperacion, configuracion config.Config) *Module {
+	ajustes := configuracion.Ajustes
+	repositorio := repositories.NewUsuarioRepository(base)
+	repositorioAdmin := repositories.NewAdminUsuarioRepository(base)
 	return &Module{
-		handler:      handlers.NewAuthHandler(services.NewAuthService(repo), secureCookie...),
-		adminHandler: handlers.NewAdminUsuarioHandler(services.NewAdminUsuarioService(adminRepo)),
-		repo:         repo,
-		redis:        rdb,
-		recuperacion: services.NewRecuperacionService(repo, repositories.NewRecuperacionRepository(db), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log),
+		handler:       handlers.NewAuthHandler(services.NewAuthService(repositorio, idtoken.Validate, configuracion.GoogleClientID, ajustes.GoogleTimeout), configuracion.CookieSecure, configuracion.JWTSecret),
+		adminHandler:  handlers.NewAdminUsuarioHandler(services.NewAdminUsuarioService(repositorioAdmin)),
+		repo:          repositorio,
+		redis:         redisCliente,
+		configuracion: configuracion,
+		recuperacion:  services.NewRecuperacionService(repositorio, repositories.NewRecuperacionRepository(base), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log, ajustes),
 	}
 }
 
 // Cerrar despacha las solicitudes de recuperación pendientes antes de apagar el proceso.
-func (m *Module) Cerrar(ctx context.Context) error {
-	return m.recuperacion.Cerrar(ctx)
+func (modulo *Module) Cerrar(ctx context.Context) error {
+	return modulo.recuperacion.Cerrar(ctx)
 }
 
 // RegisterRoutes monta /auth/* y /admin/usuarios/* bajo group.
-func (m *Module) RegisterRoutes(group *gin.RouterGroup) {
-	routes.RegistrarRutasAuth(group, m.handler, m.redis, m.repo)
-	routes.RegistrarRutasAdminUsuarios(group, m.adminHandler, m.repo)
-}
-
-// RequireAuth entrega el interceptor sin exponer claves, JWT ni entidades internas.
-func (m *Module) RequireAuth() gin.HandlerFunc {
-	return middleware.RequireAuth(m.repo)
-}
-
-// RequireRole exige que el JWT validado por RequireAuth tenga alguno de los roles.
-func (m *Module) RequireRole(roles ...string) gin.HandlerFunc {
-	return middleware.RequireRole(roles...)
+func (modulo *Module) RegisterRoutes(group *gin.RouterGroup) {
+	handlers.RegistrarRutasAuth(group, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
+	handlers.RegistrarRutasAdminUsuarios(group, modulo.adminHandler, modulo.repo, modulo.configuracion.JWTSecret)
 }
 
 // VerifyStorage comprueba las tablas que utiliza Identidad, incluida la

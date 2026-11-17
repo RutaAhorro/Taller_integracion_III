@@ -8,11 +8,12 @@ import (
 
 // Roles válidos para api.usuarios.rol. El plan comercial no forma parte del rol.
 const (
-	RolAdmin       = "admin"
-	RolColaborador = "colaborador"
-	RolRegistrado  = "registrado"
-	// RolAdminLegacy es el alias histórico que se normaliza a RolAdmin.
-	RolAdminLegacy = "administrador"
+	// Límites documentados del contrato HTTP de administración.
+	UsuariosAdminPorPagina    = 20
+	MaxUsuariosAdminPorPagina = 200
+	RolAdmin                  = "admin"
+	RolColaborador            = "colaborador"
+	RolRegistrado             = "registrado"
 
 	// Planes comerciales válidos. No forman parte del rol RBAC.
 	PlanBasico  = "basico"
@@ -20,10 +21,11 @@ const (
 )
 
 // NormalizarRol devuelve el valor canónico almacenado en api.usuarios.rol.
-// El alias "administrador" se trata siempre como "admin".
+// Sólo existen admin, colaborador y registrado: la migración 08 eliminó el
+// alias histórico "administrador" de los datos.
 func NormalizarRol(rol string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(rol)) {
-	case RolAdmin, RolAdminLegacy:
+	case RolAdmin:
 		return RolAdmin, true
 	case RolColaborador:
 		return RolColaborador, true
@@ -53,7 +55,8 @@ type FiltroUsuariosAdminDTO struct {
 	EstaActivo *bool
 	Page       int
 	Limit      int
-	Offset     int
+	// Offset lo calcula el handler a partir de Page y Limit; no es un parámetro HTTP.
+	Offset int
 }
 
 // ActualizarUsuarioAdminDTO define los campos administrables de una cuenta.
