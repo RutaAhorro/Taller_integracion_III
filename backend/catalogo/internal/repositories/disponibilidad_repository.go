@@ -37,7 +37,7 @@ func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(contexto contex
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
 		Joins(`LEFT JOIN LATERAL (
-			SELECT precio_normal, precio_oferta, capturado_el
+			SELECT precio_normal, precio_oferta, esta_disponible, capturado_el
 			FROM scraper.capturas_precios
 			WHERE producto_crudo_id = pc.id
 			ORDER BY capturado_el DESC
@@ -54,7 +54,7 @@ func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(contexto contex
 			ss.nombre AS sucursal,
 			COALESCE(pc.formato_crudo, '') AS unidad,
 			COALESCE(pc.url_imagen, '') AS url_imagen,
-			pc.en_stock,
+			cp.esta_disponible AS en_stock,
 			cp.precio_normal,
 			cp.precio_oferta,
 			cp.capturado_el

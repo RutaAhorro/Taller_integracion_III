@@ -132,7 +132,8 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    32 caracteres (generables con `openssl rand -hex 32`), privadas,
    estrictamente distintas de `JWT_SECRET` y distintas entre sí. En Kubernetes
    se inyectan desde el Secret `catalogo-internal-secret` (claves `token` y
-   `consulta-token`).
+   `consulta-token`); `consulta-token` es opcional y, si falta, la consulta
+   queda deshabilitada sin impedir el arranque.
 
 ## Consulta interna de disponibilidad (SUP-312)
 
@@ -156,14 +157,23 @@ Content-Type: application/json
 
 - Acepta entre 1 y `CATALOGO_MAX_PRODUCTOS_CONSULTA` IDs (1000 por defecto).
 - Deduplica los IDs y conserva el orden de la primera aparición.
-- Lee siempre la captura más reciente de `scraper.capturas_precios`.
+- Lee siempre la captura más reciente de `scraper.capturas_precios`. El stock y
+  la fecha se toman de esa misma captura (`esta_disponible` y `capturado_el`),
+  para que ambos correspondan a la vigencia evaluada.
 - Una captura con antigüedad mayor a
   `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` (48 h por defecto) no se presenta
   como vigente.
 - Una captura con fecha futura se trata como no vigente, para no confiar en un
-  reloj desfasado o en un dato erróneo.
-- Si `en_stock` es `NULL`, el scraper no confirmó el stock: se informa
+  reloj desfasado o en un dato erróneo. Para no ampliar el contrato se informa
+  `estado_precio: "vencido"`; el consumidor debe tratarla como no vigente.
+- Si `esta_disponible` es `NULL`, el scraper no confirmó el stock: se informa
   `estado_producto: "desconocido"` y `en_stock: null`, sin asumir disponibilidad.
+
+**Límite conocido:** la ingesta actual convierte un `en_stock` ausente del lote en
+`true` (`internal/ingesta/lote.go`) y `scraper.capturas_precios.esta_disponible`
+tiene `DEFAULT true`. Por eso, hoy `desconocido` por stock sólo aparece si la
+base contiene un `NULL` explícito. Cambiar ese valor por defecto exige modificar
+la ingesta y queda fuera del alcance de SUP-312.
 
 ```json
 {
@@ -258,8 +268,8 @@ Catálogo persiste productos y precios de forma atómica:
   conflicto sobre `(sucursal_id, sku)`. Los campos descriptivos vacíos o nulos
   no sobrescriben información existente previa (`COALESCE`).
 - **Captura de precios y disponibilidad:** cada ítem inserta un registro en
-  `scraper.capturas_precios` con el estado `esta_disponible` explícito según el
-  stock informado, evitando valores predeterminados desalineados.
+  `scraper.capturas_precios` con `esta_disponible` según el stock informado. Si
+  el lote omite `en_stock`, la ingesta asume `true` (ver límite conocido).
 
 ## Ventanas de fallo con coordinación de scraping
 
@@ -285,7 +295,9 @@ En Kubernetes ([deployment.yaml](../../infrastructure/k8s/catalogo/deployment.ya
   - `livenessProbe`: `/_catalogo/live`, periodo 10 s, timeout 2 s.
   - `readinessProbe`: `/_catalogo/ready`, periodo 5 s, timeout 3 s.
 - **Secretos:** `DB_URL` proviene de `catalogo-db-secret`, `JWT_SECRET` de `db-secret`
-  y `CATALOGO_INTERNAL_TOKEN` de `catalogo-internal-secret`.
+  y `CATALOGO_INTERNAL_TOKEN`/`CATALOGO_CONSULTA_TOKEN` de
+  `catalogo-internal-secret` (claves `token` y `consulta-token`; la segunda es
+  opcional).
 
 ## Procedimientos de rollback
 

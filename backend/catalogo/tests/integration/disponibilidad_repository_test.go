@@ -52,7 +52,7 @@ func TestDisponibilidadRepositorioUsaLaCapturaMasReciente(prueba *testing.T) {
 		"LIMIT 1",
 		"pc.id = ANY(",
 		"::uuid[]",
-		"pc.en_stock",
+		"cp.esta_disponible AS en_stock",
 		"cp.precio_normal",
 		"cp.capturado_el",
 	} {
@@ -60,8 +60,11 @@ func TestDisponibilidadRepositorioUsaLaCapturaMasReciente(prueba *testing.T) {
 			prueba.Errorf("la consulta no contiene %q: %s", fragmento, consultaSQL)
 		}
 	}
-	if strings.Contains(consultaSQL, "COALESCE(pc.en_stock") {
+	if strings.Contains(consultaSQL, "COALESCE(cp.esta_disponible") {
 		prueba.Errorf("el stock NULL no debe convertirse en disponible: %s", consultaSQL)
+	}
+	if strings.Contains(consultaSQL, "pc.en_stock") {
+		prueba.Errorf("el stock debe venir de la captura validada, no de pc.en_stock: %s", consultaSQL)
 	}
 }
 
