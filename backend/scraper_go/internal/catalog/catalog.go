@@ -40,7 +40,6 @@ type Site struct {
 	Pagination        Pagination          `json:"pagination"`
 	CategoryFrom      CategoryFrom        `json:"category_from"`
 	Selectors         map[string]string   `json:"selectors,omitempty"`
-	Patterns          map[string]string   `json:"patterns,omitempty"`
 	Limits            map[string]int      `json:"limits,omitempty"`
 	Settings          map[string]string   `json:"settings,omitempty"`
 	Lists             map[string][]string `json:"lists,omitempty"`
@@ -155,7 +154,7 @@ func parse(cuerpo []byte) (Catalog, error) {
 
 // ===== Inicialización de Sitio =====
 
-// prepare compila las expresiones regulares y valida los límites requeridos por sitio.
+// prepare valida los datos comunes y específicos que necesita cada parser.
 func (sitio *Site) prepare() error {
 	if sitio.Name == "" {
 		return fmt.Errorf("falta name")
@@ -179,20 +178,16 @@ func (sitio *Site) prepare() error {
 	for _, servidor := range sitio.AllowedHosts {
 		sitio.hosts[strings.ToLower(strings.TrimSpace(servidor))] = struct{}{}
 	}
-	sitio.compiled = make(map[string]*regexp.Regexp, len(sitio.Patterns))
-	for nombre, patron := range sitio.Patterns {
-		compilado, errorObtenido := regexp.Compile(patron)
-		if errorObtenido != nil {
-			return fmt.Errorf("patrón %q inválido: %w", nombre, errorObtenido)
-		}
-		sitio.compiled[nombre] = compilado
-	}
+	sitio.compiled = make(map[string]*regexp.Regexp, 1)
 	if sitio.CategoryFrom.IDPattern != "" {
 		compilado, errorObtenido := regexp.Compile(sitio.CategoryFrom.IDPattern)
 		if errorObtenido != nil {
 			return fmt.Errorf("category_from.id_pattern inválido: %w", errorObtenido)
 		}
 		sitio.compiled["category_id"] = compilado
+	}
+	if errorObtenido := sitio.validateParserConfiguration(); errorObtenido != nil {
+		return errorObtenido
 	}
 	switch sitio.Pagination.Mode {
 	case "", "none":
@@ -210,7 +205,80 @@ func (sitio *Site) prepare() error {
 	return nil
 }
 
-// Regexp devuelve un patrón compilado del sitio.
+// validateParserConfiguration rechaza catálogos que dejarían al extractor sin los datos que consume.
+func (sitio *Site) validateParserConfiguration() error {
+	var selectoresRequeridos []string
+	var ajustesRequeridos []string
+	var limitesRequeridos []string
+	var listasRequeridas []string
+
+	switch sitio.Parser {
+	case "jumbo":
+		selectoresRequeridos = []string{"json_ld"}
+		ajustesRequeridos = []string{"sku_prefix", "sku_trailing_segment"}
+		limitesRequeridos = []string{"sku_max_length", "slug_max_length", "hash_length"}
+	case "santa_isabel":
+		selectoresRequeridos = []string{"json_ld"}
+		ajustesRequeridos = []string{"seller", "product_suffix", "promotion_separator"}
+	case "cugat":
+		selectoresRequeridos = []string{
+			"json_ld", "product_card", "title", "price_offer", "price_normal",
+			"price_fallback", "price_amount", "cart", "image", "noscript",
+		}
+		ajustesRequeridos = []string{"card_id_prefix", "stock_class"}
+	case "acuenta":
+		selectoresRequeridos = []string{"card_link", "image"}
+		ajustesRequeridos = []string{"sku_prefix", "image_base", "image_suffix", "promotion"}
+		limitesRequeridos = []string{
+			"rsc_window", "sku_max_length", "name_min_intersection", "token_min_length",
+		}
+		listasRequeridas = []string{"brands"}
+	case "lider":
+		selectoresRequeridos = []string{
+			"json_ld", "next_data", "product_card", "product_card_fallback",
+			"card_title", "product_link", "price_block", "price_current",
+			"price_normal", "image", "brand",
+		}
+		ajustesRequeridos = []string{"promotion"}
+		listasRequeridas = []string{"stock_in", "stock_out"}
+	default:
+		return fmt.Errorf("parser desconocido %q", sitio.Parser)
+	}
+
+	for _, clave := range selectoresRequeridos {
+		if strings.TrimSpace(sitio.Selectors[clave]) == "" {
+			return fmt.Errorf("falta selectors.%s para el parser %q", clave, sitio.Parser)
+		}
+	}
+	for _, clave := range ajustesRequeridos {
+		if strings.TrimSpace(sitio.Settings[clave]) == "" {
+			return fmt.Errorf("falta settings.%s para el parser %q", clave, sitio.Parser)
+		}
+	}
+	for _, clave := range limitesRequeridos {
+		valor, existe := sitio.Limits[clave]
+		if !existe || valor <= 0 {
+			return fmt.Errorf("limits.%s debe ser mayor que cero para el parser %q", clave, sitio.Parser)
+		}
+	}
+	if sitio.Parser == "jumbo" && sitio.Limits["hash_length"] > 40 {
+		return fmt.Errorf("limits.hash_length no puede superar 40 para el parser %q", sitio.Parser)
+	}
+	for _, clave := range listasRequeridas {
+		valores := sitio.Lists[clave]
+		if len(valores) == 0 {
+			return fmt.Errorf("falta lists.%s para el parser %q", clave, sitio.Parser)
+		}
+		for _, valor := range valores {
+			if strings.TrimSpace(valor) == "" {
+				return fmt.Errorf("lists.%s contiene un valor vacío para el parser %q", clave, sitio.Parser)
+			}
+		}
+	}
+	return nil
+}
+
+// Regexp devuelve un patrón compilado del modo de categoría.
 func (sitio Site) Regexp(nombre string) *regexp.Regexp {
 	return sitio.compiled[nombre]
 }

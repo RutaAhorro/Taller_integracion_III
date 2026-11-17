@@ -209,8 +209,8 @@ func (configuracion Config) Validate() error {
 		return fmt.Errorf("SCRAPER_ROBOTS_FAILURE_TTL_SECONDS debe ser mayor que cero")
 	case configuracion.RobotsMaxBytes <= 0:
 		return fmt.Errorf("SCRAPER_ROBOTS_MAX_BYTES debe ser mayor que cero")
-	case configuracion.BackoffMin < 0:
-		return fmt.Errorf("SCRAPER_BACKOFF_MIN_MS no puede ser negativo")
+	case configuracion.BackoffMin <= 0:
+		return fmt.Errorf("SCRAPER_BACKOFF_MIN_MS debe ser mayor que cero")
 	case configuracion.BackoffMax <= 0:
 		return fmt.Errorf("SCRAPER_BACKOFF_MAX_SECONDS debe ser mayor que cero")
 	}

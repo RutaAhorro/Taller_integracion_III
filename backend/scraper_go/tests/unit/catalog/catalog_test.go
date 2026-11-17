@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
@@ -141,7 +142,10 @@ func TestFromEnvLeeElArchivoIndicado(prueba *testing.T) {
 		"category_file":"demo_categories.txt",
 		"allowed_hosts":["demo.cl"],
 		"category_url":{"message":"categoría inválida"},
-		"product_url":{"message":"producto inválido"}
+		"product_url":{"message":"producto inválido"},
+		"selectors":{"json_ld":"script[type='application/ld+json']"},
+		"settings":{"sku_prefix":"DEMO-","sku_trailing_segment":"p"},
+		"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":12}
 	}]}`
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		prueba.Fatal(err)
@@ -157,16 +161,62 @@ func TestFromEnvLeeElArchivoIndicado(prueba *testing.T) {
 	}
 }
 
+// TestFromEnvRechazaCatalogoIncompletoParaElParser evita valores cero silenciosos en configuración crítica.
+func TestFromEnvRechazaCatalogoIncompletoParaElParser(prueba *testing.T) {
+	casos := map[string]struct {
+		cuerpo string
+		error  string
+	}{
+		"limite obligatorio ausente": {
+			cuerpo: `{"sites":[{
+				"name":"demo_rsc","parser":"jumbo","supermarket":"Demo",
+				"category_file":"demo_categories.txt","allowed_hosts":["demo.cl"],
+				"category_url":{"message":"categoría inválida"},
+				"product_url":{"message":"producto inválido"},
+				"selectors":{"json_ld":"script[type='application/ld+json']"},
+				"settings":{"sku_prefix":"DEMO-","sku_trailing_segment":"p"},
+				"limits":{"slug_max_length":80,"hash_length":12}
+			}]}`,
+			error: "limits.sku_max_length",
+		},
+		"hash excede tamaño SHA-1": {
+			cuerpo: `{"sites":[{
+				"name":"demo_rsc","parser":"jumbo","supermarket":"Demo",
+				"category_file":"demo_categories.txt","allowed_hosts":["demo.cl"],
+				"category_url":{"message":"categoría inválida"},
+				"product_url":{"message":"producto inválido"},
+				"selectors":{"json_ld":"script[type='application/ld+json']"},
+				"settings":{"sku_prefix":"DEMO-","sku_trailing_segment":"p"},
+				"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":41}
+			}]}`,
+			error: "limits.hash_length no puede superar 40",
+		},
+	}
+	for nombre, caso := range casos {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			ruta := filepath.Join(prueba.TempDir(), "spiders.json")
+			if errorObtenido := os.WriteFile(ruta, []byte(caso.cuerpo), 0o600); errorObtenido != nil {
+				prueba.Fatal(errorObtenido)
+			}
+			prueba.Setenv(catalog.FileEnv, ruta)
+			_, errorObtenido := catalog.FromEnv()
+			if errorObtenido == nil || !strings.Contains(errorObtenido.Error(), caso.error) {
+				prueba.Fatalf("FromEnv() = %v; se esperaba error que incluya %q", errorObtenido, caso.error)
+			}
+		})
+	}
+}
+
 func TestFromEnvRechazaCatalogosInvalidos(prueba *testing.T) {
 	cases := map[string]string{
 		"json inválido":   `{`,
 		"sin sitios":      `{"sites":[]}`,
 		"sin nombre":      `{"sites":[{"parser":"jumbo"}]}`,
-		"paginación rota": `{"sites":[{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"pagination":{"mode":"desconocido"}}]}`,
-		"regexp inválido": `{"sites":[{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"patterns":{"roto":"("}}]}`,
+		"paginación rota": `{"sites":[{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"pagination":{"mode":"desconocido"},"selectors":{"json_ld":"script[type='application/ld+json']"},"settings":{"sku_prefix":"A-","sku_trailing_segment":"p"},"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":12}}]}`,
+		"regexp inválido": `{"sites":[{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"category_from":{"id_pattern":"("},"selectors":{"json_ld":"script[type='application/ld+json']"},"settings":{"sku_prefix":"A-","sku_trailing_segment":"p"},"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":12}}]}`,
 		"duplicado": `{"sites":[
-			{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"}},
-			{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"}}]}`,
+			{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"selectors":{"json_ld":"script[type='application/ld+json']"},"settings":{"sku_prefix":"A-","sku_trailing_segment":"p"},"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":12}},
+			{"name":"a","parser":"jumbo","supermarket":"A","category_file":"a.txt","allowed_hosts":["a.cl"],"category_url":{"message":"x"},"product_url":{"message":"y"},"selectors":{"json_ld":"script[type='application/ld+json']"},"settings":{"sku_prefix":"A-","sku_trailing_segment":"p"},"limits":{"sku_max_length":100,"slug_max_length":80,"hash_length":12}}]}`,
 	}
 	for name, body := range cases {
 		prueba.Run(name, func(prueba *testing.T) {

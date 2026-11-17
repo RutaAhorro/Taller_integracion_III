@@ -94,6 +94,7 @@ func TestValidateRechazaValoresFueraDeRango(prueba *testing.T) {
 		"max pages cero":      func(cfg *config.Config) { cfg.MaxPages = 0 },
 		"timeout api":         func(cfg *config.Config) { cfg.APITimeout = 0 },
 		"intentos crawl":      func(cfg *config.Config) { cfg.CrawlAttempts = 0 },
+		"backoff minimo cero": func(cfg *config.Config) { cfg.BackoffMin = 0 },
 		"capacidad negativa":  func(cfg *config.Config) { cfg.MinFreeBytes = 0 },
 		"backoff maximo cero": func(cfg *config.Config) { cfg.BackoffMax = 0 },
 	}
@@ -119,5 +120,14 @@ func TestFromEnvRechazaLimitesInvalidos(prueba *testing.T) {
 	prueba.Setenv("SCRAPER_API_BATCH_SIZE", "0")
 	if _, err := config.FromEnv(); err == nil {
 		prueba.Fatal("FromEnv() debió rechazar batch size 0")
+	}
+}
+
+// TestFromEnvRechazaBackoffMinimoCero asegura que el crawler no aplique un respaldo silencioso.
+func TestFromEnvRechazaBackoffMinimoCero(prueba *testing.T) {
+	clearEnv(prueba)
+	prueba.Setenv("SCRAPER_BACKOFF_MIN_MS", "0")
+	if _, errorObtenido := config.FromEnv(); errorObtenido == nil {
+		prueba.Fatal("FromEnv() debió rechazar SCRAPER_BACKOFF_MIN_MS=0")
 	}
 }

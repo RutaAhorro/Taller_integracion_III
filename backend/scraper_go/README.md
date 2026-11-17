@@ -115,7 +115,7 @@ variables con sus defaults. Las más relevantes:
 | `SCRAPER_QUEUE_NAME` | `scraper:jobs:stream` | Stream |
 | `SCRAPER_GROUP` | `scraper-workers` | Grupo de consumo |
 | `SCRAPER_CATEGORY_DIR` | `/app/research` | Archivos de categorías |
-| `SCRAPER_SPIDERS_FILE` | vacío | Override del catálogo embebido |
+| `SCRAPER_SPIDERS_FILE` | vacío | Override del catálogo embebido, validado al iniciar según el parser |
 | `SCRAPER_DOWNLOAD_DELAY_MS` | `2000` | Throttle por dominio |
 | `SCRAPER_DOWNLOAD_TIMEOUT` | `30` | Timeout HTTP |
 | `SCRAPER_DOWNLOAD_MAXSIZE` | `5242880` | Tamaño máximo de respuesta |
@@ -124,7 +124,7 @@ variables con sus defaults. Las más relevantes:
 | `SCRAPER_CRAWL_ATTEMPTS` | `3` | Intentos antes de derivar a revisión |
 | `SCRAPER_ROBOTS_CACHE_TTL_SECONDS` | `3600` | Cache de `robots.txt` |
 | `SCRAPER_ROBOTS_FAILURE_TTL_SECONDS` | `600` | Cache negativa de `robots.txt` |
-| `SCRAPER_BACKOFF_MIN_MS` | `10` | Backoff mínimo |
+| `SCRAPER_BACKOFF_MIN_MS` | `10` | Backoff mínimo, debe ser mayor que cero |
 | `SCRAPER_BACKOFF_MAX_SECONDS` | `120` | Backoff máximo |
 | `LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
@@ -134,6 +134,10 @@ Las variables de bucle (`SCRAPER_REDIS_*`, `SCRAPER_QUEUE_BLOCK_MS`,
 `SCRAPER_GC_TIMEOUT_SECONDS`) también están documentadas en `.env.example`.
 `config.FromEnv()` valida los rangos al arrancar y falla rápido si alguno es
 inválido.
+
+El catálogo alternativo valida al cargar los selectores, ajustes, límites y
+listas que requiere el parser declarado. Los patrones regulares configurables
+se limitan a `category_from.id_pattern`.
 
 `JUMBO_CATEGORY_URLS`, `SANTA_ISABEL_CATEGORY_URLS`, `CUGAT_CATEGORY_URLS`,
 `ACUENTA_CATEGORY_URLS` y `LIDER_CATEGORY_URLS` permiten agregar categorías
