@@ -7,29 +7,18 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extract"
 )
 
-// spiderConfig declara lo que cambia entre cadenas. El resto del ciclo de vida
-// (categorías, paginación, scraping puntual y armado del item) vive en
-// baseSpider.
+// spiderConfig declara sólo las funciones de parsing. El resto de la
+// configuración sale de catalog.Site.
 type spiderConfig struct {
-	name              string
-	supermarket       string
-	categoryFile      string
-	categoryEnv       string
-	defaultCategories []string
-
-	validateCategory func(string) error
-	validateProduct  func(string) error
-
 	extractProducts func([]byte, *url.URL) []domain.Product
 	extractProduct  func([]byte, *url.URL, string) *domain.Product
-
-	categoryFromURL func(string) string
-	pageURL         func(string, int) string
-	startPage       func(string) int
 }
 
 // baseSpider concentra el comportamiento común de los spiders de supermercados.
@@ -38,188 +27,197 @@ type baseSpider struct {
 	categoryDir string
 	maxPages    int
 	logger      *slog.Logger
+	site        catalog.Site
 	cfg         spiderConfig
 
 	// materialize sólo lo implementa Jumbo para enriquecer EAN desde la ficha.
 	materialize func(context.Context, domain.Product, string, *url.URL, bool) (domain.Item, error)
 }
 
+// ===== Constructor =====
+
+// newBaseSpider crea una instancia base compartida con configuración del catálogo.
 func newBaseSpider(
-	fetcher Fetcher,
-	categoryDir string,
-	maxPages int,
-	logger *slog.Logger,
-	cfg spiderConfig,
+	obtenedor Fetcher,
+	directorioCategorias string,
+	maxPaginas int,
+	registrador *slog.Logger,
+	sitio catalog.Site,
+	configuracion spiderConfig,
 ) baseSpider {
-	if maxPages <= 0 {
-		maxPages = DefaultMaxPages
+	if maxPaginas <= 0 {
+		maxPaginas = config.DefaultMaxPages
 	}
-	if logger == nil {
-		logger = slog.Default()
-	}
-	if cfg.categoryFromURL == nil {
-		cfg.categoryFromURL = categoryFromURL
-	}
-	if cfg.startPage == nil {
-		cfg.startPage = func(string) int { return 1 }
+	if registrador == nil {
+		registrador = slog.Default()
 	}
 	return baseSpider{
-		fetcher:     fetcher,
-		categoryDir: categoryDir,
-		maxPages:    maxPages,
-		logger:      logger,
-		cfg:         cfg,
+		fetcher:     obtenedor,
+		categoryDir: directorioCategorias,
+		maxPages:    maxPaginas,
+		logger:      registrador,
+		site:        sitio,
+		cfg:         configuracion,
 	}
 }
 
-func (b *baseSpider) Name() string {
-	return b.cfg.name
+// Name devuelve el identificador oficial del spider.
+func (base *baseSpider) Name() string {
+	return base.site.Name
 }
 
-func (b *baseSpider) Run(ctx context.Context, job domain.Job, emit Emitter) error {
-	if job.ProductURL != "" {
-		return b.runProduct(ctx, job, emit)
+// Run ejecuta la rutina de extracción del spider para el trabajo indicado.
+func (base *baseSpider) Run(contexto context.Context, trabajo domain.Job, emitir Emitter) error {
+	if trabajo.ProductURL != "" {
+		return base.runProduct(contexto, trabajo, emitir)
 	}
-	if job.AddURL != "" {
-		if err := b.appendCategoryURL(job.AddURL); err != nil {
-			return err
+	if trabajo.AddURL != "" {
+		if errorObtenido := base.appendCategoryURL(trabajo.AddURL); errorObtenido != nil {
+			return errorObtenido
 		}
 	}
-	urls, err := b.startURLs(job.CategoryURLs)
-	if err != nil {
-		return err
+	urls, errorObtenido := base.startURLs(trabajo.CategoryURLs)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	for _, categoryURL := range urls {
-		if err := b.runCategory(ctx, categoryURL, job.EnrichEAN, emit); err != nil {
-			return err
+	for _, urlCategoria := range urls {
+		if errorObtenido := base.runCategory(contexto, urlCategoria, trabajo.EnrichEAN, emitir); errorObtenido != nil {
+			return errorObtenido
 		}
 	}
 	return nil
 }
 
 // runProduct atiende un scraping puntual. Nunca cae al crawl de categorías.
-func (b *baseSpider) runProduct(ctx context.Context, job domain.Job, emit Emitter) error {
-	if err := b.cfg.validateProduct(job.ProductURL); err != nil {
-		return err
+func (base *baseSpider) runProduct(contexto context.Context, trabajo domain.Job, emitir Emitter) error {
+	if errorObtenido := base.site.ValidateProductURL(trabajo.ProductURL); errorObtenido != nil {
+		return errorObtenido
 	}
-	response, err := b.fetcher.Fetch(ctx, job.ProductURL)
-	if err != nil {
-		return err
+	respuesta, errorObtenido := base.fetcher.Fetch(contexto, trabajo.ProductURL)
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	if response.Status == 404 {
-		b.logger.Warn(b.cfg.name+"_product_not_found", "url", job.ProductURL)
+	if respuesta.Status == 404 {
+		base.logger.Warn(base.site.Name+"_product_not_found", "url", trabajo.ProductURL)
 		return nil
 	}
-	product := b.cfg.extractProduct(response.Body, response.URL, job.ProductURL)
-	if product == nil {
-		b.logger.Warn(b.cfg.name+"_product_without_data", "url", job.ProductURL)
+	producto := base.cfg.extractProduct(respuesta.Body, respuesta.URL, trabajo.ProductURL)
+	if producto == nil {
+		base.logger.Warn(base.site.Name+"_product_without_data", "url", trabajo.ProductURL)
 		return nil
 	}
-	return emit(b.toItem(*product, "producto", job.ProductURL))
+	return emitir(base.toItem(*producto, "producto", trabajo.ProductURL))
 }
 
-func (b *baseSpider) runCategory(ctx context.Context, categoryURL string, enrichEAN bool, emit Emitter) error {
-	category := b.cfg.categoryFromURL(categoryURL)
-	for page := b.cfg.startPage(categoryURL); page <= b.maxPages; page++ {
-		pageURL := b.cfg.pageURL(categoryURL, page)
-		response, err := b.fetcher.Fetch(ctx, pageURL)
-		if err != nil {
-			if errors.Is(err, crawler.ErrRobotsDisallowed) {
-				b.logger.Warn(b.cfg.name+"_category_robots_disallowed", "url", pageURL)
+// runCategory procesa la secuencia de páginas pertenecientes a una categoría.
+func (base *baseSpider) runCategory(contexto context.Context, urlCategoria string, enriquecerEAN bool, emitir Emitter) error {
+	categoria := extract.CategoryFromURL(base.site, urlCategoria)
+	for pagina := extract.StartPage(base.site, urlCategoria); pagina <= base.maxPages; pagina++ {
+		urlPagina := extract.PageURL(base.site, urlCategoria, pagina)
+		respuesta, errorObtenido := base.fetcher.Fetch(contexto, urlPagina)
+		if errorObtenido != nil {
+			if errors.Is(errorObtenido, crawler.ErrRobotsDisallowed) {
+				base.logger.Warn(base.site.Name+"_category_robots_disallowed", "url", urlPagina)
 				return nil
 			}
-			var statusErr *crawler.HTTPStatusError
-			if errors.As(err, &statusErr) && statusErr.Status == 404 {
-				b.logger.Info(b.cfg.name+"_pagination_end", "url", pageURL, "page", page)
+			var errorEstado *crawler.HTTPStatusError
+			if errors.As(errorObtenido, &errorEstado) && errorEstado.Status == 404 {
+				base.logger.Info(base.site.Name+"_pagination_end", "url", urlPagina, "page", pagina)
 				return nil
 			}
-			return err
+			return errorObtenido
 		}
-		if response.Status == 404 {
-			b.logger.Info(b.cfg.name+"_pagination_end", "url", pageURL, "page", page)
+		if respuesta.Status == 404 {
+			base.logger.Info(base.site.Name+"_pagination_end", "url", urlPagina, "page", pagina)
 			return nil
 		}
 
-		products := b.cfg.extractProducts(response.Body, response.URL)
-		if len(products) == 0 {
-			b.logger.Warn(b.cfg.name+"_category_without_products", "url", pageURL, "page", page)
+		productos := base.cfg.extractProducts(respuesta.Body, respuesta.URL)
+		if len(productos) == 0 {
+			base.logger.Warn(base.site.Name+"_category_without_products", "url", urlPagina, "page", pagina)
 			return nil
 		}
-		for _, product := range products {
-			item, err := b.item(ctx, product, category, response.URL, enrichEAN)
-			if err != nil {
-				return err
+		for _, producto := range productos {
+			elemento, errorObtenido := base.item(contexto, producto, categoria, respuesta.URL, enriquecerEAN)
+			if errorObtenido != nil {
+				return errorObtenido
 			}
-			if err := emit(item); err != nil {
-				return err
+			if errorObtenido := emitir(elemento); errorObtenido != nil {
+				return errorObtenido
 			}
 		}
-		if page == b.maxPages {
-			b.logger.Warn(b.cfg.name+"_pagination_limit", "url", categoryURL, "max_pages", b.maxPages)
+		if pagina == base.maxPages {
+			base.logger.Warn(base.site.Name+"_pagination_limit", "url", urlCategoria, "max_pages", base.maxPages)
 		}
 	}
 	return nil
 }
 
-func (b *baseSpider) item(
-	ctx context.Context,
-	product domain.Product,
-	category string,
-	responseURL *url.URL,
-	enrichEAN bool,
+// item empaqueta un producto asociándole su supermercado de origen.
+func (base *baseSpider) item(
+	contexto context.Context,
+	producto domain.Product,
+	categoria string,
+	urlRespuesta *url.URL,
+	enriquecerEAN bool,
 ) (domain.Item, error) {
-	if b.materialize != nil {
-		return b.materialize(ctx, product, category, responseURL, enrichEAN)
+	if base.materialize != nil {
+		return base.materialize(contexto, producto, categoria, urlRespuesta, enriquecerEAN)
 	}
-	return b.toItem(product, category, urlString(responseURL)), nil
+	return base.toItem(producto, categoria, urlString(urlRespuesta)), nil
 }
 
-func (b *baseSpider) startURLs(overrides []string) ([]string, error) {
-	urls := append([]string(nil), overrides...)
+// startURLs determina las URLs iniciales de extracción a partir del trabajo.
+func (base *baseSpider) startURLs(sobrescrituras []string) ([]string, error) {
+	urls := append([]string(nil), sobrescrituras...)
 	if len(urls) == 0 {
-		urls = readCategoryURLs(filepath.Join(b.categoryDir, b.cfg.categoryFile))
-		urls = append(urls, envCategoryURLs(b.cfg.categoryEnv)...)
+		urls = readCategoryURLs(filepath.Join(base.categoryDir, base.site.CategoryFile))
+		urls = append(urls, envCategoryURLs(base.site.CategoryEnv)...)
 	}
 	urls = dedupeStrings(urls)
 	if len(urls) == 0 {
-		return append([]string(nil), b.cfg.defaultCategories...), nil
+		return append([]string(nil), base.site.DefaultCategories...), nil
 	}
-	for _, rawURL := range urls {
-		if err := b.cfg.validateCategory(rawURL); err != nil {
-			return nil, err
+	for _, urlCruda := range urls {
+		if errorObtenido := base.site.ValidateCategoryURL(urlCruda); errorObtenido != nil {
+			return nil, errorObtenido
 		}
 	}
 	return urls, nil
 }
 
-func (b *baseSpider) appendCategoryURL(rawURL string) error {
+// appendCategoryURL agrega una categoría validando formato y unicidad.
+func (base *baseSpider) appendCategoryURL(urlCruda string) error {
 	return appendCategoryURL(
-		filepath.Join(b.categoryDir, b.cfg.categoryFile),
-		rawURL,
-		b.cfg.validateCategory,
+		filepath.Join(base.categoryDir, base.site.CategoryFile),
+		urlCruda,
+		base.site.ValidateCategoryURL,
 	)
 }
 
-func (b *baseSpider) toItem(product domain.Product, category, responseURL string) domain.Item {
-	if product.URLProducto == nil || *product.URLProducto == "" {
-		product.URLProducto = domain.StringPtr(responseURL)
+// toItem convierte un producto en elemento listo para ser emitido.
+func (base *baseSpider) toItem(producto domain.Product, categoria, urlRespuesta string) domain.Item {
+	if producto.URLProducto == nil || *producto.URLProducto == "" {
+		producto.URLProducto = domain.StringPtr(urlRespuesta)
 	}
-	product.Categoria = category
-	return domain.Item{Product: product, Supermercado: b.cfg.supermarket}
+	producto.Categoria = categoria
+	return domain.Item{Product: producto, Supermercado: base.site.Supermarket}
 }
 
-// pageURLOrSelf conserva la URL original en la primera página y agrega el
-// parámetro page desde la segunda. Es el patrón de Jumbo, Santa Isabel y Cugat.
-func pageURLOrSelf(rawURL string, page int) string {
-	if page <= 1 {
-		return rawURL
-	}
-	return withPage(rawURL, page)
-}
-
-func urlString(value *url.URL) string {
-	if value == nil {
+// urlString normaliza la representación textual de una URL.
+func urlString(valor *url.URL) string {
+	if valor == nil {
 		return ""
 	}
-	return value.String()
+	return valor.String()
+}
+
+// mustSite devuelve el sitio embebido o entra en pánico si el catálogo está
+// roto (error de build, no de ejecución).
+func mustSite(nombre string) catalog.Site {
+	sitio, valido := defaultCatalog().Get(nombre)
+	if !valido {
+		panic("catálogo sin sitio " + nombre)
+	}
+	return sitio
 }

@@ -29,11 +29,15 @@ import (
 )
 
 var (
-	ErrCrawlExhausted = errors.New("el crawl agotó 3 intentos; el spool se conserva")
+	ErrCrawlExhausted = errors.New("el crawl agotó los intentos configurados; el spool se conserva")
 	ErrLeaseLost      = errors.New("se perdió la lease del trabajo")
 	ErrNoProducts     = errors.New("el crawl terminó sin productos")
 )
 
+// ===== Estructura de Orquestador =====
+
+// Worker consume trabajos de la cola y ejecuta el ciclo completo: lease,
+// spool, crawl, entrega y cierre.
 type Worker struct {
 	cfg       config.Config
 	api       *controlscraping.Client
@@ -44,326 +48,352 @@ type Worker struct {
 	logger    *slog.Logger
 }
 
+// ===== Constructor =====
+
+// New valida la configuración y construye el worker con sus dependencias
+// derivadas: el cliente de recolección y el recolector de spools.
 func New(
-	cfg config.Config,
+	configuracion config.Config,
 	api *controlscraping.Client,
-	queueClient *queue.Queue,
-	registry *spiders.Registry,
-	logger *slog.Logger,
-) *Worker {
-	if logger == nil {
-		logger = slog.Default()
+	clienteCola *queue.Queue,
+	registro *spiders.Registry,
+	registrador *slog.Logger,
+) (*Worker, error) {
+	if errorObtenido := configuracion.Validate(); errorObtenido != nil {
+		return nil, fmt.Errorf("configuración inválida: %w", errorObtenido)
 	}
-	gcTimeout := 2 * time.Second
-	if cfg.APITimeout > 0 && cfg.APITimeout < gcTimeout {
-		gcTimeout = cfg.APITimeout
+	if registrador == nil {
+		registrador = slog.Default()
+	}
+	tiempoEsperaGC := configuracion.GCTimeout
+	if configuracion.APITimeout > 0 && configuracion.APITimeout < tiempoEsperaGC {
+		tiempoEsperaGC = configuracion.APITimeout
 	}
 	return &Worker{
-		cfg:       cfg,
-		api:       api,
-		gcAPI:     controlscraping.New(cfg.APIURL, cfg.Token, gcTimeout),
-		queue:     queueClient,
-		registry:  registry,
-		collector: storage.NewCollector(cfg.StateDir, cfg.MinFreeBytes, cfg.FailedRetention, logger),
-		logger:    logger,
-	}
+		cfg:      configuracion,
+		api:      api,
+		gcAPI:    controlscraping.New(configuracion.APIURL, configuracion.Token, tiempoEsperaGC),
+		queue:    clienteCola,
+		registry: registro,
+		collector: storage.NewCollector(
+			configuracion.StateDir,
+			configuracion.MinFreeBytes,
+			configuracion.FailedRetention,
+			configuracion.CollectTimeout,
+			registrador,
+		),
+		logger: registrador,
+	}, nil
 }
 
-func (w *Worker) Run(ctx context.Context) error {
-	if w.cfg.Token == "" {
+// ===== Bucle Principal =====
+
+// Run asegura el grupo de consumo, recolecta spools vencidos y procesa
+// mensajes hasta que el contexto se cancela. Los fallos de dependencias se
+// reintentan con RetryInterval.
+func (trabajador *Worker) Run(contexto context.Context) error {
+	if trabajador.cfg.Token == "" {
 		return fmt.Errorf("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
 	}
-	if err := os.MkdirAll(w.cfg.StateDir, 0o700); err != nil {
-		return err
+	if errorObtenido := os.MkdirAll(trabajador.cfg.StateDir, 0o700); errorObtenido != nil {
+		return errorObtenido
 	}
 
-	w.logger.Info("worker_started",
-		"stream", w.queue.Stream(),
-		"group", w.queue.Group(),
-		"consumer", w.queue.Consumer(),
+	trabajador.logger.Info("worker_started",
+		"stream", trabajador.queue.Stream(),
+		"group", trabajador.queue.Group(),
+		"consumer", trabajador.queue.Consumer(),
 	)
 
-	nextCollection := time.Time{}
+	siguienteRecoleccion := time.Time{}
 	for {
-		if ctx.Err() != nil {
+		if contexto.Err() != nil {
 			return nil
 		}
-		if err := w.queue.EnsureGroup(ctx); err != nil {
-			w.logger.Warn("worker_group_unavailable", "error", err)
-			if !sleep(ctx, 5*time.Second) {
+		if errorObtenido := trabajador.queue.EnsureGroup(contexto); errorObtenido != nil {
+			trabajador.logger.Warn("worker_group_unavailable", "error", errorObtenido)
+			if !sleep(contexto, trabajador.cfg.RetryInterval) {
 				return nil
 			}
 			continue
 		}
 
-		if time.Now().After(nextCollection) {
-			if _, err := w.collector.Collect(ctx, w.gcAPI, w.queue, 20); err != nil {
-				w.logger.Warn("worker_collection_pending", "error", err)
+		if time.Now().After(siguienteRecoleccion) {
+			if _, errorObtenido := trabajador.collector.Collect(contexto, trabajador.gcAPI, trabajador.queue, trabajador.cfg.CollectLimit); errorObtenido != nil {
+				trabajador.logger.Warn("worker_collection_pending", "error", errorObtenido)
 			}
-			nextCollection = time.Now().Add(10 * time.Second)
+			siguienteRecoleccion = time.Now().Add(trabajador.cfg.CollectInterval)
 		}
 
-		if err := storage.EnsureCapacity(w.cfg.StateDir, w.cfg.MinFreeBytes, 0); err != nil {
-			if errors.Is(err, storage.ErrStoragePressure) {
-				w.logger.Error("worker_storage_pressure", "error", err)
+		if errorObtenido := storage.EnsureCapacity(trabajador.cfg.StateDir, trabajador.cfg.MinFreeBytes, 0); errorObtenido != nil {
+			if errors.Is(errorObtenido, storage.ErrStoragePressure) {
+				trabajador.logger.Error("worker_storage_pressure", "error", errorObtenido)
 			} else {
-				w.logger.Warn("worker_storage_unavailable", "error", err)
+				trabajador.logger.Warn("worker_storage_unavailable", "error", errorObtenido)
 			}
-			if !sleep(ctx, 5*time.Second) {
+			if !sleep(contexto, trabajador.cfg.RetryInterval) {
 				return nil
 			}
 			continue
 		}
 
-		message, err := w.queue.Receive(ctx)
-		if err != nil {
-			if ctx.Err() != nil {
+		mensaje, errorObtenido := trabajador.queue.Receive(contexto)
+		if errorObtenido != nil {
+			if contexto.Err() != nil {
 				return nil
 			}
-			w.logger.Warn("worker_dependency_unavailable", "error", err)
-			if !sleep(ctx, 5*time.Second) {
-				return nil
-			}
-			continue
-		}
-		if message == nil {
-			if !sleep(ctx, 200*time.Millisecond) {
+			trabajador.logger.Warn("worker_dependency_unavailable", "error", errorObtenido)
+			if !sleep(contexto, trabajador.cfg.RetryInterval) {
 				return nil
 			}
 			continue
 		}
-		w.HandleMessage(ctx, message)
+		if mensaje == nil {
+			if !sleep(contexto, trabajador.cfg.PollInterval) {
+				return nil
+			}
+			continue
+		}
+		trabajador.HandleMessage(contexto, mensaje)
 	}
 }
 
-func (w *Worker) HandleMessage(ctx context.Context, message *redis.XMessage) {
-	raw, _ := message.Values["payload"].(string)
-	job, err := w.parseJob(raw)
-	if err != nil {
-		w.logger.Warn("worker_invalid_payload", "message_id", message.ID, "error", err)
-		if _, ackErr := w.queue.Ack(ctx, message.ID, raw, "", "invalid_payload"); ackErr != nil {
-			w.logger.Warn("worker_ack_failed", "message_id", message.ID, "error", ackErr)
+// HandleMessage procesa un mensaje ya reclamado: valida el payload, ejecuta
+// el trabajo y confirma o deriva el mensaje según el resultado.
+func (trabajador *Worker) HandleMessage(contexto context.Context, mensaje *redis.XMessage) {
+	crudo, _ := mensaje.Values["payload"].(string)
+	trabajo, errorObtenido := trabajador.parseJob(crudo)
+	if errorObtenido != nil {
+		trabajador.logger.Warn("worker_invalid_payload", "message_id", mensaje.ID, "error", errorObtenido)
+		if _, errorConfirmacion := trabajador.queue.Ack(contexto, mensaje.ID, crudo, "", "invalid_payload"); errorConfirmacion != nil {
+			trabajador.logger.Warn("worker_ack_failed", "message_id", mensaje.ID, "error", errorConfirmacion)
 		}
 		return
 	}
 
-	heartbeatCtx, cancel, lost, err := w.queue.Heartbeat(ctx, message.ID)
-	if err != nil {
-		w.logger.Warn("worker_heartbeat_failed", "trabajo_id", job.WorkID, "error", err)
+	contextoLatido, cancelar, perdido, errorObtenido := trabajador.queue.Heartbeat(contexto, mensaje.ID)
+	if errorObtenido != nil {
+		trabajador.logger.Warn("worker_heartbeat_failed", "trabajo_id", trabajo.WorkID, "error", errorObtenido)
 		return
 	}
-	defer cancel()
+	defer cancelar()
 
-	state, err := w.processJob(heartbeatCtx, lost, job)
-	if err != nil {
-		if queue.IsLost(lost) || errors.Is(err, ErrLeaseLost) {
-			w.logger.Warn("worker_lease_lost", "trabajo_id", job.WorkID)
+	estado, errorObtenido := trabajador.processJob(contextoLatido, perdido, trabajo)
+	if errorObtenido != nil {
+		if queue.IsLost(perdido) || errors.Is(errorObtenido, ErrLeaseLost) {
+			trabajador.logger.Warn("worker_lease_lost", "trabajo_id", trabajo.WorkID)
 			return
 		}
 
-		var apiErr *controlscraping.Error
-		apiFailure := errors.As(err, &apiErr)
-		var blocked *crawler.BlockedError
-		blockedFailure := errors.As(err, &blocked)
-		noProducts := errors.Is(err, ErrNoProducts)
-		permanent := errors.Is(err, ErrCrawlExhausted) || noProducts || blockedFailure ||
-			(apiFailure && apiErr.Permanent())
-		if permanent {
-			failureMessage := "Trabajo enviado a revisión; consultar spool y entregas"
-			reason := "delivery_rejected"
-			var blockedResponses *int
+		var errorAPI *controlscraping.Error
+		falloAPI := errors.As(errorObtenido, &errorAPI)
+		var bloqueado *crawler.BlockedError
+		falloBloqueo := errors.As(errorObtenido, &bloqueado)
+		sinProductos := errors.Is(errorObtenido, ErrNoProducts)
+		permanente := errors.Is(errorObtenido, ErrCrawlExhausted) || sinProductos || falloBloqueo ||
+			(falloAPI && errorAPI.Permanent())
+		if permanente {
+			mensajeFallo := "Trabajo enviado a revisión; consultar spool y entregas"
+			motivo := "delivery_rejected"
+			var respuestasBloqueadas *int
 			switch {
-			case blockedFailure:
-				blockedCount := blocked.BlockedResponses
-				if blockedCount < 1 {
-					blockedCount = 1
+			case falloBloqueo:
+				cantidadBloqueados := bloqueado.BlockedResponses
+				if cantidadBloqueados < 1 {
+					cantidadBloqueados = 1
 				}
-				blockedResponses = &blockedCount
-				failureMessage = fmt.Sprintf(
+				respuestasBloqueadas = &cantidadBloqueados
+				mensajeFallo = fmt.Sprintf(
 					"bloqueo: %d respuestas bloqueadas (motivo=%s)",
-					blockedCount,
-					blocked.Reason,
+					cantidadBloqueados,
+					bloqueado.Reason,
 				)
-				reason = "blocked"
-				w.logger.Warn("worker_job_blocked",
-					"trabajo_id", job.WorkID,
-					"url", blocked.URL,
-					"status", blocked.Status,
-					"motivo", blocked.Reason,
-					"respuestas_bloqueadas", blockedCount,
+				motivo = "blocked"
+				trabajador.logger.Warn("worker_job_blocked",
+					"trabajo_id", trabajo.WorkID,
+					"url", bloqueado.URL,
+					"status", bloqueado.Status,
+					"motivo", bloqueado.Reason,
+					"respuestas_bloqueadas", cantidadBloqueados,
 				)
-			case noProducts:
-				failureMessage = "sin productos: el crawl no extrajo elementos; no se ingirió un lote vacío"
-				reason = "no_products"
-				w.logger.Warn("worker_job_without_products", "trabajo_id", job.WorkID)
-			case errors.Is(err, ErrCrawlExhausted):
-				failureMessage = "crawl agotado: se conserva el spool para revisión"
-				reason = "attempts_exhausted"
+			case sinProductos:
+				mensajeFallo = "sin productos: el crawl no extrajo elementos; no se ingirió un lote vacío"
+				motivo = "no_products"
+				trabajador.logger.Warn("worker_job_without_products", "trabajo_id", trabajo.WorkID)
+			case errors.Is(errorObtenido, ErrCrawlExhausted):
+				mensajeFallo = "crawl agotado: se conserva el spool para revisión"
+				motivo = "attempts_exhausted"
 			}
-			if !apiFailure || apiErr.Status != 404 {
-				if _, finalizeErr := w.api.FinalizeWork(
-					heartbeatCtx,
-					job.WorkID,
+			if !falloAPI || errorAPI.Status != 404 {
+				if _, errorFinalizacion := trabajador.api.FinalizeWork(
+					contextoLatido,
+					trabajo.WorkID,
 					"fallido",
 					nil,
-					blockedResponses,
-					failureMessage,
-				); finalizeErr != nil {
-					w.logger.Warn("worker_finalize_failed", "trabajo_id", job.WorkID, "error", finalizeErr)
+					respuestasBloqueadas,
+					mensajeFallo,
+				); errorFinalizacion != nil {
+					trabajador.logger.Warn("worker_finalize_failed", "trabajo_id", trabajo.WorkID, "error", errorFinalizacion)
 					return
 				}
 			}
-			if _, ackErr := w.queue.Ack(heartbeatCtx, message.ID, raw, job.WorkID, reason); ackErr != nil {
-				w.logger.Warn("worker_ack_failed", "trabajo_id", job.WorkID, "error", ackErr)
+			if _, errorConfirmacion := trabajador.queue.Ack(contextoLatido, mensaje.ID, crudo, trabajo.WorkID, motivo); errorConfirmacion != nil {
+				trabajador.logger.Warn("worker_ack_failed", "trabajo_id", trabajo.WorkID, "error", errorConfirmacion)
 			}
 			return
 		}
-		if apiFailure && (apiErr.Status == 401 || apiErr.Status == 403) {
-			w.logger.Error("worker_auth_rejected",
-				"trabajo_id", job.WorkID,
-				"status", apiErr.Status,
+		if falloAPI && (errorAPI.Status == 401 || errorAPI.Status == 403) {
+			trabajador.logger.Error("worker_auth_rejected",
+				"trabajo_id", trabajo.WorkID,
+				"status", errorAPI.Status,
 				"error", "revisar SCRAPING_SERVICE_TOKEN",
 			)
 			return
 		}
-		w.logger.Warn("worker_delivery_pending", "trabajo_id", job.WorkID, "error", err)
+		trabajador.logger.Warn("worker_delivery_pending", "trabajo_id", trabajo.WorkID, "error", errorObtenido)
 		return
 	}
 
-	if queue.IsLost(lost) {
-		w.logger.Warn("worker_lease_lost", "trabajo_id", job.WorkID)
+	if queue.IsLost(perdido) {
+		trabajador.logger.Warn("worker_lease_lost", "trabajo_id", trabajo.WorkID)
 		return
 	}
-	acked, err := w.queue.Ack(heartbeatCtx, message.ID, raw, job.WorkID, "")
-	if err != nil {
-		w.logger.Warn("worker_ack_failed", "trabajo_id", job.WorkID, "error", err)
+	confirmado, errorObtenido := trabajador.queue.Ack(contextoLatido, mensaje.ID, crudo, trabajo.WorkID, "")
+	if errorObtenido != nil {
+		trabajador.logger.Warn("worker_ack_failed", "trabajo_id", trabajo.WorkID, "error", errorObtenido)
 		return
 	}
-	if acked && state == "completado" {
-		if _, err := storage.CleanupSpool(w.cfg.StateDir, job.WorkID); err != nil {
-			w.logger.Warn("worker_spool_cleanup_failed", "trabajo_id", job.WorkID, "error", err)
+	if confirmado && estado == "completado" {
+		if _, errorObtenido := storage.CleanupSpool(trabajador.cfg.StateDir, trabajo.WorkID); errorObtenido != nil {
+			trabajador.logger.Warn("worker_spool_cleanup_failed", "trabajo_id", trabajo.WorkID, "error", errorObtenido)
 		}
 	}
 }
 
-func (w *Worker) processJob(ctx context.Context, lost <-chan struct{}, job domain.Job) (string, error) {
-	status, err := w.api.GetWork(ctx, job.WorkID)
-	if err != nil {
-		return "", err
+// ===== Procesamiento de Trabajos =====
+
+// processJob ejecuta la secuencia de extracción, acumulación en spool y envío al control.
+func (trabajador *Worker) processJob(contexto context.Context, perdido <-chan struct{}, trabajo domain.Job) (string, error) {
+	estado, errorObtenido := trabajador.api.GetWork(contexto, trabajo.WorkID)
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if isTerminal(status) {
-		return stateOf(status), nil
+	if isTerminal(estado) {
+		return stateOf(estado), nil
 	}
 
-	store, err := spool.Open(job.WorkID, w.cfg.StateDir, w.cfg.MinFreeBytes)
-	if err != nil {
-		return "", err
+	almacen, errorObtenido := spool.Open(trabajo.WorkID, trabajador.cfg.StateDir, trabajador.cfg.MinFreeBytes)
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	defer store.Close()
+	defer almacen.Close()
 
-	lock, err := lockExecution(store.Directory())
-	if err != nil {
-		return "", err
+	bloqueo, errorObtenido := lockExecution(almacen.Directory())
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	defer lock.Close()
+	defer bloqueo.Close()
 
-	if queue.IsLost(lost) {
+	if queue.IsLost(perdido) {
 		return "", ErrLeaseLost
 	}
-	status, err = w.api.GetWork(ctx, job.WorkID)
-	if err != nil {
-		return "", err
+	estado, errorObtenido = trabajador.api.GetWork(contexto, trabajo.WorkID)
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if isTerminal(status) {
-		return stateOf(status), nil
-	}
-
-	if err := store.Seal(w.cfg.BatchSize); err != nil {
-		return "", err
-	}
-	if err := store.Replay(ctx, w.api); err != nil {
-		return "", err
+	if isTerminal(estado) {
+		return stateOf(estado), nil
 	}
 
-	done, err := store.Progress("crawl_done")
-	if err != nil {
-		return "", err
+	if errorObtenido := almacen.Seal(trabajador.cfg.BatchSize); errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if done == 0 {
-		attempts, err := store.Progress("crawl_attempts")
-		if err != nil {
-			return "", err
+	if errorObtenido := almacen.Replay(contexto, trabajador.api); errorObtenido != nil {
+		return "", errorObtenido
+	}
+
+	terminado, errorObtenido := almacen.Progress("crawl_done")
+	if errorObtenido != nil {
+		return "", errorObtenido
+	}
+	if terminado == 0 {
+		intentos, errorObtenido := almacen.Progress("crawl_attempts")
+		if errorObtenido != nil {
+			return "", errorObtenido
 		}
-		if attempts >= 3 {
+		if intentos >= trabajador.cfg.CrawlAttempts {
 			return "", ErrCrawlExhausted
 		}
-		if err := store.SetProgress("crawl_attempts", attempts+1); err != nil {
-			return "", err
+		if errorObtenido := almacen.SetProgress("crawl_attempts", intentos+1); errorObtenido != nil {
+			return "", errorObtenido
 		}
 
-		spider, ok := w.registry.Get(job.Spider)
-		if !ok {
-			return "", fmt.Errorf("spider aún no implementado en Go: %s", job.Spider)
+		spider, valido := trabajador.registry.Get(trabajo.Spider)
+		if !valido {
+			return "", fmt.Errorf("spider aún no implementado en Go: %s", trabajo.Spider)
 		}
-		pending := 0
-		emit := func(item domain.Item) error {
-			item = spiders.CompleteItem(item)
-			market := item.Supermercado
-			if err := store.Add(item.Product, &market); err != nil {
-				return err
+		pendiente := 0
+		emitir := func(elemento domain.Item) error {
+			elemento = spiders.CompleteItem(elemento)
+			mercado := elemento.Supermercado
+			if errorObtenido := almacen.Add(elemento.Product, &mercado); errorObtenido != nil {
+				return errorObtenido
 			}
-			pending++
-			if pending >= w.cfg.BatchSize {
-				if err := store.Seal(w.cfg.BatchSize); err != nil {
-					return err
+			pendiente++
+			if pendiente >= trabajador.cfg.BatchSize {
+				if errorObtenido := almacen.Seal(trabajador.cfg.BatchSize); errorObtenido != nil {
+					return errorObtenido
 				}
-				if err := store.Replay(ctx, w.api); err != nil {
-					return err
+				if errorObtenido := almacen.Replay(contexto, trabajador.api); errorObtenido != nil {
+					return errorObtenido
 				}
-				pending = 0
+				pendiente = 0
 			}
 			return nil
 		}
-		if err := spider.Run(ctx, job, emit); err != nil {
-			var blocked *crawler.BlockedError
-			if errors.As(err, &blocked) {
+		if errorObtenido := spider.Run(contexto, trabajo, emitir); errorObtenido != nil {
+			var bloqueado *crawler.BlockedError
+			if errors.As(errorObtenido, &bloqueado) {
 				// Se conserva en el spool para diagnóstico y para que el
 				// operador pueda distinguir el bloqueo de un fallo de red.
-				_ = store.SetProgress("blocked_responses", blocked.BlockedResponses)
+				_ = almacen.SetProgress("blocked_responses", bloqueado.BlockedResponses)
 			}
-			return "", err
+			return "", errorObtenido
 		}
-		if err := store.SetProgress("crawl_done", 1); err != nil {
-			return "", err
+		if errorObtenido := almacen.SetProgress("crawl_done", 1); errorObtenido != nil {
+			return "", errorObtenido
 		}
 	}
 
-	if err := store.Seal(w.cfg.BatchSize); err != nil {
-		return "", err
+	if errorObtenido := almacen.Seal(trabajador.cfg.BatchSize); errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if err := store.Replay(ctx, w.api); err != nil {
-		return "", err
+	if errorObtenido := almacen.Replay(contexto, trabajador.api); errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if queue.IsLost(lost) {
+	if queue.IsLost(perdido) {
 		return "", ErrLeaseLost
 	}
 	// Un crawl con categorías vacías puede terminar sin error y sin lotes. No
 	// se declara completado: se cierra como fallido para no publicar un
 	// catálogo vacío como éxito.
-	itemCount, err := store.Count()
-	if err != nil {
-		return "", err
+	cantidadElementos, errorObtenido := almacen.Count()
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	if itemCount == 0 {
+	if cantidadElementos == 0 {
 		return "", ErrNoProducts
 	}
-	final, err := w.api.FinalizeWork(ctx, job.WorkID, "completado", nil, nil, "")
-	if err != nil {
-		return "", err
+	final, errorObtenido := trabajador.api.FinalizeWork(contexto, trabajo.WorkID, "completado", nil, nil, "")
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
 	return fmt.Sprint(final["estado"]), nil
 }
 
+// ===== Deserialización y Validación =====
+
+// jobPayload modela el esquema JSON del mensaje de trabajo recibido desde la cola.
 type jobPayload struct {
 	WorkID     string `json:"trabajo_id"`
 	Spider     string `json:"spider"`
@@ -373,89 +403,102 @@ type jobPayload struct {
 	EnrichEAN  any    `json:"enrich_ean"`
 }
 
-func (w *Worker) parseJob(raw string) (domain.Job, error) {
-	var payload jobPayload
-	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
-		return domain.Job{}, err
+// parseJob deserializa y valida la carga útil de un trabajo recibido en la cola.
+func (trabajador *Worker) parseJob(crudo string) (domain.Job, error) {
+	var carga jobPayload
+	if errorObtenido := json.Unmarshal([]byte(crudo), &carga); errorObtenido != nil {
+		return domain.Job{}, errorObtenido
 	}
-	if _, err := uuid.Parse(payload.WorkID); err != nil {
-		return domain.Job{}, fmt.Errorf("trabajo_id inválido: %w", err)
+	if _, errorObtenido := uuid.Parse(carga.WorkID); errorObtenido != nil {
+		return domain.Job{}, fmt.Errorf("trabajo_id inválido: %w", errorObtenido)
 	}
-	spider := payload.Spider
+	spider := carga.Spider
 	if spider == "" {
 		spider = spiders.JumboName
 	}
-	if !spiders.IsKnown(spider) {
+	if trabajador.registry == nil {
+		return domain.Job{}, fmt.Errorf("registro de spiders no configurado")
+	}
+	if _, valido := trabajador.registry.Get(spider); !valido {
 		return domain.Job{}, fmt.Errorf("spider inválido: %s", spider)
 	}
-	if payload.ProductID != "" && payload.ProductURL == "" {
+	if carga.ProductID != "" && carga.ProductURL == "" {
 		return domain.Job{}, fmt.Errorf("product_id requiere product_url")
 	}
 	return domain.Job{
-		WorkID:     payload.WorkID,
+		WorkID:     carga.WorkID,
 		Spider:     spider,
-		ProductURL: payload.ProductURL,
-		AddURL:     payload.AddURL,
-		EnrichEAN:  parseEnrich(payload.EnrichEAN),
+		ProductURL: carga.ProductURL,
+		AddURL:     carga.AddURL,
+		EnrichEAN:  parseEnrich(carga.EnrichEAN),
 	}, nil
 }
 
-func parseEnrich(value any) bool {
-	switch typed := value.(type) {
+// parseEnrich extrae los parámetros específicos de enriquecimiento individual de producto.
+func parseEnrich(valor any) bool {
+	switch tipado := valor.(type) {
 	case bool:
-		return typed
+		return tipado
 	case string:
-		switch strings.ToLower(strings.TrimSpace(typed)) {
+		switch strings.ToLower(strings.TrimSpace(tipado)) {
 		case "1", "true", "yes":
 			return true
 		}
 	case float64:
-		return typed == 1
+		return tipado == 1
 	}
 	return false
 }
 
-func isTerminal(status map[string]any) bool {
-	state := stateOf(status)
-	return state == "completado" || state == "fallido"
+// isTerminal verifica si un estado reportado por control indica la culminación del trabajo.
+func isTerminal(estado map[string]any) bool {
+	estadoFinal := stateOf(estado)
+	return estadoFinal == "completado" || estadoFinal == "fallido"
 }
 
-func stateOf(status map[string]any) string {
-	state, _ := status["estado"].(string)
-	return state
+// stateOf recupera el estado vigente de un trabajo consultando el servicio de control.
+func stateOf(estado map[string]any) string {
+	estadoTrabajo, _ := estado["estado"].(string)
+	return estadoTrabajo
 }
 
+// ===== Bloqueos de Concurrencia =====
+
+// executionLock gestiona el descriptor del archivo de bloqueo para evitar concurrencia.
 type executionLock struct {
 	file *os.File
 }
 
-func lockExecution(directory string) (*executionLock, error) {
-	file, err := os.OpenFile(filepath.Join(directory, "execution.lock"), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		return nil, err
+// lockExecution adquiere un bloqueo exclusivo sobre el sistema de archivos para el trabajo.
+func lockExecution(directorio string) (*executionLock, error) {
+	archivo, errorObtenido := os.OpenFile(filepath.Join(directorio, "execution.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		_ = file.Close()
-		if errors.Is(err, syscall.EWOULDBLOCK) || errors.Is(err, syscall.EAGAIN) {
+	if errorObtenido := syscall.Flock(int(archivo.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); errorObtenido != nil {
+		_ = archivo.Close()
+		if errors.Is(errorObtenido, syscall.EWOULDBLOCK) || errors.Is(errorObtenido, syscall.EAGAIN) {
 			return nil, fmt.Errorf("el spool ya está en ejecución por otro worker")
 		}
-		return nil, err
+		return nil, errorObtenido
 	}
-	return &executionLock{file: file}, nil
+	return &executionLock{file: archivo}, nil
 }
 
-func (l *executionLock) Close() error {
-	_ = syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
-	return l.file.Close()
+// Close libera los recursos asociados al descriptor o conexión.
+func (bloqueo *executionLock) Close() error {
+	_ = syscall.Flock(int(bloqueo.file.Fd()), syscall.LOCK_UN)
+	return bloqueo.file.Close()
 }
 
-func sleep(ctx context.Context, duration time.Duration) bool {
-	timer := time.NewTimer(duration)
-	defer timer.Stop()
+// sleep realiza una pausa controlada que respeta la cancelación del contexto.
+func sleep(contexto context.Context, duracion time.Duration) bool {
+	temporizador := time.NewTimer(duracion)
+	defer temporizador.Stop()
 	select {
-	case <-ctx.Done():
+	case <-contexto.Done():
 		return false
-	case <-timer.C:
+	case <-temporizador.C:
 		return true
 	}
 }
