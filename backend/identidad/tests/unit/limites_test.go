@@ -1,4 +1,5 @@
 // Contadores de intentos por IP sobre un Redis aislado (IDENTIDAD_TEST_REDIS_URL).
+
 package unit_test
 
 import (
@@ -10,8 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -40,7 +41,7 @@ func TestRateLimitLoginSoloCuentaFallidos(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	estado := http.StatusOK
 	enrutador := gin.New()
-	enrutador.POST("/login", middleware.RateLimitLogin(redisCliente, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(estado) })
+	enrutador.POST("/login", api.RateLimitLogin(redisCliente, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(estado) })
 	login := func() int {
 		peticionHTTP := httptest.NewRequest("POST", "/login", strings.NewReader("{}"))
 		peticionHTTP.RemoteAddr = "192.0.2.10:1234"

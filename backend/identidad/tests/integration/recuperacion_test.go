@@ -6,8 +6,6 @@ package integration_test
 import (
 	"bytes"
 	"context"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"log/slog"
 	"os"
 	"regexp"
@@ -15,10 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
@@ -41,7 +40,7 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	if errorOperacion != nil {
 		prueba.Fatal(errorOperacion)
 	}
-	if errorObtenido := server.VerificarRecuperacion(contexto, baseDatos); errorObtenido != nil {
+	if errorObtenido := repositories.VerificarRecuperacion(contexto, baseDatos); errorObtenido != nil {
 		prueba.Fatal(errorObtenido)
 	}
 	usuario := &domain.Usuario{Correo: "recuperacion-" + uuid.NewString()[:8] + "@example.com", NombreCompleto: "Prueba", EstaActivo: true}
@@ -54,8 +53,8 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	if cantidad, espera, errorObtenido := repositorio.SolicitudesRecientes(contexto, usuario.ID, time.Hour, time.Minute); errorObtenido != nil || cantidad != 0 || espera {
 		prueba.Fatalf("sin tokens: %d %v %v", cantidad, espera, errorObtenido)
 	}
-	_, primero, _ := security.GenerarTokenRecuperacion()
-	_, segundo, _ := security.GenerarTokenRecuperacion()
+	_, primero, _ := services.GenerarTokenRecuperacion()
+	_, segundo, _ := services.GenerarTokenRecuperacion()
 	for _, hash := range [][]byte{primero, segundo} {
 		if errorObtenido := repositorio.EmitirToken(contexto, usuario.ID, hash, 30*time.Minute); errorObtenido != nil {
 			prueba.Fatal(errorObtenido)
@@ -109,7 +108,7 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	}
 	token := coincidencia[1]
 	var vigentes int64
-	admin.Raw("SELECT count(*) FROM api.tokens_recuperacion WHERE usuario_id = ? AND usado_el IS NULL AND token_hash = ?", usuario.ID, security.HashTokenRecuperacion(token)).Scan(&vigentes)
+	admin.Raw("SELECT count(*) FROM api.tokens_recuperacion WHERE usuario_id = ? AND usado_el IS NULL AND token_hash = ?", usuario.ID, services.HashTokenRecuperacion(token)).Scan(&vigentes)
 	if vigentes != 1 {
 		prueba.Fatal("el token del correo no quedó vigente en la base")
 	}

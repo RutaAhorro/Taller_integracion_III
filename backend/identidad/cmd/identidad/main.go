@@ -6,17 +6,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/server"
-	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/gorm"
 )
 
 // ===== Entrada =====
@@ -66,7 +67,7 @@ func run(registrador *slog.Logger) error {
 		return errors.New("pool de Identidad inválido")
 	}
 	defer pool.Close()
-	if errorOperacion := server.VerifyStorage(contextoInicio, baseDatos); errorOperacion != nil {
+	if errorOperacion := repositories.VerifyStorage(contextoInicio, baseDatos); errorOperacion != nil {
 		cancelar()
 		registrador.Error("identidad_storage_invalid", "error", errorOperacion)
 		return errors.New("Identidad requiere tablas y permisos antes de iniciar")
@@ -76,8 +77,8 @@ func run(registrador *slog.Logger) error {
 	if errorObtenido != nil {
 		return errorObtenido
 	}
-	modulo := server.NewModule(baseDatos, redisCliente, recuperacion, configuracion)
-	servidorHTTP := &http.Server{Addr: configuracion.ListenAddr, Handler: server.NewRouter(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.ReadHeaderTimeout, ReadTimeout: configuracion.Ajustes.ReadTimeout, WriteTimeout: configuracion.Ajustes.WriteTimeout, IdleTimeout: configuracion.Ajustes.IdleTimeout, MaxHeaderBytes: configuracion.Ajustes.MaxHeaderBytes}
+	modulo := api.NewModule(baseDatos, redisCliente, recuperacion, configuracion)
+	servidorHTTP := &http.Server{Addr: configuracion.ListenAddr, Handler: api.NewRouter(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.ReadHeaderTimeout, ReadTimeout: configuracion.Ajustes.ReadTimeout, WriteTimeout: configuracion.Ajustes.WriteTimeout, IdleTimeout: configuracion.Ajustes.IdleTimeout, MaxHeaderBytes: configuracion.Ajustes.MaxHeaderBytes}
 	terminado := make(chan error, 1)
 	go func() { terminado <- servidorHTTP.ListenAndServe() }()
 	select {
@@ -103,19 +104,19 @@ func run(registrador *slog.Logger) error {
 
 // recuperacionDesde decide si la recuperación de contraseña (SUP-184) queda activa.
 // Cualquier falta la apaga con un log explícito, sin impedir el login.
-func recuperacionDesde(contexto context.Context, configuracion config.Config, baseDatos *gorm.DB, registrador *slog.Logger) (server.Recuperacion, error) {
+func recuperacionDesde(contexto context.Context, configuracion config.Config, baseDatos *gorm.DB, registrador *slog.Logger) (api.Recuperacion, error) {
 	if configuracion.Correo.Modo == config.CorreoDeshabilitado || configuracion.URLRestablecer == "" {
 		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
-		return server.Recuperacion{}, nil
+		return api.Recuperacion{}, nil
 	}
-	if errorOperacion := server.VerificarRecuperacion(contexto, baseDatos); errorOperacion != nil {
+	if errorOperacion := repositories.VerificarRecuperacion(contexto, baseDatos); errorOperacion != nil {
 		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", errorOperacion.Error())
-		return server.Recuperacion{}, nil
+		return api.Recuperacion{}, nil
 	}
 	correo, errorObtenido := mailer.Nuevo(configuracion.Correo, registrador)
 	if errorObtenido != nil {
-		return server.Recuperacion{}, errorObtenido
+		return api.Recuperacion{}, errorObtenido
 	}
 	registrador.Info("identidad_recuperacion_activa", "url_restablecer", configuracion.URLRestablecer)
-	return server.Recuperacion{Correo: correo, URLRestablecer: configuracion.URLRestablecer, Log: registrador}, nil
+	return api.Recuperacion{Correo: correo, URLRestablecer: configuracion.URLRestablecer, Log: registrador}, nil
 }

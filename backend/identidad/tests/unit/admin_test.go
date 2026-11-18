@@ -12,9 +12,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -32,9 +31,9 @@ func newAdminUsuariosTestRouter(prueba *testing.T) (*gin.Engine, *mockUsuarioRep
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
-	manejador := handlers.NewAdminUsuarioHandler(services.NewAdminUsuarioService(repositorio))
+	manejador := api.NewAdminUsuarioHandler(services.NewAdminUsuarioService(repositorio))
 	enrutador := gin.New()
-	handlers.RegistrarRutasAdminUsuarios(enrutador.Group("/api/v1"), manejador, repositorio, claveJWTDePrueba)
+	api.RegistrarRutasAdminUsuarios(enrutador.Group("/api/v1"), manejador, repositorio, claveJWTDePrueba)
 	return enrutador, repositorio
 }
 
@@ -69,7 +68,7 @@ func adminRequest(prueba *testing.T, enrutador *gin.Engine, repositorio *mockUsu
 func adminRequestComo(prueba *testing.T, enrutador *gin.Engine, actorID, rol, metodo, ruta, cuerpo string) *httptest.ResponseRecorder {
 	prueba.Helper()
 
-	token, errorObtenido := security.GenerarToken(actorID, rol, "local", claveJWTDePrueba)
+	token, errorObtenido := api.GenerarToken(actorID, rol, "local", claveJWTDePrueba)
 	if errorObtenido != nil {
 		prueba.Fatalf("no se pudo generar el token de prueba: %v", errorObtenido)
 	}

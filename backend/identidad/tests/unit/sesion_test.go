@@ -1,4 +1,5 @@
-// JWT de sesión: emisión, validación, tokens inseguros y revalidación en base de datos.
+// Sesión: emisión y validación del JWT, tokens inseguros, revalidación en base
+// de datos y autorización por rol.
 
 package unit_test
 
@@ -10,22 +11,21 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang-jwt/jwt/v5"
-
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/middleware"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+// ===== JWT y revalidación =====
 
 func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 	usuarioID := "c14bd236-294a-41b8-8cbb-5473bb610415"
 	rol := "admin"
 	proveedor := "local"
 
-	tokenTexto, errorObtenido := security.GenerarToken(usuarioID, rol, proveedor, claveJWTDePrueba)
+	tokenTexto, errorObtenido := api.GenerarToken(usuarioID, rol, proveedor, claveJWTDePrueba)
 	if errorObtenido != nil {
 		prueba.Fatalf("Error inesperado al generar token: %v", errorObtenido)
 	}
@@ -34,7 +34,7 @@ func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 		prueba.Fatalf("El token generado no debería estar vacío")
 	}
 
-	token, errorObtenido := security.ValidarToken(tokenTexto, claveJWTDePrueba)
+	token, errorObtenido := api.ValidarToken(tokenTexto, claveJWTDePrueba)
 	if errorObtenido != nil {
 		prueba.Fatalf("Fallo en ValidarToken: %v", errorObtenido)
 	}
@@ -43,9 +43,9 @@ func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 		prueba.Errorf("El token validado debería ser válido")
 	}
 
-	datosToken, valido := token.Claims.(*security.JWTClaims)
+	datosToken, valido := token.Claims.(*api.JWTClaims)
 	if !valido {
-		prueba.Fatalf("No se pudo convertir claims a *security.JWTClaims")
+		prueba.Fatalf("No se pudo convertir claims a *api.JWTClaims")
 	}
 
 	if datosToken.UserID != usuarioID {
@@ -60,7 +60,7 @@ func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 }
 
 func TestJWT_TokenInvalido(prueba *testing.T) {
-	_, errorObtenido := security.ValidarToken("token.falso.invalido", claveJWTDePrueba)
+	_, errorObtenido := api.ValidarToken("token.falso.invalido", claveJWTDePrueba)
 	if errorObtenido == nil {
 		prueba.Errorf("Se esperaba error al validar token falso, pero se aceptó")
 	}
@@ -75,9 +75,9 @@ func TestMiddleware_RequireAuth(prueba *testing.T) {
 	}
 
 	enrutador := gin.New()
-	enrutador.Use(httperrors.ErrorHandler())
+	enrutador.Use(api.ErrorHandler())
 
-	enrutador.GET("/protegido", middleware.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
+	enrutador.GET("/protegido", api.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
 		idUsuario, _ := contexto.Get("user_id")
 		rol, _ := contexto.Get("rol")
 		proveedor, _ := contexto.Get("provider")
@@ -114,7 +114,7 @@ func TestMiddleware_RequireAuth(prueba *testing.T) {
 	})
 
 	prueba.Run("Cookie jwt valida exitosa", func(prueba *testing.T) {
-		tokenTexto, errorObtenido := security.GenerarToken(usuarioID.String(), domain.RolColaborador, "google", claveJWTDePrueba)
+		tokenTexto, errorObtenido := api.GenerarToken(usuarioID.String(), domain.RolColaborador, "google", claveJWTDePrueba)
 		if errorObtenido != nil {
 			prueba.Fatalf("Error generando token: %v", errorObtenido)
 		}
@@ -146,7 +146,7 @@ func TestMiddleware_RequireAuthExigeRepositorio(prueba *testing.T) {
 			prueba.Fatal("RequireAuth(nil) debía entrar en pánico para no omitir la revalidación de sesión")
 		}
 	}()
-	middleware.RequireAuth(nil, claveJWTDePrueba)
+	api.RequireAuth(nil, claveJWTDePrueba)
 }
 
 func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T) {
@@ -158,8 +158,8 @@ func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T
 	}
 
 	enrutador := gin.New()
-	enrutador.Use(httperrors.ErrorHandler())
-	enrutador.GET("/protegido", middleware.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
+	enrutador.Use(api.ErrorHandler())
+	enrutador.GET("/protegido", api.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
 		contexto.JSON(http.StatusOK, gin.H{
 			"user_id": contexto.GetString("user_id"),
 			"rol":     contexto.GetString("rol"),
@@ -167,7 +167,7 @@ func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T
 	})
 
 	// El JWT dice "registrado", pero la base de datos manda: rol admin.
-	tokenTexto, errorObtenido := security.GenerarToken(usuarioID.String(), domain.RolRegistrado, "local", claveJWTDePrueba)
+	tokenTexto, errorObtenido := api.GenerarToken(usuarioID.String(), domain.RolRegistrado, "local", claveJWTDePrueba)
 	if errorObtenido != nil {
 		prueba.Fatalf("Error generando token: %v", errorObtenido)
 	}
@@ -197,7 +197,7 @@ func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T
 	}
 
 	// Un token válido para un usuario inexistente tampoco sirve.
-	tokenInexistente, errorObtenido := security.GenerarToken(uuid.NewString(), domain.RolAdmin, "local", claveJWTDePrueba)
+	tokenInexistente, errorObtenido := api.GenerarToken(uuid.NewString(), domain.RolAdmin, "local", claveJWTDePrueba)
 	if errorObtenido != nil {
 		prueba.Fatalf("Error generando token: %v", errorObtenido)
 	}
@@ -231,16 +231,16 @@ func TestJWTRejectsUnsafeTokens(prueba *testing.T) {
 			if errorObtenido != nil {
 				prueba.Fatal(errorObtenido)
 			}
-			if _, errorObtenido = security.ValidarToken(token, claveJWTDePrueba); errorObtenido == nil {
+			if _, errorObtenido = api.ValidarToken(token, claveJWTDePrueba); errorObtenido == nil {
 				prueba.Fatal("token inseguro aceptado")
 			}
 		})
 	}
 	prueba.Run("no fallback", func(prueba *testing.T) {
-		if _, errorObtenido := security.GenerarToken("user", "registrado", "local", ""); errorObtenido == nil {
+		if _, errorObtenido := api.GenerarToken("user", "registrado", "local", ""); errorObtenido == nil {
 			prueba.Fatal("emisión sin clave")
 		}
-		if _, errorObtenido := security.ValidarToken("token", ""); errorObtenido == nil {
+		if _, errorObtenido := api.ValidarToken("token", ""); errorObtenido == nil {
 			prueba.Fatal("validación sin clave")
 		}
 	})
@@ -252,14 +252,14 @@ func FuzzJWTParser(generador *testing.F) {
 		generador.Add(valor)
 	}
 	generador.Fuzz(func(prueba *testing.T, valor string) {
-		token, errorObtenido := security.ValidarToken(valor, claveJWTDePrueba)
+		token, errorObtenido := api.ValidarToken(valor, claveJWTDePrueba)
 		if errorObtenido != nil {
 			return
 		}
 		if token == nil || !token.Valid {
 			prueba.Fatal("token aceptado sin validez")
 		}
-		datosToken, valido := token.Claims.(*security.JWTClaims)
+		datosToken, valido := token.Claims.(*api.JWTClaims)
 		if !valido || datosToken.ExpiresAt == nil || strings.TrimSpace(datosToken.UserID) == "" || strings.TrimSpace(datosToken.Rol) == "" || strings.TrimSpace(datosToken.Provider) == "" {
 			prueba.Fatal("sesión incompleta")
 		}
@@ -271,14 +271,93 @@ func FuzzJWTParser(generador *testing.F) {
 func TestClaveJWTInyectadaIgnoraElEntorno(prueba *testing.T) {
 	clave, claveDelEntorno := strings.Repeat("a", 32), strings.Repeat("b", 32)
 	prueba.Setenv("JWT_SECRET", claveDelEntorno)
-	token, errorToken := security.GenerarToken("cuenta-prueba", "registrado", "local", clave)
+	token, errorToken := api.GenerarToken("cuenta-prueba", "registrado", "local", clave)
 	if errorToken != nil {
 		prueba.Fatal(errorToken)
 	}
-	if _, errorValidacion := security.ValidarToken(token, clave); errorValidacion != nil {
+	if _, errorValidacion := api.ValidarToken(token, clave); errorValidacion != nil {
 		prueba.Fatal("la clave inyectada no se conservó")
 	}
-	if _, errorValidacion := security.ValidarToken(token, claveDelEntorno); errorValidacion == nil {
+	if _, errorValidacion := api.ValidarToken(token, claveDelEntorno); errorValidacion == nil {
 		prueba.Fatal("se firmó con el entorno en lugar de la clave inyectada")
+	}
+}
+
+// ===== Rol =====
+
+func TestRequireRole(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	casos := []struct {
+		name           string
+		rolesContexto  string
+		setContext     bool
+		rolesRequerido []string
+		expectedStatus int
+	}{
+		{
+			name:           "Sin rol en contexto retorna 403",
+			setContext:     false,
+			rolesRequerido: []string{"admin"},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "Rol vacio en contexto retorna 403",
+			setContext:     true,
+			rolesContexto:  "",
+			rolesRequerido: []string{"admin"},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "Usuario registrado intentando acceder a ruta admin retorna 403",
+			setContext:     true,
+			rolesContexto:  "registrado",
+			rolesRequerido: []string{"admin"},
+			expectedStatus: http.StatusForbidden,
+		},
+		{
+			name:           "Usuario admin accediendo a ruta admin retorna 200",
+			setContext:     true,
+			rolesContexto:  "admin",
+			rolesRequerido: []string{"admin"},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Rol en mayusculas coincide case-insensitively y retorna 200",
+			setContext:     true,
+			rolesContexto:  "ADMIN",
+			rolesRequerido: []string{"admin"},
+			expectedStatus: http.StatusOK,
+		},
+		{
+			name:           "Usuario con uno de multiples roles permitidos retorna 200",
+			setContext:     true,
+			rolesContexto:  "superadmin",
+			rolesRequerido: []string{"admin", "superadmin"},
+			expectedStatus: http.StatusOK,
+		},
+	}
+
+	for _, caso := range casos {
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			enrutador := gin.New()
+			enrutador.Use(func(contexto *gin.Context) {
+				if caso.setContext {
+					contexto.Set("rol", caso.rolesContexto)
+				}
+				contexto.Next()
+			})
+			enrutador.GET("/test-protected", api.RequireRole(caso.rolesRequerido...), func(contexto *gin.Context) {
+				contexto.JSON(http.StatusOK, gin.H{"mensaje": "acceso concedido"})
+			})
+
+			peticionHTTP, _ := http.NewRequest(http.MethodGet, "/test-protected", nil)
+			escritor := httptest.NewRecorder()
+			enrutador.ServeHTTP(escritor, peticionHTTP)
+
+			if escritor.Code != caso.expectedStatus {
+				prueba.Errorf("se esperaba status %d, se obtuvo %d. Body: %s", caso.expectedStatus, escritor.Code, escritor.Body.String())
+			}
+		})
 	}
 }

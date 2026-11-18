@@ -14,11 +14,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
 	"github.com/gin-gonic/gin"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -341,7 +340,7 @@ func TestAuthService_RegistroExitoso(prueba *testing.T) {
 		prueba.Fatalf("Usuario no persistido en el repositorio")
 	}
 
-	if usuarioLocal.PasswordHash == nil || !security.CheckPasswordHash("SuperClave2026#", *usuarioLocal.PasswordHash) {
+	if usuarioLocal.PasswordHash == nil || !services.CheckPasswordHash("SuperClave2026#", *usuarioLocal.PasswordHash) {
 		prueba.Errorf("El hash almacenado no coincide con la contraseña con bcrypt")
 	}
 	if usuarioLocal.Plan != domain.PlanBasico || usuarioLocal.UltimoAcceso == nil {
@@ -364,7 +363,7 @@ func TestAuthService_Login(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
-	hashContrasena, _ := security.HashPassword("Password123#")
+	hashContrasena, _ := services.HashPassword("Password123#")
 
 	// 1. Usuario activo normal
 	usuarioActivo := &domain.Usuario{
@@ -442,7 +441,7 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
-	hashContrasena, _ := security.HashPassword("Password123#")
+	hashContrasena, _ := services.HashPassword("Password123#")
 	usuarioID := uuid.New()
 	usuarioOriginal := &domain.Usuario{
 		ID:             usuarioID,
@@ -519,7 +518,7 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 
 		// Verificar que el hash se actualizo en el usuario
 		usuarioLocal := repositorio.usuarios["original@uct.cl"]
-		if !security.CheckPasswordHash("NuevaClaveSegura2026!", *usuarioLocal.PasswordHash) {
+		if !services.CheckPasswordHash("NuevaClaveSegura2026!", *usuarioLocal.PasswordHash) {
 			prueba.Errorf("El hash en repositorio no coincide con la nueva contraseña")
 		}
 	})
@@ -559,7 +558,7 @@ func TestPasswordBeyondBcryptLimitIsValidationError(prueba *testing.T) {
 func TestActualizarPerfilExigeContrasenaActual(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
-	hash, _ := security.HashPassword("Password123#")
+	hash, _ := services.HashPassword("Password123#")
 	local := &domain.Usuario{ID: uuid.New(), Correo: "local@uct.cl", PasswordHash: &hash, NombreCompleto: "Local", EstaActivo: true}
 	googleID := "google-only"
 	sso := &domain.Usuario{ID: uuid.New(), Correo: "sso@uct.cl", GoogleID: &googleID, NombreCompleto: "SSO", EstaActivo: true}
@@ -605,7 +604,7 @@ func TestProfileNameValidationPreservesStoredName(prueba *testing.T) {
 			repositorio := newMockUsuarioRepository()
 			usuario := &domain.Usuario{ID: uuid.New(), Correo: "profile@example.test", NombreCompleto: "Original"}
 			repositorio.usuarios[usuario.Correo] = usuario
-			manejador := handlers.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+			manejador := api.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
 			enrutador := gin.New()
 			enrutador.PUT("/profile", func(contexto *gin.Context) { contexto.Set("user_id", usuario.ID.String()) }, manejador.ActualizarPerfil)
 			cuerpo, _ := json.Marshal(map[string]string{"nombre_completo": nombre})

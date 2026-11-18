@@ -1,6 +1,6 @@
 // Endpoints del panel de administración de cuentas (rol admin).
 
-package handlers
+package api
 
 import (
 	"encoding/json"
@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -51,7 +50,7 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 	if valor := contexto.Query("esta_activo"); valor != "" {
 		activo, errorObtenido := strconv.ParseBool(valor)
 		if errorObtenido != nil {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, "El filtro esta_activo debe ser true o false.", errorObtenido)
+			ResponderError(contexto, http.StatusBadRequest, "El filtro esta_activo debe ser true o false.", errorObtenido)
 			return
 		}
 		filtro.EstaActivo = &activo
@@ -60,11 +59,11 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 	if valor := contexto.Query("limit"); valor != "" {
 		valorNumerico, errorObtenido := strconv.Atoi(valor)
 		if errorObtenido != nil || valorNumerico <= 0 {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, "El parámetro limit debe ser un entero positivo.", errorObtenido)
+			ResponderError(contexto, http.StatusBadRequest, "El parámetro limit debe ser un entero positivo.", errorObtenido)
 			return
 		}
 		if valorNumerico > maxUsuariosAdminPorPagina {
-			httperrors.ResponderError(contexto, http.StatusBadRequest,
+			ResponderError(contexto, http.StatusBadRequest,
 				"El parámetro limit no puede superar 200.", nil)
 			return
 		}
@@ -74,11 +73,11 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 	if valor := contexto.Query("page"); valor != "" {
 		valorNumerico, errorObtenido := strconv.ParseInt(valor, 10, 64)
 		if errorObtenido != nil || valorNumerico < 1 {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, "El parámetro page debe ser un entero positivo.", errorObtenido)
+			ResponderError(contexto, http.StatusBadRequest, "El parámetro page debe ser un entero positivo.", errorObtenido)
 			return
 		}
 		if valorNumerico > maximoEntero {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
+			ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
 			return
 		}
 		filtro.Page = int(valorNumerico)
@@ -87,7 +86,7 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 	if filtro.Page > 1 {
 		// Se divide antes de multiplicar para no desbordar int64.
 		if int64(filtro.Page-1) > maximoEntero/int64(filtro.Limit) {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
+			ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
 			return
 		}
 		filtro.Offset = (filtro.Page - 1) * filtro.Limit
@@ -96,10 +95,10 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 	pagina, errorOperacion := manejador.adminService.Listar(contexto.Request.Context(), filtro)
 	if errorOperacion != nil {
 		if errors.Is(errorOperacion, services.ErrRolInvalido) {
-			httperrors.ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
 			return
 		}
-		httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno al listar las cuentas de usuario.", errorOperacion)
+		ResponderError(contexto, http.StatusInternalServerError, "Error interno al listar las cuentas de usuario.", errorOperacion)
 		return
 	}
 
@@ -111,7 +110,7 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 func (manejador *AdminUsuarioHandler) Metricas(contexto *gin.Context) {
 	metricas, errorObtenido := manejador.adminService.Metricas(contexto.Request.Context())
 	if errorObtenido != nil {
-		httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno al calcular las métricas de usuarios.", errorObtenido)
+		ResponderError(contexto, http.StatusInternalServerError, "Error interno al calcular las métricas de usuarios.", errorObtenido)
 		return
 	}
 	contexto.JSON(http.StatusOK, metricas)
@@ -128,18 +127,18 @@ func (manejador *AdminUsuarioHandler) ActualizarUsuario(contexto *gin.Context) {
 		if strings.Contains(errorObtenido.Error(), "unknown field") {
 			mensaje = "La actualización contiene campos no permitidos."
 		}
-		httperrors.ResponderError(contexto, http.StatusBadRequest, mensaje, errorObtenido)
+		ResponderError(contexto, http.StatusBadRequest, mensaje, errorObtenido)
 		return
 	}
 
 	id := strings.TrimSpace(contexto.Param("id"))
 	if id == "" {
-		httperrors.ResponderError(contexto, http.StatusBadRequest, "El identificador de usuario es obligatorio en la ruta.", nil)
+		ResponderError(contexto, http.StatusBadRequest, "El identificador de usuario es obligatorio en la ruta.", nil)
 		return
 	}
 	actorID := strings.TrimSpace(contexto.GetString("user_id"))
 	if actorID == "" {
-		httperrors.ResponderError(contexto, http.StatusUnauthorized, "La sesión no identifica al administrador.", nil)
+		ResponderError(contexto, http.StatusUnauthorized, "La sesión no identifica al administrador.", nil)
 		return
 	}
 
@@ -147,13 +146,13 @@ func (manejador *AdminUsuarioHandler) ActualizarUsuario(contexto *gin.Context) {
 	if errorOperacion != nil {
 		switch {
 		case errors.Is(errorOperacion, services.ErrIDUsuarioInvalido), errors.Is(errorOperacion, services.ErrRolInvalido), errors.Is(errorOperacion, services.ErrPlanInvalido), errors.Is(errorOperacion, services.ErrSinCambiosAdmin):
-			httperrors.ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrUsuarioNoEncontrado):
-			httperrors.ResponderError(contexto, http.StatusNotFound, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusNotFound, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrAutoModificacionAdmin), errors.Is(errorOperacion, services.ErrUltimoAdmin):
-			httperrors.ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
 		default:
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno al actualizar la cuenta de usuario.", errorOperacion)
+			ResponderError(contexto, http.StatusInternalServerError, "Error interno al actualizar la cuenta de usuario.", errorOperacion)
 		}
 		return
 	}

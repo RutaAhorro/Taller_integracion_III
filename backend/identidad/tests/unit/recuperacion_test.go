@@ -18,7 +18,6 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/google/uuid"
 )
@@ -129,7 +128,7 @@ func TestRecuperacionEmiteTokenHasheadoYEnviaCorreo(prueba *testing.T) {
 	if coincidencia == nil || !strings.Contains(mensaje.Texto, urlRestablecer+"?token=") {
 		prueba.Fatalf("el texto no trae el enlace: %q", mensaje.Texto)
 	}
-	if !bytes.Equal(security.HashTokenRecuperacion(coincidencia[1]), tokens.emitidos[0].hash) {
+	if !bytes.Equal(services.HashTokenRecuperacion(coincidencia[1]), tokens.emitidos[0].hash) {
 		prueba.Fatal("el hash guardado no corresponde al token enviado")
 	}
 	if bytes.Contains(tokens.emitidos[0].hash, []byte(coincidencia[1])) {
@@ -255,11 +254,11 @@ func TestRecuperacionNoBloqueaYCerrarRespetaPlazo(prueba *testing.T) {
 func TestTokenRecuperacionAleatorioYHashEstable(prueba *testing.T) {
 	vistos := map[string]bool{}
 	for indice := 0; indice < 50; indice++ {
-		token, hash, errorObtenido := security.GenerarTokenRecuperacion()
+		token, hash, errorObtenido := services.GenerarTokenRecuperacion()
 		if errorObtenido != nil || len(token) != 43 || len(hash) != 32 || vistos[token] {
 			prueba.Fatalf("token inválido o repetido: %q %v", token, errorObtenido)
 		}
-		if !bytes.Equal(hash, security.HashTokenRecuperacion(token)) {
+		if !bytes.Equal(hash, services.HashTokenRecuperacion(token)) {
 			prueba.Fatal("el hash no es reproducible")
 		}
 		vistos[token] = true

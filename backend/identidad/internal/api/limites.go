@@ -1,16 +1,15 @@
 // Contadores de intentos por IP en Redis para login, registro y Google.
 
-package middleware
+package api
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"net/http"
 	"time"
 
-	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 )
@@ -51,7 +50,7 @@ func rateLimiter(redisCliente *redis.Client, prefijo string, maxIntentos int64, 
 	mensajeLimite := fmt.Sprintf("Demasiados intentos de acceso. Por favor, espere %d minutos antes de volver a intentar.", int(ventana.Minutes()))
 	return func(contexto *gin.Context) {
 		if redisCliente == nil {
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Servicio temporalmente no disponible", errors.New("rate limiter no configurado"))
+			ResponderError(contexto, http.StatusInternalServerError, "Servicio temporalmente no disponible", errors.New("rate limiter no configurado"))
 			return
 		}
 		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.RateTimeout)
@@ -59,11 +58,11 @@ func rateLimiter(redisCliente *redis.Client, prefijo string, maxIntentos int64, 
 		clave := fmt.Sprintf("rate_limit:%s:%s", prefijo, contexto.ClientIP())
 		intentos, errorObtenido := incrementWithExpiry.Run(contextoOperacion, redisCliente, []string{clave}, ventana.Milliseconds()).Int64()
 		if errorObtenido != nil {
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Servicio temporalmente no disponible", errors.New("rate limiter no disponible"))
+			ResponderError(contexto, http.StatusInternalServerError, "Servicio temporalmente no disponible", errors.New("rate limiter no disponible"))
 			return
 		}
 		if intentos > maxIntentos {
-			httperrors.ResponderError(contexto, http.StatusTooManyRequests, mensajeLimite, fmt.Errorf("límite de peticiones excedido (máximo %d cada %s)", maxIntentos, ventana))
+			ResponderError(contexto, http.StatusTooManyRequests, mensajeLimite, fmt.Errorf("límite de peticiones excedido (máximo %d cada %s)", maxIntentos, ventana))
 			return
 		}
 		contexto.Next()

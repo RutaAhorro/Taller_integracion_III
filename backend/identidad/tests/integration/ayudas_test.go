@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/server"
 	"github.com/gin-gonic/gin"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -29,6 +29,6 @@ func enrutadorDePrueba(prueba *testing.T, configuracion config.Config, sondaBase
 	if errorApertura != nil {
 		prueba.Fatal(errorApertura)
 	}
-	modulo := server.NewModule(base, nil, server.Recuperacion{}, configuracion)
-	return server.NewRouter(configuracion, modulo, nil, sondaBase, nil)
+	modulo := api.NewModule(base, nil, api.Recuperacion{}, configuracion)
+	return api.NewRouter(configuracion, modulo, nil, sondaBase, nil)
 }

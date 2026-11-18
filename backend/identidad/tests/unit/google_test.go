@@ -1,5 +1,6 @@
 // Login con Google: validación criptográfica, claims, vinculación de cuentas
 // y clasificación de errores, sin acceso a la red de Google.
+
 package unit_test
 
 import (
@@ -17,9 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -149,7 +149,7 @@ func googlePayload(sujeto, direccionCorreo string) *idtoken.Payload {
 // contraseña local, porque el registro local nunca verificó el correo.
 func TestGoogleVinculaCuentaLocalEInvalidaContrasena(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
-	hash, _ := security.HashPassword("Atacante2026#")
+	hash, _ := services.HashPassword("Atacante2026#")
 	victima := &domain.Usuario{ID: uuid.New(), Correo: "victima@uct.cl", PasswordHash: &hash, NombreCompleto: "Pre-registro", EstaActivo: true}
 	repositorio.usuarios[victima.Correo] = victima
 	servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
@@ -178,7 +178,7 @@ func TestGoogleVinculaCuentaLocalEInvalidaContrasena(prueba *testing.T) {
 func TestGoogleRechazaOtraIdentidadVinculada(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	vinculado := "google-original"
-	hash, _ := security.HashPassword("Password123#")
+	hash, _ := services.HashPassword("Password123#")
 	usuario := &domain.Usuario{ID: uuid.New(), Correo: "linked@uct.cl", GoogleID: &vinculado, PasswordHash: &hash, NombreCompleto: "Linked", EstaActivo: true}
 	repositorio.usuarios[usuario.Correo] = usuario
 	servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
@@ -248,7 +248,7 @@ func TestGoogleErrorClassificationDoesNotExposeStorage(prueba *testing.T) {
 	}{{"token rejected", services.ErrCredencialesInvalidas, 401}, {"inactive", services.ErrCuentaInactiva, 401}, {"configuration", services.ErrGoogleNoConfigurado, 503}, {"database", errors.New("private SQL database table and constraint"), 500}} {
 		prueba.Run(caso.name, func(prueba *testing.T) {
 			enrutador := gin.New()
-			enrutador.POST("/google", handlers.NewAuthHandler(googleErrorService{errorDevuelto: caso.errorEsperado}, false, claveJWTDePrueba).GoogleLoginUsuario)
+			enrutador.POST("/google", api.NewAuthHandler(googleErrorService{errorDevuelto: caso.errorEsperado}, false, claveJWTDePrueba).GoogleLoginUsuario)
 			escritor := httptest.NewRecorder()
 			peticionHTTP := httptest.NewRequest("POST", "/google", strings.NewReader(`{"id_token":"fixture"}`))
 			peticionHTTP.Header.Set("Content-Type", "application/json")

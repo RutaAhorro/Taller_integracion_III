@@ -48,7 +48,7 @@ no conceden permisos administrativos.
 `PUT /auth/me` acepta nombre, correo, teléfono, dirección y contraseña.
 Cambiar `correo` o `password` exige `current_password` válida; de lo contrario
 responde 403. Las cuentas sin contraseña local no pueden establecerla por
-esta vía. Los handlers y DTO de [internal/handlers](internal/handlers) y
+esta vía. Los handlers y DTO de [internal/api](internal/api) y
 [internal/domain](internal/domain) son la referencia de campos y respuestas.
 El envoltorio de errores usa `estado`, `mensaje` y `detalle` cuando corresponde;
 los errores internos no incluyen SQL ni trazas en el JSON.
@@ -125,7 +125,7 @@ validadores. Ver la [guía de configuración compartida](../../docs/Guias/GUIA_C
 
 Plazos, límites por IP, tamaño del pool y límites de recuperación no son
 variables de entorno: son constantes con nombre en
-[internal/config/ajustes.go](internal/config/ajustes.go), porque ningún ambiente
+[internal/config/config.go](internal/config/config.go), porque ningún ambiente
 los cambia. Sólo van al entorno los valores que difieren entre ambientes (los de
 la tabla anterior). JWT y cookie conservan las 24 h del contrato.
 
@@ -302,13 +302,20 @@ go vet ./...
 go build ./cmd/identidad
 ```
 
-- `cmd/identidad`: arranque, conexiones y apagado.
-- `internal/config`: entorno validado y defaults.
-- `internal/handlers`, `middleware`, `httperrors`: rutas, HTTP y controles de sesión.
-- `internal/services`, `repositories`, `domain`: casos de uso, SQL y contratos internos.
-- `internal/security`, `mailer`, `server`: criptografía, correo, armado del módulo y servidor.
-- `tests/unit`: configuración, lógica, handlers con dependencias aisladas y seguridad.
-- `tests/integration`: router, SMTP local y PostgreSQL real opcional.
+| Paquete | Archivos | Rol |
+| --- | --- | --- |
+| `cmd/identidad` | `main.go` | Arranque, conexiones y apagado |
+| `internal/config` | `config.go` | Entorno validado al arrancar, plazos y límites fijos, correo |
+| `internal/api` | `rutas.go`, `auth.go`, `admin.go`, `sesion.go`, `limites.go`, `errores.go` | Router y middlewares globales, endpoints, JWT y RBAC, contadores por IP, formato de error |
+| `internal/services` | `auth.go`, `admin.go`, `recuperacion.go` | Casos de uso, bcrypt y tokens de recuperación |
+| `internal/repositories` | `conexion.go`, `usuarios.go`, `recuperacion.go` | Conexión, verificación de permisos y SQL |
+| `internal/domain` | `usuario.go`, `admin.go`, `repositorios.go` | Entidades, roles, DTO y contratos de repositorio |
+| `internal/mailer` | `mailer.go` | Transporte SMTP y modo `log` |
+
+Las pruebas siguen los mismos temas: `tests/unit` cubre configuración, sesión,
+límites, servicios y handlers con dependencias aisladas; `tests/integration`
+cubre el router completo, SMTP local y PostgreSQL y Redis reales opcionales.
+`arquitectura_test.go` falla si Identidad importa otro servicio.
 
 Las pruebas SMTP crean certificados efímeros y aíslan las raíces de confianza en
 subprocesos mediante la API pública de `x509`; no modifican TLS de producción.

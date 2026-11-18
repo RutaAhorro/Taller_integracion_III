@@ -3,8 +3,9 @@
 - Leer `README.md` del servicio y `.env.example`: configuración, contratos,
   seguridad, operación y correo. Go/Gin/GORM, puerto 8080 por defecto,
   entrada `cmd/identidad/main.go`.
-- Rutas y handlers en `internal/handlers`; armado del módulo en `server`; negocio en `services`;
-  acceso SQL en `repositories`; sesión en `middleware` y `security`.
+- HTTP en `internal/api` (router, handlers, sesión JWT, RBAC, límites y errores);
+  negocio en `services`; SQL y verificación de permisos en `repositories`;
+  entidades y contratos en `domain`; un archivo por tema, sin paquetes de un archivo.
 - Solo `IDENTITY_DB_URL`/`app_identity`: usuarios, tokens y auditoría autorizados.
   No Catálogo/Control por imports o SQL, ni AutoMigrate.
 - Cookie HttpOnly `jwt`, HS256 y expiración obligatoria. Las rutas protegidas
@@ -37,9 +38,9 @@
 
 ## Índice breve generado
 
-54 archivos fuente, incluidos los de pruebas. Distribución:
+33 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 30 archivos.
-- `tests`: 23 archivos.
+- `internal`: 17 archivos.
+- `tests`: 15 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

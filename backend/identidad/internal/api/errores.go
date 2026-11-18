@@ -1,6 +1,7 @@
-// Package httperrors da el formato único de error JSON (estado, mensaje,
-// detalle) y evita que panics o errores internos expongan SQL o trazas.
-package httperrors
+// Formato único de error JSON (estado, mensaje, detalle): evita que panics o
+// errores internos expongan SQL o trazas.
+
+package api
 
 import (
 	"fmt"

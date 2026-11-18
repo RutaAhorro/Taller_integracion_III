@@ -8,14 +8,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/mail"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/api/idtoken"
 )
 
@@ -80,10 +81,10 @@ func NewAuthService(repositorio domain.UsuarioRepository, validarGoogle Validado
 
 // validarComplejidadPassword exige al menos 8 caracteres, una mayúscula, un número y un símbolo
 func validarComplejidadPassword(contrasena string) error {
-	if len(contrasena) > security.MaximoBytesPassword {
+	if len(contrasena) > MaximoBytesPassword {
 		return fmt.Errorf("%w: longitud máxima de 72 bytes", ErrPasswordInvalido)
 	}
-	if len(contrasena) < security.MinimoBytesPassword {
+	if len(contrasena) < MinimoBytesPassword {
 		return fmt.Errorf("%w: longitud mínima de 8 caracteres", ErrPasswordInvalido)
 	}
 
@@ -177,7 +178,7 @@ func (servicio *authService) Registrar(contexto context.Context, entrada Registr
 	}
 
 	// 4. Generar hash bcrypt de la contraseña
-	hash, errorObtenido := security.HashPassword(entrada.Password)
+	hash, errorObtenido := HashPassword(entrada.Password)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al generar hash seguro de contraseña: %w", errorObtenido)
 	}
@@ -219,8 +220,8 @@ func (servicio *authService) LoginWithContext(contexto context.Context, correo, 
 		return nil, ErrCuentaInactiva
 	}
 
-	// 4. Validación de Credenciales: comparar contraseña con security.CheckPasswordHash de forma segura
-	if !security.CheckPasswordHash(contrasena, *usuario.PasswordHash) {
+	// 4. Validación de Credenciales: comparar contraseña con CheckPasswordHash de forma segura
+	if !CheckPasswordHash(contrasena, *usuario.PasswordHash) {
 		return nil, ErrCredencialesInvalidas
 	}
 
@@ -329,7 +330,7 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 	cambiaCorreo := entrada.Correo != nil && normalizarCorreo(*entrada.Correo) != usuarioActual.Correo
 	if cambiaCorreo || entrada.Password != nil {
 		if usuarioActual.PasswordHash == nil || *usuarioActual.PasswordHash == "" ||
-			entrada.PasswordActual == nil || !security.CheckPasswordHash(*entrada.PasswordActual, *usuarioActual.PasswordHash) {
+			entrada.PasswordActual == nil || !CheckPasswordHash(*entrada.PasswordActual, *usuarioActual.PasswordHash) {
 			return nil, ErrReautenticacionRequerida
 		}
 	}
@@ -377,7 +378,7 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 		if errorOperacion := validarComplejidadPassword(*entrada.Password); errorOperacion != nil {
 			return nil, errorOperacion
 		}
-		hash, errorInterno := security.HashPassword(*entrada.Password)
+		hash, errorInterno := HashPassword(*entrada.Password)
 		if errorInterno != nil {
 			return nil, fmt.Errorf("error al generar hash de contraseña: %w", errorInterno)
 		}
@@ -452,4 +453,53 @@ func (servicio *authService) validateGoogleAccount(contexto context.Context, usu
 	usuario.GoogleID = &sujeto
 	usuario.PasswordHash = nil
 	return usuario, nil
+}
+
+// ===== Saneamiento de nombres =====
+
+var caracteresNoPermitidos = regexp.MustCompile(`[^a-zA-Z0-9\sñÑáéíóúÁÉÍÓÚ\-]`)
+
+// maximoCaracteresNombre conserva la política vigente de los perfiles.
+const maximoCaracteresNombre = 100
+
+// SanitizarInputBusqueda limita nombres a 100 caracteres y filtra su alfabeto.
+// La seguridad SQL depende de consultas parametrizadas; HTML debe escaparse al mostrarlo.
+func SanitizarInputBusqueda(entrada string) string {
+	// 1. Quitar espacios en blanco al inicio y final
+	limpio := strings.TrimSpace(entrada)
+
+	// 2. Limitar la longitud máxima a 100 caracteres para evitar desbordamientos o consultas pesadas
+	runas := []rune(limpio)
+	if len(runas) > maximoCaracteresNombre {
+		limpio = string(runas[:maximoCaracteresNombre])
+	}
+
+	// 3. Filtrar estrictamente caracteres: Permitir solo alfanuméricos, espacios, guiones y letras con tilde
+	// El alfabeto heredado no incluye signos como ;, comillas o corchetes.
+	limpio = caracteresNoPermitidos.ReplaceAllString(limpio, "")
+
+	return strings.TrimSpace(limpio)
+}
+
+// ===== Contraseñas =====
+
+// Límites de la política vigente y del formato bcrypt; no se alteran en el barrido.
+const (
+	MinimoBytesPassword = 8
+	MaximoBytesPassword = 72
+)
+
+// HashPassword genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
+func HashPassword(contrasena string) (string, error) {
+	cantidadBytes, errorObtenido := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
+	if errorObtenido != nil {
+		return "", errorObtenido
+	}
+	return string(cantidadBytes), nil
+}
+
+// CheckPasswordHash compara una contraseña en texto plano contra un hash bcrypt almacenado
+func CheckPasswordHash(contrasena, hash string) bool {
+	errorObtenido := bcrypt.CompareHashAndPassword([]byte(hash), []byte(contrasena))
+	return errorObtenido == nil
 }

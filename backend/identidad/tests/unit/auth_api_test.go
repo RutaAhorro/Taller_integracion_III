@@ -9,9 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/handlers"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -22,12 +21,12 @@ func TestAuthHandler_RegistrarUsuario_AutoLogin(prueba *testing.T) {
 
 	repositorio := newMockUsuarioRepository()
 	servicioAuth := nuevoServicioAuth(repositorio)
-	manejador := handlers.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
+	manejador := api.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
 
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/register", manejador.RegistrarUsuario)
 
-	datosGoogle := handlers.RegistroRequest{
+	datosGoogle := api.RegistroRequest{
 		Correo:         "autologin@uct.cl",
 		Password:       "AutoLogin2026!",
 		NombreCompleto: "Usuario AutoLogin",
@@ -70,7 +69,7 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
-	hash, errorOperacion := security.HashPassword("AliasLogin2026!")
+	hash, errorOperacion := services.HashPassword("AliasLogin2026!")
 	if errorOperacion != nil {
 		prueba.Fatal(errorOperacion)
 	}
@@ -80,11 +79,11 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 		PasswordHash: &hash, Rol: " Admin ", EstaActivo: true,
 	}
 
-	manejador := handlers.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+	manejador := api.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/login", manejador.LoginUsuario)
 
-	cuerpo, _ := json.Marshal(handlers.LoginRequest{Correo: "alias@uct.cl", Password: "AliasLogin2026!"})
+	cuerpo, _ := json.Marshal(api.LoginRequest{Correo: "alias@uct.cl", Password: "AliasLogin2026!"})
 	escritor := httptest.NewRecorder()
 	peticion, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBuffer(cuerpo))
 	peticion.Header.Set("Content-Type", "application/json")
@@ -93,7 +92,7 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 	if escritor.Code != http.StatusOK {
 		prueba.Fatalf("Esperaba HTTP 200, obtuve %d. Body: %s", escritor.Code, escritor.Body.String())
 	}
-	var resultado handlers.LoginResponse
+	var resultado api.LoginResponse
 	if errorObtenido := json.Unmarshal(escritor.Body.Bytes(), &resultado); errorObtenido != nil {
 		prueba.Fatalf("Respuesta inválida: %v", errorObtenido)
 	}
@@ -111,11 +110,11 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 	if cookieJWT == nil {
 		prueba.Fatal("El login debía emitir la cookie jwt")
 	}
-	token, errorOperacion := security.ValidarToken(cookieJWT.Value, claveJWTDePrueba)
+	token, errorOperacion := api.ValidarToken(cookieJWT.Value, claveJWTDePrueba)
 	if errorOperacion != nil {
 		prueba.Fatalf("Token inválido: %v", errorOperacion)
 	}
-	datosToken, valido := token.Claims.(*security.JWTClaims)
+	datosToken, valido := token.Claims.(*api.JWTClaims)
 	if !valido || datosToken.Rol != domain.RolAdmin {
 		prueba.Fatalf("El JWT debía llevar el rol admin, obtuve %+v", token.Claims)
 	}
@@ -126,7 +125,7 @@ func TestAuthHandler_ActualizarPerfil(prueba *testing.T) {
 
 	repositorio := newMockUsuarioRepository()
 	servicioAuth := nuevoServicioAuth(repositorio)
-	manejador := handlers.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
+	manejador := api.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
 
 	usuarioID := uuid.New()
 	creado, errorObtenido := servicioAuth.Registrar(prueba.Context(), services.RegistroDTO{
@@ -201,7 +200,7 @@ func TestAuthHandler_ActualizarPerfil(prueba *testing.T) {
 func TestAuthHandler_CerrarSesion_ExpiraCookie(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	manejador := handlers.NewAuthHandler(nuevoServicioAuth(newMockUsuarioRepository()), true, claveJWTDePrueba)
+	manejador := api.NewAuthHandler(nuevoServicioAuth(newMockUsuarioRepository()), true, claveJWTDePrueba)
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/logout", manejador.CerrarSesion)
 

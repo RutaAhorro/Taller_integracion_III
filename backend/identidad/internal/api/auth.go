@@ -1,16 +1,15 @@
-// Package handlers traduce HTTP a casos de uso: validan la entrada, llaman
-// al servicio y eligen el código de estado. No contienen reglas de negocio.
-package handlers
+// Endpoints de cuenta propia: registro, login local y con Google, cierre de
+// sesión y perfil.
+
+package api
 
 import (
 	"errors"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"net/http"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	httperrors "github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/httperrors"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/security"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -83,9 +82,9 @@ func NewAuthHandler(servicio services.AuthService, cookieSegura bool, clave stri
 // emitirSesion firma el JWT y lo entrega en una cookie HttpOnly (no accesible
 // desde JavaScript, protege contra XSS). Responde el error y retorna false si falla.
 func (manejador *AuthHandler) emitirSesion(contexto *gin.Context, usuarioID, rol, proveedor string) bool {
-	tokenTexto, errorObtenido := security.GenerarToken(usuarioID, rolCanonico(rol), proveedor, manejador.claveJWT)
+	tokenTexto, errorObtenido := GenerarToken(usuarioID, rolCanonico(rol), proveedor, manejador.claveJWT)
 	if errorObtenido != nil {
-		httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error generando token de autorización.", errorObtenido)
+		ResponderError(contexto, http.StatusInternalServerError, "Error generando token de autorización.", errorObtenido)
 		return false
 	}
 	contexto.SetSameSite(http.SameSiteLaxMode)
@@ -100,7 +99,7 @@ func (manejador *AuthHandler) emitirSesion(contexto *gin.Context, usuarioID, rol
 func (manejador *AuthHandler) RegistrarUsuario(contexto *gin.Context) {
 	var peticion RegistroRequest
 	if errorObtenido := contexto.ShouldBindJSON(&peticion); errorObtenido != nil {
-		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos o incompletos.", errorObtenido)
+		ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos o incompletos.", errorObtenido)
 		return
 	}
 
@@ -114,11 +113,11 @@ func (manejador *AuthHandler) RegistrarUsuario(contexto *gin.Context) {
 	if errorOperacion != nil {
 		switch {
 		case errors.Is(errorOperacion, services.ErrPasswordInvalido), errors.Is(errorOperacion, services.ErrNombreInvalido):
-			httperrors.ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrCorreoDuplicado):
-			httperrors.ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
 		default:
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno procesando el registro.", errorOperacion)
+			ResponderError(contexto, http.StatusInternalServerError, "Error interno procesando el registro.", errorOperacion)
 		}
 		return
 	}
@@ -143,7 +142,7 @@ func (manejador *AuthHandler) RegistrarUsuario(contexto *gin.Context) {
 func (manejador *AuthHandler) LoginUsuario(contexto *gin.Context) {
 	var peticion LoginRequest
 	if errorOperacion := contexto.ShouldBindJSON(&peticion); errorOperacion != nil {
-		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de inicio de sesión inválidos o incompletos.", errorOperacion)
+		ResponderError(contexto, http.StatusBadRequest, "Datos de inicio de sesión inválidos o incompletos.", errorOperacion)
 		return
 	}
 
@@ -151,11 +150,11 @@ func (manejador *AuthHandler) LoginUsuario(contexto *gin.Context) {
 	if errorObtenido != nil {
 		switch {
 		case errors.Is(errorObtenido, services.ErrCredencialesInvalidas):
-			httperrors.ResponderError(contexto, http.StatusUnauthorized, "Credenciales incorrectas.", errorObtenido)
+			ResponderError(contexto, http.StatusUnauthorized, "Credenciales incorrectas.", errorObtenido)
 		case errors.Is(errorObtenido, services.ErrCuentaInactiva):
-			httperrors.ResponderError(contexto, http.StatusForbidden, errorObtenido.Error(), errorObtenido)
+			ResponderError(contexto, http.StatusForbidden, errorObtenido.Error(), errorObtenido)
 		default:
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación.", errorObtenido)
+			ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación.", errorObtenido)
 		}
 		return
 	}
@@ -208,19 +207,19 @@ func (manejador *AuthHandler) ActualizarPerfil(contexto *gin.Context) {
 	// Prevención IDOR: Extraer identidad exclusivamente del contexto seguro inyectado por RequireAuth
 	valorUsuarioID, existe := contexto.Get("user_id")
 	if !existe {
-		httperrors.ResponderError(contexto, http.StatusUnauthorized, "Acceso no autorizado.", errors.New("identificador de usuario no presente en sesión"))
+		ResponderError(contexto, http.StatusUnauthorized, "Acceso no autorizado.", errors.New("identificador de usuario no presente en sesión"))
 		return
 	}
 
 	usuarioID, valido := valorUsuarioID.(string)
 	if !valido || usuarioID == "" {
-		httperrors.ResponderError(contexto, http.StatusUnauthorized, "Identificador de usuario inválido.", errors.New("formato de user_id erróneo"))
+		ResponderError(contexto, http.StatusUnauthorized, "Identificador de usuario inválido.", errors.New("formato de user_id erróneo"))
 		return
 	}
 
 	var peticion domain.ActualizarPerfilDTO
 	if errorObtenido := contexto.ShouldBindJSON(&peticion); errorObtenido != nil {
-		httperrors.ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos para actualización de perfil.", errorObtenido)
+		ResponderError(contexto, http.StatusBadRequest, "Datos de entrada inválidos para actualización de perfil.", errorObtenido)
 		return
 	}
 
@@ -228,15 +227,15 @@ func (manejador *AuthHandler) ActualizarPerfil(contexto *gin.Context) {
 	if errorOperacion != nil {
 		switch {
 		case errors.Is(errorOperacion, services.ErrPasswordInvalido), errors.Is(errorOperacion, services.ErrCorreoInvalido), errors.Is(errorOperacion, services.ErrNombreInvalido):
-			httperrors.ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrCorreoDuplicado):
-			httperrors.ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusConflict, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrUsuarioNoEncontrado):
-			httperrors.ResponderError(contexto, http.StatusNotFound, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusNotFound, errorOperacion.Error(), errorOperacion)
 		case errors.Is(errorOperacion, services.ErrReautenticacionRequerida):
-			httperrors.ResponderError(contexto, http.StatusForbidden, errorOperacion.Error(), errorOperacion)
+			ResponderError(contexto, http.StatusForbidden, errorOperacion.Error(), errorOperacion)
 		default:
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno al actualizar perfil.", errorOperacion)
+			ResponderError(contexto, http.StatusInternalServerError, "Error interno al actualizar perfil.", errorOperacion)
 		}
 		return
 	}
@@ -256,7 +255,7 @@ type GoogleLoginRequest struct {
 func (manejador *AuthHandler) GoogleLoginUsuario(contexto *gin.Context) {
 	var peticion GoogleLoginRequest
 	if errorObtenido := contexto.ShouldBindJSON(&peticion); errorObtenido != nil {
-		httperrors.ResponderError(contexto, http.StatusBadRequest, "El id_token de Google es obligatorio.", errorObtenido)
+		ResponderError(contexto, http.StatusBadRequest, "El id_token de Google es obligatorio.", errorObtenido)
 		return
 	}
 
@@ -264,11 +263,11 @@ func (manejador *AuthHandler) GoogleLoginUsuario(contexto *gin.Context) {
 	if errorOperacion != nil {
 		switch {
 		case errors.Is(errorOperacion, services.ErrCredencialesInvalidas), errors.Is(errorOperacion, services.ErrCuentaInactiva):
-			httperrors.ResponderError(contexto, http.StatusUnauthorized, "Autenticación con Google fallida.", errorOperacion)
+			ResponderError(contexto, http.StatusUnauthorized, "Autenticación con Google fallida.", errorOperacion)
 		case errors.Is(errorOperacion, services.ErrGoogleNoConfigurado):
-			httperrors.ResponderError(contexto, http.StatusServiceUnavailable, "Autenticación con Google temporalmente no disponible.", errorOperacion)
+			ResponderError(contexto, http.StatusServiceUnavailable, "Autenticación con Google temporalmente no disponible.", errorOperacion)
 		default:
-			httperrors.ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación con Google.", errorOperacion)
+			ResponderError(contexto, http.StatusInternalServerError, "Error interno durante la autenticación con Google.", errorOperacion)
 		}
 		return
 	}

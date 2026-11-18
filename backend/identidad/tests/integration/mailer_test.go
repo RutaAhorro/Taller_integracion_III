@@ -15,8 +15,6 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"errors"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"io"
 	"log/slog"
 	"math/big"
@@ -32,6 +30,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 )
 
 // ejecutarSMTPAislado mantiene las raíces efímeras fuera del proceso de otras pruebas.
