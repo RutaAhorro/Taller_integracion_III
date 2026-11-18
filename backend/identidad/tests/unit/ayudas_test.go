@@ -4,6 +4,9 @@
 package unit_test
 
 import (
+	"context"
+	"errors"
+
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
@@ -28,4 +31,12 @@ var plazoGoogleDePrueba = config.AjustesPredeterminados().PlazoGoogle
 // que necesitan las pruebas de registro, login local y perfil.
 func nuevoServicioAuth(repositorio domain.RepositorioUsuarios) *services.ServicioAuth {
 	return services.NuevoServicioAuth(repositorio, idtoken.Validate, "", plazoGoogleDePrueba)
+}
+
+// usuariosQueFallan simula una base caída al buscar la cuenta.
+type usuariosQueFallan struct{ *mockUsuarioRepository }
+
+// BuscarPorCorreo siempre falla.
+func (usuariosQueFallan) BuscarPorCorreo(context.Context, string) (*domain.Usuario, error) {
+	return nil, errors.New("conexión rechazada")
 }

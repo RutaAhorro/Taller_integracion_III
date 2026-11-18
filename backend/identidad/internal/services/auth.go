@@ -1,5 +1,5 @@
 // Package services contiene los casos de uso de Identidad: registro, login,
-// Google, perfil, administración de cuentas y recuperación de contraseña.
+// Google, perfil y administración de cuentas.
 package services
 
 import (

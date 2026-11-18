@@ -29,6 +29,6 @@ func enrutadorDePrueba(prueba *testing.T, configuracion config.Configuracion, so
 	if errorApertura != nil {
 		prueba.Fatal(errorApertura)
 	}
-	modulo := api.NuevoModulo(base, nil, api.Recuperacion{}, configuracion)
+	modulo := api.NuevoModulo(base, nil, configuracion)
 	return api.NuevoEnrutador(configuracion, modulo, nil, sondaBase, nil)
 }

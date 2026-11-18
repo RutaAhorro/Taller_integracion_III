@@ -14,7 +14,6 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
@@ -27,8 +26,6 @@ import (
 
 // NuevoEnrutador monta sondas, middlewares globales y las rutas del módulo. Cada
 // petición protegida valida JWT localmente; no acepta identidad de headers.
-// Recibe el módulo ya armado para que main pueda cerrarlo al apagar
-// (despacho pendiente de correos de recuperación, SUP-184).
 func NuevoEnrutador(configuracion config.Configuracion, modulo *Modulo, redisCliente *redis.Client, sondaBase func(context.Context) error, registrador *slog.Logger) *gin.Engine {
 	ajustes := configuracion.Ajustes
 	enrutador := gin.New()
@@ -142,21 +139,10 @@ type Modulo struct {
 	repo          domain.RepositorioUsuarios
 	redis         *redis.Client
 	configuracion config.Configuracion
-	// recuperacion emite tokens y despacha su correo (SUP-184). El endpoint que la
-	// expone (POST /auth/recuperar) es SUP-233.
-	recuperacion *services.ServicioRecuperacion
-}
-
-// Recuperacion configura SUP-184. Sin Correo o sin URLRestablecer queda apagada:
-// Solicitar sólo valida el formato y no emite tokens ni correos.
-type Recuperacion struct {
-	Correo         mailer.Enviador
-	URLRestablecer string
-	Log            *slog.Logger
 }
 
 // NuevoModulo arma el módulo con una instantánea validada del arranque.
-func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuperacion, configuracion config.Configuracion) *Modulo {
+func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, configuracion config.Configuracion) *Modulo {
 	ajustes := configuracion.Ajustes
 	repositorio := repositories.NuevoRepositorioUsuarios(base)
 	repositorioAdmin := repositories.NuevoRepositorioAdmin(base)
@@ -166,13 +152,7 @@ func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuper
 		repo:          repositorio,
 		redis:         redisCliente,
 		configuracion: configuracion,
-		recuperacion:  services.NuevoServicioRecuperacion(repositorio, repositories.NuevoRepositorioRecuperacion(base), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log, ajustes),
 	}
-}
-
-// Cerrar despacha las solicitudes de recuperación pendientes antes de apagar el proceso.
-func (modulo *Modulo) Cerrar(contexto context.Context) error {
-	return modulo.recuperacion.Cerrar(contexto)
 }
 
 // RegistrarRutas monta /auth/* y /admin/usuarios/* bajo group.

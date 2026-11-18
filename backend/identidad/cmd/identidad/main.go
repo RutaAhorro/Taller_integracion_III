@@ -14,10 +14,8 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/mailer"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/repositories"
 	"github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
 // ===== Entrada =====
@@ -37,10 +35,6 @@ func ejecutar(registrador *slog.Logger) error {
 	configuracion, errorObtenido := config.Cargar()
 	if errorObtenido != nil {
 		return errorObtenido
-	}
-	registrador.Info("identidad_correo", "modo", configuracion.Correo.Modo, "host", configuracion.Correo.Host, "puerto", configuracion.Correo.Puerto)
-	if configuracion.Correo.Modo == config.CorreoLog {
-		registrador.Warn("identidad_correo_modo_log", "detalle", "los correos se imprimen completos en el log; sólo para desarrollo local")
 	}
 	opciones, errorObtenido := redis.ParseURL(configuracion.URLRedis)
 	if errorObtenido != nil {
@@ -72,12 +66,8 @@ func ejecutar(registrador *slog.Logger) error {
 		registrador.Error("identidad_storage_invalid", "error", errorOperacion)
 		return errors.New("Identidad requiere tablas y permisos antes de iniciar")
 	}
-	recuperacion, errorObtenido := recuperacionDesde(contextoInicio, configuracion, baseDatos, registrador)
 	cancelar()
-	if errorObtenido != nil {
-		return errorObtenido
-	}
-	modulo := api.NuevoModulo(baseDatos, redisCliente, recuperacion, configuracion)
+	modulo := api.NuevoModulo(baseDatos, redisCliente, configuracion)
 	servidorHTTP := &http.Server{Addr: configuracion.DireccionEscucha, Handler: api.NuevoEnrutador(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.PlazoCabeceras, ReadTimeout: configuracion.Ajustes.PlazoLectura, WriteTimeout: configuracion.Ajustes.PlazoEscritura, IdleTimeout: configuracion.Ajustes.PlazoInactividad, MaxHeaderBytes: configuracion.Ajustes.MaximoBytesCabeceras}
 	terminado := make(chan error, 1)
 	go func() { terminado <- servidorHTTP.ListenAndServe() }()
@@ -93,30 +83,6 @@ func ejecutar(registrador *slog.Logger) error {
 			_ = servidorHTTP.Close()
 			return errors.New("Identidad agotó el plazo de apagado")
 		}
-		if errorOperacion := modulo.Cerrar(contextoApagado); errorOperacion != nil {
-			registrador.Warn("identidad_recuperacion_pendiente", "error", errorOperacion)
-		}
 	}
 	return nil
-}
-
-// ===== Recuperación de contraseña =====
-
-// recuperacionDesde decide si la recuperación de contraseña (SUP-184) queda activa.
-// Cualquier falta la apaga con un log explícito, sin impedir el login.
-func recuperacionDesde(contexto context.Context, configuracion config.Configuracion, baseDatos *gorm.DB, registrador *slog.Logger) (api.Recuperacion, error) {
-	if configuracion.Correo.Modo == config.CorreoDeshabilitado || configuracion.URLRestablecer == "" {
-		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
-		return api.Recuperacion{}, nil
-	}
-	if errorOperacion := repositories.VerificarRecuperacion(contexto, baseDatos); errorOperacion != nil {
-		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", errorOperacion.Error())
-		return api.Recuperacion{}, nil
-	}
-	correo, errorObtenido := mailer.Nuevo(configuracion.Correo, registrador)
-	if errorObtenido != nil {
-		return api.Recuperacion{}, errorObtenido
-	}
-	registrador.Info("identidad_recuperacion_activa", "url_restablecer", configuracion.URLRestablecer)
-	return api.Recuperacion{Correo: correo, URLRestablecer: configuracion.URLRestablecer, Log: registrador}, nil
 }

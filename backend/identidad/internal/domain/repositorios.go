@@ -6,9 +6,6 @@ package domain
 import (
 	"context"
 	"errors"
-	"time"
-
-	"github.com/google/uuid"
 )
 
 // ===== Usuarios =====
@@ -41,16 +38,4 @@ type RepositorioAdmin interface {
 	// ActualizarConGuarda aplica el cambio y registra la auditoría en una sola
 	// transacción, impidiendo que se desactive o degrade al último admin activo.
 	ActualizarConGuarda(contexto context.Context, id string, datos map[string]interface{}, actorID string) error
-}
-
-// ===== Tokens de recuperación =====
-
-// RepositorioRecuperacion persiste tokens en api.tokens_recuperacion (SUP-184).
-// Las comparaciones de tiempo usan el reloj de PostgreSQL, igual que el consumo (SUP-185).
-type RepositorioRecuperacion interface {
-	// SolicitudesRecientes cuenta los tokens emitidos dentro de ventana e indica si
-	// alguno tiene menos de espera.
-	SolicitudesRecientes(contexto context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (enVentana int, enEspera bool, errorObtenido error)
-	// EmitirToken invalida los tokens pendientes del usuario y guarda el hash nuevo.
-	EmitirToken(contexto context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error
 }

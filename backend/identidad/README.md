@@ -1,7 +1,7 @@
 # Identidad
 
 Servicio Go/Gin/GORM de cuentas, sesión y administración de usuarios. Es dueño
-de `api.usuarios`, de sus tokens de recuperación y de la auditoría administrativa.
+de `api.usuarios` y de la auditoría administrativa.
 Usa PostgreSQL con `app_identity` y Redis para limitar intentos de autenticación.
 Gateway enruta las solicitudes; la autorización efectiva pertenece a Identidad.
 No importa otros dominios ni consulta tablas ajenas; tampoco ejecuta migraciones.
@@ -40,7 +40,8 @@ no conceden permisos administrativos.
 > | `rol=administrador` se aceptaba como alias de `admin` en `PUT /admin/usuarios/{id}` y en el filtro `?rol=` | Responde 400: los únicos roles son `registrado`, `colaborador` y `admin` |
 > | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | Ya no se reconoce como admin. La migración `08_normalizar_rol_admin_y_auditoria.sql` debe estar aplicada |
 > | El registro generaba un UUID en `api.usuarios.token_verificacion` | Las cuentas nuevas lo dejan en `NULL`: no hay flujo que lo consuma. La columna se conserva y ninguna respuesta HTTP lo exponía |
-> | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor. El envío SMTP se prueba en `tests/integration/mailer_test.go` |
+> | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor |
+> | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`, ni verifica `api.tokens_recuperacion`. La tabla y sus grants se conservan; la recuperación se reimplementará completa (SUP-233/185) |
 >
 > Ningún consumidor del repositorio enviaba `offset` ni escribía `administrador`
 > al momento del cambio (el frontend usa `page` y `limit`).
@@ -123,7 +124,7 @@ No renombrar estas variables ni rotar `JWT_SECRET` sólo en un servicio. Una
 rotación invalida las sesiones anteriores y se coordina con todos sus
 validadores. Ver la [guía de configuración compartida](../../docs/Guias/GUIA_CONFIGURACION.md).
 
-Plazos, límites por IP, tamaño del pool y límites de recuperación no son
+Plazos, límites por IP y tamaño del pool no son
 variables de entorno: son constantes con nombre en
 [internal/config/config.go](internal/config/config.go), porque ningún ambiente
 los cambia. Sólo van al entorno los valores que difieren entre ambientes (los de
@@ -136,8 +137,6 @@ la tabla anterior). JWT y cookie conservan las 24 h del contrato.
 | Dependencias y sonda | Redis 1 s, readiness 2 s, validación de Google 5 s |
 | Pool PostgreSQL | 5 conexiones abiertas, 2 inactivas, vida máxima 30 min |
 | Contadores por IP | ventana 15 min; login 5 fallos, registro 30, Google 30 |
-| Recuperación | vigencia 30 min, espera 1 min, 5 por hora, 45 s por envío |
-| Correo | 30 s por envío SMTP |
 
 > [!NOTE]
 > SUP-347 llegó a exponer estos valores como variables `IDENTIDAD_*`. Se
@@ -154,13 +153,11 @@ El servicio comprueba tablas y permisos antes de abrir HTTP:
 - `08_normalizar_rol_admin_y_auditoria.sql`: normalización y auditoría;
   requiere SELECT/INSERT en `api.auditoria_admin_usuarios` y USAGE en su secuencia.
 - `09_plan_y_ultimo_acceso.sql`: columnas de plan comercial y último acceso.
-- Para activar recuperación: `05_tokens_recuperacion.sql` antes de conceder
-  sus permisos con `06_propiedad_permisos.sql`.
 
-El rol runtime tiene SELECT/INSERT/UPDATE sobre usuarios y tokens, sin DELETE,
-DDL ni acceso a tablas de otros servicios. La ausencia de almacenamiento base
-o permisos impide iniciar; la ausencia de la tabla opcional de recuperación
-deshabilita esa función con un diagnóstico y deja disponible el login.
+El rol runtime tiene SELECT/INSERT/UPDATE sobre usuarios, sin DELETE, DDL ni
+acceso a tablas de otros servicios. La ausencia de almacenamiento base o
+permisos impide iniciar. `api.tokens_recuperacion` (`05_tokens_recuperacion.sql`)
+sigue en el esquema, pero hoy ningún código la usa.
 No se ejecuta AutoMigrate ni se amplían grants desde la aplicación.
 
 Cada réplica tiene su propio pool. Al cambiar su tamaño máximo o el
@@ -198,84 +195,12 @@ expiración atómicamente, repara TTL ausentes y devuelve el intento de un login
 Sin Redis, estas rutas fallan cerradas con 500 genérico; no se desactiva el
 límite ni se reintentan sus escrituras.
 
-## Correo y recuperación
-
-`IDENTIDAD_CORREO_MODO` acepta `smtp`, `log` o `deshabilitado`. Vacío elige SMTP
-si hay credenciales; de lo contrario queda deshabilitado. En modo SMTP son
-obligatorios `SMTP_HOST`, `SMTP_USER` y `SMTP_PASS`. `SMTP_PORT` vale 587 por
-defecto; `SMTP_TLS` vacío elige STARTTLS salvo en 465, donde elige TLS implícito.
-`SMTP_FROM` vacío usa `SMTP_USER`. No existe un modo de autenticación sin cifrado.
-Los certificados se validan; si no hay STARTTLS no se envían credenciales.
-
-El transporte es síncrono y aplica 30 s cuando el contexto no trae deadline;
-si ya lo trae, prevalece ese presupuesto. La recuperación ejecuta cada envío
-en segundo plano con un plazo de 45 s. Correo no forma
-parte de readiness. El modo `log` imprime enlaces y tokens completos y sólo
-se admite para desarrollo; `deshabilitado` devuelve `mailer.ErrDeshabilitado`.
-
-**Cuenta emisora (SUP-188).** Activar la verificación en dos pasos y generar
-una App Password dedicada a Identidad (Cuenta de Google → Seguridad →
-Contraseñas de aplicaciones). Guardarla sin espacios en el gestor de secretos
-del equipo y revocarla en la misma pantalla si se filtra. Gmail limita los
-destinatarios diarios por cuenta (del orden de 500; 2000 en Workspace):
-confirmar la cuota en la cuenta real.
-
-**Kubernetes.** El Deployment referencia el Secret opcional `identidad-smtp`
-para `SMTP_USER`/`SMTP_PASS`; host y puerto vienen del ConfigMap. Crearlo desde
-un archivo privado con esas dos líneas, nunca con la clave como argumento:
-
-```bash
-kubectl create secret generic identidad-smtp --from-env-file=<archivo-privado>
-kubectl rollout restart deployment/identidad
-```
-
-El log de arranque `identidad_correo` debe mostrar `"modo":"smtp"`. La
-NetworkPolicy sólo restringe entrada: la salida al puerto SMTP depende de la
-red del clúster. No escribir contraseñas en Git, issues ni logs.
-
-Un error `smtp conexion`
-requiere revisar DNS, conectividad, firewall y plazo; `smtp autenticacion`,
-credenciales y permisos del proveedor; `smtp starttls`/`smtp tls`, certificado
-y negociación TLS (por ejemplo, un proxy que intercepta). Ningún error por sí
-solo demuestra que el clúster bloquee un puerto concreto; ante `smtp conexion`
-persistente se puede probar `SMTP_PORT=465`.
-
-`ServicioRecuperacion.Solicitar` normaliza y valida el correo y despacha el
-resto en segundo plano, sin esperar consultas ni envío: la respuesta no revela
-la existencia de la cuenta. Sólo se atienden cuentas activas y se aplican los
-límites por cuenta. No hay cola ni tope de envíos simultáneos: el endpoint que
-exponga este servicio (SUP-233) debe llevar contador por IP, como login y registro. El token tiene 256 bits
-aleatorios, codificados en 43 caracteres base64url; sólo su SHA-256 se guarda en
-`api.tokens_recuperacion`. Emitir uno nuevo invalida los pendientes de esa cuenta.
-La vigencia configurada se usa tanto en PostgreSQL como en el texto y HTML del correo.
-
-El enlace usa `IDENTIDAD_URL_RESTABLECER?token=...`. Se activa el servicio interno
-cuando están disponibles correo, URL y permisos; los logs indican
-`identidad_recuperacion_activa` o `identidad_recuperacion_deshabilitada`.
-Esto no acredita endpoints públicos: solicitar recuperación es SUP-233 y
-consumir el token/restablecer la contraseña corresponde a SUP-185/SUP-234.
-No se presentan esas operaciones como implementadas ni como verificación de correo.
-
-Para quien implemente el consumo (SUP-185/SUP-234): calcular
-`security.HashTokenRecuperacion(token)` y marcarlo usado en una sola sentencia,
-para que dos peticiones simultáneas no lo consuman dos veces. Sin fila, el token
-es inválido, venció o ya se usó: responder lo mismo en los tres casos.
-
-```sql
-UPDATE api.tokens_recuperacion SET usado_el = now()
-WHERE token_hash = $1 AND usado_el IS NULL AND expira_el > now()
-RETURNING usuario_id;
-```
-
-`app_identity` ya tiene SELECT/INSERT/UPDATE en esa tabla, sin DELETE. El
-frontend (SUP-250) lee `token` del enlace y lo envía al endpoint de restablecimiento.
-
 ## Salud y operación
 
 `/_identidad/live` responde sin consultar SQL ni Redis. `/_identidad/ready`
 comparte su presupuesto entre Ping SQL y Redis; no repite la auditoría de
 permisos. Con los defaults, el arranque tiene 5 s, readiness 2 s y el apagado
-15 s. Al apagar, HTTP y los envíos de recuperación en curso comparten el presupuesto de cierre.
+15 s.
 Una caída posterior de dependencias no provoca un fallo de liveness; readiness
 puede recuperarse al volver esas dependencias. Cambiar permisos después del
 arranque requiere reiniciar para volver a verificarlos.
@@ -305,23 +230,20 @@ go build ./cmd/identidad
 | Paquete | Archivos | Rol |
 | --- | --- | --- |
 | `cmd/identidad` | `main.go` | Arranque, conexiones y apagado |
-| `internal/config` | `config.go` | Entorno validado al arrancar, plazos y límites fijos, correo |
+| `internal/config` | `config.go` | Entorno validado al arrancar, plazos y límites fijos |
 | `internal/api` | `rutas.go`, `auth.go`, `admin.go`, `sesion.go`, `limites.go`, `errores.go` | Router y middlewares globales, endpoints, JWT y RBAC, contadores por IP, formato de error |
-| `internal/services` | `auth.go`, `admin.go`, `recuperacion.go` | Casos de uso, bcrypt y tokens de recuperación |
-| `internal/repositories` | `conexion.go`, `usuarios.go`, `recuperacion.go` | Conexión, verificación de permisos y SQL |
+| `internal/services` | `auth.go`, `admin.go` | Casos de uso y bcrypt |
+| `internal/repositories` | `conexion.go`, `usuarios.go` | Conexión, verificación de permisos y SQL |
 | `internal/domain` | `usuario.go`, `admin.go`, `repositorios.go` | Entidades, roles, DTO y contratos de repositorio |
-| `internal/mailer` | `mailer.go` | Transporte SMTP y modo `log` |
 
 Las pruebas siguen los mismos temas: `tests/unit` cubre configuración, sesión,
 límites, servicios y handlers con dependencias aisladas; `tests/integration`
-cubre el router completo, SMTP local y PostgreSQL y Redis reales opcionales.
+cubre el router completo y PostgreSQL y Redis reales opcionales.
 `arquitectura_test.go` falla si Identidad importa otro servicio.
 
-Las pruebas SMTP crean certificados efímeros y aíslan las raíces de confianza en
-subprocesos mediante la API pública de `x509`; no modifican TLS de producción.
 Las pruebas Google usan el validador real con firmas RSA y una respuesta JWKS
 controlada, sin credenciales ni llamadas al proveedor. Ninguna reemplaza una
-prueba de Google en navegador o la entrega de correo a una bandeja real.
+prueba de Google en navegador.
 
 PostgreSQL real requiere `IDENTIDAD_TEST_DB_URL` y `IDENTIDAD_TEST_ADMIN_URL`;
 la prueba de contador Redis requiere `IDENTIDAD_TEST_REDIS_URL`. Sin ellas esos

@@ -63,20 +63,3 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
 	}
 	return nil
 }
-
-// VerificarRecuperacion comprueba api.tokens_recuperacion. A diferencia de VerificarAlmacenamiento,
-// su ausencia no impide iniciar: el login sigue disponible y sólo se apaga la recuperación.
-func VerificarRecuperacion(contexto context.Context, baseDatos *gorm.DB) error {
-	var permitido bool
-	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT to_regclass('api.tokens_recuperacion') IS NOT NULL AND
-        has_table_privilege(current_user, 'api.tokens_recuperacion', 'SELECT') AND
-        has_table_privilege(current_user, 'api.tokens_recuperacion', 'INSERT') AND
-        has_table_privilege(current_user, 'api.tokens_recuperacion', 'UPDATE')`).Scan(&permitido).Error
-	if errorObtenido != nil {
-		return fmt.Errorf("no se pudo verificar la recuperación: %w", errorObtenido)
-	}
-	if !permitido {
-		return errors.New("aplicar 05_tokens_recuperacion.sql y 06_propiedad_permisos.sql para activar la recuperación")
-	}
-	return nil
-}
