@@ -121,13 +121,20 @@ FALLBACK_JITTER_MAX = _leer_env_float("IA_FALLBACK_JITTER_MAX", 0.5)
 # --------------------------------------------------------------------------
 CHAT_MAX_MENSAJE_LEN = _leer_env_int("IA_CHAT_MAX_MENSAJE_LEN", 1000)
 EXPLICACION_MAX_PRODUCTOS = _leer_env_int("IA_EXPLICACION_MAX_PRODUCTOS", 8)
+
+# --------------------------------------------------------------------------
+# Limitacion de Frecuencia del Chat (SUP-336)
+# --------------------------------------------------------------------------
+CHAT_RATE_LIMIT_SOLICITUDES_PREDETERMINADO: int = 10
+CHAT_RATE_LIMIT_VENTANA_SEGUNDOS_PREDETERMINADA: float = 60.0
+
 CHAT_RATE_LIMIT_SOLICITUDES = _leer_env_int(
     "IA_CHAT_RATE_LIMIT_SOLICITUDES",
-    _leer_env_int("CHAT_RATE_LIMIT_REQUESTS", 10),
+    CHAT_RATE_LIMIT_SOLICITUDES_PREDETERMINADO,
 )
 CHAT_RATE_LIMIT_VENTANA_SEGUNDOS = _leer_env_float(
     "IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS",
-    _leer_env_float("CHAT_RATE_LIMIT_WINDOW_SECONDS", 60.0),
+    CHAT_RATE_LIMIT_VENTANA_SEGUNDOS_PREDETERMINADA,
 )
 
 
