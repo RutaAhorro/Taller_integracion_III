@@ -1,4 +1,4 @@
-"""Limitación de solicitudes del chat por usuario autenticado."""
+"""Limitación de solicitudes del chat por usuario autenticado mediante ventana deslizante."""
 
 import math
 import time
@@ -9,38 +9,38 @@ from typing import Callable, Optional
 from fastapi import HTTPException, status
 
 
-class RateLimiter:
-    """Contador de solicitudes en memoria local, independiente por réplica."""
+class LimitadorSolicitudes:
+    """Contador de solicitudes en memoria local mediante ventana deslizante, independiente por réplica."""
 
     def __init__(
         self,
-        max_requests: int = 10,
-        window_seconds: float = 60.0,
-        clock: Optional[Callable[[], float]] = None,
+        maximo_solicitudes: int = 10,
+        ventana_segundos: float = 60.0,
+        reloj: Optional[Callable[[], float]] = None,
     ):
-        """Inicializa una ventana fija deslizante por usuario autenticado."""
-        if max_requests <= 0:
-            raise ValueError("max_requests debe ser mayor a 0")
-        if window_seconds <= 0 or not math.isfinite(window_seconds):
-            raise ValueError("window_seconds debe ser mayor a 0 y finito")
+        """Inicializa el limitador por ventana deslizante (log de marcas de tiempo)."""
+        if maximo_solicitudes <= 0:
+            raise ValueError("maximo_solicitudes debe ser mayor a 0")
+        if ventana_segundos <= 0 or not math.isfinite(ventana_segundos):
+            raise ValueError("ventana_segundos debe ser mayor a 0 y finito")
 
-        self.max_requests = max_requests
-        self.window_seconds = window_seconds
-        self._clock = clock or time.monotonic
+        self.maximo_solicitudes = maximo_solicitudes
+        self.ventana_segundos = ventana_segundos
+        self._reloj = reloj or time.monotonic
         self._solicitudes: dict[str, deque[float]] = defaultdict(deque)
         self._lock = Lock()
 
-    def verificar(self, user_id: str) -> None:
-        """Registra una solicitud o lanza HTTP 429 si la cuota está agotada."""
-        ahora = self._clock()
+    def verificar(self, usuario_id: str) -> None:
+        """Registra una solicitud o lanza HTTP 429 si la cuota del usuario está agotada."""
+        ahora = self._reloj()
         with self._lock:
-            historial = self._solicitudes[user_id]
-            limite_ventana = ahora - self.window_seconds
+            historial = self._solicitudes[usuario_id]
+            limite_ventana = ahora - self.ventana_segundos
             while historial and historial[0] <= limite_ventana:
                 historial.popleft()
 
-            if len(historial) >= self.max_requests:
-                segundos_restantes = historial[0] + self.window_seconds - ahora
+            if len(historial) >= self.maximo_solicitudes:
+                segundos_restantes = historial[0] + self.ventana_segundos - ahora
                 raise HTTPException(
                     status_code=status.HTTP_429_TOO_MANY_REQUESTS,
                     detail="Límite de solicitudes al asistente excedido. Por favor, espera antes de enviar otro mensaje.",
@@ -51,7 +51,26 @@ class RateLimiter:
 
             historial.append(ahora)
 
-    def reset(self) -> None:
-        """Limpia el almacenamiento local; está destinado principalmente a pruebas."""
+    def purgar_inactivos(self, tiempo_limite: Optional[float] = None) -> None:
+        """Elimina entradas de usuarios cuyo historial esté completamente expirado."""
+        ahora = tiempo_limite if tiempo_limite is not None else self._reloj()
+        limite_ventana = ahora - self.ventana_segundos
+        with self._lock:
+            usuarios_inactivos = []
+            for usuario_id, historial in self._solicitudes.items():
+                while historial and historial[0] <= limite_ventana:
+                    historial.popleft()
+                if not historial:
+                    usuarios_inactivos.append(usuario_id)
+            for usuario_id in usuarios_inactivos:
+                del self._solicitudes[usuario_id]
+
+    def reiniciar(self) -> None:
+        """Limpia el almacenamiento local en memoria; destinado principalmente a pruebas."""
         with self._lock:
             self._solicitudes.clear()
+
+
+# Alias retrocompatible por si algún import externo lo referencia
+RateLimiter = LimitadorSolicitudes
+
