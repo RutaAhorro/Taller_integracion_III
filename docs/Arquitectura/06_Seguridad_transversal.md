@@ -9,7 +9,7 @@
 | Autorización | Cada servicio | El Gateway no valida JWT; las rutas protegidas revalidan estado y rol |
 | Anti-suplantación | Gateway | Elimina las cabeceras `X-User-ID` y `X-Role` que envía el cliente |
 | Rate limit | Identidad + Redis | Por IP cada 15 min: 5 logins fallidos, 30 registros y 30 logins Google. Sin Redis, falla cerrado |
-| Tokens de servicio | Control, Catálogo | `SCRAPING_SERVICE_TOKEN` y `CATALOGO_INTERNAL_TOKEN`, comparados en tiempo constante. Nunca llegan al navegador |
+| Tokens de servicio | Control, Catálogo, Listas, IA | `SCRAPING_SERVICE_TOKEN`, `CATALOGO_INTERNAL_TOKEN` (escritura) y `CATALOGO_CONSULTA_TOKEN` (sólo lectura), comparados en tiempo constante. Nunca llegan al navegador |
 | Recuperación de contraseña | Identidad | Cola asíncrona, para que el tiempo de respuesta no revele si la cuenta existe. Los tokens se guardan como hash |
 | Google SSO | Identidad | Validación criptográfica y protección contra *pre-account hijacking* al vincular cuentas |
 | Contraseñas | Identidad | bcrypt, con su límite de 72 bytes. Cambiar correo o contraseña exige la contraseña actual |

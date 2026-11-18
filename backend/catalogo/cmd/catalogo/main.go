@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/consulta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
@@ -59,10 +61,24 @@ func run(log *slog.Logger) error {
 		LargoMaximoBusqueda:        cfg.MaxSearchLength,
 	})
 	fuenteService := services.NewFuenteService(repositories.NewFuenteRepository(db))
+	disponibilidadService := services.NewDisponibilidadService(
+		repositories.NewDisponibilidadRepository(db),
+		services.LimitesDisponibilidad{
+			MaxProductos:     cfg.MaxProductosConsulta,
+			AntiguedadMaxima: cfg.AntiguedadMaximaDisponibilidad,
+		},
+		time.Now,
+	)
 	ready := sqlDB.PingContext
+	enrutador := server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, cfg.ReadinessTimeout, log, cfg.CORSAllowedOrigins,
+		ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken, MaxProductos: cfg.MaxBatchProductos, MaxBodyBytes: cfg.MaxBodyBytes})
+	consulta.Register(enrutador, consulta.Config{
+		Service:      disponibilidadService,
+		Token:        cfg.ConsultaToken,
+		MaxBodyBytes: cfg.MaxBodyBytes,
+	}, log)
 	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, cfg.ReadinessTimeout, log, cfg.CORSAllowedOrigins,
-			ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken, MaxProductos: cfg.MaxBatchProductos, MaxBodyBytes: cfg.MaxBodyBytes}),
+		Addr: cfg.ListenAddr, Handler: enrutador,
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout,
 	}

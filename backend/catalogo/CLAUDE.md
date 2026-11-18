@@ -8,8 +8,10 @@
   No leer usuarios ni trabajos. No Redis ni AutoMigrate.
 - JWT HS256 local; no confiar en headers de identidad ni consultar SQL de Identidad.
 - API `/api/v1/productos*` pública; `/api/v1/admin/productos*` exige admin.
-- `/internal/v1/*`: token `CATALOGO_INTERNAL_TOKEN`, distinto de JWT; no publicar
-  mediante Gateway. Lote y recibo se confirman juntos, preservando idempotencia.
+- `/internal/v1/*`: ingesta con `CATALOGO_INTERNAL_TOKEN` (escritura) y
+  disponibilidad con `CATALOGO_CONSULTA_TOKEN` (sólo lectura), distintos de JWT
+  y entre sí; no publicar mediante Gateway. Lote y recibo se confirman juntos,
+  preservando idempotencia.
 - Fuentes: actualizar solo `esta_activa`; no ampliar permisos de tabla completa.
 - Startup valida permisos una vez; `/_catalogo/live` sin SQL y `ready` con Ping.
 - Pruebas desde este servicio: `go test -race ./...`, `go vet ./...`.
@@ -19,9 +21,9 @@
 
 ## Índice breve generado
 
-36 archivos fuente, incluidos los de pruebas. Distribución:
+44 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 22 archivos.
-- `tests`: 13 archivos.
+- `internal`: 27 archivos.
+- `tests`: 16 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

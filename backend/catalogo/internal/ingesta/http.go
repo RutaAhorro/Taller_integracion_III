@@ -2,8 +2,6 @@ package ingesta
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"io"
@@ -11,6 +9,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/middleware"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
@@ -44,19 +43,7 @@ func Register(enrutador *gin.Engine, cfg Config, logger *slog.Logger) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	expected := sha256.Sum256([]byte("Bearer " + cfg.Token))
-	group := enrutador.Group("/internal/v1", func(contexto *gin.Context) {
-		if contexto.GetHeader("Origin") != "" {
-			contexto.AbortWithStatusJSON(403, gin.H{"error": "internal_origin_forbidden"})
-			return
-		}
-		got := sha256.Sum256([]byte(contexto.GetHeader("Authorization")))
-		if subtle.ConstantTimeCompare(got[:], expected[:]) != 1 {
-			contexto.AbortWithStatusJSON(401, gin.H{"error": "internal_unauthorized"})
-			return
-		}
-		contexto.Next()
-	})
+	group := enrutador.Group("/internal/v1", middleware.RequireInternalToken(cfg.Token))
 	fail := func(contexto *gin.Context, err error) {
 		logger.Error("catalogo_ingesta_error", "request_id", contexto.Writer.Header().Get("X-Request-ID"), "error", err)
 		var sqlError interface{ SQLState() string }

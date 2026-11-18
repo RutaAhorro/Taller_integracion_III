@@ -24,7 +24,7 @@ assert args.project.startswith('sup268-'), 'Sólo recursos del harness aislado'
 root = Path(__file__).resolve().parents[3]
 env = {k: v for k, v in os.environ.items() if k not in {
     'DB_USER','DB_PASSWORD','DB_NAME','JWT_SECRET','GOOGLE_CLIENT_ID',
-    'CATALOGO_CORS_ALLOWED_ORIGINS','GATEWAY_TRUSTED_PROXIES','CATALOGO_INTERNAL_TOKEN',
+    'CATALOGO_CORS_ALLOWED_ORIGINS','GATEWAY_TRUSTED_PROXIES','CATALOGO_INTERNAL_TOKEN','CATALOGO_CONSULTA_TOKEN',
     'IDENTITY_DB_PASSWORD','SCRAPING_DB_PASSWORD','CATALOGO_DB_PASSWORD',
     'IDENTIDAD_EDGE_SUBNET','IDENTIDAD_EDGE_RANGE','IDENTIDAD_GATEWAY_IP','IDENTIDAD_CORS_ALLOWED_ORIGINS','IDENTIDAD_COOKIE_SECURE'}}
 compose_args = ['docker','compose','--project-name',args.project,'--env-file',args.env_file,
