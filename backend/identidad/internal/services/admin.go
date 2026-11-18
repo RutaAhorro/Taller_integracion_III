@@ -32,27 +32,20 @@ var (
 
 // ===== Contrato del servicio =====
 
-// AdminUsuarioService define los casos de uso del panel de administración de cuentas.
-type AdminUsuarioService interface {
-	Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)
-	Metricas(contexto context.Context) (*domain.MetricasUsuariosDTO, error)
-	Actualizar(contexto context.Context, id string, entrada domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
+// ServicioAdmin reúne los casos de uso del panel de administración de cuentas.
+type ServicioAdmin struct {
+	repositorio domain.RepositorioAdmin
 }
 
-// adminUsuarioService implementa AdminUsuarioService.
-type adminUsuarioService struct {
-	usuarioRepo domain.AdminUsuarioRepository
-}
-
-// NewAdminUsuarioService inicializa el servicio administrativo con su repositorio.
-func NewAdminUsuarioService(repositorio domain.AdminUsuarioRepository) AdminUsuarioService {
-	return &adminUsuarioService{usuarioRepo: repositorio}
+// NuevoServicioAdmin inicializa el servicio administrativo con su repositorio.
+func NuevoServicioAdmin(repositorio domain.RepositorioAdmin) *ServicioAdmin {
+	return &ServicioAdmin{repositorio: repositorio}
 }
 
 // ===== Casos de uso =====
 
 // Listar devuelve una página de cuentas con los filtros recibidos, sin exponer credenciales.
-func (servicio *adminUsuarioService) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
+func (servicio *ServicioAdmin) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
 	if filtro.Rol != "" {
 		rol, errorObtenido := normalizarRol(filtro.Rol)
 		if errorObtenido != nil {
@@ -70,7 +63,7 @@ func (servicio *adminUsuarioService) Listar(contexto context.Context, filtro dom
 		filtro.Offset = 0
 	}
 
-	usuarios, total, errorOperacion := servicio.usuarioRepo.Listar(contexto, filtro)
+	usuarios, total, errorOperacion := servicio.repositorio.Listar(contexto, filtro)
 	if errorOperacion != nil {
 		return nil, errorOperacion
 	}
@@ -96,8 +89,8 @@ func (servicio *adminUsuarioService) Listar(contexto context.Context, filtro dom
 }
 
 // Metricas devuelve el total de cuentas y las activas para el panel.
-func (servicio *adminUsuarioService) Metricas(contexto context.Context) (*domain.MetricasUsuariosDTO, error) {
-	total, activos, errorObtenido := servicio.usuarioRepo.Contar(contexto)
+func (servicio *ServicioAdmin) Metricas(contexto context.Context) (*domain.MetricasUsuariosDTO, error) {
+	total, activos, errorObtenido := servicio.repositorio.Contar(contexto)
 	if errorObtenido != nil {
 		return nil, errorObtenido
 	}
@@ -106,7 +99,7 @@ func (servicio *adminUsuarioService) Metricas(contexto context.Context) (*domain
 
 // Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
 // del último admin y la auditoría se ejecutan juntas en el repositorio.
-func (servicio *adminUsuarioService) Actualizar(contexto context.Context, id string, entrada domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
+func (servicio *ServicioAdmin) Actualizar(contexto context.Context, id string, entrada domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
 	id = strings.TrimSpace(id)
 	if _, errorObtenido := uuid.Parse(id); errorObtenido != nil {
 		return nil, ErrIDUsuarioInvalido
@@ -139,7 +132,7 @@ func (servicio *adminUsuarioService) Actualizar(contexto context.Context, id str
 	}
 
 	datos["actualizado_el"] = time.Now()
-	if errorObtenido := servicio.usuarioRepo.ActualizarConGuarda(contexto, id, datos, actorID); errorObtenido != nil {
+	if errorObtenido := servicio.repositorio.ActualizarConGuarda(contexto, id, datos, actorID); errorObtenido != nil {
 		if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 			return nil, ErrUsuarioNoEncontrado
 		}
@@ -149,7 +142,7 @@ func (servicio *adminUsuarioService) Actualizar(contexto context.Context, id str
 		return nil, errorObtenido
 	}
 
-	actualizado, errorOperacion := servicio.usuarioRepo.FindByID(contexto, id)
+	actualizado, errorOperacion := servicio.repositorio.BuscarPorID(contexto, id)
 	if errorOperacion != nil {
 		return nil, errorOperacion
 	}

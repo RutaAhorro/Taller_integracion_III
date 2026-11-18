@@ -1,6 +1,6 @@
 // Package mailer despacha los correos de Identidad (recuperación de cuenta)
 // por SMTP con STARTTLS o TLS implícito; nunca autentica sin cifrado. Los casos
-// de uso dependen de Mailer; config.Correo elige el transporte.
+// de uso dependen de Enviador; config.Correo elige el transporte.
 package mailer
 
 import (
@@ -35,8 +35,8 @@ type Mensaje struct {
 	Para, Asunto, Texto, HTML string
 }
 
-// Mailer es lo único que conocen los casos de uso: el transporte se elige en Nuevo.
-type Mailer interface {
+// Enviador es lo único que conocen los casos de uso: el transporte se elige en Nuevo.
+type Enviador interface {
 	Enviar(contexto context.Context, mensaje Mensaje) error
 }
 
@@ -46,7 +46,7 @@ var (
 )
 
 // Nuevo elige el transporte según configuracion.Modo. Sin modo conocido, el correo queda deshabilitado.
-func Nuevo(configuracion config.Correo, registrador *slog.Logger) (Mailer, error) {
+func Nuevo(configuracion config.Correo, registrador *slog.Logger) (Enviador, error) {
 	if registrador == nil {
 		registrador = slog.Default()
 	}
@@ -55,7 +55,7 @@ func Nuevo(configuracion config.Correo, registrador *slog.Logger) (Mailer, error
 		servicio, errorObtenido := NuevoSMTP(configuracion)
 		if errorObtenido != nil {
 			// No retornar s directamente: un *SMTP nil dentro de la interfaz
-			// Mailer no es igual a nil y el llamador no detectaría el error.
+			// Enviador no es igual a nil y el llamador no detectaría el error.
 			return nil, errorObtenido
 		}
 		return servicio, nil
@@ -114,7 +114,7 @@ func construir(remitente, para *mail.Address, mensaje Mensaje, ahora time.Time) 
 	cabecera("To", para.String())
 	cabecera("Subject", mime.QEncoding.Encode("utf-8", mensaje.Asunto))
 	cabecera("Date", ahora.Format(time.RFC1123Z))
-	cabecera("Message-ID", messageID(remitente.Address))
+	cabecera("Message-ID", identificadorMensaje(remitente.Address))
 	cabecera("MIME-Version", "1.0")
 	if mensaje.HTML == "" {
 		cabecera("Content-Type", "text/plain; charset=UTF-8")
@@ -153,8 +153,8 @@ func escribirQP(escritor io.Writer, texto string) error {
 	return codificador.Close()
 }
 
-// messageID genera un Message-ID único con el dominio del remitente.
-func messageID(remitente string) string {
+// identificadorMensaje genera un Message-ID único con el dominio del remitente.
+func identificadorMensaje(remitente string) string {
 	dominio := "identidad.local"
 	if posicion := strings.LastIndex(remitente, "@"); posicion >= 0 && posicion < len(remitente)-1 {
 		dominio = remitente[posicion+1:]
@@ -195,9 +195,9 @@ func (errorSMTP *ErrorSMTP) Unwrap() error { return errorSMTP.Err }
 // NuevoSMTP prepara el transporte a partir de la configuración validada;
 // no abre conexiones hasta el primer envío.
 func NuevoSMTP(configuracion config.Correo) (*SMTP, error) {
-	plazoEnvio := configuracion.Timeout
+	plazoEnvio := configuracion.Plazo
 	if plazoEnvio == 0 {
-		plazoEnvio = config.TimeoutSMTPPredeterminado
+		plazoEnvio = config.PlazoSMTPPredeterminado
 	}
 	remitente, errorObtenido := mail.ParseAddress(configuracion.Remitente)
 	if errorObtenido != nil {

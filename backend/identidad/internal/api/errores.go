@@ -22,8 +22,8 @@ type RespuestaError struct {
 
 // ===== Middlewares =====
 
-// ErrorHandler es el middleware global que intercepta panics no controlados y errores del contexto
-func ErrorHandler() gin.HandlerFunc {
+// ManejarErrores es el middleware global que intercepta panics no controlados y errores del contexto
+func ManejarErrores() gin.HandlerFunc {
 	return func(contexto *gin.Context) {
 		defer func() {
 			if valorPanico := recover(); valorPanico != nil {
@@ -56,8 +56,8 @@ func ErrorHandler() gin.HandlerFunc {
 	}
 }
 
-// NotFoundHandler genera respuestas estandarizadas 404 para rutas inexistentes
-func NotFoundHandler() gin.HandlerFunc {
+// RutaNoEncontrada genera respuestas estandarizadas 404 para rutas inexistentes
+func RutaNoEncontrada() gin.HandlerFunc {
 	return func(contexto *gin.Context) {
 		contexto.JSON(http.StatusNotFound, RespuestaError{
 			Estado:  http.StatusNotFound,
@@ -67,8 +67,8 @@ func NotFoundHandler() gin.HandlerFunc {
 	}
 }
 
-// MethodNotAllowedHandler genera respuestas estandarizadas 405 para métodos HTTP no permitidos
-func MethodNotAllowedHandler() gin.HandlerFunc {
+// MetodoNoPermitido genera respuestas estandarizadas 405 para métodos HTTP no permitidos
+func MetodoNoPermitido() gin.HandlerFunc {
 	return func(contexto *gin.Context) {
 		contexto.JSON(http.StatusMethodNotAllowed, RespuestaError{
 			Estado:  http.StatusMethodNotAllowed,

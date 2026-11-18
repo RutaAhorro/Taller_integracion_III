@@ -11,19 +11,19 @@ import (
 	"gorm.io/gorm"
 )
 
-// gormRecuperacionRepository implementa domain.RecuperacionRepository.
-type gormRecuperacionRepository struct {
+// repositorioRecuperacion implementa domain.RepositorioRecuperacion.
+type repositorioRecuperacion struct {
 	baseDatos *gorm.DB
 }
 
-// NewRecuperacionRepository crea el repositorio de tokens sobre la conexión dada.
-func NewRecuperacionRepository(baseDatos *gorm.DB) domain.RecuperacionRepository {
-	return &gormRecuperacionRepository{baseDatos: baseDatos}
+// NuevoRepositorioRecuperacion crea el repositorio de tokens sobre la conexión dada.
+func NuevoRepositorioRecuperacion(baseDatos *gorm.DB) domain.RepositorioRecuperacion {
+	return &repositorioRecuperacion{baseDatos: baseDatos}
 }
 
 // SolicitudesRecientes cuenta los tokens emitidos dentro de la ventana con el
 // reloj de PostgreSQL, igual que la expiración.
-func (repositorio *gormRecuperacionRepository) SolicitudesRecientes(contexto context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
+func (repositorio *repositorioRecuperacion) SolicitudesRecientes(contexto context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
 	var fila struct {
 		EnVentana int
 		EnEspera  bool
@@ -38,7 +38,7 @@ func (repositorio *gormRecuperacionRepository) SolicitudesRecientes(contexto con
 
 // EmitirToken invalida los tokens pendientes de la cuenta y guarda el hash
 // nuevo en una sola transacción.
-func (repositorio *gormRecuperacionRepository) EmitirToken(contexto context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
+func (repositorio *repositorioRecuperacion) EmitirToken(contexto context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
 	return repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		// Sólo sirve el enlace más reciente: los anteriores pendientes quedan inutilizados.
 		if errorObtenido := transaccion.Exec(`UPDATE api.tokens_recuperacion SET usado_el = now() WHERE usuario_id = ? AND usado_el IS NULL`, usuarioID).Error; errorObtenido != nil {

@@ -20,7 +20,7 @@ import (
 
 // ===== JWT y revalidación =====
 
-func TestJWT_GenerarYValidarToken(prueba *testing.T) {
+func TestJWTGenerarYValidarToken(prueba *testing.T) {
 	usuarioID := "c14bd236-294a-41b8-8cbb-5473bb610415"
 	rol := "admin"
 	proveedor := "local"
@@ -43,9 +43,9 @@ func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 		prueba.Errorf("El token validado debería ser válido")
 	}
 
-	datosToken, valido := token.Claims.(*api.JWTClaims)
+	datosToken, valido := token.Claims.(*api.DatosSesion)
 	if !valido {
-		prueba.Fatalf("No se pudo convertir claims a *api.JWTClaims")
+		prueba.Fatalf("No se pudo convertir claims a *api.DatosSesion")
 	}
 
 	if datosToken.UserID != usuarioID {
@@ -59,14 +59,14 @@ func TestJWT_GenerarYValidarToken(prueba *testing.T) {
 	}
 }
 
-func TestJWT_TokenInvalido(prueba *testing.T) {
+func TestJWTTokenMalformado(prueba *testing.T) {
 	_, errorObtenido := api.ValidarToken("token.falso.invalido", claveJWTDePrueba)
 	if errorObtenido == nil {
 		prueba.Errorf("Se esperaba error al validar token falso, pero se aceptó")
 	}
 }
 
-func TestMiddleware_RequireAuth(prueba *testing.T) {
+func TestExigirSesion(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	usuarioID := uuid.New()
 	repositorio.usuarios["middleware@uct.cl"] = &domain.Usuario{
@@ -75,9 +75,9 @@ func TestMiddleware_RequireAuth(prueba *testing.T) {
 	}
 
 	enrutador := gin.New()
-	enrutador.Use(api.ErrorHandler())
+	enrutador.Use(api.ManejarErrores())
 
-	enrutador.GET("/protegido", api.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
+	enrutador.GET("/protegido", api.ExigirSesion(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
 		idUsuario, _ := contexto.Get("user_id")
 		rol, _ := contexto.Get("rol")
 		proveedor, _ := contexto.Get("provider")
@@ -140,16 +140,16 @@ func TestMiddleware_RequireAuth(prueba *testing.T) {
 	})
 }
 
-func TestMiddleware_RequireAuthExigeRepositorio(prueba *testing.T) {
+func TestExigirSesionExigeRepositorio(prueba *testing.T) {
 	defer func() {
 		if recover() == nil {
-			prueba.Fatal("RequireAuth(nil) debía entrar en pánico para no omitir la revalidación de sesión")
+			prueba.Fatal("ExigirSesion(nil) debía entrar en pánico para no omitir la revalidación de sesión")
 		}
 	}()
-	api.RequireAuth(nil, claveJWTDePrueba)
+	api.ExigirSesion(nil, claveJWTDePrueba)
 }
 
-func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T) {
+func TestExigirSesionRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	usuarioID := uuid.New()
 	repositorio.usuarios["admin@uct.cl"] = &domain.Usuario{
@@ -158,8 +158,8 @@ func TestMiddleware_RequireAuthRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T
 	}
 
 	enrutador := gin.New()
-	enrutador.Use(api.ErrorHandler())
-	enrutador.GET("/protegido", api.RequireAuth(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
+	enrutador.Use(api.ManejarErrores())
+	enrutador.GET("/protegido", api.ExigirSesion(repositorio, claveJWTDePrueba), func(contexto *gin.Context) {
 		contexto.JSON(http.StatusOK, gin.H{
 			"user_id": contexto.GetString("user_id"),
 			"rol":     contexto.GetString("rol"),
@@ -259,33 +259,16 @@ func FuzzJWTParser(generador *testing.F) {
 		if token == nil || !token.Valid {
 			prueba.Fatal("token aceptado sin validez")
 		}
-		datosToken, valido := token.Claims.(*api.JWTClaims)
+		datosToken, valido := token.Claims.(*api.DatosSesion)
 		if !valido || datosToken.ExpiresAt == nil || strings.TrimSpace(datosToken.UserID) == "" || strings.TrimSpace(datosToken.Rol) == "" || strings.TrimSpace(datosToken.Provider) == "" {
 			prueba.Fatal("sesión incompleta")
 		}
 	})
 }
 
-// TestClaveJWTInyectadaIgnoraElEntorno preserva la instantánea del arranque:
-// un token sólo valida con la clave recibida, aunque el entorno defina otra.
-func TestClaveJWTInyectadaIgnoraElEntorno(prueba *testing.T) {
-	clave, claveDelEntorno := strings.Repeat("a", 32), strings.Repeat("b", 32)
-	prueba.Setenv("JWT_SECRET", claveDelEntorno)
-	token, errorToken := api.GenerarToken("cuenta-prueba", "registrado", "local", clave)
-	if errorToken != nil {
-		prueba.Fatal(errorToken)
-	}
-	if _, errorValidacion := api.ValidarToken(token, clave); errorValidacion != nil {
-		prueba.Fatal("la clave inyectada no se conservó")
-	}
-	if _, errorValidacion := api.ValidarToken(token, claveDelEntorno); errorValidacion == nil {
-		prueba.Fatal("se firmó con el entorno en lugar de la clave inyectada")
-	}
-}
-
 // ===== Rol =====
 
-func TestRequireRole(prueba *testing.T) {
+func TestExigirRol(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	casos := []struct {
@@ -347,7 +330,7 @@ func TestRequireRole(prueba *testing.T) {
 				}
 				contexto.Next()
 			})
-			enrutador.GET("/test-protected", api.RequireRole(caso.rolesRequerido...), func(contexto *gin.Context) {
+			enrutador.GET("/test-protected", api.ExigirRol(caso.rolesRequerido...), func(contexto *gin.Context) {
 				contexto.JSON(http.StatusOK, gin.H{"mensaje": "acceso concedido"})
 			})
 

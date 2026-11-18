@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestIdentityDoesNotDependOnOtherServices(prueba *testing.T) {
+func TestIdentidadNoDependeDeOtrosServicios(prueba *testing.T) {
 	errorOperacion := filepath.WalkDir(filepath.Join("..", ".."), func(ruta string, entrada fs.DirEntry, errorObtenido error) error {
 		if errorObtenido != nil {
 			return errorObtenido

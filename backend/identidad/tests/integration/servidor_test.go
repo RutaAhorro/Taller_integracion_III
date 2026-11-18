@@ -21,7 +21,7 @@ import (
 // ===== Fronteras HTTP =====
 
 func TestHTTPBoundariesCorsAndJWT(prueba *testing.T) {
-	configuracion := config.Config{JWTSecret: strings.Repeat("j", 32), AllowedOrigins: []string{"https://frontend.example"}}
+	configuracion := config.Configuracion{ClaveJWT: strings.Repeat("j", 32), OrigenesPermitidos: []string{"https://frontend.example"}}
 	enrutador := enrutadorDePrueba(prueba, configuracion, func(context.Context) error { return nil })
 	// Con la base inalcanzable un token válido no se autoriza y la
 	// petición termina en 500 fail-closed, nunca en un bypass de la revalidación.
@@ -69,7 +69,7 @@ func TestHTTPBoundariesCorsAndJWT(prueba *testing.T) {
 	}
 }
 func TestRecoveryDoesNotExposePanic(prueba *testing.T) {
-	enrutador := enrutadorDePrueba(prueba, config.Config{}, nil)
+	enrutador := enrutadorDePrueba(prueba, config.Configuracion{}, nil)
 	enrutador.GET("/panic", func(contexto *gin.Context) { panic("private SQL table and credentials") })
 	escritor := httptest.NewRecorder()
 	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/panic", nil))
@@ -79,7 +79,7 @@ func TestRecoveryDoesNotExposePanic(prueba *testing.T) {
 }
 func TestReadinessDeadlineAndLiveness(prueba *testing.T) {
 	llamadas := 0
-	enrutador := enrutadorDePrueba(prueba, config.Config{}, func(contextoOperacion context.Context) error {
+	enrutador := enrutadorDePrueba(prueba, config.Configuracion{}, func(contextoOperacion context.Context) error {
 		llamadas++
 		<-contextoOperacion.Done()
 		return errors.New("private diagnostic")
@@ -100,7 +100,7 @@ func TestReadinessDeadlineAndLiveness(prueba *testing.T) {
 }
 
 func TestUnclassifiedContextErrorDoesNotExposeSQL(prueba *testing.T) {
-	enrutador := enrutadorDePrueba(prueba, config.Config{}, nil)
+	enrutador := enrutadorDePrueba(prueba, config.Configuracion{}, nil)
 	enrutador.GET("/context-error", func(contexto *gin.Context) { _ = contexto.Error(errors.New("private SQL table and credentials")) })
 	escritor := httptest.NewRecorder()
 	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/context-error", nil))
@@ -114,13 +114,13 @@ func TestUnclassifiedContextErrorDoesNotExposeSQL(prueba *testing.T) {
 // TestRouterAplicaLimitesConfigurados comprueba tamaño de cuerpo y cancelación.
 func TestRouterAplicaLimitesConfigurados(prueba *testing.T) {
 	ajustes := config.AjustesPredeterminados()
-	ajustes.MaxBodyBytes = 8
-	ajustes.RequestTimeout = 25 * time.Millisecond
-	enrutador := enrutadorDePrueba(prueba, config.Config{Ajustes: ajustes}, nil)
+	ajustes.MaximoBytesCuerpo = 8
+	ajustes.PlazoPeticion = 25 * time.Millisecond
+	enrutador := enrutadorDePrueba(prueba, config.Configuracion{Ajustes: ajustes}, nil)
 	enrutador.POST("/limites", func(contexto *gin.Context) {
 		cuerpo, errorLectura := io.ReadAll(contexto.Request.Body)
 		var exceso *http.MaxBytesError
-		if !errors.As(errorLectura, &exceso) || len(cuerpo) != ajustes.MaxBodyBytes {
+		if !errors.As(errorLectura, &exceso) || len(cuerpo) != ajustes.MaximoBytesCuerpo {
 			prueba.Error("no se aplicó el límite de cuerpo configurado")
 		}
 		<-contexto.Request.Context().Done()
@@ -140,8 +140,8 @@ func TestRouterAplicaLimitesConfigurados(prueba *testing.T) {
 // TestReadinessUsaSuPlazo comprueba que la sonda tiene su presupuesto propio.
 func TestReadinessUsaSuPlazo(prueba *testing.T) {
 	ajustes := config.AjustesPredeterminados()
-	ajustes.ReadinessTimeout = 20 * time.Millisecond
-	enrutador := enrutadorDePrueba(prueba, config.Config{Ajustes: ajustes}, func(contexto context.Context) error {
+	ajustes.PlazoReadiness = 20 * time.Millisecond
+	enrutador := enrutadorDePrueba(prueba, config.Configuracion{Ajustes: ajustes}, func(contexto context.Context) error {
 		<-contexto.Done()
 		return contexto.Err()
 	})

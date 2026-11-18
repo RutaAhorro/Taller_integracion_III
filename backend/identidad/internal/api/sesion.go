@@ -22,8 +22,8 @@ import (
 // maximoBytesJWT limita el formato recibido, no la duración del contrato.
 const maximoBytesJWT = 4096
 
-// JWTClaims define los datos del payload del token JWT centralizado
-type JWTClaims struct {
+// DatosSesion define los datos del payload del token JWT centralizado
+type DatosSesion struct {
 	UserID   string `json:"user_id"`
 	Rol      string `json:"rol"`
 	Provider string `json:"provider"`
@@ -40,7 +40,7 @@ func GenerarToken(usuarioID, rol, proveedor, clave string) (string, error) {
 	}
 
 	ahora := time.Now()
-	datosToken := JWTClaims{
+	datosToken := DatosSesion{
 		UserID:   usuarioID,
 		Rol:      rol,
 		Provider: proveedor,
@@ -72,7 +72,7 @@ func ValidarToken(tokenTexto, clave string) (*jwt.Token, error) {
 		return nil, errors.New("JWT_SECRET no configurado")
 	}
 	secreto := []byte(clave)
-	token, errorObtenido := jwt.ParseWithClaims(tokenTexto, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+	token, errorObtenido := jwt.ParseWithClaims(tokenTexto, &DatosSesion{}, func(token *jwt.Token) (interface{}, error) {
 		return secreto, nil
 	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired())
 
@@ -80,7 +80,7 @@ func ValidarToken(tokenTexto, clave string) (*jwt.Token, error) {
 		return nil, fmt.Errorf("token inválido: %w", errorObtenido)
 	}
 
-	datosToken, valido := token.Claims.(*JWTClaims)
+	datosToken, valido := token.Claims.(*DatosSesion)
 	if !valido || strings.TrimSpace(datosToken.UserID) == "" || strings.TrimSpace(datosToken.Rol) == "" || strings.TrimSpace(datosToken.Provider) == "" {
 		return nil, errors.New("claims de identidad incompletos")
 	}
@@ -89,7 +89,7 @@ func ValidarToken(tokenTexto, clave string) (*jwt.Token, error) {
 
 // ===== Sesión =====
 
-// RequireAuth intercepta la petición HTTP validando el token en la cookie
+// ExigirSesion intercepta la petición HTTP validando el token en la cookie
 // segura HttpOnly 'jwt' y revalida en api.usuarios que la cuenta siga activa,
 // usando el rol actual de la base de datos: así una desactivación o degradación
 // surte efecto sin esperar a que expire el JWT.
@@ -97,9 +97,9 @@ func ValidarToken(tokenTexto, clave string) (*jwt.Token, error) {
 // El repositorio es obligatorio (fail-closed): una ruta protegida no puede
 // omitir por accidente la revalidación de sesión. Sin él sólo se validaría la
 // firma del JWT, que sigue vigente hasta 24 h después de desactivar la cuenta.
-func RequireAuth(repositorio domain.UsuarioRepository, clave string) gin.HandlerFunc {
+func ExigirSesion(repositorio domain.RepositorioUsuarios, clave string) gin.HandlerFunc {
 	if repositorio == nil {
-		panic("RequireAuth: el repositorio de usuarios es obligatorio")
+		panic("ExigirSesion: el repositorio de usuarios es obligatorio")
 	}
 
 	return func(contexto *gin.Context) {
@@ -125,7 +125,7 @@ func RequireAuth(repositorio domain.UsuarioRepository, clave string) gin.Handler
 			return
 		}
 
-		datosToken, existe := token.Claims.(*JWTClaims)
+		datosToken, existe := token.Claims.(*DatosSesion)
 		if !existe {
 			ResponderError(
 				contexto,
@@ -144,7 +144,7 @@ func RequireAuth(repositorio domain.UsuarioRepository, clave string) gin.Handler
 			return
 		}
 
-		usuario, errorOperacion := repositorio.FindByID(contexto.Request.Context(), usuarioID)
+		usuario, errorOperacion := repositorio.BuscarPorID(contexto.Request.Context(), usuarioID)
 		if errorOperacion != nil {
 			ResponderError(contexto, http.StatusInternalServerError, "No se pudo validar la sesión.", errorOperacion)
 			return
@@ -174,9 +174,9 @@ func RequireAuth(repositorio domain.UsuarioRepository, clave string) gin.Handler
 
 // ===== Rol =====
 
-// RequireRole valida que el usuario autenticado posea al menos uno de los roles permitidos en la petición.
+// ExigirRol valida que el usuario autenticado posea al menos uno de los roles permitidos en la petición.
 // Si no se encuentra el rol o no coincide con los autorizados, interrumpe el flujo retornando HTTP 403 Forbidden.
-func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
+func ExigirRol(rolesPermitidos ...string) gin.HandlerFunc {
 	return func(contexto *gin.Context) {
 		valorRol, existe := contexto.Get("rol")
 		if !existe {

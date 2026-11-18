@@ -19,7 +19,7 @@ import (
 
 // W3 (#99): los logins exitosos no consumen intentos; los fallidos sí.
 // Requiere Redis real: IDENTIDAD_TEST_REDIS_URL (p. ej. redis://localhost:6379/15).
-func TestRateLimitLoginSoloCuentaFallidos(prueba *testing.T) {
+func TestLimitarLoginSoloCuentaFallidos(prueba *testing.T) {
 	direccion := os.Getenv("IDENTIDAD_TEST_REDIS_URL")
 	if direccion == "" {
 		prueba.Skip("IDENTIDAD_TEST_REDIS_URL no definido")
@@ -41,7 +41,7 @@ func TestRateLimitLoginSoloCuentaFallidos(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	estado := http.StatusOK
 	enrutador := gin.New()
-	enrutador.POST("/login", api.RateLimitLogin(redisCliente, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(estado) })
+	enrutador.POST("/login", api.LimitarLogin(redisCliente, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(estado) })
 	login := func() int {
 		peticionHTTP := httptest.NewRequest("POST", "/login", strings.NewReader("{}"))
 		peticionHTTP.RemoteAddr = "192.0.2.10:1234"

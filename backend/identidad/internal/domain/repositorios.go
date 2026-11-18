@@ -13,11 +13,11 @@ import (
 
 // ===== Usuarios =====
 
-// UsuarioRepository define el contrato para operaciones sobre la tabla api.usuarios
-type UsuarioRepository interface {
-	FindByEmail(contexto context.Context, direccionCorreo string) (*Usuario, error)
-	FindByID(contexto context.Context, id string) (*Usuario, error)
-	Create(contexto context.Context, usuario *Usuario) error
+// RepositorioUsuarios define el contrato para operaciones sobre la tabla api.usuarios
+type RepositorioUsuarios interface {
+	BuscarPorCorreo(contexto context.Context, direccionCorreo string) (*Usuario, error)
+	BuscarPorID(contexto context.Context, id string) (*Usuario, error)
+	Crear(contexto context.Context, usuario *Usuario) error
 	Actualizar(contexto context.Context, id string, datos map[string]interface{}) error
 }
 
@@ -31,11 +31,11 @@ var ErrAutoModificacionAdmin = errors.New("un administrador no puede desactivar 
 
 // ===== Contrato de repositorio =====
 
-// AdminUsuarioRepository define las operaciones de administración sobre api.usuarios.
-// Se mantiene separado de UsuarioRepository para no acoplar el perfil público.
-type AdminUsuarioRepository interface {
+// RepositorioAdmin define las operaciones de administración sobre api.usuarios.
+// Se mantiene separado de RepositorioUsuarios para no acoplar el perfil público.
+type RepositorioAdmin interface {
 	Listar(contexto context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, int64, error)
-	FindByID(contexto context.Context, id string) (*Usuario, error)
+	BuscarPorID(contexto context.Context, id string) (*Usuario, error)
 	// Contar devuelve el total de cuentas y cuántas están activas.
 	Contar(contexto context.Context) (total, activos int64, errorObtenido error)
 	// ActualizarConGuarda aplica el cambio y registra la auditoría en una sola
@@ -45,9 +45,9 @@ type AdminUsuarioRepository interface {
 
 // ===== Tokens de recuperación =====
 
-// RecuperacionRepository persiste tokens en api.tokens_recuperacion (SUP-184).
+// RepositorioRecuperacion persiste tokens en api.tokens_recuperacion (SUP-184).
 // Las comparaciones de tiempo usan el reloj de PostgreSQL, igual que el consumo (SUP-185).
-type RecuperacionRepository interface {
+type RepositorioRecuperacion interface {
 	// SolicitudesRecientes cuenta los tokens emitidos dentro de ventana e indica si
 	// alguno tiene menos de espera.
 	SolicitudesRecientes(contexto context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (enVentana int, enEspera bool, errorObtenido error)

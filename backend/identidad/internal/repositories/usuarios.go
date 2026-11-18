@@ -19,26 +19,26 @@ import (
 // instancias. El valor es un identificador estable, no un dato de negocio.
 const adminGuardLockKey int64 = 0x535550323432
 
-// gormUsuarioRepository implementa los repositorios de perfil y de
+// repositorioUsuarios implementa los repositorios de perfil y de
 // administración sobre api.usuarios.
-type gormUsuarioRepository struct {
+type repositorioUsuarios struct {
 	baseDatos *gorm.DB
 }
 
-// NewUsuarioRepository inicializa un repositorio de usuarios con conexión GORM.
-func NewUsuarioRepository(baseDatos *gorm.DB) domain.UsuarioRepository {
-	return &gormUsuarioRepository{baseDatos: baseDatos}
+// NuevoRepositorioUsuarios inicializa un repositorio de usuarios con conexión GORM.
+func NuevoRepositorioUsuarios(baseDatos *gorm.DB) domain.RepositorioUsuarios {
+	return &repositorioUsuarios{baseDatos: baseDatos}
 }
 
-// NewAdminUsuarioRepository expone las operaciones administrativas del mismo adaptador.
-func NewAdminUsuarioRepository(baseDatos *gorm.DB) domain.AdminUsuarioRepository {
-	return &gormUsuarioRepository{baseDatos: baseDatos}
+// NuevoRepositorioAdmin expone las operaciones administrativas del mismo adaptador.
+func NuevoRepositorioAdmin(baseDatos *gorm.DB) domain.RepositorioAdmin {
+	return &repositorioUsuarios{baseDatos: baseDatos}
 }
 
 // ===== Consultas =====
 
-// FindByEmail consulta si existe un usuario por su dirección de correo electrónico
-func (repositorio *gormUsuarioRepository) FindByEmail(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
+// BuscarPorCorreo consulta si existe un usuario por su dirección de correo electrónico
+func (repositorio *repositorioUsuarios) BuscarPorCorreo(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
 	var usuario domain.Usuario
 	errorObtenido := repositorio.baseDatos.WithContext(contexto).Where("correo = ?", direccionCorreo).First(&usuario).Error
 	if errorObtenido != nil {
@@ -50,8 +50,8 @@ func (repositorio *gormUsuarioRepository) FindByEmail(contexto context.Context, 
 	return &usuario, nil
 }
 
-// FindByID consulta a un usuario por su clave primaria UUID
-func (repositorio *gormUsuarioRepository) FindByID(contexto context.Context, id string) (*domain.Usuario, error) {
+// BuscarPorID consulta a un usuario por su clave primaria UUID
+func (repositorio *repositorioUsuarios) BuscarPorID(contexto context.Context, id string) (*domain.Usuario, error) {
 	var usuario domain.Usuario
 	errorObtenido := repositorio.baseDatos.WithContext(contexto).Where("id = ?", id).First(&usuario).Error
 	if errorObtenido != nil {
@@ -65,7 +65,7 @@ func (repositorio *gormUsuarioRepository) FindByID(contexto context.Context, id 
 
 // Listar devuelve una página de cuentas de api.usuarios y el total de filas
 // que cumplen los filtros administrativos indicados.
-func (repositorio *gormUsuarioRepository) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
+func (repositorio *repositorioUsuarios) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
 	consulta := repositorio.baseDatos.WithContext(contexto).Model(&domain.Usuario{})
 
 	if texto := strings.TrimSpace(filtro.Query); texto != "" {
@@ -104,7 +104,7 @@ func (repositorio *gormUsuarioRepository) Listar(contexto context.Context, filtr
 
 // Contar devuelve el total de cuentas y cuántas están activas, en dos COUNT
 // simples que no exponen columnas sensibles ni cargan filas en memoria.
-func (repositorio *gormUsuarioRepository) Contar(contexto context.Context) (int64, int64, error) {
+func (repositorio *repositorioUsuarios) Contar(contexto context.Context) (int64, int64, error) {
 	var total, activos int64
 	consulta := repositorio.baseDatos.WithContext(contexto).Model(&domain.Usuario{})
 	if errorObtenido := consulta.Session(&gorm.Session{}).Count(&total).Error; errorObtenido != nil {
@@ -118,19 +118,19 @@ func (repositorio *gormUsuarioRepository) Contar(contexto context.Context) (int6
 
 // ===== Escrituras =====
 
-// Create inserta un nuevo registro de usuario en la base de datos
-func (repositorio *gormUsuarioRepository) Create(contexto context.Context, usuario *domain.Usuario) error {
-	return classifyWriteError(repositorio.baseDatos.WithContext(contexto).Create(usuario).Error)
+// Crear inserta un nuevo registro de usuario en la base de datos
+func (repositorio *repositorioUsuarios) Crear(contexto context.Context, usuario *domain.Usuario) error {
+	return clasificarErrorEscritura(repositorio.baseDatos.WithContext(contexto).Create(usuario).Error)
 }
 
 // Actualizar aplica cambios parciales dinámicamente a la tabla api.usuarios usando GORM Updates
-func (repositorio *gormUsuarioRepository) Actualizar(contexto context.Context, id string, datos map[string]interface{}) error {
+func (repositorio *repositorioUsuarios) Actualizar(contexto context.Context, id string, datos map[string]interface{}) error {
 	resultado := repositorio.baseDatos.WithContext(contexto).
 		Model(&domain.Usuario{}).
 		Where("id = ?", id).
 		Updates(datos)
 	if resultado.Error != nil {
-		return classifyWriteError(resultado.Error)
+		return clasificarErrorEscritura(resultado.Error)
 	}
 	if resultado.RowsAffected == 0 {
 		return gorm.ErrRecordNotFound
@@ -143,7 +143,7 @@ func (repositorio *gormUsuarioRepository) Actualizar(contexto context.Context, i
 // ActualizarConGuarda aplica el cambio de estado/rol y su auditoría dentro de
 // una transacción. El advisory lock serializa las actualizaciones entre
 // instancias para que dos admins no puedan degradarse mutuamente a la vez.
-func (repositorio *gormUsuarioRepository) ActualizarConGuarda(contexto context.Context, id string, datos map[string]interface{}, actorID string) error {
+func (repositorio *repositorioUsuarios) ActualizarConGuarda(contexto context.Context, id string, datos map[string]interface{}, actorID string) error {
 	actorUUID, errorObtenido := uuid.Parse(strings.TrimSpace(actorID))
 	if errorObtenido != nil {
 		return errors.New("actor de auditoría inválido")
@@ -201,7 +201,7 @@ func (repositorio *gormUsuarioRepository) ActualizarConGuarda(contexto context.C
 
 		resultado := transaccion.Model(&domain.Usuario{}).Where("id = ?", id).Updates(datos)
 		if resultado.Error != nil {
-			return classifyWriteError(resultado.Error)
+			return clasificarErrorEscritura(resultado.Error)
 		}
 		if resultado.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
@@ -248,9 +248,9 @@ func escaparPatronLike(texto string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(texto)
 }
 
-// classifyWriteError traduce la violación de unicidad de PostgreSQL (23505)
+// clasificarErrorEscritura traduce la violación de unicidad de PostgreSQL (23505)
 // al error de negocio de correo duplicado.
-func classifyWriteError(errorObtenido error) error {
+func clasificarErrorEscritura(errorObtenido error) error {
 	var errorPostgres *pgconn.PgError
 	if errors.As(errorObtenido, &errorPostgres) && errorPostgres.Code == "23505" {
 		return domain.ErrCorreoDuplicado

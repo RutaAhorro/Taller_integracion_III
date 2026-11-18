@@ -48,7 +48,7 @@ func TestListarUsuariosEscapaComodinesLIKE(prueba *testing.T) {
 			if errorRegistro != nil {
 				prueba.Fatal(errorRegistro)
 			}
-			repositorio := repositories.NewAdminUsuarioRepository(conexion)
+			repositorio := repositories.NuevoRepositorioAdmin(conexion)
 			if _, _, errorListado := repositorio.Listar(context.Background(), domain.FiltroUsuariosAdminDTO{Query: caso.entrada}); errorListado != nil {
 				prueba.Fatal(errorListado)
 			}

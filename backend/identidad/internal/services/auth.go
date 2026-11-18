@@ -24,8 +24,8 @@ import (
 
 var (
 	ErrGoogleNoConfigurado = errors.New("login Google no configurado")
-	// ErrPasswordInvalido se emite cuando la contraseña no cumple las reglas de complejidad
-	ErrPasswordInvalido = errors.New("la contraseña debe tener al menos 8 caracteres, una letra mayúscula, un número y un símbolo especial")
+	// ErrContrasenaInvalida se emite cuando la contraseña no cumple las reglas de complejidad
+	ErrContrasenaInvalida = errors.New("la contraseña debe tener al menos 8 caracteres, una letra mayúscula, un número y un símbolo especial")
 	// ErrCorreoDuplicado se emite cuando ya existe un usuario con el mismo correo
 	ErrCorreoDuplicado = domain.ErrCorreoDuplicado
 	// ErrCredencialesInvalidas se emite genéricamente cuando el correo o contraseña son incorrectos
@@ -51,41 +51,33 @@ type RegistroDTO struct {
 	NombreCompleto string
 }
 
-// AuthService define los casos de uso para la autenticación e identidad de usuarios
-type AuthService interface {
-	Registrar(contexto context.Context, entrada RegistroDTO) (*domain.Usuario, error)
-	LoginWithContext(contexto context.Context, correo, contrasena string) (*domain.Usuario, error)
-	GoogleLogin(contexto context.Context, tokenGoogle string) (*domain.Usuario, error)
-	ActualizarPerfil(contexto context.Context, usuarioID string, entrada domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error)
-}
-
 // ValidadorGoogle verifica criptográficamente un id_token contra el client ID.
 // En producción es idtoken.Validate; las pruebas inyectan claims sin red.
 type ValidadorGoogle func(contexto context.Context, tokenGoogle, clienteGoogle string) (*idtoken.Payload, error)
 
-// authService implementa AuthService.
-type authService struct {
-	usuarioRepo    domain.UsuarioRepository
-	validateGoogle ValidadorGoogle
-	googleClientID string
-	googleTimeout  time.Duration
+// ServicioAuth reúne registro, login local y con Google, y edición del perfil.
+type ServicioAuth struct {
+	usuarios      domain.RepositorioUsuarios
+	validarGoogle ValidadorGoogle
+	clienteGoogle string
+	plazoGoogle   time.Duration
 }
 
-// NewAuthService recibe el validador de Google, su client ID y su plazo ya
+// NuevoServicioAuth recibe el validador de Google, su client ID y su plazo ya
 // leídos al arrancar: el servicio nunca consulta el entorno.
-func NewAuthService(repositorio domain.UsuarioRepository, validarGoogle ValidadorGoogle, clienteGoogle string, plazoGoogle time.Duration) AuthService {
-	return &authService{usuarioRepo: repositorio, validateGoogle: validarGoogle, googleClientID: clienteGoogle, googleTimeout: plazoGoogle}
+func NuevoServicioAuth(repositorio domain.RepositorioUsuarios, validarGoogle ValidadorGoogle, clienteGoogle string, plazoGoogle time.Duration) *ServicioAuth {
+	return &ServicioAuth{usuarios: repositorio, validarGoogle: validarGoogle, clienteGoogle: clienteGoogle, plazoGoogle: plazoGoogle}
 }
 
 // ===== Validaciones y valores iniciales =====
 
-// validarComplejidadPassword exige al menos 8 caracteres, una mayúscula, un número y un símbolo
-func validarComplejidadPassword(contrasena string) error {
-	if len(contrasena) > MaximoBytesPassword {
-		return fmt.Errorf("%w: longitud máxima de 72 bytes", ErrPasswordInvalido)
+// validarComplejidadContrasena exige al menos 8 caracteres, una mayúscula, un número y un símbolo
+func validarComplejidadContrasena(contrasena string) error {
+	if len(contrasena) > MaximoBytesContrasena {
+		return fmt.Errorf("%w: longitud máxima de 72 bytes", ErrContrasenaInvalida)
 	}
-	if len(contrasena) < MinimoBytesPassword {
-		return fmt.Errorf("%w: longitud mínima de 8 caracteres", ErrPasswordInvalido)
+	if len(contrasena) < MinimoBytesContrasena {
+		return fmt.Errorf("%w: longitud mínima de 8 caracteres", ErrContrasenaInvalida)
 	}
 
 	var tieneMayuscula, tieneNumero, tieneSimbolo bool
@@ -101,13 +93,13 @@ func validarComplejidadPassword(contrasena string) error {
 	}
 
 	if !tieneMayuscula {
-		return fmt.Errorf("%w: debe incluir al menos una letra mayúscula", ErrPasswordInvalido)
+		return fmt.Errorf("%w: debe incluir al menos una letra mayúscula", ErrContrasenaInvalida)
 	}
 	if !tieneNumero {
-		return fmt.Errorf("%w: debe incluir al menos un número", ErrPasswordInvalido)
+		return fmt.Errorf("%w: debe incluir al menos un número", ErrContrasenaInvalida)
 	}
 	if !tieneSimbolo {
-		return fmt.Errorf("%w: debe incluir al menos un símbolo especial", ErrPasswordInvalido)
+		return fmt.Errorf("%w: debe incluir al menos un símbolo especial", ErrContrasenaInvalida)
 	}
 
 	return nil
@@ -132,20 +124,20 @@ func nuevoUsuarioRegistrado(correo, nombre string) *domain.Usuario {
 	}
 }
 
-// validarEmail verifica que el correo tenga un formato sintácticamente válido
-func validarEmail(direccionCorreo string) bool {
+// formatoCorreoValido verifica que el correo tenga un formato sintácticamente válido
+func formatoCorreoValido(direccionCorreo string) bool {
 	valorNumerico, errorObtenido := mail.ParseAddress(direccionCorreo)
 	return errorObtenido == nil && valorNumerico.Address != "" && strings.Contains(direccionCorreo, "@") && strings.Contains(direccionCorreo, ".")
 }
 
 // registrarUltimoAcceso deja constancia del acceso sin bloquear el login si
 // falla la escritura: la autenticación ya fue validada.
-func (servicio *authService) registrarUltimoAcceso(contexto context.Context, usuario *domain.Usuario) {
+func (servicio *ServicioAuth) registrarUltimoAcceso(contexto context.Context, usuario *domain.Usuario) {
 	if usuario == nil {
 		return
 	}
 	ahora := time.Now()
-	if errorObtenido := servicio.usuarioRepo.Actualizar(contexto, usuario.ID.String(), map[string]interface{}{"ultimo_acceso": ahora}); errorObtenido != nil {
+	if errorObtenido := servicio.usuarios.Actualizar(contexto, usuario.ID.String(), map[string]interface{}{"ultimo_acceso": ahora}); errorObtenido != nil {
 		slog.Warn("identidad_ultimo_acceso", "user_id", usuario.ID.String(), "error", errorObtenido)
 		return
 	}
@@ -155,21 +147,20 @@ func (servicio *authService) registrarUltimoAcceso(contexto context.Context, usu
 // ===== Registro y login local =====
 
 // Registrar ejecuta el caso de uso completo de registro con validaciones de seguridad
-func (servicio *authService) Registrar(contexto context.Context, entrada RegistroDTO) (*domain.Usuario, error) {
-	// 1. Validar complejidad de contraseña antes de computar hash
-	if errorOperacion := validarComplejidadPassword(entrada.Password); errorOperacion != nil {
+func (servicio *ServicioAuth) Registrar(contexto context.Context, entrada RegistroDTO) (*domain.Usuario, error) {
+	// La política se valida antes del hash: bcrypt cuesta CPU y no debe gastarse
+	// en una contraseña que se va a rechazar.
+	if errorOperacion := validarComplejidadContrasena(entrada.Password); errorOperacion != nil {
 		return nil, errorOperacion
 	}
 
-	// 2. Normalizar y sanitizar entradas
 	correoNormalizado := normalizarCorreo(entrada.Correo)
-	nombreSanitizado := SanitizarInputBusqueda(entrada.NombreCompleto)
+	nombreSanitizado := SanitizarNombre(entrada.NombreCompleto)
 	if nombreSanitizado == "" {
 		return nil, ErrNombreInvalido
 	}
 
-	// 3. Comprobar unicidad del correo electrónico
-	existente, errorObtenido := servicio.usuarioRepo.FindByEmail(contexto, correoNormalizado)
+	existente, errorObtenido := servicio.usuarios.BuscarPorCorreo(contexto, correoNormalizado)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error consultando disponibilidad del correo: %w", errorObtenido)
 	}
@@ -177,18 +168,15 @@ func (servicio *authService) Registrar(contexto context.Context, entrada Registr
 		return nil, ErrCorreoDuplicado
 	}
 
-	// 4. Generar hash bcrypt de la contraseña
-	hash, errorObtenido := HashPassword(entrada.Password)
+	hash, errorObtenido := HashearContrasena(entrada.Password)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al generar hash seguro de contraseña: %w", errorObtenido)
 	}
 
-	// 5. Instanciar modelo de dominio
 	nuevoUsuario := nuevoUsuarioRegistrado(correoNormalizado, nombreSanitizado)
 	nuevoUsuario.PasswordHash = &hash
 
-	// 6. Persistir en repositorio
-	if errorOperacion := servicio.usuarioRepo.Create(contexto, nuevoUsuario); errorOperacion != nil {
+	if errorOperacion := servicio.usuarios.Crear(contexto, nuevoUsuario); errorOperacion != nil {
 		return nil, fmt.Errorf("error al persistir el nuevo usuario: %w", errorOperacion)
 	}
 
@@ -196,11 +184,10 @@ func (servicio *authService) Registrar(contexto context.Context, entrada Registr
 	return nuevoUsuario, nil
 }
 
-// LoginWithContext ejecuta la autenticación verificando credenciales y estado de forma segura
-func (servicio *authService) LoginWithContext(contexto context.Context, correo, contrasena string) (*domain.Usuario, error) {
-	// 1. Buscar al usuario por correo usando el repositorio
+// Login ejecuta la autenticación verificando credenciales y estado de forma segura
+func (servicio *ServicioAuth) Login(contexto context.Context, correo, contrasena string) (*domain.Usuario, error) {
 	correoNormalizado := normalizarCorreo(correo)
-	usuario, errorObtenido := servicio.usuarioRepo.FindByEmail(contexto, correoNormalizado)
+	usuario, errorObtenido := servicio.usuarios.BuscarPorCorreo(contexto, correoNormalizado)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al buscar usuario: %w", errorObtenido)
 	}
@@ -209,19 +196,17 @@ func (servicio *authService) LoginWithContext(contexto context.Context, correo, 
 		return nil, ErrCredencialesInvalidas
 	}
 
-	// 2. Prevención de Panic por puntero nulo:
-	// Si el usuario no tiene contraseña local (PasswordHash nulo o vacío), NO llamar a bcrypt y retornar de inmediato
+	// Una cuenta creada con Google no tiene contraseña local: se rechaza con el
+	// mismo error genérico, sin desreferenciar el hash nulo ni llamar a bcrypt.
 	if usuario.PasswordHash == nil || *usuario.PasswordHash == "" {
 		return nil, ErrCredencialesInvalidas
 	}
 
-	// 3. Validación de Activación: verificar si EstaActivo es true
 	if !usuario.EstaActivo {
 		return nil, ErrCuentaInactiva
 	}
 
-	// 4. Validación de Credenciales: comparar contraseña con CheckPasswordHash de forma segura
-	if !CheckPasswordHash(contrasena, *usuario.PasswordHash) {
+	if !ContrasenaCoincide(contrasena, *usuario.PasswordHash) {
 		return nil, ErrCredencialesInvalidas
 	}
 
@@ -231,17 +216,17 @@ func (servicio *authService) LoginWithContext(contexto context.Context, correo, 
 
 // ===== Login con Google =====
 
-// GoogleLogin valida el id_token de Google, exige correo verificado y busca o
+// LoginGoogle valida el id_token de Google, exige correo verificado y busca o
 // crea la cuenta; una creación concurrente se resuelve como login.
-func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle string) (*domain.Usuario, error) {
-	clienteGoogle := servicio.googleClientID
+func (servicio *ServicioAuth) LoginGoogle(contexto context.Context, tokenGoogle string) (*domain.Usuario, error) {
+	clienteGoogle := servicio.clienteGoogle
 	if clienteGoogle == "" {
 		return nil, ErrGoogleNoConfigurado
 	}
 
-	contextoGoogle, cancelar := context.WithTimeout(contexto, servicio.googleTimeout)
+	contextoGoogle, cancelar := context.WithTimeout(contexto, servicio.plazoGoogle)
 	defer cancelar()
-	datosGoogle, errorObtenido := servicio.validateGoogle(contextoGoogle, tokenGoogle, clienteGoogle)
+	datosGoogle, errorObtenido := servicio.validarGoogle(contextoGoogle, tokenGoogle, clienteGoogle)
 	if errorObtenido != nil || datosGoogle == nil {
 		return nil, ErrCredencialesInvalidas
 	}
@@ -252,11 +237,11 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 	verificado, verificadoValido := datosGoogle.Claims["email_verified"].(bool)
 	googleID := datosGoogle.Subject
 	direccionCorreo = normalizarCorreo(direccionCorreo)
-	if !correoValido || !verificadoValido || !verificado || !validarEmail(direccionCorreo) || googleID == "" {
+	if !correoValido || !verificadoValido || !verificado || !formatoCorreoValido(direccionCorreo) || googleID == "" {
 		return nil, ErrCredencialesInvalidas
 	}
 	nombre, _ := datosGoogle.Claims["name"].(string)
-	nombre = SanitizarInputBusqueda(nombre)
+	nombre = SanitizarNombre(nombre)
 	if nombre == "" {
 		nombre = strings.SplitN(direccionCorreo, "@", 2)[0]
 	}
@@ -267,7 +252,7 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 		urlAvatar = &imagen
 	}
 
-	usuario, errorObtenido := servicio.usuarioRepo.FindByEmail(contexto, direccionCorreo)
+	usuario, errorObtenido := servicio.usuarios.BuscarPorCorreo(contexto, direccionCorreo)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al buscar usuario: %w", errorObtenido)
 	}
@@ -278,7 +263,7 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 		nuevoUsuario.URLAvatar = urlAvatar
 		nuevoUsuario.GoogleID = &googleID
 
-		errorObtenido = servicio.usuarioRepo.Create(contexto, nuevoUsuario)
+		errorObtenido = servicio.usuarios.Crear(contexto, nuevoUsuario)
 		if errorObtenido == nil {
 			return nuevoUsuario, nil
 		}
@@ -287,7 +272,7 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 		}
 		// Otro request pudo crear la misma cuenta entre find y create:
 		// se continúa como login sobre la cuenta existente.
-		usuario, errorObtenido = servicio.usuarioRepo.FindByEmail(contexto, direccionCorreo)
+		usuario, errorObtenido = servicio.usuarios.BuscarPorCorreo(contexto, direccionCorreo)
 		if errorObtenido != nil {
 			return nil, fmt.Errorf("error al consultar registro concurrente de Google: %w", errorObtenido)
 		}
@@ -296,7 +281,7 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 		}
 	}
 
-	usuario, errorObtenido = servicio.validateGoogleAccount(contexto, usuario, googleID)
+	usuario, errorObtenido = servicio.validarCuentaGoogle(contexto, usuario, googleID)
 	if errorObtenido != nil {
 		return nil, errorObtenido
 	}
@@ -307,14 +292,13 @@ func (servicio *authService) GoogleLogin(contexto context.Context, tokenGoogle s
 // ===== Perfil =====
 
 // ActualizarPerfil procesa las actualizaciones parciales del perfil de usuario
-func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioID string, entrada domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error) {
+func (servicio *ServicioAuth) ActualizarPerfil(contexto context.Context, usuarioID string, entrada domain.ActualizarPerfilDTO) (*domain.PerfilUsuarioDTO, error) {
 	usuarioID = strings.TrimSpace(usuarioID)
 	if usuarioID == "" {
 		return nil, ErrUsuarioNoEncontrado
 	}
 
-	// 1. Verificar existencia del usuario actual
-	usuarioActual, errorObtenido := servicio.usuarioRepo.FindByID(contexto, usuarioID)
+	usuarioActual, errorObtenido := servicio.usuarios.BuscarPorID(contexto, usuarioID)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al verificar usuario: %w", errorObtenido)
 	}
@@ -330,29 +314,27 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 	cambiaCorreo := entrada.Correo != nil && normalizarCorreo(*entrada.Correo) != usuarioActual.Correo
 	if cambiaCorreo || entrada.Password != nil {
 		if usuarioActual.PasswordHash == nil || *usuarioActual.PasswordHash == "" ||
-			entrada.PasswordActual == nil || !CheckPasswordHash(*entrada.PasswordActual, *usuarioActual.PasswordHash) {
+			entrada.PasswordActual == nil || !ContrasenaCoincide(*entrada.PasswordActual, *usuarioActual.PasswordHash) {
 			return nil, ErrReautenticacionRequerida
 		}
 	}
 
-	// 2. Procesar NombreCompleto si viene presente
 	if entrada.NombreCompleto != nil {
-		nombreSanitizado := SanitizarInputBusqueda(*entrada.NombreCompleto)
+		nombreSanitizado := SanitizarNombre(*entrada.NombreCompleto)
 		if nombreSanitizado == "" {
 			return nil, ErrNombreInvalido
 		}
 		datos["nombre_completo"] = nombreSanitizado
 	}
 
-	// 3. Procesar Correo si viene presente
 	if entrada.Correo != nil {
 		correoNormalizado := normalizarCorreo(*entrada.Correo)
-		if !validarEmail(correoNormalizado) {
+		if !formatoCorreoValido(correoNormalizado) {
 			return nil, ErrCorreoInvalido
 		}
 		// Validar unicidad si el correo ha cambiado
 		if correoNormalizado != usuarioActual.Correo {
-			existente, errorOperacion := servicio.usuarioRepo.FindByEmail(contexto, correoNormalizado)
+			existente, errorOperacion := servicio.usuarios.BuscarPorCorreo(contexto, correoNormalizado)
 			if errorOperacion != nil {
 				return nil, fmt.Errorf("error consultando disponibilidad del correo: %w", errorOperacion)
 			}
@@ -363,22 +345,19 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 		}
 	}
 
-	// 4. Procesar Teléfono si viene presente
 	if entrada.Telefono != nil {
 		datos["telefono"] = strings.TrimSpace(*entrada.Telefono)
 	}
 
-	// 5. Procesar Dirección si viene presente
 	if entrada.Direccion != nil {
 		datos["direccion"] = strings.TrimSpace(*entrada.Direccion)
 	}
 
-	// 6. Procesar Contraseña si viene presente
 	if entrada.Password != nil {
-		if errorOperacion := validarComplejidadPassword(*entrada.Password); errorOperacion != nil {
+		if errorOperacion := validarComplejidadContrasena(*entrada.Password); errorOperacion != nil {
 			return nil, errorOperacion
 		}
-		hash, errorInterno := HashPassword(*entrada.Password)
+		hash, errorInterno := HashearContrasena(*entrada.Password)
 		if errorInterno != nil {
 			return nil, fmt.Errorf("error al generar hash de contraseña: %w", errorInterno)
 		}
@@ -388,16 +367,14 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 	// Seguridad: datos solo recibe las claves de arriba; este caso de uso nunca
 	// escribe esta_activo, rol ni cuota_tokens_ia.
 
-	// 7. Si hay cambios dinámicos, persistir
 	if len(datos) > 0 {
 		datos["actualizado_el"] = time.Now()
-		if errorOperacion := servicio.usuarioRepo.Actualizar(contexto, usuarioID, datos); errorOperacion != nil {
+		if errorOperacion := servicio.usuarios.Actualizar(contexto, usuarioID, datos); errorOperacion != nil {
 			return nil, fmt.Errorf("error al actualizar el perfil en base de datos: %w", errorOperacion)
 		}
 	}
 
-	// 8. Consultar datos actualizados para retornar DTO consistente
-	actualizado, errorObtenido := servicio.usuarioRepo.FindByID(contexto, usuarioID)
+	actualizado, errorObtenido := servicio.usuarios.BuscarPorID(contexto, usuarioID)
 	if errorObtenido != nil {
 		return nil, fmt.Errorf("error al consultar usuario actualizado: %w", errorObtenido)
 	}
@@ -423,7 +400,7 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 
 // ===== Vinculación de cuentas Google =====
 
-// validateGoogleAccount acepta el login con Google sobre una cuenta existente.
+// validarCuentaGoogle acepta el login con Google sobre una cuenta existente.
 //
 // MEDIDA PROVISORIA (hasta implementar la confirmación de correo): hoy el
 // registro local no verifica el correo, así que cualquiera puede registrar el
@@ -432,7 +409,7 @@ func (servicio *authService) ActualizarPerfil(contexto context.Context, usuarioI
 // google_id y se invalida la contraseña local, que nunca demostró ser del dueño.
 // Cuando exista `correo_verificado`, la contraseña debe conservarse si el correo
 // local ya estaba verificado, y ambos métodos de acceso pueden convivir.
-func (servicio *authService) validateGoogleAccount(contexto context.Context, usuario *domain.Usuario, sujeto string) (*domain.Usuario, error) {
+func (servicio *ServicioAuth) validarCuentaGoogle(contexto context.Context, usuario *domain.Usuario, sujeto string) (*domain.Usuario, error) {
 	if !usuario.EstaActivo {
 		return nil, ErrCuentaInactiva
 	}
@@ -443,7 +420,7 @@ func (servicio *authService) validateGoogleAccount(contexto context.Context, usu
 		return usuario, nil
 	}
 	datos := map[string]interface{}{"google_id": sujeto, "password_hash": nil, "actualizado_el": time.Now()}
-	if errorObtenido := servicio.usuarioRepo.Actualizar(contexto, usuario.ID.String(), datos); errorObtenido != nil {
+	if errorObtenido := servicio.usuarios.Actualizar(contexto, usuario.ID.String(), datos); errorObtenido != nil {
 		if errors.Is(errorObtenido, ErrCorreoDuplicado) {
 			// google_id es único: ya está vinculado a otra cuenta.
 			return nil, ErrCredencialesInvalidas
@@ -462,20 +439,19 @@ var caracteresNoPermitidos = regexp.MustCompile(`[^a-zA-Z0-9\sñÑáéíóúÁÉ
 // maximoCaracteresNombre conserva la política vigente de los perfiles.
 const maximoCaracteresNombre = 100
 
-// SanitizarInputBusqueda limita nombres a 100 caracteres y filtra su alfabeto.
+// SanitizarNombre limita nombres a 100 caracteres y filtra su alfabeto.
 // La seguridad SQL depende de consultas parametrizadas; HTML debe escaparse al mostrarlo.
-func SanitizarInputBusqueda(entrada string) string {
-	// 1. Quitar espacios en blanco al inicio y final
+func SanitizarNombre(entrada string) string {
 	limpio := strings.TrimSpace(entrada)
 
-	// 2. Limitar la longitud máxima a 100 caracteres para evitar desbordamientos o consultas pesadas
+	// Se cuenta en runas, no en bytes, para no cortar una letra con tilde por la mitad.
 	runas := []rune(limpio)
 	if len(runas) > maximoCaracteresNombre {
 		limpio = string(runas[:maximoCaracteresNombre])
 	}
 
-	// 3. Filtrar estrictamente caracteres: Permitir solo alfanuméricos, espacios, guiones y letras con tilde
-	// El alfabeto heredado no incluye signos como ;, comillas o corchetes.
+	// Sólo letras (con tilde y ñ), números, espacios y guiones: el alfabeto
+	// heredado excluye signos como ;, comillas o corchetes.
 	limpio = caracteresNoPermitidos.ReplaceAllString(limpio, "")
 
 	return strings.TrimSpace(limpio)
@@ -485,12 +461,12 @@ func SanitizarInputBusqueda(entrada string) string {
 
 // Límites de la política vigente y del formato bcrypt; no se alteran en el barrido.
 const (
-	MinimoBytesPassword = 8
-	MaximoBytesPassword = 72
+	MinimoBytesContrasena = 8
+	MaximoBytesContrasena = 72
 )
 
-// HashPassword genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
-func HashPassword(contrasena string) (string, error) {
+// HashearContrasena genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
+func HashearContrasena(contrasena string) (string, error) {
 	cantidadBytes, errorObtenido := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
 	if errorObtenido != nil {
 		return "", errorObtenido
@@ -498,8 +474,8 @@ func HashPassword(contrasena string) (string, error) {
 	return string(cantidadBytes), nil
 }
 
-// CheckPasswordHash compara una contraseña en texto plano contra un hash bcrypt almacenado
-func CheckPasswordHash(contrasena, hash string) bool {
+// ContrasenaCoincide compara una contraseña en texto plano contra un hash bcrypt almacenado
+func ContrasenaCoincide(contrasena, hash string) bool {
 	errorObtenido := bcrypt.CompareHashAndPassword([]byte(hash), []byte(contrasena))
 	return errorObtenido == nil
 }

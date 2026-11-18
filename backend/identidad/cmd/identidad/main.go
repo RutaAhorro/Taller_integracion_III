@@ -26,15 +26,15 @@ import (
 func main() {
 	registrador := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	slog.SetDefault(registrador)
-	if errorObtenido := run(registrador); errorObtenido != nil {
+	if errorObtenido := ejecutar(registrador); errorObtenido != nil {
 		registrador.Error("identidad_stopped", "error", errorObtenido)
 		os.Exit(1)
 	}
 }
 
-// run arma y sirve Identidad hasta recibir una señal de apagado.
-func run(registrador *slog.Logger) error {
-	configuracion, errorObtenido := config.Load()
+// ejecutar arma y sirve Identidad hasta recibir una señal de apagado.
+func ejecutar(registrador *slog.Logger) error {
+	configuracion, errorObtenido := config.Cargar()
 	if errorObtenido != nil {
 		return errorObtenido
 	}
@@ -42,21 +42,21 @@ func run(registrador *slog.Logger) error {
 	if configuracion.Correo.Modo == config.CorreoLog {
 		registrador.Warn("identidad_correo_modo_log", "detalle", "los correos se imprimen completos en el log; sólo para desarrollo local")
 	}
-	opciones, errorObtenido := redis.ParseURL(configuracion.RedisURL)
+	opciones, errorObtenido := redis.ParseURL(configuracion.URLRedis)
 	if errorObtenido != nil {
 		return errors.New("REDIS_URL inválido")
 	}
 	opciones.ContextTimeoutEnabled = true
 	opciones.MaxRetries = -1
-	opciones.DialTimeout = configuracion.Ajustes.RedisTimeout
-	opciones.ReadTimeout = configuracion.Ajustes.RedisTimeout
-	opciones.WriteTimeout = configuracion.Ajustes.RedisTimeout
+	opciones.DialTimeout = configuracion.Ajustes.PlazoRedis
+	opciones.ReadTimeout = configuracion.Ajustes.PlazoRedis
+	opciones.WriteTimeout = configuracion.Ajustes.PlazoRedis
 	redisCliente := redis.NewClient(opciones)
 	defer redisCliente.Close()
 	contexto, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer detener()
-	contextoInicio, cancelar := context.WithTimeout(contexto, configuracion.Ajustes.InicioTimeout)
-	baseDatos, errorObtenido := repositories.Open(contextoInicio, configuracion.DatabaseURL, configuracion.Ajustes)
+	contextoInicio, cancelar := context.WithTimeout(contexto, configuracion.Ajustes.PlazoInicio)
+	baseDatos, errorObtenido := repositories.Abrir(contextoInicio, configuracion.URLBaseDatos, configuracion.Ajustes)
 	if errorObtenido != nil {
 		cancelar()
 		return errorObtenido
@@ -67,7 +67,7 @@ func run(registrador *slog.Logger) error {
 		return errors.New("pool de Identidad inválido")
 	}
 	defer pool.Close()
-	if errorOperacion := repositories.VerifyStorage(contextoInicio, baseDatos); errorOperacion != nil {
+	if errorOperacion := repositories.VerificarAlmacenamiento(contextoInicio, baseDatos); errorOperacion != nil {
 		cancelar()
 		registrador.Error("identidad_storage_invalid", "error", errorOperacion)
 		return errors.New("Identidad requiere tablas y permisos antes de iniciar")
@@ -77,8 +77,8 @@ func run(registrador *slog.Logger) error {
 	if errorObtenido != nil {
 		return errorObtenido
 	}
-	modulo := api.NewModule(baseDatos, redisCliente, recuperacion, configuracion)
-	servidorHTTP := &http.Server{Addr: configuracion.ListenAddr, Handler: api.NewRouter(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.ReadHeaderTimeout, ReadTimeout: configuracion.Ajustes.ReadTimeout, WriteTimeout: configuracion.Ajustes.WriteTimeout, IdleTimeout: configuracion.Ajustes.IdleTimeout, MaxHeaderBytes: configuracion.Ajustes.MaxHeaderBytes}
+	modulo := api.NuevoModulo(baseDatos, redisCliente, recuperacion, configuracion)
+	servidorHTTP := &http.Server{Addr: configuracion.DireccionEscucha, Handler: api.NuevoEnrutador(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.PlazoCabeceras, ReadTimeout: configuracion.Ajustes.PlazoLectura, WriteTimeout: configuracion.Ajustes.PlazoEscritura, IdleTimeout: configuracion.Ajustes.PlazoInactividad, MaxHeaderBytes: configuracion.Ajustes.MaximoBytesCabeceras}
 	terminado := make(chan error, 1)
 	go func() { terminado <- servidorHTTP.ListenAndServe() }()
 	select {
@@ -87,7 +87,7 @@ func run(registrador *slog.Logger) error {
 			return fmt.Errorf("no se pudo iniciar HTTP de Identidad: %w", errorOperacion)
 		}
 	case <-contexto.Done():
-		contextoApagado, cancelarOperacion := context.WithTimeout(context.Background(), configuracion.Ajustes.ApagadoTimeout)
+		contextoApagado, cancelarOperacion := context.WithTimeout(context.Background(), configuracion.Ajustes.PlazoApagado)
 		defer cancelarOperacion()
 		if errorOperacion := servidorHTTP.Shutdown(contextoApagado); errorOperacion != nil {
 			_ = servidorHTTP.Close()
@@ -104,7 +104,7 @@ func run(registrador *slog.Logger) error {
 
 // recuperacionDesde decide si la recuperación de contraseña (SUP-184) queda activa.
 // Cualquier falta la apaga con un log explícito, sin impedir el login.
-func recuperacionDesde(contexto context.Context, configuracion config.Config, baseDatos *gorm.DB, registrador *slog.Logger) (api.Recuperacion, error) {
+func recuperacionDesde(contexto context.Context, configuracion config.Configuracion, baseDatos *gorm.DB, registrador *slog.Logger) (api.Recuperacion, error) {
 	if configuracion.Correo.Modo == config.CorreoDeshabilitado || configuracion.URLRestablecer == "" {
 		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
 		return api.Recuperacion{}, nil

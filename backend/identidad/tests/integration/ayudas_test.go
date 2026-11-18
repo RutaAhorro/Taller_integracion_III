@@ -20,7 +20,7 @@ const dsnSinConexion = "host=127.0.0.1 port=1 user=app_identity dbname=sin_conex
 
 // enrutadorDePrueba construye el router con el módulo real sobre una base
 // inalcanzable y sin Redis. Completa los ajustes predeterminados si faltan.
-func enrutadorDePrueba(prueba *testing.T, configuracion config.Config, sondaBase func(context.Context) error) *gin.Engine {
+func enrutadorDePrueba(prueba *testing.T, configuracion config.Configuracion, sondaBase func(context.Context) error) *gin.Engine {
 	prueba.Helper()
 	if configuracion.Ajustes == (config.Ajustes{}) {
 		configuracion.Ajustes = config.AjustesPredeterminados()
@@ -29,6 +29,6 @@ func enrutadorDePrueba(prueba *testing.T, configuracion config.Config, sondaBase
 	if errorApertura != nil {
 		prueba.Fatal(errorApertura)
 	}
-	modulo := api.NewModule(base, nil, api.Recuperacion{}, configuracion)
-	return api.NewRouter(configuracion, modulo, nil, sondaBase, nil)
+	modulo := api.NuevoModulo(base, nil, api.Recuperacion{}, configuracion)
+	return api.NuevoEnrutador(configuracion, modulo, nil, sondaBase, nil)
 }

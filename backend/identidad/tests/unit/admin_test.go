@@ -31,21 +31,21 @@ func newAdminUsuariosTestRouter(prueba *testing.T) (*gin.Engine, *mockUsuarioRep
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
-	manejador := api.NewAdminUsuarioHandler(services.NewAdminUsuarioService(repositorio))
+	manejador := api.NuevoManejadorAdmin(services.NuevoServicioAdmin(repositorio))
 	enrutador := gin.New()
 	api.RegistrarRutasAdminUsuarios(enrutador.Group("/api/v1"), manejador, repositorio, claveJWTDePrueba)
 	return enrutador, repositorio
 }
 
 // asegurarActorAdmin registra la cuenta que firma la petición, porque
-// RequireAuth revalida su rol en el repositorio.
+// ExigirSesion revalida su rol en el repositorio.
 func asegurarActorAdmin(prueba *testing.T, repositorio *mockUsuarioRepository, rol string) string {
 	prueba.Helper()
 	actorID, valido := adminActorIDs[rol]
 	if !valido {
 		prueba.Fatalf("no hay actor de prueba para el rol %q", rol)
 	}
-	if existente, _ := repositorio.FindByID(context.Background(), actorID); existente == nil {
+	if existente, _ := repositorio.BuscarPorID(context.Background(), actorID); existente == nil {
 		repositorio.usuarios["zz-actor-"+rol+"@uct.cl"] = &domain.Usuario{
 			ID:             uuid.MustParse(actorID),
 			Correo:         "zz-actor-" + rol + "@uct.cl",

@@ -80,8 +80,8 @@ func (correo *correoFalso) Enviar(contextoOperacion context.Context, mensaje mai
 // usuariosQueFallan simula una base caída al buscar la cuenta.
 type usuariosQueFallan struct{ *mockUsuarioRepository }
 
-// FindByEmail siempre falla.
-func (usuariosQueFallan) FindByEmail(context.Context, string) (*domain.Usuario, error) {
+// BuscarPorCorreo siempre falla.
+func (usuariosQueFallan) BuscarPorCorreo(context.Context, string) (*domain.Usuario, error) {
 	return nil, errors.New("conexión rechazada")
 }
 
@@ -97,7 +97,7 @@ func usuarioDePrueba(repositorio *mockUsuarioRepository, correo string, activo b
 }
 
 // procesarPendientes espera a que terminen los envíos en segundo plano.
-func procesarPendientes(prueba *testing.T, servicio services.RecuperacionService) {
+func procesarPendientes(prueba *testing.T, servicio *services.ServicioRecuperacion) {
 	prueba.Helper()
 	contexto, cancelar := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelar()
@@ -111,7 +111,7 @@ var tokenEnEnlace = regexp.MustCompile(`token=([A-Za-z0-9_-]{43})`)
 func TestRecuperacionEmiteTokenHasheadoYEnviaCorreo(prueba *testing.T) {
 	repositorio, tokens, correo := newMockUsuarioRepository(), &tokensFalsos{}, &correoFalso{}
 	ana := usuarioDePrueba(repositorio, "ana@example.com", true, true)
-	servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
 	if errorObtenido := servicio.Solicitar("  ANA@Example.com "); errorObtenido != nil {
 		prueba.Fatal(errorObtenido)
 	}
@@ -143,7 +143,7 @@ func TestRecuperacionNoRevelaCuentasNiProveedor(prueba *testing.T) {
 	repositorio, tokens, correo := newMockUsuarioRepository(), &tokensFalsos{}, &correoFalso{}
 	usuarioDePrueba(repositorio, "inactiva@example.com", false, true)
 	google := usuarioDePrueba(repositorio, "google@example.com", true, false)
-	servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
 	for _, direccion := range []string{"nadie@example.com", "inactiva@example.com", "google@example.com"} {
 		if errorObtenido := servicio.Solicitar(direccion); errorObtenido != nil {
 			prueba.Fatalf("%s: la respuesta debe ser igual para toda cuenta: %v", direccion, errorObtenido)
@@ -158,7 +158,7 @@ func TestRecuperacionNoRevelaCuentasNiProveedor(prueba *testing.T) {
 
 func TestRecuperacionValidaFormatoSinProcesar(prueba *testing.T) {
 	repositorio, tokens, correo := newMockUsuarioRepository(), &tokensFalsos{}, &correoFalso{}
-	servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
 	for _, direccion := range []string{"", "   ", "no-es-correo", "a@b", "ana@example.com\r\nBcc: x@example.com"} {
 		if errorObtenido := servicio.Solicitar(direccion); !errors.Is(errorObtenido, services.ErrCorreoInvalido) {
 			prueba.Errorf("%q: esperaba ErrCorreoInvalido, obtuvo %v", direccion, errorObtenido)
@@ -175,7 +175,7 @@ func TestRecuperacionLimitaSolicitudesPorCuenta(prueba *testing.T) {
 		prueba.Run(nombre, func(prueba *testing.T) {
 			repositorio, correo := newMockUsuarioRepository(), &correoFalso{}
 			usuarioDePrueba(repositorio, "ana@example.com", true, true)
-			servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
+			servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
 			if errorObtenido := servicio.Solicitar("ana@example.com"); errorObtenido != nil {
 				prueba.Fatal(errorObtenido)
 			}
@@ -190,13 +190,13 @@ func TestRecuperacionLimitaSolicitudesPorCuenta(prueba *testing.T) {
 func TestRecuperacionFallasQuedanEnLogSinCorreoDelUsuario(prueba *testing.T) {
 	var salida bytes.Buffer
 	registrador := slog.New(slog.NewJSONHandler(&salida, nil))
-	servicio := services.NewRecuperacionService(usuariosQueFallan{newMockUsuarioRepository()}, &tokensFalsos{}, &correoFalso{}, urlRestablecer, registrador, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(usuariosQueFallan{newMockUsuarioRepository()}, &tokensFalsos{}, &correoFalso{}, urlRestablecer, registrador, config.AjustesPredeterminados())
 	_ = servicio.Solicitar("secreta@example.com")
 	procesarPendientes(prueba, servicio)
 
 	repositorio, tokens := newMockUsuarioRepository(), &tokensFalsos{}
 	usuarioDePrueba(repositorio, "secreta@example.com", true, true)
-	servicio = services.NewRecuperacionService(repositorio, tokens, &correoFalso{errorDevuelto: errors.New("smtp autenticacion: 535")}, urlRestablecer, registrador, config.AjustesPredeterminados())
+	servicio = services.NuevoServicioRecuperacion(repositorio, tokens, &correoFalso{errorDevuelto: errors.New("smtp autenticacion: 535")}, urlRestablecer, registrador, config.AjustesPredeterminados())
 	_ = servicio.Solicitar("secreta@example.com")
 	procesarPendientes(prueba, servicio)
 
@@ -212,9 +212,9 @@ func TestRecuperacionFallasQuedanEnLogSinCorreoDelUsuario(prueba *testing.T) {
 func TestRecuperacionApagadaSinTransporteOURL(prueba *testing.T) {
 	repositorio, tokens := newMockUsuarioRepository(), &tokensFalsos{}
 	usuarioDePrueba(repositorio, "ana@example.com", true, true)
-	for _, servicio := range []services.RecuperacionService{
-		services.NewRecuperacionService(repositorio, tokens, nil, urlRestablecer, nil, config.AjustesPredeterminados()),
-		services.NewRecuperacionService(repositorio, tokens, &correoFalso{}, "", nil, config.AjustesPredeterminados()),
+	for _, servicio := range []*services.ServicioRecuperacion{
+		services.NuevoServicioRecuperacion(repositorio, tokens, nil, urlRestablecer, nil, config.AjustesPredeterminados()),
+		services.NuevoServicioRecuperacion(repositorio, tokens, &correoFalso{}, "", nil, config.AjustesPredeterminados()),
 	} {
 		if errorObtenido := servicio.Solicitar("ana@example.com"); errorObtenido != nil {
 			prueba.Fatal(errorObtenido)
@@ -234,7 +234,7 @@ func TestRecuperacionNoBloqueaYCerrarRespetaPlazo(prueba *testing.T) {
 	usuarioDePrueba(repositorio, "ana@example.com", true, true)
 	correo := &correoFalso{bloqueo: make(chan struct{})}
 	defer close(correo.bloqueo)
-	servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, config.AjustesPredeterminados())
 	inicio := time.Now()
 	for indice := 0; indice < 200; indice++ {
 		if errorObtenido := servicio.Solicitar("ana@example.com"); errorObtenido != nil {
@@ -271,7 +271,7 @@ func TestRecuperacionUsaVigenciaConfigurada(prueba *testing.T) {
 	usuarioDePrueba(repositorio, "ana@example.com", true, true)
 	ajustes := config.AjustesPredeterminados()
 	ajustes.RecuperacionVigencia = 15 * time.Minute
-	servicio := services.NewRecuperacionService(repositorio, tokens, correo, urlRestablecer, nil, ajustes)
+	servicio := services.NuevoServicioRecuperacion(repositorio, tokens, correo, urlRestablecer, nil, ajustes)
 	if errorSolicitud := servicio.Solicitar("ana@example.com"); errorSolicitud != nil {
 		prueba.Fatal(errorSolicitud)
 	}

@@ -23,7 +23,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// mockUsuarioRepository implementa UsuarioRepository en memoria para pruebas unitarias
+// mockUsuarioRepository implementa RepositorioUsuarios en memoria para pruebas unitarias
 type mockUsuarioRepository struct {
 	usuarios   map[string]*domain.Usuario
 	auditorias []domain.AuditoriaAdminUsuario
@@ -36,16 +36,16 @@ func newMockUsuarioRepository() *mockUsuarioRepository {
 	}
 }
 
-// FindByEmail busca por correo exacto, como la consulta real.
-func (repositorio *mockUsuarioRepository) FindByEmail(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
+// BuscarPorCorreo busca por correo exacto, como la consulta real.
+func (repositorio *mockUsuarioRepository) BuscarPorCorreo(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
 	if usuarioLocal, valido := repositorio.usuarios[direccionCorreo]; valido {
 		return usuarioLocal, nil
 	}
 	return nil, nil
 }
 
-// FindByID busca por identificador.
-func (repositorio *mockUsuarioRepository) FindByID(contexto context.Context, id string) (*domain.Usuario, error) {
+// BuscarPorID busca por identificador.
+func (repositorio *mockUsuarioRepository) BuscarPorID(contexto context.Context, id string) (*domain.Usuario, error) {
 	for _, usuarioLocal := range repositorio.usuarios {
 		if usuarioLocal.ID.String() == id {
 			return usuarioLocal, nil
@@ -54,8 +54,8 @@ func (repositorio *mockUsuarioRepository) FindByID(contexto context.Context, id 
 	return nil, nil
 }
 
-// Create asigna un ID si falta y rechaza correos duplicados.
-func (repositorio *mockUsuarioRepository) Create(contexto context.Context, usuario *domain.Usuario) error {
+// Crear asigna un ID si falta y rechaza correos duplicados.
+func (repositorio *mockUsuarioRepository) Crear(contexto context.Context, usuario *domain.Usuario) error {
 	if usuario.ID == uuid.Nil {
 		usuario.ID = uuid.New()
 	}
@@ -278,7 +278,7 @@ func (repositorio *mockUsuarioRepository) ContarAdminsActivos(contexto context.C
 	return total, nil
 }
 
-func TestAuthService_PasswordComplexity(prueba *testing.T) {
+func TestServicioAuthComplejidadContrasena(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
@@ -312,7 +312,7 @@ func TestAuthService_PasswordComplexity(prueba *testing.T) {
 	}
 }
 
-func TestAuthService_RegistroExitoso(prueba *testing.T) {
+func TestServicioAuthRegistroExitoso(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
@@ -340,7 +340,7 @@ func TestAuthService_RegistroExitoso(prueba *testing.T) {
 		prueba.Fatalf("Usuario no persistido en el repositorio")
 	}
 
-	if usuarioLocal.PasswordHash == nil || !services.CheckPasswordHash("SuperClave2026#", *usuarioLocal.PasswordHash) {
+	if usuarioLocal.PasswordHash == nil || !services.ContrasenaCoincide("SuperClave2026#", *usuarioLocal.PasswordHash) {
 		prueba.Errorf("El hash almacenado no coincide con la contraseña con bcrypt")
 	}
 	if usuarioLocal.Plan != domain.PlanBasico || usuarioLocal.UltimoAcceso == nil {
@@ -359,13 +359,12 @@ func TestAuthService_RegistroExitoso(prueba *testing.T) {
 	}
 }
 
-func TestAuthService_Login(prueba *testing.T) {
+func TestServicioAuthLogin(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
-	hashContrasena, _ := services.HashPassword("Password123#")
+	hashContrasena, _ := services.HashearContrasena("Password123#")
 
-	// 1. Usuario activo normal
 	usuarioActivo := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "activo@uct.cl",
@@ -375,7 +374,7 @@ func TestAuthService_Login(prueba *testing.T) {
 	}
 	repositorio.usuarios[usuarioActivo.Correo] = usuarioActivo
 
-	// 2. Usuario con PasswordHash nulo (Login social previo con Google)
+	// Cuenta creada con Google: sin contraseña local.
 	usuarioGoogle := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "google@uct.cl",
@@ -385,7 +384,6 @@ func TestAuthService_Login(prueba *testing.T) {
 	}
 	repositorio.usuarios[usuarioGoogle.Correo] = usuarioGoogle
 
-	// 3. Usuario inactivo pendiente de verificación
 	usuarioInactivo := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "inactivo@uct.cl",
@@ -396,35 +394,35 @@ func TestAuthService_Login(prueba *testing.T) {
 	repositorio.usuarios[usuarioInactivo.Correo] = usuarioInactivo
 
 	prueba.Run("Usuario inexistente", func(prueba *testing.T) {
-		_, errorObtenido := servicio.LoginWithContext(context.Background(), "noexiste@uct.cl", "Password123#")
+		_, errorObtenido := servicio.Login(context.Background(), "noexiste@uct.cl", "Password123#")
 		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
 			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Usuario con PasswordHash nulo (sin panic)", func(prueba *testing.T) {
-		_, errorObtenido := servicio.LoginWithContext(context.Background(), "google@uct.cl", "CualquierPass123#")
+		_, errorObtenido := servicio.Login(context.Background(), "google@uct.cl", "CualquierPass123#")
 		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
 			prueba.Errorf("Esperaba ErrCredencialesInvalidas ante cuenta sin password local, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Cuenta inactiva pendiente de confirmacion", func(prueba *testing.T) {
-		_, errorObtenido := servicio.LoginWithContext(context.Background(), "inactivo@uct.cl", "Password123#")
+		_, errorObtenido := servicio.Login(context.Background(), "inactivo@uct.cl", "Password123#")
 		if !errors.Is(errorObtenido, services.ErrCuentaInactiva) {
 			prueba.Errorf("Esperaba ErrCuentaInactiva, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Contraseña incorrecta", func(prueba *testing.T) {
-		_, errorObtenido := servicio.LoginWithContext(context.Background(), "activo@uct.cl", "PasswordErronea123#")
+		_, errorObtenido := servicio.Login(context.Background(), "activo@uct.cl", "PasswordErronea123#")
 		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
 			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Login exitoso", func(prueba *testing.T) {
-		usuarioLocal, errorObtenido := servicio.LoginWithContext(context.Background(), "ACTIVO@UCT.CL ", "Password123#")
+		usuarioLocal, errorObtenido := servicio.Login(context.Background(), "ACTIVO@UCT.CL ", "Password123#")
 		if errorObtenido != nil {
 			prueba.Fatalf("Login exitoso falló inesperadamente: %v", errorObtenido)
 		}
@@ -437,11 +435,11 @@ func TestAuthService_Login(prueba *testing.T) {
 	})
 }
 
-func TestAuthService_ActualizarPerfil(prueba *testing.T) {
+func TestServicioAuthActualizarPerfil(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
 
-	hashContrasena, _ := services.HashPassword("Password123#")
+	hashContrasena, _ := services.HashearContrasena("Password123#")
 	usuarioID := uuid.New()
 	usuarioOriginal := &domain.Usuario{
 		ID:             usuarioID,
@@ -500,8 +498,8 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 			Password:       &contrasenaInvalida,
 			PasswordActual: &actual,
 		})
-		if !errors.Is(errorObtenido, services.ErrPasswordInvalido) {
-			prueba.Errorf("Esperaba ErrPasswordInvalido, obtuve %v", errorObtenido)
+		if !errors.Is(errorObtenido, services.ErrContrasenaInvalida) {
+			prueba.Errorf("Esperaba ErrContrasenaInvalida, obtuve %v", errorObtenido)
 		}
 
 		contrasenaValida := "NuevaClaveSegura2026!"
@@ -518,7 +516,7 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 
 		// Verificar que el hash se actualizo en el usuario
 		usuarioLocal := repositorio.usuarios["original@uct.cl"]
-		if !services.CheckPasswordHash("NuevaClaveSegura2026!", *usuarioLocal.PasswordHash) {
+		if !services.ContrasenaCoincide("NuevaClaveSegura2026!", *usuarioLocal.PasswordHash) {
 			prueba.Errorf("El hash en repositorio no coincide con la nueva contraseña")
 		}
 	})
@@ -549,7 +547,7 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 func TestPasswordBeyondBcryptLimitIsValidationError(prueba *testing.T) {
 	servicio := nuevoServicioAuth(newMockUsuarioRepository())
 	_, errorObtenido := servicio.Registrar(prueba.Context(), services.RegistroDTO{Correo: "fixture@example.test", NombreCompleto: "Fixture", Password: "A1!" + strings.Repeat("a", 70)})
-	if !errors.Is(errorObtenido, services.ErrPasswordInvalido) {
+	if !errors.Is(errorObtenido, services.ErrContrasenaInvalida) {
 		prueba.Fatal(errorObtenido)
 	}
 }
@@ -558,7 +556,7 @@ func TestPasswordBeyondBcryptLimitIsValidationError(prueba *testing.T) {
 func TestActualizarPerfilExigeContrasenaActual(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	servicio := nuevoServicioAuth(repositorio)
-	hash, _ := services.HashPassword("Password123#")
+	hash, _ := services.HashearContrasena("Password123#")
 	local := &domain.Usuario{ID: uuid.New(), Correo: "local@uct.cl", PasswordHash: &hash, NombreCompleto: "Local", EstaActivo: true}
 	googleID := "google-only"
 	sso := &domain.Usuario{ID: uuid.New(), Correo: "sso@uct.cl", GoogleID: &googleID, NombreCompleto: "SSO", EstaActivo: true}
@@ -604,7 +602,7 @@ func TestProfileNameValidationPreservesStoredName(prueba *testing.T) {
 			repositorio := newMockUsuarioRepository()
 			usuario := &domain.Usuario{ID: uuid.New(), Correo: "profile@example.test", NombreCompleto: "Original"}
 			repositorio.usuarios[usuario.Correo] = usuario
-			manejador := api.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+			manejador := api.NuevoManejadorAuth(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
 			enrutador := gin.New()
 			enrutador.PUT("/profile", func(contexto *gin.Context) { contexto.Set("user_id", usuario.ID.String()) }, manejador.ActualizarPerfil)
 			cuerpo, _ := json.Marshal(map[string]string{"nombre_completo": nombre})
@@ -628,7 +626,7 @@ func TestNameSanitizationPreservesUnicodeBoundaries(prueba *testing.T) {
 		{"filtered whitespace", "@ @", ""},
 	} {
 		prueba.Run(caso.name, func(prueba *testing.T) {
-			obtenido := services.SanitizarInputBusqueda(caso.input)
+			obtenido := services.SanitizarNombre(caso.input)
 			if obtenido != caso.want || !utf8.ValidString(obtenido) {
 				prueba.Fatalf("got=%q want=%q", obtenido, caso.want)
 			}

@@ -240,7 +240,7 @@ y negociación TLS (por ejemplo, un proxy que intercepta). Ningún error por sí
 solo demuestra que el clúster bloquee un puerto concreto; ante `smtp conexion`
 persistente se puede probar `SMTP_PORT=465`.
 
-`RecuperacionService.Solicitar` normaliza y valida el correo y despacha el
+`ServicioRecuperacion.Solicitar` normaliza y valida el correo y despacha el
 resto en segundo plano, sin esperar consultas ni envío: la respuesta no revela
 la existencia de la cuenta. Sólo se atienden cuentas activas y se aplican los
 límites por cuenta. No hay cola ni tope de envíos simultáneos: el endpoint que

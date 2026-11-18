@@ -30,8 +30,8 @@
 | **Client ID** | Identificador público de una aplicación registrada en un proveedor OAuth. | `GOOGLE_CLIENT_ID`. Debe tener `http://localhost:3000` como origen autorizado. |
 | **HttpOnly** | Atributo de cookie que impide leerla desde JavaScript. | La cookie `jwt`. Por eso el logout debe hacerlo el servidor. |
 | **SameSite** | Atributo de cookie que limita su envío entre sitios (`Lax`, `Strict`, `None`). | `SameSite=Lax` en la cookie `jwt`. |
-| **Secure (cookie)** | La cookie sólo viaja por HTTPS. | Configurable con `CookieSecure`. |
-| **RBAC** | *Role-Based Access Control*. Permisos según el rol del usuario. | Roles `registrado`, `colaborador`, `admin` (`RequireRole`). |
+| **Secure (cookie)** | La cookie sólo viaja por HTTPS. | Configurable con `IDENTIDAD_COOKIE_SECURE`. |
+| **RBAC** | *Role-Based Access Control*. Permisos según el rol del usuario. | Roles `registrado`, `colaborador`, `admin` (`ExigirRol` en Identidad, `RequireRole` en Catálogo). |
 | **IDOR** | *Insecure Direct Object Reference*. Acceder a recursos ajenos cambiando un ID. | Se evita tomando el usuario siempre del JWT, nunca del cuerpo ni de la URL. |
 | **XSS** | *Cross-Site Scripting*. Inyección de JavaScript malicioso en una página. | Mitigado con cookies HttpOnly y el escape de React. |
 | **CSRF** | *Cross-Site Request Forgery*. Hacer que el navegador de la víctima envíe peticiones no deseadas. | Mitigado con `SameSite=Lax` y la lista blanca CORS. |
@@ -48,7 +48,7 @@
 | **TLS** | *Transport Layer Security*. Cifrado de la conexión (sucesor de SSL). | HTTPS y envío de correo (TLS ≥ 1.2). |
 | **STARTTLS** | Comando que convierte una conexión SMTP en texto plano a TLS. | Puerto 587 del mailer; si no hay STARTTLS no se envían credenciales. |
 | **App Password** | Contraseña específica de aplicación (Gmail) en lugar de la contraseña real. | `SMTP_PASS` del mailer. |
-| **Sanitización** | Limpiar la entrada del usuario antes de usarla. | `SanitizarInputBusqueda()` en Go; `normalizar_nombre()` en Python. |
+| **Sanitización** | Limpiar la entrada del usuario antes de usarla. | `SanitizarNombre()` en Identidad y `SanitizarInputBusqueda()` en Catálogo; `normalizar_nombre()` en Python. |
 
 ## Redes y protocolos
 
@@ -97,10 +97,10 @@
 | **Monolito** | Aplicación desplegada como una sola unidad. | La API Go original (`backend/api`), retirada en SUP-273 al separar Identidad, Catálogo y Control. |
 | **DTO** | *Data Transfer Object*. Estructura para transportar datos entre capas sin exponer el modelo interno. | `RegistroDTO`, `PerfilUsuarioDTO`, `ProductoDTO`, … |
 | **ORM** | *Object-Relational Mapping*. Traduce tablas SQL a objetos del lenguaje. | GORM (Go). |
-| **Repository (patrón)** | Capa que encapsula el acceso a datos. | `UsuarioRepository`, `RepositorioListas`. |
-| **Service (capa)** | Capa con la lógica de negocio (casos de uso). | `AuthService`, `RecuperacionService`. |
-| **Handler** | Función que atiende una petición HTTP. | `AuthHandler`, `ProductoHandler`. |
-| **Middleware** | Función que se ejecuta antes o después del handler (auth, CORS, logs). | `RequireAuth`, `RequireRole`, `RateLimitLogin`, CORS. |
+| **Repository (patrón)** | Capa que encapsula el acceso a datos. | `RepositorioUsuarios`, `RepositorioListas`. |
+| **Service (capa)** | Capa con la lógica de negocio (casos de uso). | `ServicioAuth`, `ServicioRecuperacion`. |
+| **Handler** | Función que atiende una petición HTTP. | `ManejadorAuth`, `ProductoHandler`. |
+| **Middleware** | Función que se ejecuta antes o después del handler (auth, CORS, logs). | `ExigirSesion`, `ExigirRol`, `LimitarLogin` en Identidad; `RequireAuth` y `RequireRole` en Catálogo; CORS. |
 | **Inyección de dependencias** | Pasar las dependencias desde fuera en vez de crearlas dentro. | Repositorios inyectados en servicios (permite mocks en tests). |
 | **Strategy (patrón)** | Algoritmos intercambiables tras una misma interfaz. | `RoutingStrategy` del Motor de rutas; `ProveedorIA` de la IA. |
 | **Fallback** | Alternativa automática cuando falla la opción principal. | `FallbackProveedor`: Groq → Gemini. |

@@ -24,21 +24,21 @@ const (
 	maxUsuariosAdminPorPagina = domain.MaxUsuariosAdminPorPagina
 )
 
-// AdminUsuarioHandler gestiona los endpoints administrativos de api.usuarios.
-type AdminUsuarioHandler struct {
-	adminService services.AdminUsuarioService
+// ManejadorAdmin gestiona los endpoints administrativos de api.usuarios.
+type ManejadorAdmin struct {
+	servicio *services.ServicioAdmin
 }
 
-// NewAdminUsuarioHandler construye el handler administrativo inyectando el servicio.
-func NewAdminUsuarioHandler(servicioAdmin services.AdminUsuarioService) *AdminUsuarioHandler {
-	return &AdminUsuarioHandler{adminService: servicioAdmin}
+// NuevoManejadorAdmin construye el handler administrativo inyectando el servicio.
+func NuevoManejadorAdmin(servicioAdmin *services.ServicioAdmin) *ManejadorAdmin {
+	return &ManejadorAdmin{servicio: servicioAdmin}
 }
 
 // ===== Endpoints =====
 
 // ListarUsuarios: listar cuentas de usuario.
 // Devuelve las cuentas registradas en api.usuarios con filtros opcionales por texto, rol y estado. Sólo rol admin.
-func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
+func (manejador *ManejadorAdmin) ListarUsuarios(contexto *gin.Context) {
 	maximoEntero := int64(^uint(0) >> 1)
 	filtro := domain.FiltroUsuariosAdminDTO{
 		Query: contexto.Query("q"),
@@ -92,7 +92,7 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 		filtro.Offset = (filtro.Page - 1) * filtro.Limit
 	}
 
-	pagina, errorOperacion := manejador.adminService.Listar(contexto.Request.Context(), filtro)
+	pagina, errorOperacion := manejador.servicio.Listar(contexto.Request.Context(), filtro)
 	if errorOperacion != nil {
 		if errors.Is(errorOperacion, services.ErrRolInvalido) {
 			ResponderError(contexto, http.StatusBadRequest, errorOperacion.Error(), errorOperacion)
@@ -107,8 +107,8 @@ func (manejador *AdminUsuarioHandler) ListarUsuarios(contexto *gin.Context) {
 
 // Metricas: métricas de cuentas de usuario.
 // Devuelve el total de cuentas y cuántas están activas. Sólo rol admin.
-func (manejador *AdminUsuarioHandler) Metricas(contexto *gin.Context) {
-	metricas, errorObtenido := manejador.adminService.Metricas(contexto.Request.Context())
+func (manejador *ManejadorAdmin) Metricas(contexto *gin.Context) {
+	metricas, errorObtenido := manejador.servicio.Metricas(contexto.Request.Context())
 	if errorObtenido != nil {
 		ResponderError(contexto, http.StatusInternalServerError, "Error interno al calcular las métricas de usuarios.", errorObtenido)
 		return
@@ -118,11 +118,11 @@ func (manejador *AdminUsuarioHandler) Metricas(contexto *gin.Context) {
 
 // ActualizarUsuario: activar/desactivar, asignar rol o plan a una cuenta.
 // Actualiza esta_activo, el rol RBAC y/o el plan comercial de un usuario. Sólo rol admin.
-func (manejador *AdminUsuarioHandler) ActualizarUsuario(contexto *gin.Context) {
+func (manejador *ManejadorAdmin) ActualizarUsuario(contexto *gin.Context) {
 	// El cuerpo sólo admite los campos administrables; el identificador viaja
 	// siempre en la ruta para evitar dos fuentes de verdad.
 	var peticion domain.ActualizarUsuarioAdminDTO
-	if errorObtenido := bindJSONStrict(contexto, &peticion); errorObtenido != nil {
+	if errorObtenido := leerJSONEstricto(contexto, &peticion); errorObtenido != nil {
 		mensaje := "Datos de entrada inválidos para actualizar la cuenta."
 		if strings.Contains(errorObtenido.Error(), "unknown field") {
 			mensaje = "La actualización contiene campos no permitidos."
@@ -142,7 +142,7 @@ func (manejador *AdminUsuarioHandler) ActualizarUsuario(contexto *gin.Context) {
 		return
 	}
 
-	dto, errorOperacion := manejador.adminService.Actualizar(contexto.Request.Context(), id, peticion, actorID)
+	dto, errorOperacion := manejador.servicio.Actualizar(contexto.Request.Context(), id, peticion, actorID)
 	if errorOperacion != nil {
 		switch {
 		case errors.Is(errorOperacion, services.ErrIDUsuarioInvalido), errors.Is(errorOperacion, services.ErrRolInvalido), errors.Is(errorOperacion, services.ErrPlanInvalido), errors.Is(errorOperacion, services.ErrSinCambiosAdmin):
@@ -162,10 +162,10 @@ func (manejador *AdminUsuarioHandler) ActualizarUsuario(contexto *gin.Context) {
 
 // ===== Utilidades =====
 
-// bindJSONStrict decodifica un único objeto JSON y rechaza campos desconocidos.
+// leerJSONEstricto decodifica un único objeto JSON y rechaza campos desconocidos.
 // Así un cliente no recibe 200 cuando intenta enviar, por ejemplo, id o correo
 // fuera del contrato administrable.
-func bindJSONStrict(contexto *gin.Context, destino any) error {
+func leerJSONEstricto(contexto *gin.Context, destino any) error {
 	decodificador := json.NewDecoder(contexto.Request.Body)
 	decodificador.DisallowUnknownFields()
 	if errorObtenido := decodificador.Decode(destino); errorObtenido != nil {

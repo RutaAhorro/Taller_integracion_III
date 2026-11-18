@@ -16,17 +16,17 @@ import (
 	"github.com/google/uuid"
 )
 
-func TestAuthHandler_RegistrarUsuario_AutoLogin(prueba *testing.T) {
+func TestManejadorAuthRegistroIniciaSesion(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
 	servicioAuth := nuevoServicioAuth(repositorio)
-	manejador := api.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
+	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
 
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/register", manejador.RegistrarUsuario)
 
-	datosGoogle := api.RegistroRequest{
+	datosGoogle := api.PeticionRegistro{
 		Correo:         "autologin@uct.cl",
 		Password:       "AutoLogin2026!",
 		NombreCompleto: "Usuario AutoLogin",
@@ -65,11 +65,11 @@ func TestAuthHandler_RegistrarUsuario_AutoLogin(prueba *testing.T) {
 	}
 }
 
-func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
+func TestManejadorAuthLoginEmiteRolCanonico(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
-	hash, errorOperacion := services.HashPassword("AliasLogin2026!")
+	hash, errorOperacion := services.HashearContrasena("AliasLogin2026!")
 	if errorOperacion != nil {
 		prueba.Fatal(errorOperacion)
 	}
@@ -79,11 +79,11 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 		PasswordHash: &hash, Rol: " Admin ", EstaActivo: true,
 	}
 
-	manejador := api.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+	manejador := api.NuevoManejadorAuth(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/login", manejador.LoginUsuario)
 
-	cuerpo, _ := json.Marshal(api.LoginRequest{Correo: "alias@uct.cl", Password: "AliasLogin2026!"})
+	cuerpo, _ := json.Marshal(api.PeticionLogin{Correo: "alias@uct.cl", Password: "AliasLogin2026!"})
 	escritor := httptest.NewRecorder()
 	peticion, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBuffer(cuerpo))
 	peticion.Header.Set("Content-Type", "application/json")
@@ -92,7 +92,7 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 	if escritor.Code != http.StatusOK {
 		prueba.Fatalf("Esperaba HTTP 200, obtuve %d. Body: %s", escritor.Code, escritor.Body.String())
 	}
-	var resultado api.LoginResponse
+	var resultado api.RespuestaLogin
 	if errorObtenido := json.Unmarshal(escritor.Body.Bytes(), &resultado); errorObtenido != nil {
 		prueba.Fatalf("Respuesta inválida: %v", errorObtenido)
 	}
@@ -114,18 +114,18 @@ func TestAuthHandler_LoginEmiteRolCanonico(prueba *testing.T) {
 	if errorOperacion != nil {
 		prueba.Fatalf("Token inválido: %v", errorOperacion)
 	}
-	datosToken, valido := token.Claims.(*api.JWTClaims)
+	datosToken, valido := token.Claims.(*api.DatosSesion)
 	if !valido || datosToken.Rol != domain.RolAdmin {
 		prueba.Fatalf("El JWT debía llevar el rol admin, obtuve %+v", token.Claims)
 	}
 }
 
-func TestAuthHandler_ActualizarPerfil(prueba *testing.T) {
+func TestManejadorAuthActualizarPerfil(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	repositorio := newMockUsuarioRepository()
 	servicioAuth := nuevoServicioAuth(repositorio)
-	manejador := api.NewAuthHandler(servicioAuth, false, claveJWTDePrueba)
+	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
 
 	usuarioID := uuid.New()
 	creado, errorObtenido := servicioAuth.Registrar(prueba.Context(), services.RegistroDTO{
@@ -197,10 +197,10 @@ func TestAuthHandler_ActualizarPerfil(prueba *testing.T) {
 	})
 }
 
-func TestAuthHandler_CerrarSesion_ExpiraCookie(prueba *testing.T) {
+func TestManejadorAuthCerrarSesionExpiraCookie(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 
-	manejador := api.NewAuthHandler(nuevoServicioAuth(newMockUsuarioRepository()), true, claveJWTDePrueba)
+	manejador := api.NuevoManejadorAuth(nuevoServicioAuth(newMockUsuarioRepository()), true, claveJWTDePrueba)
 	enrutador := gin.New()
 	enrutador.POST("/api/v1/auth/logout", manejador.CerrarSesion)
 

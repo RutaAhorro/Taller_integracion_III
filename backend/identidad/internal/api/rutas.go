@@ -25,22 +25,22 @@ import (
 
 // ===== Router =====
 
-// NewRouter monta sondas, middlewares globales y las rutas del módulo. Cada
+// NuevoEnrutador monta sondas, middlewares globales y las rutas del módulo. Cada
 // petición protegida valida JWT localmente; no acepta identidad de headers.
 // Recibe el módulo ya armado para que main pueda cerrarlo al apagar
 // (despacho pendiente de correos de recuperación, SUP-184).
-func NewRouter(configuracion config.Config, modulo *Module, redisCliente *redis.Client, sondaBase func(context.Context) error, registrador *slog.Logger) *gin.Engine {
+func NuevoEnrutador(configuracion config.Configuracion, modulo *Modulo, redisCliente *redis.Client, sondaBase func(context.Context) error, registrador *slog.Logger) *gin.Engine {
 	ajustes := configuracion.Ajustes
 	enrutador := gin.New()
-	_ = enrutador.SetTrustedProxies(configuracion.TrustedProxies)
+	_ = enrutador.SetTrustedProxies(configuracion.ProxiesConfiables)
 	enrutador.RemoteIPHeaders = []string{"X-Forwarded-For"}
-	enrutador.Use(observe(registrador), ErrorHandler(), cors(configuracion.AllowedOrigins), boundedRequest(ajustes))
+	enrutador.Use(observar(registrador), ManejarErrores(), cors(configuracion.OrigenesPermitidos), acotarPeticion(ajustes))
 	enrutador.HandleMethodNotAllowed = true
-	enrutador.NoRoute(NotFoundHandler())
-	enrutador.NoMethod(MethodNotAllowedHandler())
+	enrutador.NoRoute(RutaNoEncontrada())
+	enrutador.NoMethod(MetodoNoPermitido())
 	enrutador.GET("/_identidad/live", func(contexto *gin.Context) { contexto.JSON(200, gin.H{"status": "ok", "service": "identidad"}) })
 	enrutador.GET("/_identidad/ready", func(contexto *gin.Context) {
-		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.ReadinessTimeout)
+		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.PlazoReadiness)
 		defer cancelar()
 		verificaciones := gin.H{"database": "error", "redis": "error"}
 		// Login falla cerrado sin Redis: readiness debe reflejar esa dependencia.
@@ -56,7 +56,7 @@ func NewRouter(configuracion config.Config, modulo *Module, redisCliente *redis.
 		}
 		contexto.JSON(codigo, gin.H{"status": estado, "service": "identidad", "checks": verificaciones})
 	})
-	modulo.RegisterRoutes(enrutador.Group("/api/v1"))
+	modulo.RegistrarRutas(enrutador.Group("/api/v1"))
 	return enrutador
 }
 
@@ -92,19 +92,19 @@ func cors(origenes []string) gin.HandlerFunc {
 	}
 }
 
-// requestIDPattern acepta un X-Request-ID recibido sólo si es corto y seguro
+// patronRequestID acepta un X-Request-ID recibido sólo si es corto y seguro
 // para escribirlo en logs; si no, se genera uno nuevo.
-var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+var patronRequestID = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
-// observe propaga o genera X-Request-ID y registra método, ruta de plantilla,
+// observar propaga o genera X-Request-ID y registra método, ruta de plantilla,
 // estado y duración, sin cuerpos ni cookies.
-func observe(registrador *slog.Logger) gin.HandlerFunc {
+func observar(registrador *slog.Logger) gin.HandlerFunc {
 	if registrador == nil {
 		registrador = slog.Default()
 	}
 	return func(contexto *gin.Context) {
 		id := contexto.GetHeader("X-Request-ID")
-		if !requestIDPattern.MatchString(id) {
+		if !patronRequestID.MatchString(id) {
 			var token [16]byte
 			_, _ = rand.Read(token[:])
 			id = hex.EncodeToString(token[:])
@@ -121,77 +121,77 @@ func observe(registrador *slog.Logger) gin.HandlerFunc {
 	}
 }
 
-// boundedRequest acota la duración y el tamaño del cuerpo de cada petición.
-func boundedRequest(ajustes config.Ajustes) gin.HandlerFunc {
+// acotarPeticion acota la duración y el tamaño del cuerpo de cada petición.
+func acotarPeticion(ajustes config.Ajustes) gin.HandlerFunc {
 	return func(contexto *gin.Context) {
-		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.RequestTimeout)
+		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.PlazoPeticion)
 		defer cancelar()
 		contexto.Request = contexto.Request.WithContext(contextoOperacion)
-		contexto.Request.Body = http.MaxBytesReader(contexto.Writer, contexto.Request.Body, int64(ajustes.MaxBodyBytes))
+		contexto.Request.Body = http.MaxBytesReader(contexto.Writer, contexto.Request.Body, int64(ajustes.MaximoBytesCuerpo))
 		contexto.Next()
 	}
 }
 
 // ===== Módulo =====
 
-// Module arma Identidad completa (repositorios, servicios y handlers) y es lo
+// Modulo arma Identidad completa (repositorios, servicios y handlers) y es lo
 // único que main ve del servicio.
-type Module struct {
-	handler       *AuthHandler
-	adminHandler  *AdminUsuarioHandler
-	repo          domain.UsuarioRepository
+type Modulo struct {
+	handler       *ManejadorAuth
+	adminHandler  *ManejadorAdmin
+	repo          domain.RepositorioUsuarios
 	redis         *redis.Client
-	configuracion config.Config
+	configuracion config.Configuracion
 	// recuperacion emite tokens y despacha su correo (SUP-184). El endpoint que la
 	// expone (POST /auth/recuperar) es SUP-233.
-	recuperacion services.RecuperacionService
+	recuperacion *services.ServicioRecuperacion
 }
 
 // Recuperacion configura SUP-184. Sin Correo o sin URLRestablecer queda apagada:
 // Solicitar sólo valida el formato y no emite tokens ni correos.
 type Recuperacion struct {
-	Correo         mailer.Mailer
+	Correo         mailer.Enviador
 	URLRestablecer string
 	Log            *slog.Logger
 }
 
-// NewModule arma el módulo con una instantánea validada del arranque.
-func NewModule(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuperacion, configuracion config.Config) *Module {
+// NuevoModulo arma el módulo con una instantánea validada del arranque.
+func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuperacion, configuracion config.Configuracion) *Modulo {
 	ajustes := configuracion.Ajustes
-	repositorio := repositories.NewUsuarioRepository(base)
-	repositorioAdmin := repositories.NewAdminUsuarioRepository(base)
-	return &Module{
-		handler:       NewAuthHandler(services.NewAuthService(repositorio, idtoken.Validate, configuracion.GoogleClientID, ajustes.GoogleTimeout), configuracion.CookieSecure, configuracion.JWTSecret),
-		adminHandler:  NewAdminUsuarioHandler(services.NewAdminUsuarioService(repositorioAdmin)),
+	repositorio := repositories.NuevoRepositorioUsuarios(base)
+	repositorioAdmin := repositories.NuevoRepositorioAdmin(base)
+	return &Modulo{
+		handler:       NuevoManejadorAuth(services.NuevoServicioAuth(repositorio, idtoken.Validate, configuracion.ClienteGoogle, ajustes.PlazoGoogle), configuracion.CookieSegura, configuracion.ClaveJWT),
+		adminHandler:  NuevoManejadorAdmin(services.NuevoServicioAdmin(repositorioAdmin)),
 		repo:          repositorio,
 		redis:         redisCliente,
 		configuracion: configuracion,
-		recuperacion:  services.NewRecuperacionService(repositorio, repositories.NewRecuperacionRepository(base), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log, ajustes),
+		recuperacion:  services.NuevoServicioRecuperacion(repositorio, repositories.NuevoRepositorioRecuperacion(base), recuperacion.Correo, recuperacion.URLRestablecer, recuperacion.Log, ajustes),
 	}
 }
 
 // Cerrar despacha las solicitudes de recuperación pendientes antes de apagar el proceso.
-func (modulo *Module) Cerrar(contexto context.Context) error {
+func (modulo *Modulo) Cerrar(contexto context.Context) error {
 	return modulo.recuperacion.Cerrar(contexto)
 }
 
-// RegisterRoutes monta /auth/* y /admin/usuarios/* bajo group.
-func (modulo *Module) RegisterRoutes(grupo *gin.RouterGroup) {
+// RegistrarRutas monta /auth/* y /admin/usuarios/* bajo group.
+func (modulo *Modulo) RegistrarRutas(grupo *gin.RouterGroup) {
 	RegistrarRutasAuth(grupo, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
-	RegistrarRutasAdminUsuarios(grupo, modulo.adminHandler, modulo.repo, modulo.configuracion.JWTSecret)
+	RegistrarRutasAdminUsuarios(grupo, modulo.adminHandler, modulo.repo, modulo.configuracion.ClaveJWT)
 }
 
 // ===== Autenticación y perfil =====
 
 // RegistrarRutasAuth monta /auth/*. Registro, login y Google llevan contador
 // por IP; las rutas de perfil revalidan la cuenta en api.usuarios además del JWT.
-func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *AuthHandler, redisCliente *redis.Client, repositorio domain.UsuarioRepository, configuracion config.Config) {
+func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *ManejadorAuth, redisCliente *redis.Client, repositorio domain.RepositorioUsuarios, configuracion config.Configuracion) {
 	ajustes := configuracion.Ajustes
-	sesion := RequireAuth(repositorio, configuracion.JWTSecret)
+	sesion := ExigirSesion(repositorio, configuracion.ClaveJWT)
 	auth := grupo.Group("/auth")
-	auth.POST("/register", RateLimitRegistro(redisCliente, ajustes), manejador.RegistrarUsuario)
-	auth.POST("/login", RateLimitLogin(redisCliente, ajustes), manejador.LoginUsuario)
-	auth.POST("/google", RateLimitGoogle(redisCliente, ajustes), manejador.GoogleLoginUsuario)
+	auth.POST("/register", LimitarRegistro(redisCliente, ajustes), manejador.RegistrarUsuario)
+	auth.POST("/login", LimitarLogin(redisCliente, ajustes), manejador.LoginUsuario)
+	auth.POST("/google", LimitarGoogle(redisCliente, ajustes), manejador.LoginGoogleUsuario)
 	auth.POST("/logout", manejador.CerrarSesion)
 	auth.GET("/me", sesion, manejador.PerfilUsuario)
 	auth.PUT("/me", sesion, manejador.ActualizarPerfil)
@@ -201,8 +201,8 @@ func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *AuthHandler, redisCli
 
 // RegistrarRutasAdminUsuarios monta /admin/usuarios. Toda petición exige
 // sesión JWT vigente y rol admin.
-func RegistrarRutasAdminUsuarios(grupo *gin.RouterGroup, manejador *AdminUsuarioHandler, repositorio domain.UsuarioRepository, claveJWT string) {
-	admin := grupo.Group("/admin/usuarios", RequireAuth(repositorio, claveJWT), RequireRole(domain.RolAdmin))
+func RegistrarRutasAdminUsuarios(grupo *gin.RouterGroup, manejador *ManejadorAdmin, repositorio domain.RepositorioUsuarios, claveJWT string) {
+	admin := grupo.Group("/admin/usuarios", ExigirSesion(repositorio, claveJWT), ExigirRol(domain.RolAdmin))
 	admin.GET("", manejador.ListarUsuarios)
 	admin.GET("/metricas", manejador.Metricas)
 	admin.PUT("/:id", manejador.ActualizarUsuario)

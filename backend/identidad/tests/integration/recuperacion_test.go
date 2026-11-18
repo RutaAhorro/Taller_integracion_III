@@ -26,13 +26,13 @@ import (
 
 // Integración con PostgreSQL real tras 05_tokens_recuperacion.sql y 06_propiedad_permisos.sql.
 // Se omite salvo que existan IDENTIDAD_TEST_DB_URL (app_identity) e IDENTIDAD_TEST_ADMIN_URL (operador).
-func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
+func TestRepositorioRecuperacionPostgres(prueba *testing.T) {
 	dsn, adminDSN := os.Getenv("IDENTIDAD_TEST_DB_URL"), os.Getenv("IDENTIDAD_TEST_ADMIN_URL")
 	if dsn == "" || adminDSN == "" {
 		prueba.Skip("requiere IDENTIDAD_TEST_DB_URL e IDENTIDAD_TEST_ADMIN_URL")
 	}
 	contexto := context.Background()
-	baseDatos, errorOperacion := repositories.Open(contexto, dsn, config.AjustesPredeterminados())
+	baseDatos, errorOperacion := repositories.Abrir(contexto, dsn, config.AjustesPredeterminados())
 	if errorOperacion != nil {
 		prueba.Fatal(errorOperacion)
 	}
@@ -44,12 +44,12 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 		prueba.Fatal(errorObtenido)
 	}
 	usuario := &domain.Usuario{Correo: "recuperacion-" + uuid.NewString()[:8] + "@example.com", NombreCompleto: "Prueba", EstaActivo: true}
-	if errorObtenido := repositories.NewUsuarioRepository(baseDatos).Create(contexto, usuario); errorObtenido != nil {
+	if errorObtenido := repositories.NuevoRepositorioUsuarios(baseDatos).Crear(contexto, usuario); errorObtenido != nil {
 		prueba.Fatal(errorObtenido)
 	}
 	prueba.Cleanup(func() { admin.Exec("DELETE FROM api.usuarios WHERE id = ?", usuario.ID) })
 
-	repositorio := repositories.NewRecuperacionRepository(baseDatos)
+	repositorio := repositories.NuevoRepositorioRecuperacion(baseDatos)
 	if cantidad, espera, errorObtenido := repositorio.SolicitudesRecientes(contexto, usuario.ID, time.Hour, time.Minute); errorObtenido != nil || cantidad != 0 || espera {
 		prueba.Fatalf("sin tokens: %d %v %v", cantidad, espera, errorObtenido)
 	}
@@ -93,7 +93,7 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	if errorCorreo != nil {
 		prueba.Fatal(errorCorreo)
 	}
-	servicio := services.NewRecuperacionService(repositories.NewUsuarioRepository(baseDatos), repositorio, correo, "https://frontend.example/restablecer-contrasena", nil, config.AjustesPredeterminados())
+	servicio := services.NuevoServicioRecuperacion(repositories.NuevoRepositorioUsuarios(baseDatos), repositorio, correo, "https://frontend.example/restablecer-contrasena", nil, config.AjustesPredeterminados())
 	if errorObtenido := servicio.Solicitar(usuario.Correo); errorObtenido != nil {
 		prueba.Fatal(errorObtenido)
 	}

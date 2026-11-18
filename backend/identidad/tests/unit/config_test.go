@@ -24,21 +24,21 @@ func valid(prueba *testing.T) {
 func TestURLRestablecer(prueba *testing.T) {
 	valid(prueba)
 	prueba.Setenv("IDENTIDAD_URL_RESTABLECER", "https://frontend.example/restablecer-contrasena")
-	if contexto, errorObtenido := config.Load(); errorObtenido != nil || contexto.URLRestablecer != "https://frontend.example/restablecer-contrasena" {
-		prueba.Fatalf("%q %v", contexto.URLRestablecer, errorObtenido)
+	if configuracion, errorObtenido := config.Cargar(); errorObtenido != nil || configuracion.URLRestablecer != "https://frontend.example/restablecer-contrasena" {
+		prueba.Fatalf("%q %v", configuracion.URLRestablecer, errorObtenido)
 	}
 	for _, invalida := range []string{"ftp://frontend.example/r", "/restablecer", "https://frontend.example/r?token=x", "https://frontend.example/r#x", "https://user:fixture-private@frontend.example/r", "https://frontend.example/r x"} {
 		prueba.Setenv("IDENTIDAD_URL_RESTABLECER", invalida)
-		if _, errorObtenido := config.Load(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
+		if _, errorObtenido := config.Cargar(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
 			prueba.Fatalf("%q aceptada o con secreto en el error: %v", invalida, errorObtenido)
 		}
 	}
 }
 func TestValidDefaults(prueba *testing.T) {
 	valid(prueba)
-	contexto, errorObtenido := config.Load()
-	if errorObtenido != nil || !contexto.CookieSecure || contexto.ListenAddr != ":8080" || len(contexto.TrustedProxies) != 1 {
-		prueba.Fatalf("%+v %v", contexto, errorObtenido)
+	configuracion, errorObtenido := config.Cargar()
+	if errorObtenido != nil || !configuracion.CookieSegura || configuracion.DireccionEscucha != ":8080" || len(configuracion.ProxiesConfiables) != 1 {
+		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
 	}
 }
 func TestInvalidConfigFailsWithoutSecrets(prueba *testing.T) {
@@ -54,7 +54,7 @@ func TestInvalidConfigFailsWithoutSecrets(prueba *testing.T) {
 		prueba.Run(caso.key+caso.value, func(prueba *testing.T) {
 			valid(prueba)
 			prueba.Setenv(caso.key, caso.value)
-			_, errorObtenido := config.Load()
+			_, errorObtenido := config.Cargar()
 			if errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
 				prueba.Fatalf("config aceptada o secretos expuestos: %v", errorObtenido)
 			}
@@ -66,9 +66,9 @@ func TestExplicitLocalAndProxyConfig(prueba *testing.T) {
 	prueba.Setenv("IDENTIDAD_COOKIE_SECURE", "false")
 	prueba.Setenv("IDENTIDAD_TRUSTED_PROXIES", "172.30.0.2,10.0.0.0/24")
 	prueba.Setenv("CORS_ALLOWED_ORIGINS", "https://frontend.example,http://localhost:3000")
-	contexto, errorObtenido := config.Load()
-	if errorObtenido != nil || contexto.CookieSecure || len(contexto.TrustedProxies) != 2 || len(contexto.AllowedOrigins) != 2 {
-		prueba.Fatalf("%+v %v", contexto, errorObtenido)
+	configuracion, errorObtenido := config.Cargar()
+	if errorObtenido != nil || configuracion.CookieSegura || len(configuracion.ProxiesConfiables) != 2 || len(configuracion.OrigenesPermitidos) != 2 {
+		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
 	}
 }
 
@@ -76,9 +76,9 @@ func TestExplicitLocalAndProxyConfig(prueba *testing.T) {
 func TestClienteGoogleSeCargaDelEntorno(prueba *testing.T) {
 	valid(prueba)
 	prueba.Setenv("GOOGLE_CLIENT_ID", "cliente-de-prueba")
-	configuracion, errorCarga := config.Load()
-	if errorCarga != nil || configuracion.GoogleClientID != "cliente-de-prueba" {
-		prueba.Fatalf("client ID de Google no cargado: %q %v", configuracion.GoogleClientID, errorCarga)
+	configuracion, errorCarga := config.Cargar()
+	if errorCarga != nil || configuracion.ClienteGoogle != "cliente-de-prueba" {
+		prueba.Fatalf("client ID de Google no cargado: %q %v", configuracion.ClienteGoogle, errorCarga)
 	}
 }
 
@@ -105,31 +105,31 @@ func conSMTP(prueba *testing.T) {
 func TestCorreoSinCredencialesQuedaDeshabilitado(prueba *testing.T) {
 	sinCorreo(prueba)
 	prueba.Setenv("SMTP_HOST", "smtp.gmail.com")
-	contexto, errorObtenido := config.LoadCorreo()
-	if errorObtenido != nil || contexto.Modo != config.CorreoDeshabilitado || contexto.Clave != "" {
-		prueba.Fatalf("%+v %v", contexto, errorObtenido)
+	configuracion, errorObtenido := config.CargarCorreo()
+	if errorObtenido != nil || configuracion.Modo != config.CorreoDeshabilitado || configuracion.Clave != "" {
+		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
 	}
 }
 
 func TestCorreoSMTPConDefaults(prueba *testing.T) {
 	conSMTP(prueba)
-	contexto, errorObtenido := config.LoadCorreo()
-	if errorObtenido != nil || contexto.Modo != config.CorreoSMTP || contexto.Puerto != 587 || contexto.TLS != config.TLSStartTLS || contexto.Remitente != "emisor@example.com" {
-		prueba.Fatalf("%+v %v", contexto, errorObtenido)
+	configuracion, errorObtenido := config.CargarCorreo()
+	if errorObtenido != nil || configuracion.Modo != config.CorreoSMTP || configuracion.Puerto != 587 || configuracion.TLS != config.TLSStartTLS || configuracion.Remitente != "emisor@example.com" {
+		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
 	}
 	prueba.Setenv("SMTP_PORT", "465")
 	prueba.Setenv("SMTP_FROM", "RutaAhorro <emisor@example.com>")
-	contexto, errorObtenido = config.LoadCorreo()
-	if errorObtenido != nil || contexto.Puerto != 465 || contexto.TLS != config.TLSImplicito || contexto.Remitente != "RutaAhorro <emisor@example.com>" {
-		prueba.Fatalf("465 debe usar TLS implícito: %+v %v", contexto, errorObtenido)
+	configuracion, errorObtenido = config.CargarCorreo()
+	if errorObtenido != nil || configuracion.Puerto != 465 || configuracion.TLS != config.TLSImplicito || configuracion.Remitente != "RutaAhorro <emisor@example.com>" {
+		prueba.Fatalf("465 debe usar TLS implícito: %+v %v", configuracion, errorObtenido)
 	}
 }
 
 func TestCorreoLogNoExigeCredenciales(prueba *testing.T) {
 	sinCorreo(prueba)
 	prueba.Setenv("IDENTIDAD_CORREO_MODO", "log")
-	if contexto, errorObtenido := config.LoadCorreo(); errorObtenido != nil || contexto.Modo != config.CorreoLog {
-		prueba.Fatalf("%+v %v", contexto, errorObtenido)
+	if configuracion, errorObtenido := config.CargarCorreo(); errorObtenido != nil || configuracion.Modo != config.CorreoLog {
+		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
 	}
 }
 
@@ -154,8 +154,8 @@ func TestCorreoInvalidoNoExponeClave(prueba *testing.T) {
 			for clave, valor := range caso {
 				prueba.Setenv(clave, valor)
 			}
-			if contexto, errorObtenido := config.LoadCorreo(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
-				prueba.Fatalf("config aceptada o clave expuesta: %+v %v", contexto, errorObtenido)
+			if configuracion, errorObtenido := config.CargarCorreo(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
+				prueba.Fatalf("config aceptada o clave expuesta: %+v %v", configuracion, errorObtenido)
 			}
 		})
 	}
@@ -164,12 +164,12 @@ func TestCorreoInvalidoNoExponeClave(prueba *testing.T) {
 func TestLoadIncluyeCorreoYFallaSiEsInvalido(prueba *testing.T) {
 	valid(prueba)
 	conSMTP(prueba)
-	contexto, errorOperacion := config.Load()
-	if errorOperacion != nil || contexto.Correo.Modo != config.CorreoSMTP {
-		prueba.Fatalf("%+v %v", contexto.Correo.Modo, errorOperacion)
+	configuracion, errorOperacion := config.Cargar()
+	if errorOperacion != nil || configuracion.Correo.Modo != config.CorreoSMTP {
+		prueba.Fatalf("%+v %v", configuracion.Correo.Modo, errorOperacion)
 	}
 	prueba.Setenv("SMTP_TLS", "none")
-	if _, errorObtenido := config.Load(); errorObtenido == nil {
+	if _, errorObtenido := config.Cargar(); errorObtenido == nil {
 		prueba.Fatal("Load aceptó un transporte SMTP sin cifrado")
 	}
 }

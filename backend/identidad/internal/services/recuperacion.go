@@ -24,23 +24,13 @@ import (
 
 // ===== Servicio =====
 
-// RecuperacionService emite el token de restablecimiento y despacha su correo.
-type RecuperacionService interface {
-	// Solicitar valida el formato y despacha el resto en segundo plano: la
-	// respuesta y su tiempo no revelan si la cuenta existe, está inactiva o usa
-	// Google. Sólo devuelve ErrCorreoInvalido.
-	Solicitar(correo string) error
-	// Cerrar espera los envíos en curso; se llama al apagar Identidad.
-	Cerrar(contexto context.Context) error
-}
-
-// recuperacionService procesa cada solicitud en su propia goroutine. No hay
+// ServicioRecuperacion procesa cada solicitud en su propia goroutine. No hay
 // cola: el límite de carga lo ponen el rate limit del endpoint y el límite por
 // cuenta de procesar.
-type recuperacionService struct {
-	usuarios       domain.UsuarioRepository
-	tokens         domain.RecuperacionRepository
-	correo         mailer.Mailer
+type ServicioRecuperacion struct {
+	usuarios       domain.RepositorioUsuarios
+	tokens         domain.RepositorioRecuperacion
+	correo         mailer.Enviador
 	urlRestablecer string
 	log            *slog.Logger
 	ajustes        config.Ajustes
@@ -51,13 +41,13 @@ type recuperacionService struct {
 	enCurso sync.WaitGroup
 }
 
-// NewRecuperacionService arma el servicio. Sin transporte de correo o sin URL de
+// NuevoServicioRecuperacion arma el servicio. Sin transporte de correo o sin URL de
 // restablecimiento queda apagado: valida el formato pero no emite tokens ni correos.
-func NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.RecuperacionRepository, correo mailer.Mailer, urlRestablecer string, registrador *slog.Logger, ajustes config.Ajustes) RecuperacionService {
+func NuevoServicioRecuperacion(usuarios domain.RepositorioUsuarios, tokens domain.RepositorioRecuperacion, correo mailer.Enviador, urlRestablecer string, registrador *slog.Logger, ajustes config.Ajustes) *ServicioRecuperacion {
 	if registrador == nil {
 		registrador = slog.Default()
 	}
-	return &recuperacionService{
+	return &ServicioRecuperacion{
 		usuarios:       usuarios,
 		tokens:         tokens,
 		correo:         correo,
@@ -68,10 +58,12 @@ func NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.Rec
 	}
 }
 
-// Solicitar nunca bloquea la petición HTTP: valida el formato y delega el resto.
-func (servicio *recuperacionService) Solicitar(correo string) error {
+// Solicitar nunca bloquea la petición HTTP: valida el formato y delega el resto
+// en segundo plano, así que la respuesta y su tiempo no revelan si la cuenta
+// existe, está inactiva o usa Google. Sólo devuelve ErrCorreoInvalido.
+func (servicio *ServicioRecuperacion) Solicitar(correo string) error {
 	correo = normalizarCorreo(correo)
-	if !validarEmail(correo) {
+	if !formatoCorreoValido(correo) {
 		return ErrCorreoInvalido
 	}
 	if !servicio.activa {
@@ -85,8 +77,9 @@ func (servicio *recuperacionService) Solicitar(correo string) error {
 	return nil
 }
 
-// Cerrar espera los envíos en curso hasta que venza el plazo del apagado.
-func (servicio *recuperacionService) Cerrar(contexto context.Context) error {
+// Cerrar espera los envíos en curso hasta que venza el plazo del apagado; main
+// lo llama al recibir SIGTERM para no perder correos ya aceptados.
+func (servicio *ServicioRecuperacion) Cerrar(contexto context.Context) error {
 	terminado := make(chan struct{})
 	go func() {
 		servicio.enCurso.Wait()
@@ -102,10 +95,10 @@ func (servicio *recuperacionService) Cerrar(contexto context.Context) error {
 
 // procesar emite el token y envía el correo. Las cuentas inexistentes o inactivas se
 // ignoran en silencio. Nunca registra el correo: los logs usan el UUID de la cuenta.
-func (servicio *recuperacionService) procesar(correo string) {
-	contexto, cancelar := context.WithTimeout(context.Background(), servicio.ajustes.RecuperacionTimeout)
+func (servicio *ServicioRecuperacion) procesar(correo string) {
+	contexto, cancelar := context.WithTimeout(context.Background(), servicio.ajustes.RecuperacionPlazo)
 	defer cancelar()
-	usuario, errorOperacion := servicio.usuarios.FindByEmail(contexto, correo)
+	usuario, errorOperacion := servicio.usuarios.BuscarPorCorreo(contexto, correo)
 	if errorOperacion != nil {
 		servicio.log.Error("recuperacion_fallida", "etapa", "cuenta", "error", errorOperacion)
 		return
@@ -118,7 +111,7 @@ func (servicio *recuperacionService) procesar(correo string) {
 		servicio.log.Error("recuperacion_fallida", "etapa", "limite", "usuario_id", usuario.ID, "error", errorOperacion)
 		return
 	}
-	if enEspera || enVentana >= servicio.ajustes.RecuperacionMax {
+	if enEspera || enVentana >= servicio.ajustes.RecuperacionMaximo {
 		servicio.log.Info("recuperacion_limitada", "usuario_id", usuario.ID)
 		return
 	}

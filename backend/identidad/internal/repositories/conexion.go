@@ -16,8 +16,8 @@ import (
 
 // ===== Conexión =====
 
-// Open conecta a PostgreSQL y aplica los límites del pool validados al arrancar.
-func Open(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.DB, error) {
+// Abrir conecta a PostgreSQL y aplica los límites del pool validados al arrancar.
+func Abrir(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.DB, error) {
 	baseDatos, errorObtenido := gorm.Open(postgres.Open(dsn), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
 	if errorObtenido != nil {
 		return nil, errors.New("no se pudo configurar PostgreSQL de Identidad")
@@ -26,9 +26,9 @@ func Open(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.D
 	if errorObtenido != nil {
 		return nil, errors.New("no se pudo obtener el pool de Identidad")
 	}
-	pool.SetMaxOpenConns(ajustes.DBMaxOpen)
-	pool.SetMaxIdleConns(ajustes.DBMaxIdle)
-	pool.SetConnMaxLifetime(ajustes.DBMaxLifetime)
+	pool.SetMaxOpenConns(ajustes.MaximoConexionesAbiertas)
+	pool.SetMaxIdleConns(ajustes.MaximoConexionesInactivas)
+	pool.SetConnMaxLifetime(ajustes.VidaMaximaConexion)
 	if pool.PingContext(contexto) != nil {
 		pool.Close()
 		return nil, errors.New("no se pudo conectar a PostgreSQL de Identidad")
@@ -38,9 +38,9 @@ func Open(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.D
 
 // ===== Verificación de almacenamiento =====
 
-// VerifyStorage comprueba las tablas que utiliza Identidad, incluida la
+// VerificarAlmacenamiento comprueba las tablas que utiliza Identidad, incluida la
 // auditoría administrativa agregada en SUP-242.
-func VerifyStorage(contexto context.Context, baseDatos *gorm.DB) error {
+func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error {
 	var permitido bool
 	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT
         has_schema_privilege(current_user, 'api', 'USAGE') AND
@@ -64,7 +64,7 @@ func VerifyStorage(contexto context.Context, baseDatos *gorm.DB) error {
 	return nil
 }
 
-// VerificarRecuperacion comprueba api.tokens_recuperacion. A diferencia de VerifyStorage,
+// VerificarRecuperacion comprueba api.tokens_recuperacion. A diferencia de VerificarAlmacenamiento,
 // su ausencia no impide iniciar: el login sigue disponible y sólo se apaga la recuperación.
 func VerificarRecuperacion(contexto context.Context, baseDatos *gorm.DB) error {
 	var permitido bool
