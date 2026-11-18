@@ -6,133 +6,140 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
-	"github.com/google/uuid"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/danirc2024/Taller_integracion_III/backend/control_scraping/internal/domain"
+	"github.com/google/uuid"
 )
 
-func (s *scraperService) ingestarDurable(ctx context.Context, trabajoID *string, input domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
-	if len(input.Productos) == 0 {
+// ===== Registro durable de lotes =====
+
+// ingestarDurable registra el lote una sola vez y lo procesa bajo una lease.
+func (servicio *scraperService) ingestarDurable(contexto context.Context, trabajoID *string, entrada domain.IngestaLoteDTO) (*domain.IngestaResultadoDTO, error) {
+	if len(entrada.Productos) == 0 {
 		return nil, ErrLoteVacio
 	}
-	if len(input.Productos) > 1000 {
+	if len(entrada.Productos) > 1000 {
 		return nil, ErrLoteExcedeMaximo
 	}
-	id, err := uuid.Parse(input.LoteID)
-	if err != nil {
+	identificador, errorObtenido := uuid.Parse(entrada.LoteID)
+	if errorObtenido != nil {
 		return nil, ErrUUIDInvalido
 	}
-	var jobID *uuid.UUID
+	var trabajoUUID *uuid.UUID
 	if trabajoID != nil {
-		parsed, err := uuid.Parse(strings.TrimSpace(*trabajoID))
-		if err != nil {
+		analizado, errorObtenido := uuid.Parse(strings.TrimSpace(*trabajoID))
+		if errorObtenido != nil {
 			return nil, ErrUUIDInvalido
 		}
-		jobID = &parsed
+		trabajoUUID = &analizado
 	}
-	data, err := json.Marshal(input)
-	if err != nil {
-		return nil, err
+	datos, errorObtenido := json.Marshal(entrada)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	hashData, err := json.Marshal(struct {
+	hashDatos, errorObtenido := json.Marshal(struct {
 		TrabajoID *uuid.UUID
 		Input     domain.IngestaLoteDTO
-	}{jobID, input})
-	if err != nil {
-		return nil, err
+	}{trabajoUUID, entrada})
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	hash := sha256.Sum256(hashData)
-	e, err := s.entregas.Registrar(ctx, &domain.Entrega{ID: id, TrabajoID: jobID, Payload: string(data), PayloadHash: hex.EncodeToString(hash[:])})
-	if err != nil {
-		return nil, err
+	huella := sha256.Sum256(hashDatos)
+	entrega, errorObtenido := servicio.entregas.Registrar(contexto, &domain.Entrega{ID: identificador, TrabajoID: trabajoUUID, Payload: string(datos), PayloadHash: hex.EncodeToString(huella[:])})
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if e.Estado == "confirmada" {
-		var result domain.IngestaResultadoDTO
-		err = json.Unmarshal([]byte(*e.Resultado), &result)
-		return &result, err
+	if entrega.Estado == "confirmada" {
+		var resultado domain.IngestaResultadoDTO
+		errorObtenido = json.Unmarshal([]byte(*entrega.Resultado), &resultado)
+		return &resultado, errorObtenido
 	}
-	if e.Estado == "fallida" {
+	if entrega.Estado == "fallida" {
 		return nil, ErrEntregaFallida
 	}
-	e, err = s.entregas.Adquirir(ctx, &id)
-	if err != nil {
-		return nil, err
+	entrega, errorObtenido = servicio.entregas.Adquirir(contexto, &identificador)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if e == nil {
+	if entrega == nil {
 		return nil, ErrEntregaPendiente
 	}
-	return s.entregar(ctx, e)
+	return servicio.entregar(contexto, entrega)
 }
 
-func (s *scraperService) entregar(ctx context.Context, e *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
-	ctx = domain.ConLoteID(ctx, e.ID.String())
-	var input domain.IngestaLoteDTO
-	var result *domain.IngestaResultadoDTO
-	err := json.Unmarshal([]byte(e.Payload), &input)
-	if err == nil && e.SucursalID == nil {
-		chain := e.CadenaID
-		if chain == 0 && input.Supermercado != nil {
-			var c *domain.CadenaSupermercado
-			c, err = s.ingesta.ObtenerCadena(ctx, 0, *input.Supermercado)
-			if err == nil && c != nil {
-				chain = c.ID
+// ===== Resolución, entrega y reintentos =====
+
+// entregar resuelve la sucursal, ingesta en Catálogo y confirma o reprograma el lote.
+func (servicio *scraperService) entregar(contexto context.Context, entrega *domain.Entrega) (*domain.IngestaResultadoDTO, error) {
+	contexto = domain.ConLoteID(contexto, entrega.ID.String())
+	var entrada domain.IngestaLoteDTO
+	var resultado *domain.IngestaResultadoDTO
+	errorObtenido := json.Unmarshal([]byte(entrega.Payload), &entrada)
+	if errorObtenido == nil && entrega.SucursalID == nil {
+		cadenaObtenida := entrega.CadenaID
+		if cadenaObtenida == 0 && entrada.Supermercado != nil {
+			var cadena *domain.CadenaSupermercado
+			cadena, errorObtenido = servicio.ingesta.ObtenerCadena(contexto, 0, *entrada.Supermercado)
+			if errorObtenido == nil && cadena != nil {
+				cadenaObtenida = cadena.ID
 			}
 		}
-		if err == nil {
-			var branch *domain.SucursalSupermercado
-			branch, err = s.ingesta.ObtenerSucursal(ctx, chain, input.SucursalID, input.CodigoSucursal)
-			if err == nil && branch == nil {
-				err = ErrSucursalNoEncontrada
+		if errorObtenido == nil {
+			var sucursal *domain.SucursalSupermercado
+			sucursal, errorObtenido = servicio.ingesta.ObtenerSucursal(contexto, cadenaObtenida, entrada.SucursalID, entrada.CodigoSucursal)
+			if errorObtenido == nil && sucursal == nil {
+				errorObtenido = ErrSucursalNoEncontrada
 			}
-			if err == nil {
-				var id int
-				id, err = s.entregas.FijarSucursal(ctx, e.ID, branch.ID)
-				e.SucursalID = &id
+			if errorObtenido == nil {
+				var identificador int
+				identificador, errorObtenido = servicio.entregas.FijarSucursal(contexto, entrega.ID, sucursal.ID)
+				entrega.SucursalID = &identificador
 			}
 		}
 	}
-	if err == nil {
-		result, err = s.ingesta.IngestarLote(ctx, e.TrabajoID, *e.SucursalID, input.Productos)
+	if errorObtenido == nil {
+		resultado, errorObtenido = servicio.ingesta.IngestarLote(contexto, entrega.TrabajoID, *entrega.SucursalID, entrada.Productos)
 	}
-	confirmed := err == nil
-	if confirmed {
-		err = s.entregas.Confirmar(ctx, e, *result)
-		if err == nil {
-			return result, nil
+	confirmado := errorObtenido == nil
+	if confirmado {
+		errorObtenido = servicio.entregas.Confirmar(contexto, entrega, *resultado)
+		if errorObtenido == nil {
+			return resultado, nil
 		}
-		err = ErrContadorPendiente
+		errorObtenido = ErrContadorPendiente
 	}
-	permanent := errors.Is(err, ErrSucursalNoEncontrada) || errors.Is(err, ErrIdempotencia) || errors.Is(err, ErrCatalogoRechazo)
-	code := "catalogo_unavailable"
-	if confirmed {
-		code = "contador_pendiente"
+	permanente := errors.Is(errorObtenido, ErrSucursalNoEncontrada) || errors.Is(errorObtenido, ErrIdempotencia) || errors.Is(errorObtenido, ErrCatalogoRechazo)
+	codigo := "catalogo_unavailable"
+	if confirmado {
+		codigo = "contador_pendiente"
 	}
-	if permanent {
-		code = "lote_rechazado"
+	if permanente {
+		codigo = "lote_rechazado"
 	}
 	// No usar el contexto cancelado de una petición para liberar/reprogramar.
-	retryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
-	defer cancel()
-	if failure := s.entregas.Reprogramar(retryCtx, e, code, permanent); failure != nil {
-		slog.Error("ingesta_reprogramar_error", "lote_id", e.ID, "error", failure)
+	contextoReintento, cancelar := context.WithTimeout(context.WithoutCancel(contexto), 2*time.Second)
+	defer cancelar()
+	if fallo := servicio.entregas.Reprogramar(contextoReintento, entrega, codigo, permanente); fallo != nil {
+		slog.Error("ingesta_reprogramar_error", "lote_id", entrega.ID, "error", fallo)
 	}
-	slog.Warn("ingesta_pendiente", "lote_id", e.ID, "trabajo_id", e.TrabajoID, "intento", e.Intentos, "codigo", code)
-	return nil, err
+	slog.Warn("ingesta_pendiente", "lote_id", entrega.ID, "trabajo_id", entrega.TrabajoID, "intento", entrega.Intentos, "codigo", codigo)
+	return nil, errorObtenido
 }
 
 // Recuperar entrega una entrada por tick; las leases permiten varias API.
-func (s *scraperService) Recuperar(ctx context.Context) {
-	if s.entregas == nil {
+func (servicio *scraperService) Recuperar(contexto context.Context) {
+	if servicio.entregas == nil {
 		return
 	}
-	e, err := s.entregas.Adquirir(ctx, nil)
-	if err != nil {
-		slog.Error("ingesta_recuperacion_error", "error", err)
+	entrega, errorObtenido := servicio.entregas.Adquirir(contexto, nil)
+	if errorObtenido != nil {
+		slog.Error("ingesta_recuperacion_error", "error", errorObtenido)
 		return
 	}
-	if e != nil {
-		_, _ = s.entregar(ctx, e)
+	if entrega != nil {
+		_, _ = servicio.entregar(contexto, entrega)
 	}
 }

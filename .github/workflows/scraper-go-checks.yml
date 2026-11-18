@@ -64,12 +64,12 @@ jobs:
           SCRAPER_MEMORY_ITEMS: '200000'
           SCRAPER_MEMORY_LIMIT_MB: '150'
           SCRAPER_MEMORY_RESULT: ${{ github.workspace }}/backend/scraper_go/ram-result.json
-        run: go test -run TestMemoryGate -count=1 -timeout 10m ./internal/worker
+        run: go test -run TestMemoryGate -count=1 -timeout 10m ./tests/performance/worker
       - name: Compilar test de RAM
         working-directory: backend/scraper_go
         env:
           CGO_ENABLED: '0'
-        run: go test -c -o scraper-memory.test ./internal/worker
+        run: go test -c -o scraper-memory.test ./tests/performance/worker
       - name: Gate de RAM en cgroup de 192 MB (OOM)
         working-directory: backend/scraper_go
         run: |

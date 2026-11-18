@@ -2,6 +2,8 @@
 // worker, los spiders y los adaptadores de salida.
 package domain
 
+// ===== Modelos del Dominio =====
+
 // Product es el documento que se guarda en el spool y se envía a la API.
 // Los campos opcionales usan punteros para conservar los valores null esperados
 // por la API; no se debe usar omitempty en este contrato.
@@ -38,10 +40,16 @@ type Job struct {
 	EnrichEAN    bool
 }
 
-func StringPtr(value string) *string {
-	return &value
+// ===== Constructores de Punteros =====
+
+// StringPtr devuelve un puntero a una copia del valor, para los campos
+// opcionales del contrato.
+func StringPtr(valor string) *string {
+	return &valor
 }
 
-func BoolPtr(value bool) *bool {
-	return &value
+// BoolPtr devuelve un puntero a una copia del valor, para los campos
+// opcionales del contrato.
+func BoolPtr(valor bool) *bool {
+	return &valor
 }

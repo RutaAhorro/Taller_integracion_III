@@ -1,56 +1,24 @@
 // Vista del asistente: presenta mensajes de la API y delega las solicitudes en useChatbot.
 import { 
-  Sparkles, CheckCircle2, 
-  Trash2, 
-  User, Bot, X, ShieldAlert, Loader2, Info, Send
+  Trash2,
+  User, Bot, X, ShieldAlert, Info, Send
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
-import { OutOfStockAlert } from '@/components/chatbot/OutOfStockAlert';
-import { RichRecipeCard } from '@/components/chatbot/RichRecipeCard';
 import { TypingIndicator } from '@/components/chatbot/TypingIndicator';
-import { useToast } from '@/contexts/ToastContext';
 import ReactMarkdown from 'react-markdown';
 import { useChatbot } from '@/hooks/useChatbot';
 
 const SUGGESTIONS = [
-  'Almuerzo saludable para 4 por menos de $15.000',
-  'Asado familiar económico para este fin de semana',
-  'Busco Harina de Almendras 1kg',
+  'Busco leche por menos de $2.000',
+  '¿Qué arroz está disponible?',
+  'Busco harina de almendras',
 ];
-
-const PROCESSING_STEPS = [
-  'Extrayendo ingredientes y cantidades...',
-  'Cruzando stock en supermercados de Temuco...',
-  'Generando plan de ahorro...',
-];
-
-// Cada paso está hecho, en curso o pendiente según el paso actual.
-function ProcessingStep({ label, step, current }: { label: string; step: number; current: number }) {
-  const done = current > step;
-  const active = current === step;
-  return (
-    <div className="flex items-center gap-3 text-sm">
-      {done ? (
-        <CheckCircle2 className="h-4 w-4 text-foreground" />
-      ) : active ? (
-        <Loader2 className={cn('h-4 w-4 animate-spin', step === 1 ? 'text-muted-foreground' : 'text-foreground')} />
-      ) : (
-        <div className="h-4 w-4 rounded-full border-2 border-border" />
-      )}
-      <span className={done ? 'text-foreground' : active && step > 1 ? 'text-foreground font-medium' : 'text-muted-foreground'}>
-        {label}
-      </span>
-    </div>
-  );
-}
 
 export default function Chatbot() {
   const navigate = useNavigate();
-  const { toast } = useToast();
   
   const {
-    user,
     messages,
     inputValue,
     setInputValue,
@@ -61,10 +29,6 @@ export default function Chatbot() {
     handleSend,
     handleClear
   } = useChatbot();
-
-  const handleAddToCart = () => {
-    toast("Ingredientes agregados a tu carrito", "success");
-  };
 
   return (
     <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden relative">
@@ -78,21 +42,13 @@ export default function Chatbot() {
             <div className="flex items-center gap-2 mt-0.5">
               <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)] whitespace-nowrap">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
-                Integración pendiente
+                Consultas vía Gateway
               </span>
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="hidden sm:flex group relative items-center justify-center rounded-md border border-border bg-card px-3 py-1.5 text-xs font-medium cursor-pointer hover:bg-accent transition-colors">
-            <Sparkles className="h-3.5 w-3.5 mr-1.5 text-primary"/>
-            Consultas IA: {user?.cuota_tokens_ia ?? 0} disponibles
-            <div className="absolute top-full mt-2 w-48 rounded-md border border-border bg-card p-2 text-center text-xs text-muted-foreground opacity-0 shadow-md transition-opacity group-hover:opacity-100 pointer-events-none z-50">
-              Conviértete en Colaborador para cuota extendida
-            </div>
-          </div>
-
           <div className="flex items-center gap-1 border-l border-border pl-2 ml-2">
             <button onClick={handleClear} className="p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors" title="Vaciar chat">
               <Trash2 className="h-4 w-4"/>
@@ -102,8 +58,8 @@ export default function Chatbot() {
       </header>
 
       <div role="note" className="border-b border-border bg-muted px-4 py-3 text-sm text-foreground">
-        Vista previa: el chat aún no está disponible. La conexión con el asistente está pendiente de SUP-253;
-        los envíos pueden devolver un error y no generan recetas ni listas de compra.
+        Puedes consultar al asistente con tu sesión. La selección de productos de recetas
+        y su guardado en listas siguen pendientes de integración (SUP-325, SUP-329 y SUP-241/SUP-318).
       </div>
 
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
@@ -123,8 +79,8 @@ export default function Chatbot() {
                   ? "bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] rounded-br-none"
                   : "bg-card border border-border text-foreground rounded-bl-none shadow-sm"
               )}>
-                {msg.type === 'text' && (
-                  <div className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
+                {(msg.type === 'text' || msg.type === 'error') && (
+                  <div role={msg.type === 'error' ? 'alert' : undefined} className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
                     <ReactMarkdown>{msg.content || ''}</ReactMarkdown>
                   </div>
                 )}
@@ -132,14 +88,16 @@ export default function Chatbot() {
                 {msg.type === 'welcome' && (
                   <div className="space-y-4">
                     <p className="leading-relaxed">
-                      ¡Hola! Soy tu asistente inteligente de compras. Puedo ayudarte a planificar tus comidas optimizando tu presupuesto con los precios reales de Temuco. ¿Qué tienes en mente hoy?
+                      ¡Hola! Puedes consultar productos del catálogo y pedir recomendaciones de compra.
+                      El chat todavía no guarda ingredientes ni calcula rutas.
                     </p>
                     <div className="flex flex-col gap-2 mt-4">
                       {SUGGESTIONS.map((chip) => (
                         <button
                           key={chip}
+                          disabled={isProcessing}
                           onClick={() => handleSend(chip)}
-                          className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium"
+                          className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           "{chip}"
                         </button>
@@ -149,21 +107,12 @@ export default function Chatbot() {
                 )}
 
                 {msg.type === 'processing' && (
-                  <div className="space-y-3 py-1">
-                    {PROCESSING_STEPS.map((label, indice) => (
-                      <ProcessingStep key={label} label={label} step={indice + 1} current={msg.step ?? 1} />
-                    ))}
+                  <div role="status" className="space-y-3 py-1">
+                    <p>Consultando al asistente…</p>
                     <TypingIndicator className="mt-2" />
                   </div>
                 )}
 
-                {msg.type === 'out-of-stock' && (
-                  <OutOfStockAlert query={msg.query} />
-                )}
-
-                {msg.type === 'rich-recipe' && (
-                  <RichRecipeCard onAddToCart={handleAddToCart} />
-                )}
               </div>
 
               {msg.role === 'user' && (
@@ -184,6 +133,7 @@ export default function Chatbot() {
           >
             <textarea 
               value={inputValue}
+              disabled={isProcessing}
               onChange={(evento) => setInputValue(evento.target.value)}
               onKeyDown={(evento) => {
                 if (evento.key === 'Enter' && !evento.shiftKey) {
@@ -191,12 +141,14 @@ export default function Chatbot() {
                   handleSend(inputValue);
                 }
               }}
-              placeholder="Pide una receta, ingredientes o presupuesto..."
+              aria-label="Mensaje para el asistente"
+              placeholder="Consulta un producto o pide una recomendación..."
               className="w-full max-h-32 min-h-[44px] bg-transparent resize-none outline-none py-2.5 px-3 text-[clamp(0.875rem,2vw,1.125rem)] text-foreground placeholder:text-muted-foreground"
               rows={1}
             />
             <button 
               type="submit"
+              aria-label="Enviar mensaje"
               disabled={!inputValue.trim() || isProcessing}
               className="p-2.5 mb-0.5 rounded-xl bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] hover:bg-primary disabled:bg-muted disabled:text-muted-foreground transition-colors shrink-0 flex items-center justify-center"
             >
@@ -205,7 +157,7 @@ export default function Chatbot() {
           </form>
           <p className="text-center text-[10px] text-muted-foreground mt-2 flex items-center justify-center gap-1">
             <Info className="h-3 w-3"/>
-            La validación de precios y stock estará disponible al integrar el asistente (SUP-253).
+              Las recomendaciones dependen de los datos disponibles en Catálogo; confirma precio y stock antes de comprar.
           </p>
         </div>
       </div>
@@ -221,7 +173,7 @@ export default function Chatbot() {
                 Inicia sesión para consultar al Asistente IA
               </h2>
               <p className="text-sm text-muted-foreground leading-relaxed">
-                El cálculo inteligente de recetas y optimización de rutas requiere una cuenta activa para personalizar tu experiencia.
+                Para consultar al asistente necesitas una sesión válida. Si expiró, vuelve a iniciar sesión.
               </p>
               
               <div className="pt-4 space-y-3">

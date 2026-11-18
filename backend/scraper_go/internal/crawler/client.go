@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
 	"github.com/temoto/robotstxt"
 )
 
@@ -36,6 +37,8 @@ var (
 	ErrResponseTooLarge = errors.New("la respuesta supera DOWNLOAD_MAXSIZE")
 )
 
+// Response es la respuesta HTTP aceptada: URL final, estado, cabeceras y
+// cuerpo.
 type Response struct {
 	URL    *url.URL
 	Status int
@@ -43,6 +46,8 @@ type Response struct {
 	Body   []byte
 }
 
+// BlockedError indica que el sitio bloqueó la petición por estado HTTP o por
+// un challenge.
 type BlockedError struct {
 	URL    string
 	Status int
@@ -54,245 +59,303 @@ type BlockedError struct {
 	BlockedResponses int
 }
 
-func (e *BlockedError) Error() string {
-	return fmt.Sprintf("bloqueo detectado en %s (status=%d, motivo=%s)", e.URL, e.Status, e.Reason)
+// Error implementa error con URL, status y motivo del bloqueo.
+func (errorEstado *BlockedError) Error() string {
+	return fmt.Sprintf("bloqueo detectado en %s (status=%d, motivo=%s)", errorEstado.URL, errorEstado.Status, errorEstado.Reason)
 }
 
+// HTTPStatusError representa un estado HTTP que el crawler no puede
+// recuperar: 5xx tras agotar los reintentos o 4xx distinto de 404.
 type HTTPStatusError struct {
 	URL    string
 	Status int
 }
 
-func (e *HTTPStatusError) Error() string {
-	return fmt.Sprintf("HTTP %d en %s", e.Status, e.URL)
+// Error implementa error con el estado y la URL.
+func (errorEstado *HTTPStatusError) Error() string {
+	return fmt.Sprintf("HTTP %d en %s", errorEstado.Status, errorEstado.URL)
 }
 
+// Options agrupa la configuración del crawler: identidad, tiempos, tamaño
+// máximo, reintentos, robots.txt y backoff.
 type Options struct {
-	UserAgent  string
-	Delay      time.Duration
-	Timeout    time.Duration
-	MaxSize    int64
-	MaxRetries int
-	Logger     *slog.Logger
+	UserAgent        string
+	Delay            time.Duration
+	Timeout          time.Duration
+	MaxSize          int64
+	MaxRetries       int
+	RobotsCacheTTL   time.Duration
+	RobotsFailureTTL time.Duration
+	RobotsMaxBytes   int64
+	BackoffMin       time.Duration
+	BackoffMax       time.Duration
+	Logger           *slog.Logger
 }
 
+// ===== Estructura de Cliente y Opciones =====
+
+// Client descarga páginas respetando robots.txt, throttle por dominio,
+// tamaño máximo y reintentos con backoff.
 type Client struct {
 	http       *http.Client
 	userAgent  string
 	delay      time.Duration
 	maxSize    int64
 	maxRetries int
+	backoffMin time.Duration
+	backoffMax time.Duration
 	logger     *slog.Logger
 	robots     *robotsCache
 	throttle   *throttle
 }
 
-func New(opts Options) *Client {
-	if opts.Timeout <= 0 {
-		opts.Timeout = 30 * time.Second
+// ===== Constructor =====
+
+// New construye el cliente y aplica valores seguros a los campos de Options
+// que lleguen en cero.
+func New(opciones Options) *Client {
+	configuracionPredeterminada := config.Default()
+	if opciones.Timeout <= 0 {
+		opciones.Timeout = configuracionPredeterminada.DownloadTimeout
 	}
-	if opts.MaxSize <= 0 {
-		opts.MaxSize = 5 * 1024 * 1024
+	if opciones.MaxSize <= 0 {
+		opciones.MaxSize = configuracionPredeterminada.MaxDownloadSize
 	}
-	if opts.MaxRetries < 0 {
-		opts.MaxRetries = 0
+	if opciones.MaxRetries < 0 {
+		opciones.MaxRetries = 0
 	}
-	if opts.Logger == nil {
-		opts.Logger = slog.Default()
+	if opciones.RobotsCacheTTL <= 0 {
+		opciones.RobotsCacheTTL = configuracionPredeterminada.RobotsCacheTTL
 	}
-	client := &Client{
-		http:       newHTTPClient(opts.Timeout),
-		userAgent:  opts.UserAgent,
-		delay:      opts.Delay,
-		maxSize:    opts.MaxSize,
-		maxRetries: opts.MaxRetries,
-		logger:     opts.Logger,
+	if opciones.RobotsFailureTTL <= 0 {
+		opciones.RobotsFailureTTL = configuracionPredeterminada.RobotsFailureTTL
+	}
+	if opciones.RobotsMaxBytes <= 0 {
+		opciones.RobotsMaxBytes = configuracionPredeterminada.RobotsMaxBytes
+	}
+	if opciones.BackoffMin <= 0 {
+		opciones.BackoffMin = configuracionPredeterminada.BackoffMin
+	}
+	if opciones.BackoffMax <= 0 {
+		opciones.BackoffMax = configuracionPredeterminada.BackoffMax
+	}
+	if opciones.Logger == nil {
+		opciones.Logger = slog.Default()
+	}
+	cliente := &Client{
+		http:       newHTTPClient(opciones.Timeout),
+		userAgent:  opciones.UserAgent,
+		delay:      opciones.Delay,
+		maxSize:    opciones.MaxSize,
+		maxRetries: opciones.MaxRetries,
+		backoffMin: opciones.BackoffMin,
+		backoffMax: opciones.BackoffMax,
+		logger:     opciones.Logger,
 		throttle:   newThrottle(),
 	}
-	client.robots = newRobotsCache(client.http, client.userAgent, client.logger)
-	return client
+	cliente.robots = newRobotsCache(
+		cliente.http,
+		cliente.userAgent,
+		opciones.RobotsCacheTTL,
+		opciones.RobotsFailureTTL,
+		opciones.RobotsMaxBytes,
+		cliente.logger,
+	)
+	return cliente
 }
 
-func newHTTPClient(timeout time.Duration) *http.Client {
-	roots, err := x509.SystemCertPool()
-	if err != nil || roots == nil {
-		roots = x509.NewCertPool()
+// ===== Cliente HTTP =====
+
+// newHTTPClient instancia un cliente HTTP con timeouts estrictos para crawling.
+func newHTTPClient(tiempoEspera time.Duration) *http.Client {
+	raices, errorObtenido := x509.SystemCertPool()
+	if errorObtenido != nil || raices == nil {
+		raices = x509.NewCertPool()
 	}
 	if len(extraCACert) > 0 {
-		roots.AppendCertsFromPEM(extraCACert)
+		raices.AppendCertsFromPEM(extraCACert)
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.TLSClientConfig = &tls.Config{
-		RootCAs:    roots,
+	transporte := http.DefaultTransport.(*http.Transport).Clone()
+	transporte.TLSClientConfig = &tls.Config{
+		RootCAs:    raices,
 		MinVersion: tls.VersionTLS12,
 	}
 	// Scrapy usa HTTP/1.1. Forzarlo evita que algunos anti-bot rechacen la
 	// huella HTTP/2 de Go.
-	transport.ForceAttemptHTTP2 = false
+	transporte.ForceAttemptHTTP2 = false
 
 	// El jar conserva las cookies entre robots.txt y la página, igual que Scrapy.
-	jar, _ := cookiejar.New(nil)
+	galletas, _ := cookiejar.New(nil)
 	return &http.Client{
-		Transport: transport,
-		Jar:       jar,
-		Timeout:   timeout,
+		Transport: transporte,
+		Jar:       galletas,
+		Timeout:   tiempoEspera,
 	}
 }
+
+// ===== Método Público Fetch =====
 
 // Fetch aplica robots, throttle y reintentos. Un 404 se devuelve como
 // respuesta para que el spider decida si termina la paginación; un bloqueo
 // persistente se devuelve como BlockedError.
-func (c *Client) Fetch(ctx context.Context, rawURL string) (*Response, error) {
-	parsed, err := url.Parse(rawURL)
-	if err != nil {
-		return nil, err
+func (cliente *Client) Fetch(contexto context.Context, urlCruda string) (*Response, error) {
+	analizada, errorObtenido := url.Parse(urlCruda)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return nil, fmt.Errorf("URL no soportada: %s", rawURL)
-	}
-
-	allowed, crawlDelay, err := c.robots.Allowed(ctx, parsed)
-	if err != nil {
-		c.logger.Warn("scraper_robots_unavailable", "url", rawURL, "error", err)
-	}
-	if !allowed {
-		return nil, fmt.Errorf("%w: %s", ErrRobotsDisallowed, rawURL)
-	}
-	delay := c.delay
-	if crawlDelay > delay {
-		delay = crawlDelay
+	if analizada.Scheme != "http" && analizada.Scheme != "https" {
+		return nil, fmt.Errorf("URL no soportada: %s", urlCruda)
 	}
 
-	blockedResponses := 0
-	for attempt := 0; attempt <= c.maxRetries; attempt++ {
-		if err := c.throttle.Wait(ctx, parsed.Hostname(), delay); err != nil {
-			return nil, err
+	permitido, retrasoRastreo, errorObtenido := cliente.robots.Allowed(contexto, analizada)
+	if errorObtenido != nil {
+		cliente.logger.Warn("scraper_robots_unavailable", "url", urlCruda, "error", errorObtenido)
+	}
+	if !permitido {
+		return nil, fmt.Errorf("%w: %s", ErrRobotsDisallowed, urlCruda)
+	}
+	retraso := cliente.delay
+	if retrasoRastreo > retraso {
+		retraso = retrasoRastreo
+	}
+
+	respuestasBloqueadas := 0
+	for intento := 0; intento <= cliente.maxRetries; intento++ {
+		if errorObtenido := cliente.throttle.Wait(contexto, analizada.Hostname(), retraso); errorObtenido != nil {
+			return nil, errorObtenido
 		}
-		response, err := c.doRequest(ctx, rawURL)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
+		respuesta, errorObtenido := cliente.doRequest(contexto, urlCruda)
+		if errorObtenido != nil {
+			if contexto.Err() != nil {
+				return nil, contexto.Err()
 			}
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, 0); err != nil {
-					return nil, err
+			if intento < cliente.maxRetries {
+				if errorObtenido := cliente.backoff(contexto, intento, 0); errorObtenido != nil {
+					return nil, errorObtenido
 				}
 				continue
 			}
-			return nil, err
+			return nil, errorObtenido
 		}
 
-		if reason := detectBlock(response.Status, response.Body); reason != "" {
-			blockedResponses++
-			c.logger.Warn("scraper_blocked",
-				"url", rawURL,
-				"status", response.Status,
-				"reason", reason,
-				"attempt", attempt+1,
+		if motivo := detectBlock(respuesta.Status, respuesta.Body); motivo != "" {
+			respuestasBloqueadas++
+			cliente.logger.Warn("scraper_blocked",
+				"url", urlCruda,
+				"status", respuesta.Status,
+				"reason", motivo,
+				"attempt", intento+1,
 			)
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
-					return nil, err
+			if intento < cliente.maxRetries {
+				if errorObtenido := cliente.backoff(contexto, intento, retryAfter(respuesta.Header)); errorObtenido != nil {
+					return nil, errorObtenido
 				}
 				continue
 			}
 			return nil, &BlockedError{
-				URL:              rawURL,
-				Status:           response.Status,
-				Reason:           reason,
-				BlockedResponses: blockedResponses,
+				URL:              urlCruda,
+				Status:           respuesta.Status,
+				Reason:           motivo,
+				BlockedResponses: respuestasBloqueadas,
 			}
 		}
 
-		if response.Status >= 500 {
-			if attempt < c.maxRetries {
-				if err := c.backoff(ctx, attempt, retryAfter(response.Header)); err != nil {
-					return nil, err
+		if respuesta.Status >= 500 {
+			if intento < cliente.maxRetries {
+				if errorObtenido := cliente.backoff(contexto, intento, retryAfter(respuesta.Header)); errorObtenido != nil {
+					return nil, errorObtenido
 				}
 				continue
 			}
-			return nil, &HTTPStatusError{URL: rawURL, Status: response.Status}
+			return nil, &HTTPStatusError{URL: urlCruda, Status: respuesta.Status}
 		}
-		if response.Status >= 400 && response.Status != http.StatusNotFound {
-			return nil, &HTTPStatusError{URL: rawURL, Status: response.Status}
+		if respuesta.Status >= 400 && respuesta.Status != http.StatusNotFound {
+			return nil, &HTTPStatusError{URL: urlCruda, Status: respuesta.Status}
 		}
-		return response, nil
+		return respuesta, nil
 	}
-	return nil, fmt.Errorf("no se pudo obtener %s", rawURL)
+	return nil, fmt.Errorf("no se pudo obtener %s", urlCruda)
 }
 
-func (c *Client) doRequest(ctx context.Context, rawURL string) (*Response, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("User-Agent", c.userAgent)
-	request.Header.Set("Accept", "text/html,application/xhtml+xml")
+// ===== Petición HTTP y Transporte =====
 
-	response, err := c.http.Do(request)
-	if err != nil {
-		return nil, err
+// doRequest ejecuta la solicitud HTTP GET incorporando cabeceras de navegación.
+func (cliente *Client) doRequest(contexto context.Context, urlCruda string) (*Response, error) {
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodGet, urlCruda, nil)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	defer response.Body.Close()
+	peticion.Header.Set("User-Agent", cliente.userAgent)
+	peticion.Header.Set("Accept", "text/html,application/xhtml+xml")
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, c.maxSize+1))
-	if err != nil {
-		return nil, err
+	respuesta, errorObtenido := cliente.http.Do(peticion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if int64(len(body)) > c.maxSize {
+	defer respuesta.Body.Close()
+
+	cuerpo, errorObtenido := io.ReadAll(io.LimitReader(respuesta.Body, cliente.maxSize+1))
+	if errorObtenido != nil {
+		return nil, errorObtenido
+	}
+	if int64(len(cuerpo)) > cliente.maxSize {
 		return nil, ErrResponseTooLarge
 	}
 	return &Response{
-		URL:    response.Request.URL,
-		Status: response.StatusCode,
-		Header: response.Header,
-		Body:   body,
+		URL:    respuesta.Request.URL,
+		Status: respuesta.StatusCode,
+		Header: respuesta.Header,
+		Body:   cuerpo,
 	}, nil
 }
 
-func (c *Client) backoff(ctx context.Context, attempt int, retryAfter time.Duration) error {
-	wait := retryAfter
-	if wait <= 0 {
-		base := c.delay
-		if base < 10*time.Millisecond {
-			base = 10 * time.Millisecond
+// ===== Reintentos y Espera =====
+
+// backoff calcula el tiempo de espera exponencial con variación aleatoria para reintentos.
+func (cliente *Client) backoff(contexto context.Context, intento int, esperaReintento time.Duration) error {
+	espera := esperaReintento
+	if espera <= 0 {
+		base := cliente.delay
+		if base < cliente.backoffMin {
+			base = cliente.backoffMin
 		}
-		exponential := base * time.Duration(1<<min(attempt, 7))
+		exponencial := base * time.Duration(1<<min(intento, 7))
 		// Jitter completo sobre la mitad superior: conserva el crecimiento
 		// exponencial y evita que varios workers reintenten a la vez.
-		half := exponential / 2
-		wait = half + time.Duration(rand.Int64N(int64(half)+1))
+		mitad := exponencial / 2
+		espera = mitad + time.Duration(rand.Int64N(int64(mitad)+1))
 	}
 	// Retry-After es una instrucción del servidor: se respeta incluso si es
 	// mayor que el techo del backoff propio. El techo sólo aplica al jitter.
-	if retryAfter <= 0 && wait > 120*time.Second {
-		wait = 120 * time.Second
+	if esperaReintento <= 0 && espera > cliente.backoffMax {
+		espera = cliente.backoffMax
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
+	temporizador := time.NewTimer(espera)
+	defer temporizador.Stop()
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
+	case <-contexto.Done():
+		return contexto.Err()
+	case <-temporizador.C:
 		return nil
 	}
 }
 
-func retryAfter(header http.Header) time.Duration {
-	value := strings.TrimSpace(header.Get("Retry-After"))
-	if value == "" {
+// retryAfter interpreta la cabecera Retry-After en segundos o formato HTTP-date.
+func retryAfter(cabecera http.Header) time.Duration {
+	valor := strings.TrimSpace(cabecera.Get("Retry-After"))
+	if valor == "" {
 		return 0
 	}
-	if seconds, err := strconv.Atoi(value); err == nil {
-		if seconds < 0 {
+	if segundos, errorObtenido := strconv.Atoi(valor); errorObtenido == nil {
+		if segundos < 0 {
 			return 0
 		}
-		return time.Duration(seconds) * time.Second
+		return time.Duration(segundos) * time.Second
 	}
-	if when, err := http.ParseTime(value); err == nil {
-		if wait := time.Until(when); wait > 0 {
-			return wait
+	if cuando, errorObtenido := http.ParseTime(valor); errorObtenido == nil {
+		if espera := time.Until(cuando); espera > 0 {
+			return espera
 		}
 	}
 	return 0
@@ -324,204 +387,228 @@ var (
 	)
 )
 
-func detectBlock(status int, body []byte) string {
-	switch status {
+// ===== Detección de Bloqueos =====
+
+// detectBlock analiza la respuesta para detectar patrones de bloqueo o desafíos antibot.
+func detectBlock(estado int, cuerpo []byte) string {
+	switch estado {
 	case http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
-		return fmt.Sprintf("http_%d", status)
+		return fmt.Sprintf("http_%d", estado)
 	}
 	// Los marcadores de challenge sólo se evalúan en respuestas 200: son las
 	// que un CDN/WAF usa para servir la página de verificación sin cambiar el
 	// status. En 4xx/5xx no bloqueantes (por ejemplo 404) el cuerpo se deja al
 	// spider, que decide si es fin de paginación o un producto inexistente.
-	if status != http.StatusOK || len(body) == 0 {
+	if estado != http.StatusOK || len(cuerpo) == 0 {
 		return ""
 	}
-	lower := strings.ToLower(string(body))
-	for _, marker := range blockMarkers {
-		if strings.Contains(lower, marker) {
-			return marker
+	minuscula := strings.ToLower(string(cuerpo))
+	for _, marcador := range blockMarkers {
+		if strings.Contains(minuscula, marcador) {
+			return marcador
 		}
 	}
-	if standaloneCaptcha.MatchString(lower) {
+	if standaloneCaptcha.MatchString(minuscula) {
 		return "captcha"
 	}
 	return ""
 }
 
+// ===== Regulación de Tasa (Throttle) =====
+
+// throttle gestiona la cadencia de peticiones por host para evitar saturaciones.
 type throttle struct {
 	mu   sync.Mutex
 	next map[string]time.Time
 }
 
+// newThrottle instancia un regulador de frecuencia de peticiones por intervalo.
 func newThrottle() *throttle {
 	return &throttle{next: make(map[string]time.Time)}
 }
 
 // Wait reserva el siguiente turno del dominio. La reserva se hace bajo lock
 // para que dos goroutines no calculen el mismo instante.
-func (t *throttle) Wait(ctx context.Context, host string, delay time.Duration) error {
-	if delay <= 0 {
+func (regulador *throttle) Wait(contexto context.Context, servidor string, retraso time.Duration) error {
+	if retraso <= 0 {
 		return nil
 	}
-	t.mu.Lock()
-	now := time.Now()
-	next := t.next[host]
-	if next.Before(now) {
-		next = now
+	regulador.mu.Lock()
+	ahora := time.Now()
+	siguiente := regulador.next[servidor]
+	if siguiente.Before(ahora) {
+		siguiente = ahora
 	}
-	t.next[host] = next.Add(delay)
-	t.mu.Unlock()
+	regulador.next[servidor] = siguiente.Add(retraso)
+	regulador.mu.Unlock()
 
-	wait := time.Until(next)
-	if wait <= 0 {
+	espera := time.Until(siguiente)
+	if espera <= 0 {
 		return nil
 	}
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
+	temporizador := time.NewTimer(espera)
+	defer temporizador.Stop()
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
+	case <-contexto.Done():
+		return contexto.Err()
+	case <-temporizador.C:
 		return nil
 	}
 }
 
+// ===== Gestión de Robots.txt =====
+
+// robotsEntry almacena las reglas y tiempos de crawl-delay para un dominio.
 type robotsEntry struct {
 	data       *robotstxt.RobotsData
 	crawlDelay time.Duration
 	fetched    time.Time
 }
 
-const (
-	robotsCacheTTL   = time.Hour
-	robotsFailureTTL = 10 * time.Minute
-)
-
+// robotsCache mantiene en memoria las directivas de robots.txt por host.
 type robotsCache struct {
-	mu        sync.Mutex
-	entries   map[string]*robotsEntry
-	failures  map[string]time.Time
-	http      *http.Client
-	userAgent string
-	logger    *slog.Logger
+	mu         sync.Mutex
+	entries    map[string]*robotsEntry
+	failures   map[string]time.Time
+	http       *http.Client
+	userAgent  string
+	cacheTTL   time.Duration
+	failureTTL time.Duration
+	maxBytes   int64
+	logger     *slog.Logger
 }
 
-func newRobotsCache(client *http.Client, userAgent string, logger *slog.Logger) *robotsCache {
+// newRobotsCache inicializa el caché de directivas de robots.txt.
+func newRobotsCache(
+	cliente *http.Client,
+	agenteUsuario string,
+	vidaCache time.Duration,
+	vidaFallo time.Duration,
+	maximoBytes int64,
+	registrador *slog.Logger,
+) *robotsCache {
 	return &robotsCache{
-		entries:   make(map[string]*robotsEntry),
-		failures:  make(map[string]time.Time),
-		http:      client,
-		userAgent: userAgent,
-		logger:    logger,
+		entries:    make(map[string]*robotsEntry),
+		failures:   make(map[string]time.Time),
+		http:       cliente,
+		userAgent:  agenteUsuario,
+		cacheTTL:   vidaCache,
+		failureTTL: vidaFallo,
+		maxBytes:   maximoBytes,
+		logger:     registrador,
 	}
 }
 
-func (r *robotsCache) Allowed(ctx context.Context, target *url.URL) (bool, time.Duration, error) {
-	base := target.Scheme + "://" + target.Host
-	r.mu.Lock()
-	entry := r.entries[base]
-	failedAt, failed := r.failures[base]
-	r.mu.Unlock()
+// Allowed determina si una URL cumple las reglas de exclusión de robots.txt.
+func (cacheRobots *robotsCache) Allowed(contexto context.Context, objetivo *url.URL) (bool, time.Duration, error) {
+	base := objetivo.Scheme + "://" + objetivo.Host
+	cacheRobots.mu.Lock()
+	entrada := cacheRobots.entries[base]
+	falladoEn, fallido := cacheRobots.failures[base]
+	cacheRobots.mu.Unlock()
 
-	if entry == nil || time.Since(entry.fetched) > robotsCacheTTL {
-		if failed && time.Since(failedAt) < robotsFailureTTL {
+	if entrada == nil || time.Since(entrada.fetched) > cacheRobots.cacheTTL {
+		if fallido && time.Since(falladoEn) < cacheRobots.failureTTL {
 			// Fail-open sin repetir el aviso en cada pagina. Cugat, por
 			// ejemplo, redirige robots.txt en bucle; sin esta cache el
 			// worker registraria un warning por cada categoria.
 			return true, 0, nil
 		}
-		fetched, err := r.fetch(ctx, base)
-		if err != nil {
-			if ctx.Err() == nil {
-				r.mu.Lock()
-				r.failures[base] = time.Now()
-				r.mu.Unlock()
+		obtenido, errorObtenido := cacheRobots.fetch(contexto, base)
+		if errorObtenido != nil {
+			if contexto.Err() == nil {
+				cacheRobots.mu.Lock()
+				cacheRobots.failures[base] = time.Now()
+				cacheRobots.mu.Unlock()
 			}
-			return true, 0, err
+			return true, 0, errorObtenido
 		}
-		entry = fetched
-		r.mu.Lock()
-		r.entries[base] = entry
-		delete(r.failures, base)
-		r.mu.Unlock()
+		entrada = obtenido
+		cacheRobots.mu.Lock()
+		cacheRobots.entries[base] = entrada
+		delete(cacheRobots.failures, base)
+		cacheRobots.mu.Unlock()
 	}
 
-	path := target.RequestURI()
-	if path == "" {
-		path = "/"
+	ruta := objetivo.RequestURI()
+	if ruta == "" {
+		ruta = "/"
 	}
-	return entry.data.TestAgent(path, r.userAgent), entry.crawlDelay, nil
+	return entrada.data.TestAgent(ruta, cacheRobots.userAgent), entrada.crawlDelay, nil
 }
 
-func (r *robotsCache) fetch(ctx context.Context, base string) (*robotsEntry, error) {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"/robots.txt", nil)
-	if err != nil {
-		return nil, err
+// fetch descarga y procesa el archivo robots.txt correspondiente a un host.
+func (cacheRobots *robotsCache) fetch(contexto context.Context, base string) (*robotsEntry, error) {
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodGet, base+"/robots.txt", nil)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	request.Header.Set("User-Agent", r.userAgent)
-	response, err := r.http.Do(request)
-	if err != nil {
-		return nil, err
+	peticion.Header.Set("User-Agent", cacheRobots.userAgent)
+	respuesta, errorObtenido := cacheRobots.http.Do(peticion)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	defer response.Body.Close()
+	defer respuesta.Body.Close()
 
-	body, err := io.ReadAll(io.LimitReader(response.Body, 512*1024))
-	if err != nil {
-		return nil, err
+	cuerpo, errorObtenido := io.ReadAll(io.LimitReader(respuesta.Body, cacheRobots.maxBytes))
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	if response.StatusCode >= 400 {
-		body = nil
+	if respuesta.StatusCode >= 400 {
+		cuerpo = nil
 	}
-	data, parseErr := robotstxt.FromBytes(body)
-	if parseErr != nil {
+	datos, errorParseo := robotstxt.FromBytes(cuerpo)
+	if errorParseo != nil {
 		// Un robots.txt inválido no debe bloquear el crawl; se comporta como
 		// ausente, igual que Scrapy ante un error de parseo.
-		data, _ = robotstxt.FromBytes(nil)
+		datos, _ = robotstxt.FromBytes(nil)
 	}
 	return &robotsEntry{
-		data:       data,
-		crawlDelay: parseCrawlDelay(body, r.userAgent),
+		data:       datos,
+		crawlDelay: parseCrawlDelay(cuerpo, cacheRobots.userAgent),
 		fetched:    time.Now(),
 	}, nil
 }
 
-func parseCrawlDelay(body []byte, userAgent string) time.Duration {
+// parseCrawlDelay busca la directiva Crawl-delay aplicable en robots.txt.
+func parseCrawlDelay(cuerpo []byte, agenteUsuario string) time.Duration {
 	var (
-		agents []string
-		delay  time.Duration
+		agentes []string
+		retraso time.Duration
 	)
-	for _, line := range strings.Split(string(body), "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			agents = nil
+	for _, linea := range strings.Split(string(cuerpo), "\n") {
+		linea = strings.TrimSpace(linea)
+		if linea == "" || strings.HasPrefix(linea, "#") {
+			agentes = nil
 			continue
 		}
-		lower := strings.ToLower(line)
+		minuscula := strings.ToLower(linea)
 		switch {
-		case strings.HasPrefix(lower, "user-agent:"):
-			agents = append(agents, strings.TrimSpace(lower[len("user-agent:"):]))
-		case strings.HasPrefix(lower, "crawl-delay:"):
-			if !matchesAgent(agents, userAgent) {
+		case strings.HasPrefix(minuscula, "user-agent:"):
+			agentes = append(agentes, strings.TrimSpace(minuscula[len("user-agent:"):]))
+		case strings.HasPrefix(minuscula, "crawl-delay:"):
+			if !matchesAgent(agentes, agenteUsuario) {
 				continue
 			}
-			raw := strings.TrimSpace(lower[len("crawl-delay:"):])
-			seconds, err := strconv.ParseFloat(raw, 64)
-			if err != nil || seconds <= 0 {
+			crudo := strings.TrimSpace(minuscula[len("crawl-delay:"):])
+			segundos, errorObtenido := strconv.ParseFloat(crudo, 64)
+			if errorObtenido != nil || segundos <= 0 {
 				continue
 			}
-			candidate := time.Duration(seconds * float64(time.Second))
-			if candidate > delay {
-				delay = candidate
+			candidato := time.Duration(segundos * float64(time.Second))
+			if candidato > retraso {
+				retraso = candidato
 			}
 		}
 	}
-	return delay
+	return retraso
 }
 
-func matchesAgent(agents []string, userAgent string) bool {
-	lowerUser := strings.ToLower(userAgent)
-	for _, agent := range agents {
-		if agent == "*" || strings.Contains(lowerUser, agent) || strings.Contains(agent, "tallerintegracion") {
+// matchesAgent verifica si una directiva de User-agent aplica al cliente actual.
+func matchesAgent(agentes []string, agenteUsuario string) bool {
+	usuarioMinuscula := strings.ToLower(agenteUsuario)
+	for _, agente := range agentes {
+		if agente == "*" || strings.Contains(usuarioMinuscula, agente) || strings.Contains(agente, "tallerintegracion") {
 			return true
 		}
 	}

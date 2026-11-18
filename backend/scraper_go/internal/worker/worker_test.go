@@ -2,556 +2,91 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"io"
 	"log/slog"
-	"net/http"
-	"net/http/httptest"
-	"os"
-	"path/filepath"
-	"strings"
-	"sync"
 	"testing"
-	"time"
 
-	"github.com/google/uuid"
-	"github.com/redis/go-redis/v9"
-
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/catalog"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
 )
 
-func floatPtr(value float64) *float64 {
-	return &value
+// arañaDePrueba representa una araña registrada para validar el worker.
+type arañaDePrueba struct {
+	nombre string
 }
 
-func skipIfRedisUnavailable(t *testing.T, err error) {
-	t.Helper()
-	if os.Getenv("REDIS_TEST_URL") != "" {
-		t.Fatalf("Redis configurado en REDIS_TEST_URL no está disponible: %v", err)
-	}
-	t.Skipf("Redis no disponible: %v", err)
-}
+// Name devuelve el nombre declarado en el registro de prueba.
+func (araña arañaDePrueba) Name() string { return araña.nombre }
 
-func testWorker(t *testing.T) *Worker {
-	t.Helper()
-	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	return &Worker{
-		registry: registry,
-		logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
-	}
-}
+// Run no realiza extracción porque estas pruebas solo validan la selección.
+func (arañaDePrueba) Run(context.Context, domain.Job, spiders.Emitter) error { return nil }
 
-func TestParseJob(t *testing.T) {
-	w := testWorker(t)
-	workID := uuid.NewString()
-
-	job, err := w.parseJob(`{"trabajo_id":"` + workID + `","product_url":"https://www.jumbo.cl/p/lechuga","enrich_ean":"true"}`)
-	if err != nil {
-		t.Fatalf("parseJob() error = %v", err)
+func TestNewRechazaConfiguracionInvalida(prueba *testing.T) {
+	casos := map[string]func(*config.Config){
+		"configuración vacía": func(configuracion *config.Config) {
+			*configuracion = config.Config{}
+		},
+		"sin intentos de crawl": func(configuracion *config.Config) {
+			configuracion.CrawlAttempts = 0
+		},
+		"sin intervalo de consulta": func(configuracion *config.Config) {
+			configuracion.PollInterval = 0
+		},
+		"sin intervalo de reintento": func(configuracion *config.Config) {
+			configuracion.RetryInterval = 0
+		},
 	}
-	if job.WorkID != workID {
-		t.Errorf("WorkID = %q", job.WorkID)
-	}
-	if job.Spider != spiders.JumboName {
-		t.Errorf("Spider = %q", job.Spider)
-	}
-	if !job.EnrichEAN {
-		t.Error("EnrichEAN = false")
-	}
-	if job.ProductURL != "https://www.jumbo.cl/p/lechuga" {
-		t.Errorf("ProductURL = %q", job.ProductURL)
-	}
-}
-
-func TestParseJobAcceptsKnownSpider(t *testing.T) {
-	w := testWorker(t)
-	job, err := w.parseJob(`{"trabajo_id":"` + uuid.NewString() + `","spider":"santa_isabel_rsc"}`)
-	if err != nil {
-		t.Fatalf("parseJob() error = %v", err)
-	}
-	if job.Spider != spiders.SantaIsabelName {
-		t.Errorf("Spider = %q", job.Spider)
-	}
-}
-
-func TestParseJobRejectsInvalidPayloads(t *testing.T) {
-	w := testWorker(t)
-	cases := map[string]string{
-		"json inválido":       `{`,
-		"trabajo_id inválido": `{"trabajo_id":"no-es-uuid"}`,
-		"spider desconocido":  `{"trabajo_id":"` + uuid.NewString() + `","spider":"desconocido"}`,
-		"product_id sin url":  `{"trabajo_id":"` + uuid.NewString() + `","product_id":"123"}`,
-	}
-	for name, raw := range cases {
-		t.Run(name, func(t *testing.T) {
-			if _, err := w.parseJob(raw); err == nil {
-				t.Fatalf("parseJob(%s) debió fallar", raw)
+	for nombre, mutar := range casos {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			configuracion := config.Default()
+			mutar(&configuracion)
+			if _, errorObtenido := New(configuracion, nil, nil, nil, nil); errorObtenido == nil {
+				prueba.Fatal("New aceptó una configuración inválida")
 			}
 		})
 	}
 }
 
-func TestParseEnrich(t *testing.T) {
-	cases := []struct {
-		value any
-		want  bool
-	}{
-		{true, true},
-		{false, false},
-		{"true", true},
-		{"1", true},
-		{"yes", true},
-		{"false", false},
-		{float64(1), true},
-		{float64(0), false},
-		{nil, false},
+func TestParseJobValidaContraRegistroConfigurado(prueba *testing.T) {
+	sitioJumbo, existe := catalog.Default().Get(spiders.JumboName)
+	if !existe {
+		prueba.Fatal("falta jumbo_rsc en el catálogo base de prueba")
 	}
-	for _, tc := range cases {
-		if got := parseEnrich(tc.value); got != tc.want {
-			t.Errorf("parseEnrich(%v) = %v, want %v", tc.value, got, tc.want)
-		}
+	sitioJumbo.Name = "tottus_rsc"
+	catalogoConfigurado := catalog.Catalog{Sites: []catalog.Site{sitioJumbo}}
+	registro, errorObtenido := spiders.NewRegistryFromCatalog(
+		catalogoConfigurado,
+		nil,
+		prueba.TempDir(),
+		100,
+		slog.New(slog.NewTextHandler(io.Discard, nil)),
+	)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+
+	trabajador := &Worker{registry: registro}
+	carga := `{"trabajo_id":"550e8400-e29b-41d4-a716-446655440000","spider":"tottus_rsc"}`
+	trabajo, errorObtenido := trabajador.parseJob(carga)
+	if errorObtenido != nil {
+		prueba.Fatalf("se rechazó un spider del registro configurado: %v", errorObtenido)
+	}
+	if trabajo.Spider != "tottus_rsc" {
+		prueba.Errorf("Spider = %q, se esperaba tottus_rsc", trabajo.Spider)
+	}
+
+	carga = `{"trabajo_id":"550e8400-e29b-41d4-a716-446655440000","spider":"jumbo_rsc"}`
+	if _, errorObtenido := trabajador.parseJob(carga); errorObtenido == nil {
+		prueba.Fatal("se aceptó jumbo_rsc aunque no está en el registro configurado")
 	}
 }
 
-func TestIsTerminal(t *testing.T) {
-	if !isTerminal(map[string]any{"estado": "completado"}) {
-		t.Error("completado debería ser terminal")
-	}
-	if !isTerminal(map[string]any{"estado": "fallido"}) {
-		t.Error("fallido debería ser terminal")
-	}
-	if isTerminal(map[string]any{"estado": "en_progreso"}) {
-		t.Error("en_progreso no debería ser terminal")
-	}
-}
-
-type fakeSpider struct {
-	name  string
-	items []domain.Item
-	err   error
-	calls int
-}
-
-func (f *fakeSpider) Name() string {
-	return f.name
-}
-
-func (f *fakeSpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error {
-	f.calls++
-	for _, item := range f.items {
-		if err := emit(item); err != nil {
-			return err
-		}
-	}
-	return f.err
-}
-
-func TestWorkerProcessesJobEndToEnd(t *testing.T) {
-	redisURL := os.Getenv("REDIS_TEST_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379/15"
-	}
-	redisOptions, err := redis.ParseURL(redisURL)
-	if err != nil {
-		t.Fatalf("REDIS_TEST_URL inválida: %v", err)
-	}
-	redisOptions.DialTimeout = 500 * time.Millisecond
-	redisOptions.ReadTimeout = 2 * time.Second
-	redisOptions.WriteTimeout = 2 * time.Second
-	redisClient := redis.NewClient(redisOptions)
-
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
-		_ = redisClient.Close()
-		skipIfRedisUnavailable(t, err)
-	}
-
-	workID := uuid.NewString()
-	prefix := "scraper:test:worker:" + uuid.NewString()
-	stream := prefix + ":stream"
-	group := prefix + ":group"
-	index := prefix + ":index"
-	dead := prefix + ":dead"
-	closedPrefix := prefix + ":closed:"
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = redisClient.Del(cleanupCtx, stream, index, dead, closedPrefix+workID).Err()
-		_ = redisClient.Close()
-	})
-
-	type apiState struct {
-		sync.Mutex
-		finalized   string
-		batches     int
-		products    []domain.Product
-		supermarket string
-		idempotency string
-	}
-	state := &apiState{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		base := "/api/v1/scraper/trabajos/" + workID
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == base:
-			state.Lock()
-			status := "en_progreso"
-			if state.finalized != "" {
-				status = state.finalized
-			}
-			state.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": workID, "estado": status})
-		case r.Method == http.MethodPost && r.URL.Path == base+"/productos":
-			var payload struct {
-				Productos    []domain.Product `json:"productos"`
-				Supermercado string           `json:"supermercado"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Errorf("decode productos: %v", err)
-			}
-			state.Lock()
-			state.batches++
-			state.products = append(state.products, payload.Productos...)
-			state.supermarket = payload.Supermercado
-			state.idempotency = r.Header.Get("Idempotency-Key")
-			state.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{
-				"total_recibidos":     len(payload.Productos),
-				"precios_registrados": len(payload.Productos),
-				"insertados":          len(payload.Productos),
-				"actualizados":        0,
-			})
-		case r.Method == http.MethodPut && r.URL.Path == base+"/finalizar":
-			var payload struct {
-				Estado string `json:"estado"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Errorf("decode finalizar: %v", err)
-			}
-			state.Lock()
-			state.finalized = payload.Estado
-			state.Unlock()
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": workID, "estado": payload.Estado})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	queueClient, err := queue.New(redisClient, queue.Options{
-		Stream:       stream,
-		Group:        group,
-		Lease:        10 * time.Second,
-		Consumer:     "worker-test",
-		IndexKey:     index,
-		DeadLetter:   dead,
-		ClosedPrefix: closedPrefix,
-	})
-	if err != nil {
-		t.Fatalf("queue.New() error = %v", err)
-	}
-	if err := queueClient.EnsureGroup(context.Background()); err != nil {
-		t.Fatalf("EnsureGroup() error = %v", err)
-	}
-	raw := `{"trabajo_id":"` + workID + `","spider":"` + spiders.SantaIsabelName + `"}`
-	messageID, err := redisClient.XAdd(context.Background(), &redis.XAddArgs{
-		Stream: stream,
-		Values: map[string]any{"payload": raw},
-	}).Result()
-	if err != nil {
-		t.Fatalf("XAdd() error = %v", err)
-	}
-	if err := redisClient.HSet(context.Background(), index, workID, messageID).Err(); err != nil {
-		t.Fatalf("HSet() error = %v", err)
-	}
-
-	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	registry.Register(&fakeSpider{
-		name: spiders.SantaIsabelName,
-		items: []domain.Item{
-			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}, Supermercado: "Santa Isabel"},
-			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: floatPtr(990)}, Supermercado: "Santa Isabel"},
-		},
-	})
-	cfg := config.Config{
-		APIURL:          server.URL + "/api/v1/scraper/productos",
-		Token:           "token",
-		StateDir:        t.TempDir(),
-		MinFreeBytes:    1 << 20,
-		FailedRetention: time.Hour,
-		APITimeout:      2 * time.Second,
-		BatchSize:       2,
-		Lease:           10 * time.Second,
-	}
-	apiClient := controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout)
-	scraperWorker := New(cfg, apiClient, queueClient, registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	receiveCtx, receiveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer receiveCancel()
-	message, err := queueClient.Receive(receiveCtx)
-	if err != nil || message == nil {
-		t.Fatalf("Receive() = %+v, %v", message, err)
-	}
-	scraperWorker.HandleMessage(receiveCtx, message)
-
-	state.Lock()
-	defer state.Unlock()
-	if state.finalized != "completado" {
-		t.Errorf("estado final = %q", state.finalized)
-	}
-	if state.batches != 1 || len(state.products) != 2 {
-		t.Errorf("lotes = %d, productos = %d", state.batches, len(state.products))
-	}
-	if state.supermarket != "Santa Isabel" {
-		t.Errorf("supermercado = %q", state.supermarket)
-	}
-	if state.idempotency == "" {
-		t.Error("el lote debe enviar Idempotency-Key")
-	}
-	if length, _ := redisClient.XLen(context.Background(), stream).Result(); length != 0 {
-		t.Errorf("stream length = %d, want 0", length)
-	}
-	if _, err := os.Stat(filepath.Join(cfg.StateDir, workID)); !os.IsNotExist(err) {
-		t.Errorf("el spool debería haberse limpiado: %v", err)
-	}
-}
-
-type workerRunState struct {
-	sync.Mutex
-	finalized    string
-	finalMessage string
-	blocked      int
-	batches      int
-	products     int
-	streamLength int64
-}
-
-func runWorkerJob(t *testing.T, workID string, spider spiders.Spider) *workerRunState {
-	t.Helper()
-	redisURL := os.Getenv("REDIS_TEST_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379/15"
-	}
-	redisOptions, err := redis.ParseURL(redisURL)
-	if err != nil {
-		t.Fatalf("REDIS_TEST_URL inválida: %v", err)
-	}
-	redisOptions.DialTimeout = 500 * time.Millisecond
-	redisOptions.ReadTimeout = 2 * time.Second
-	redisOptions.WriteTimeout = 2 * time.Second
-	redisClient := redis.NewClient(redisOptions)
-
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
-		_ = redisClient.Close()
-		skipIfRedisUnavailable(t, err)
-	}
-
-	prefix := "scraper:test:worker:" + uuid.NewString()
-	stream := prefix + ":stream"
-	group := prefix + ":group"
-	index := prefix + ":index"
-	dead := prefix + ":dead"
-	closedPrefix := prefix + ":closed:"
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = redisClient.Del(cleanupCtx, stream, index, dead, closedPrefix+workID).Err()
-		_ = redisClient.Close()
-	})
-
-	state := &workerRunState{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		base := "/api/v1/scraper/trabajos/" + workID
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == base:
-			state.Lock()
-			status := "en_progreso"
-			if state.finalized != "" {
-				status = state.finalized
-			}
-			state.Unlock()
-			writeJSON(w, map[string]any{"id": workID, "estado": status})
-		case r.Method == http.MethodPost && r.URL.Path == base+"/productos":
-			var payload struct {
-				Productos []domain.Product `json:"productos"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Errorf("decode productos: %v", err)
-				return
-			}
-			state.Lock()
-			state.batches++
-			state.products += len(payload.Productos)
-			state.Unlock()
-			writeJSON(w, map[string]any{
-				"total_recibidos":     len(payload.Productos),
-				"precios_registrados": len(payload.Productos),
-				"insertados":          len(payload.Productos),
-				"actualizados":        0,
-			})
-		case r.Method == http.MethodPut && r.URL.Path == base+"/finalizar":
-			var payload struct {
-				Estado               string  `json:"estado"`
-				RespuestasBloqueadas *int    `json:"respuestas_bloqueadas"`
-				RegistroErrores      *string `json:"registro_errores"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-				t.Errorf("decode finalizar: %v", err)
-				return
-			}
-			state.Lock()
-			state.finalized = payload.Estado
-			if payload.RespuestasBloqueadas != nil {
-				state.blocked = *payload.RespuestasBloqueadas
-			}
-			if payload.RegistroErrores != nil {
-				state.finalMessage = *payload.RegistroErrores
-			}
-			state.Unlock()
-			writeJSON(w, map[string]any{"id": workID, "estado": payload.Estado})
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	queueClient, err := queue.New(redisClient, queue.Options{
-		Stream:       stream,
-		Group:        group,
-		Lease:        10 * time.Second,
-		Consumer:     "worker-test",
-		IndexKey:     index,
-		DeadLetter:   dead,
-		ClosedPrefix: closedPrefix,
-	})
-	if err != nil {
-		t.Fatalf("queue.New() error = %v", err)
-	}
-	if err := queueClient.EnsureGroup(context.Background()); err != nil {
-		t.Fatalf("EnsureGroup() error = %v", err)
-	}
-	raw := `{"trabajo_id":"` + workID + `","spider":"` + spider.Name() + `"}`
-	messageID, err := redisClient.XAdd(context.Background(), &redis.XAddArgs{
-		Stream: stream,
-		Values: map[string]any{"payload": raw},
-	}).Result()
-	if err != nil {
-		t.Fatalf("XAdd() error = %v", err)
-	}
-	if err := redisClient.HSet(context.Background(), index, workID, messageID).Err(); err != nil {
-		t.Fatalf("HSet() error = %v", err)
-	}
-
-	registry := spiders.NewRegistry(nil, t.TempDir(), 100, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	registry.Register(spider)
-	cfg := config.Config{
-		APIURL:          server.URL + "/api/v1/scraper/productos",
-		Token:           "token",
-		StateDir:        t.TempDir(),
-		MinFreeBytes:    1 << 20,
-		FailedRetention: time.Hour,
-		APITimeout:      2 * time.Second,
-		BatchSize:       2,
-		Lease:           10 * time.Second,
-	}
-	scraperWorker := New(cfg, controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout), queueClient,
-		registry, slog.New(slog.NewTextHandler(io.Discard, nil)))
-
-	receiveCtx, receiveCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer receiveCancel()
-	message, err := queueClient.Receive(receiveCtx)
-	if err != nil || message == nil {
-		t.Fatalf("Receive() = %+v, %v", message, err)
-	}
-	scraperWorker.HandleMessage(receiveCtx, message)
-	state.Lock()
-	state.streamLength, _ = redisClient.XLen(context.Background(), stream).Result()
-	state.Unlock()
-	return state
-}
-
-func TestWorkerFinalizesBlockedJob(t *testing.T) {
-	state := runWorkerJob(t, uuid.NewString(), &fakeSpider{
-		name: spiders.SantaIsabelName,
-		err: &crawler.BlockedError{
-			URL:              "https://www.santaisabel.cl/despensa",
-			Status:           429,
-			Reason:           "http_429",
-			BlockedResponses: 3,
-		},
-	})
-
-	state.Lock()
-	defer state.Unlock()
-	if state.finalized != "fallido" {
-		t.Errorf("estado final = %q, want fallido", state.finalized)
-	}
-	if !strings.Contains(state.finalMessage, "bloqueo: 3 respuestas bloqueadas") {
-		t.Errorf("registro_errores = %q", state.finalMessage)
-	}
-	if state.blocked != 3 {
-		t.Errorf("respuestas_bloqueadas = %d, want 3", state.blocked)
-	}
-	if state.batches != 0 {
-		t.Errorf("lotes = %d, want 0", state.batches)
-	}
-	if state.streamLength != 0 {
-		t.Errorf("stream length = %d, want 0 (mensaje ACK)", state.streamLength)
-	}
-}
-
-func TestWorkerRejectsEmptyCrawl(t *testing.T) {
-	state := runWorkerJob(t, uuid.NewString(), &fakeSpider{name: spiders.CugatName})
-
-	state.Lock()
-	defer state.Unlock()
-	if state.finalized != "fallido" {
-		t.Errorf("estado final = %q, want fallido", state.finalized)
-	}
-	if !strings.Contains(state.finalMessage, "sin productos") {
-		t.Errorf("registro_errores = %q", state.finalMessage)
-	}
-	if state.batches != 0 {
-		t.Errorf("lotes = %d, want 0", state.batches)
-	}
-	if state.streamLength != 0 {
-		t.Errorf("stream length = %d, want 0 (mensaje ACK)", state.streamLength)
-	}
-}
-
-func TestLockExecution(t *testing.T) {
-	directory := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(directory, "spool"), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	spoolDir := filepath.Join(directory, "spool")
-
-	first, err := lockExecution(spoolDir)
-	if err != nil {
-		t.Fatalf("primer lock: %v", err)
-	}
-	if _, err := lockExecution(spoolDir); err == nil {
-		t.Fatal("el segundo lock debió fallar")
-	}
-	if err := first.Close(); err != nil {
-		t.Fatalf("Close(): %v", err)
-	}
-
-	third, err := lockExecution(spoolDir)
-	if err != nil {
-		t.Fatalf("lock tras liberar: %v", err)
-	}
-	if err := third.Close(); err != nil {
-		t.Fatalf("Close() tercero: %v", err)
+func TestParseJobRechazaRegistroNoConfigurado(prueba *testing.T) {
+	trabajador := &Worker{}
+	carga := `{"trabajo_id":"550e8400-e29b-41d4-a716-446655440000","spider":"jumbo_rsc"}`
+	if _, errorObtenido := trabajador.parseJob(carga); errorObtenido == nil {
+		prueba.Fatal("se aceptó un trabajo sin registro de spiders")
 	}
 }

@@ -4,73 +4,80 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"github.com/gin-gonic/gin"
 	"log/slog"
 	"net/http"
 	"regexp"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+// ===== Límites de petición y acceso de origen =====
 
 // Mismo máximo que Catálogo; no corta lotes válidos ni permite requests infinitos.
 func BoundedRequest() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 65*time.Second)
-		defer cancel()
-		c.Request = c.Request.WithContext(ctx)
-		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 8<<20)
-		c.Next()
+	return func(contextoHTTP *gin.Context) {
+		contexto, cancelar := context.WithTimeout(contextoHTTP.Request.Context(), 65*time.Second)
+		defer cancelar()
+		contextoHTTP.Request = contextoHTTP.Request.WithContext(contexto)
+		contextoHTTP.Request.Body = http.MaxBytesReader(contextoHTTP.Writer, contextoHTTP.Request.Body, 8<<20)
+		contextoHTTP.Next()
 	}
 }
 
-func CORS(origins []string) gin.HandlerFunc {
-	allowed := map[string]bool{}
-	for _, origin := range origins {
-		if origin != "" && origin != "*" && origin != "null" {
-			allowed[origin] = true
+// CORS limita los orígenes web permitidos y resuelve solicitudes de preflight.
+func CORS(origenes []string) gin.HandlerFunc {
+	permitido := map[string]bool{}
+	for _, origen := range origenes {
+		if origen != "" && origen != "*" && origen != "null" {
+			permitido[origen] = true
 		}
 	}
-	return func(c *gin.Context) {
-		c.Writer.Header().Add("Vary", "Origin")
-		origin := c.GetHeader("Origin")
-		if origin != "" {
-			if !allowed[origin] {
-				ResponderError(c, 403, "Origen no permitido.", nil)
+	return func(contextoHTTP *gin.Context) {
+		contextoHTTP.Writer.Header().Add("Vary", "Origin")
+		origen := contextoHTTP.GetHeader("Origin")
+		if origen != "" {
+			if !permitido[origen] {
+				ResponderError(contextoHTTP, 403, "Origen no permitido.", nil)
 				return
 			}
-			c.Header("Access-Control-Allow-Origin", origin)
-			c.Header("Access-Control-Allow-Credentials", "true")
-			c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-CSRF-Token, Idempotency-Key")
-			c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			contextoHTTP.Header("Access-Control-Allow-Origin", origen)
+			contextoHTTP.Header("Access-Control-Allow-Credentials", "true")
+			contextoHTTP.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-CSRF-Token, Idempotency-Key")
+			contextoHTTP.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		}
-		if c.Request.Method == http.MethodOptions {
-			c.AbortWithStatus(204)
+		if contextoHTTP.Request.Method == http.MethodOptions {
+			contextoHTTP.AbortWithStatus(204)
 			return
 		}
-		c.Next()
+		contextoHTTP.Next()
 	}
 }
 
-var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+// ===== Identificación y observabilidad =====
 
-func Observe(log *slog.Logger) gin.HandlerFunc {
-	if log == nil {
-		log = slog.Default()
+var patronIDPeticion = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
+
+// Observe asigna un ID de petición seguro y registra el resultado HTTP sin datos sensibles.
+func Observe(registrador *slog.Logger) gin.HandlerFunc {
+	if registrador == nil {
+		registrador = slog.Default()
 	}
-	return func(c *gin.Context) {
-		id := c.GetHeader("X-Request-ID")
-		if !requestIDPattern.MatchString(id) {
+	return func(contextoHTTP *gin.Context) {
+		identificador := contextoHTTP.GetHeader("X-Request-ID")
+		if !patronIDPeticion.MatchString(identificador) {
 			var token [16]byte
 			_, _ = rand.Read(token[:])
-			id = hex.EncodeToString(token[:])
+			identificador = hex.EncodeToString(token[:])
 		}
-		c.Header("X-Request-ID", id)
-		c.Set("request_id", id)
-		start := time.Now()
-		c.Next()
-		path := c.FullPath()
-		if path == "" {
-			path = "unmatched"
+		contextoHTTP.Header("X-Request-ID", identificador)
+		contextoHTTP.Set("request_id", identificador)
+		inicio := time.Now()
+		contextoHTTP.Next()
+		ruta := contextoHTTP.FullPath()
+		if ruta == "" {
+			ruta = "unmatched"
 		}
-		log.Info("http_request", "request_id", id, "method", c.Request.Method, "path", path, "status", c.Writer.Status(), "duration_ms", time.Since(start).Milliseconds())
+		registrador.Info("http_request", "request_id", identificador, "method", contextoHTTP.Request.Method, "path", ruta, "status", contextoHTTP.Writer.Status(), "duration_ms", time.Since(inicio).Milliseconds())
 	}
 }

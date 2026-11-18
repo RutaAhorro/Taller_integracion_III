@@ -1,65 +1,183 @@
-// Ejecuta handleSend con estado en memoria, sin añadir un entorno DOM a la suite.
+// Ejecuta el hook real con estado y refs en memoria, sin DOM ni llamadas al proveedor.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import ts from 'typescript';
 
-const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
+const moduleUrl = codigo => `data:text/javascript;base64,${Buffer.from(codigo).toString('base64')}`;
 const reactUrl = moduleUrl(`
-  export const states = [];
-  export function useState(initial) {
-    const index = states.length;
-    states.push(typeof initial === 'function' ? initial() : initial);
-    return [states[index], value => {
-      states[index] = typeof value === 'function' ? value(states[index]) : value;
+  const estados = [];
+  const referencias = [];
+  let indiceEstado = 0;
+  let indiceReferencia = 0;
+  export function prepararRender(reiniciar = false) {
+    indiceEstado = 0;
+    indiceReferencia = 0;
+    if (reiniciar) { estados.length = 0; referencias.length = 0; }
+  }
+  export function useState(inicial) {
+    const indice = indiceEstado++;
+    if (indice === estados.length) estados.push(typeof inicial === 'function' ? inicial() : inicial);
+    return [estados[indice], valor => {
+      estados[indice] = typeof valor === 'function' ? valor(estados[indice]) : valor;
     }];
   }
-  export const useRef = () => ({ current: null });
+  export function useRef(inicial) {
+    const indice = indiceReferencia++;
+    if (indice === referencias.length) referencias.push({ current: inicial });
+    return referencias[indice];
+  }
   export const useEffect = () => {};
 `);
-const authUrl = moduleUrl('export const useAuth = () => ({ isGuest: false, user: null });');
-const source = await readFile(new URL('../src/hooks/useChatbot.ts', import.meta.url), 'utf8');
+const authUrl = moduleUrl(`
+  export const sesion = { isGuest: false };
+  export const useAuth = () => sesion;
+`);
+const codigo = await readFile(new URL('../src/hooks/useChatbot.ts', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(
-  source.replace("from 'react'", `from '${reactUrl}'`)
+  codigo.replace("from 'react'", `from '${reactUrl}'`)
     .replace("from '@/hooks/useAuth'", `from '${authUrl}'`)
-    .replace('import.meta.env.VITE_IA_URL', '"http://localhost:8002"'),
+    .replace('import.meta.env.VITE_API_URL', '"/api/v1/"'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } },
 );
 const { useChatbot } = await import(moduleUrl(outputText));
-const { states } = await import(reactUrl);
+const { prepararRender } = await import(reactUrl);
+const { sesion } = await import(authUrl);
 const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.';
 
-async function send() {
-  states.length = 0;
-  await useChatbot().handleSend('Quiero hacer pebre');
-  // Estas posiciones siguen el orden de useState en useChatbot: isProcessing y messages.
-  // Si cambia ese orden, hay que actualizar este adaptador; no implica un fallo del chat.
-  assert.equal(states[2], false, 'libera el estado de procesamiento');
-  assert.ok(states[3].every(message => message.type !== 'processing'));
-  return states[3].at(-1).content;
+function montarChat(invitado = false) {
+  sesion.isGuest = invitado;
+  prepararRender(true);
+  return () => {
+    prepararRender();
+    return useChatbot();
+  };
 }
 
-test('un HTTP no exitoso nunca se presenta como respuesta real del asistente', async prueba => {
-  for (const status of [401, 403, 404, 500, 502]) {
-    for (const body of [{ detail: 'Not Found' }, { explicacion: 'Respuesta que no debe mostrarse' }]) {
-      const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json(body, { status }));
-      assert.equal(await send(), ERROR_IA);
-      mock.mock.restore();
-    }
-  }
-  prueba.mock.method(globalThis, 'fetch', async () => new Response('<html>Bad gateway</html>', { status: 502 }));
-  assert.equal(await send(), ERROR_IA);
+function ultimaRespuesta(chat) {
+  assert.equal(chat.isProcessing, false);
+  assert.ok(chat.messages.every(mensaje => mensaje.type !== 'processing'));
+  return chat.messages.at(-1);
+}
+
+test('envía el mensaje por Gateway con cookie y muestra respuesta, no explicacion', async prueba => {
+  const leerChat = montarChat();
+  prueba.mock.method(globalThis, 'fetch', async (url, opciones) => {
+    assert.equal(url, '/api/v1/chat');
+    assert.equal(opciones.method, 'POST');
+    assert.equal(opciones.credentials, 'include');
+    assert.deepEqual(opciones.headers, { 'Content-Type': 'application/json' });
+    assert.deepEqual(JSON.parse(opciones.body), { mensaje: 'Busco leche' });
+    assert.ok(opciones.signal instanceof AbortSignal);
+    return Response.json({
+      respuesta: 'Encontré leche en el catálogo.',
+      explicacion: 'No corresponde al contrato actual.',
+      productos_recomendados: [],
+    });
+  });
+  await leerChat().handleSend('  Busco leche  ');
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Encontré leche en el catálogo.');
+  assert.equal(ultimaRespuesta(leerChat()).type, 'text');
 });
 
-test('un JSON sin explicación válida no se convierte en un éxito inventado', async prueba => {
-  for (const body of [{}, null, { explicacion: '' }, { explicacion: '  ' }, { explicacion: 123 }, { error: 'No disponible', explicacion: 'Ignorar' }]) {
-    const mock = prueba.mock.method(globalThis, 'fetch', async () => Response.json(body));
-    assert.equal(await send(), ERROR_IA);
-    mock.mock.restore();
+test('invitados y mensajes vacíos no hacen peticiones', async prueba => {
+  const peticiones = prueba.mock.method(globalThis, 'fetch', async () => { throw new Error('No debe consultar'); });
+  const leerChat = montarChat(true);
+  await leerChat().handleSend('Busco leche');
+  assert.equal(leerChat().showAuthModal, true);
+  const leerSesion = montarChat();
+  await leerSesion().handleSend('  ');
+  assert.equal(leerSesion().messages.length, 1);
+  assert.equal(peticiones.mock.callCount(), 0);
+});
+
+test('ningún error HTTP se presenta como respuesta real del asistente', async prueba => {
+  for (const estado of [400, 500, 502, 503, 504]) {
+    const leerChat = montarChat();
+    const peticion = prueba.mock.method(globalThis, 'fetch', async () =>
+      Response.json({ respuesta: 'No debe mostrarse', detail: 'Error' }, { status: estado }));
+    await leerChat().handleSend('Busco leche');
+    const respuesta = ultimaRespuesta(leerChat());
+    assert.equal(respuesta.type, 'error');
+    assert.equal(respuesta.content, ERROR_IA);
+    assert.equal(leerChat().inputValue, 'Busco leche');
+    peticion.mock.restore();
   }
 });
 
-test('conserva la explicación real de una respuesta exitosa', async prueba => {
-  prueba.mock.method(globalThis, 'fetch', async () => Response.json({ explicacion: 'Necesitas tomate y cebolla.' }));
-  assert.equal(await send(), 'Necesitas tomate y cebolla.');
+test('sesión vencida, ruta ausente, validación y saturación tienen mensajes explícitos', async prueba => {
+  for (const [estado, esperado] of [
+    [401, /sesión expiró/], [403, /permiso/], [404, /no está habilitado/],
+    [422, /mensaje no es válido/], [429, /demasiadas solicitudes/],
+  ]) {
+    const leerChat = montarChat();
+    const peticion = prueba.mock.method(globalThis, 'fetch', async () => new Response(null, { status: estado }));
+    await leerChat().handleSend('Busco arroz');
+    assert.match(ultimaRespuesta(leerChat()).content, esperado);
+    assert.equal(leerChat().showAuthModal, estado === 401);
+    peticion.mock.restore();
+  }
+});
+
+test('JSON inválido, HTML y contratos antiguos no se convierten en éxito', async prueba => {
+  for (const cuerpo of [
+    {}, null, { respuesta: '' }, { respuesta: '  ' }, { respuesta: 123 },
+    { explicacion: 'Solo contrato antiguo' }, { error: 'No disponible', respuesta: 'Ignorar' },
+  ]) {
+    const leerChat = montarChat();
+    const peticion = prueba.mock.method(globalThis, 'fetch', async () => Response.json(cuerpo));
+    await leerChat().handleSend('Busco arroz');
+    assert.equal(ultimaRespuesta(leerChat()).content, ERROR_IA);
+    peticion.mock.restore();
+  }
+  const leerChat = montarChat();
+  prueba.mock.method(globalThis, 'fetch', async () => new Response('<html>No es la API</html>'));
+  await leerChat().handleSend('Busco arroz');
+  assert.equal(ultimaRespuesta(leerChat()).content, ERROR_IA);
+});
+
+test('un fallo de red permite reintentar sin inventar una respuesta', async prueba => {
+  const leerChat = montarChat();
+  const peticion = prueba.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Sin conexión'); });
+  await leerChat().handleSend('Busco arroz');
+  assert.match(ultimaRespuesta(leerChat()).content, /Revisa la conexión/);
+  assert.equal(leerChat().inputValue, 'Busco arroz');
+  peticion.mock.restore();
+  prueba.mock.method(globalThis, 'fetch', async () => Response.json({ respuesta: 'Respuesta real' }));
+  await leerChat().handleSend(leerChat().inputValue);
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Respuesta real');
+});
+
+test('dos envíos inmediatos comparten el bloqueo hasta terminar la primera petición', async prueba => {
+  const leerChat = montarChat();
+  let resolver;
+  const peticion = prueba.mock.method(globalThis, 'fetch', () => new Promise(completar => { resolver = completar; }));
+  const chat = leerChat();
+  const pendiente = chat.handleSend('Busco arroz');
+  await chat.handleSend('Busco leche');
+  assert.equal(peticion.mock.callCount(), 1);
+  assert.equal(leerChat().isProcessing, true);
+  resolver(Response.json({ respuesta: 'Arroz disponible' }));
+  await pendiente;
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Arroz disponible');
+});
+
+test('vaciar cancela la espera y descarta respuestas antiguas sin pisar una consulta nueva', async prueba => {
+  const leerChat = montarChat();
+  const pendientes = [];
+  prueba.mock.method(globalThis, 'fetch', (_url, opciones) => new Promise(resolver => {
+    pendientes.push({ resolver, signal: opciones.signal });
+  }));
+  const anterior = leerChat().handleSend('Consulta antigua');
+  leerChat().handleClear();
+  assert.equal(pendientes[0].signal.aborted, true);
+  assert.equal(leerChat().messages.length, 1);
+  const nueva = leerChat().handleSend('Consulta nueva');
+  pendientes[0].resolver(Response.json({ respuesta: 'No debe reaparecer' }));
+  await anterior;
+  assert.equal(leerChat().isProcessing, true);
+  pendientes[1].resolver(Response.json({ respuesta: 'Resultado nuevo' }));
+  await nueva;
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Resultado nuevo');
+  assert.equal(leerChat().messages.some(mensaje => mensaje.content === 'No debe reaparecer'), false);
 });

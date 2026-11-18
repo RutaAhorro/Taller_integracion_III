@@ -12,101 +12,105 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-type gormTrabajoRepository struct{ db *gorm.DB }
+// ===== Persistencia del ciclo de vida de trabajos =====
 
-func NewTrabajoRepository(db *gorm.DB) domain.TrabajoRepository {
-	return &gormTrabajoRepository{db: db}
+// gormTrabajoRepository implementa la persistencia SQL del ciclo de vida de trabajos.
+type gormTrabajoRepository struct{ baseDatos *gorm.DB }
+
+// NewTrabajoRepository crea el repositorio GORM de trabajos de scraping.
+func NewTrabajoRepository(baseDatos *gorm.DB) domain.TrabajoRepository {
+	return &gormTrabajoRepository{baseDatos: baseDatos}
 }
 
 // CrearTrabajo inserta una nueva ejecución en scraper.trabajos_scraper
-func (r *gormTrabajoRepository) CrearTrabajo(ctx context.Context, trabajo *domain.TrabajoScraper) error {
-	return r.db.WithContext(ctx).Create(trabajo).Error
+func (repositorio *gormTrabajoRepository) CrearTrabajo(contexto context.Context, trabajo *domain.TrabajoScraper) error {
+	return repositorio.baseDatos.WithContext(contexto).Create(trabajo).Error
 }
 
 // ObtenerTrabajoPorID lee únicamente el trabajo y su snapshot de auditoría.
-func (r *gormTrabajoRepository) ObtenerTrabajoPorID(ctx context.Context, id uuid.UUID) (*domain.TrabajoScraper, error) {
+func (repositorio *gormTrabajoRepository) ObtenerTrabajoPorID(contexto context.Context, identificador uuid.UUID) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
-	err := r.db.WithContext(ctx).
-		Where("id = ?", id).
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).
+		Where("id = ?", identificador).
 		First(&trabajo).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errorObtenido != nil {
+		if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, errorObtenido
 	}
 	return &trabajo, nil
 }
 
 // IncrementarElementos mantiene las métricas bajo propiedad del coordinador.
 // Se ejecuta sólo después de confirmar el commit de Catálogo.
-func (r *gormTrabajoRepository) IncrementarElementos(ctx context.Context, id uuid.UUID, cantidad int) error {
-	result := r.db.WithContext(ctx).Model(&domain.TrabajoScraper{}).
-		Where("id = ?", id).Update("elementos_extraidos", gorm.Expr("elementos_extraidos + ?", cantidad))
-	if result.Error != nil {
-		return result.Error
+func (repositorio *gormTrabajoRepository) IncrementarElementos(contexto context.Context, identificador uuid.UUID, cantidad int) error {
+	resultado := repositorio.baseDatos.WithContext(contexto).Model(&domain.TrabajoScraper{}).
+		Where("id = ?", identificador).Update("elementos_extraidos", gorm.Expr("elementos_extraidos + ?", cantidad))
+	if resultado.Error != nil {
+		return resultado.Error
 	}
-	if result.RowsAffected != 1 {
+	if resultado.RowsAffected != 1 {
 		return errors.New("no se pudo actualizar el contador del trabajo")
 	}
 	return nil
 }
 
 // FinalizarTrabajo actualiza el estado, fecha fin, items extraídos y posibles errores
-func (r *gormTrabajoRepository) FinalizarTrabajo(ctx context.Context, id uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
+func (repositorio *gormTrabajoRepository) FinalizarTrabajo(contexto context.Context, identificador uuid.UUID, estado string, elementosExtraidos *int, respuestasBloqueadas *int, registroErrores *string) (*domain.TrabajoScraper, error) {
 	var trabajo domain.TrabajoScraper
-	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&trabajo, "id = ?", id).Error; err != nil {
-			return err
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
+		if errorObtenido := transaccion.Clauses(clause.Locking{Strength: "UPDATE"}).First(&trabajo, "id = ?", identificador).Error; errorObtenido != nil {
+			return errorObtenido
 		}
 		if trabajo.Estado == estado {
-			return tx.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, id).Error
+			return transaccion.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, identificador).Error
 		}
 		if trabajo.Estado != "en_progreso" {
 			return services.ErrTrabajoYaFinalizado
 		}
 		if estado == "completado" {
-			var failed, pending int64
-			if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='fallida'", id).Count(&failed).Error; err != nil {
-				return err
+			var fallidos, pendientes int64
+			if errorObtenido := transaccion.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='fallida'", identificador).Count(&fallidos).Error; errorObtenido != nil {
+				return errorObtenido
 			}
-			if failed > 0 {
+			if fallidos > 0 {
 				return services.ErrEntregaFallida
 			}
-			if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='pendiente'", id).Count(&pending).Error; err != nil {
-				return err
+			if errorObtenido := transaccion.Table("scraper.entregas_ingesta").Where("trabajo_id=? AND estado='pendiente'", identificador).Count(&pendientes).Error; errorObtenido != nil {
+				return errorObtenido
 			}
-			if pending > 0 {
+			if pendientes > 0 {
 				return services.ErrEntregaPendiente
 			}
 		}
 		// Un cierre fallido no espera los backoffs ni cancela entregas ambiguas:
 		// su ledger sigue conciliándose, incluso si Catálogo ya hizo commit.
-		var managed int64
-		if err := tx.Table("scraper.entregas_ingesta").Where("trabajo_id=?", id).Count(&managed).Error; err != nil {
-			return err
+		var gestionados int64
+		if errorObtenido := transaccion.Table("scraper.entregas_ingesta").Where("trabajo_id=?", identificador).Count(&gestionados).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		updates := map[string]any{"estado": estado, "finalizado_el": time.Now()}
+		actualizaciones := map[string]any{"estado": estado, "finalizado_el": time.Now()}
 		// Un worker no puede sobrescribir el contador del ledger durable.
-		if managed == 0 && elementosExtraidos != nil {
-			updates["elementos_extraidos"] = *elementosExtraidos
+		if gestionados == 0 && elementosExtraidos != nil {
+			actualizaciones["elementos_extraidos"] = *elementosExtraidos
 		}
 		if respuestasBloqueadas != nil {
-			updates["respuestas_bloqueadas"] = *respuestasBloqueadas
+			actualizaciones["respuestas_bloqueadas"] = *respuestasBloqueadas
 		}
 		if registroErrores != nil {
-			updates["registro_errores"] = *registroErrores
+			actualizaciones["registro_errores"] = *registroErrores
 		}
-		if err := tx.Model(&trabajo).Updates(updates).Error; err != nil {
-			return err
+		if errorObtenido := transaccion.Model(&trabajo).Updates(actualizaciones).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		return tx.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, id).Error
+		return transaccion.Exec(`DELETE FROM scraper.entregas_trabajos WHERE trabajo_id=?`, identificador).Error
 	})
-	if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, err
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
-	return r.ObtenerTrabajoPorID(ctx, id)
+	return repositorio.ObtenerTrabajoPorID(contexto, identificador)
 }
