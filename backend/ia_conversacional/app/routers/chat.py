@@ -11,11 +11,13 @@ import logging
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app import config
 from app.auth import UsuarioAutenticado, obtener_usuario_actual
 from app.explicacion import generar_explicacion_con_tiempo
 from app.filtros import filtrar_productos
 from app.productos import ProductoRepositorio
 from app.proveedores.base import ProveedorIA
+from app.rate_limit import LimitadorSolicitudes
 from app.schemas import ChatRequest
 
 logger = logging.getLogger(__name__)
@@ -24,8 +26,13 @@ logger = logging.getLogger(__name__)
 def crear_router_chat(
     repositorio: ProductoRepositorio,
     proveedor_fallback: ProveedorIA,
+    limitador: LimitadorSolicitudes | None = None,
 ) -> APIRouter:
     router = APIRouter(tags=["chat"])
+    limitador = limitador or LimitadorSolicitudes(
+        maximo_solicitudes=config.CHAT_RATE_LIMIT_SOLICITUDES,
+        ventana_segundos=config.CHAT_RATE_LIMIT_VENTANA_SEGUNDOS,
+    )
 
     async def _procesar_chat(proveedor: ProveedorIA, mensaje: str) -> dict:
         # Etapa 1: Extraer filtros estructurados mediante function calling
@@ -87,6 +94,7 @@ def crear_router_chat(
         Endpoint unificado protegido con JWT de sesión (SUP-247).
         Ejecuta las 3 etapas deterministas con proveedor_fallback.
         """
+        limitador.verificar(usuario.user_id)
         return await _procesar_chat(proveedor_fallback, req.mensaje)
 
     return router
