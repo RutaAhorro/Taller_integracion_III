@@ -1,3 +1,5 @@
+// Casos de uso de registro, login y perfil sobre un repositorio en memoria.
+
 package unit_test
 
 import (
@@ -28,21 +30,24 @@ type mockUsuarioRepository struct {
 	auditorias []domain.AuditoriaAdminUsuario
 }
 
+// newMockUsuarioRepository crea el repositorio en memoria compartido por las pruebas.
 func newMockUsuarioRepository() *mockUsuarioRepository {
 	return &mockUsuarioRepository{
 		usuarios: make(map[string]*domain.Usuario),
 	}
 }
 
-func (mensaje *mockUsuarioRepository) FindByEmail(ctx context.Context, email string) (*domain.Usuario, error) {
-	if usuarioLocal, ok := mensaje.usuarios[email]; ok {
+// FindByEmail busca por correo exacto, como la consulta real.
+func (repositorio *mockUsuarioRepository) FindByEmail(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
+	if usuarioLocal, valido := repositorio.usuarios[direccionCorreo]; valido {
 		return usuarioLocal, nil
 	}
 	return nil, nil
 }
 
-func (mensaje *mockUsuarioRepository) FindByID(ctx context.Context, id string) (*domain.Usuario, error) {
-	for _, usuarioLocal := range mensaje.usuarios {
+// FindByID busca por identificador.
+func (repositorio *mockUsuarioRepository) FindByID(contexto context.Context, id string) (*domain.Usuario, error) {
+	for _, usuarioLocal := range repositorio.usuarios {
 		if usuarioLocal.ID.String() == id {
 			return usuarioLocal, nil
 		}
@@ -50,17 +55,19 @@ func (mensaje *mockUsuarioRepository) FindByID(ctx context.Context, id string) (
 	return nil, nil
 }
 
-func (mensaje *mockUsuarioRepository) Create(ctx context.Context, usuario *domain.Usuario) error {
+// Create asigna un ID si falta y rechaza correos duplicados.
+func (repositorio *mockUsuarioRepository) Create(contexto context.Context, usuario *domain.Usuario) error {
 	if usuario.ID == uuid.Nil {
 		usuario.ID = uuid.New()
 	}
-	mensaje.usuarios[usuario.Correo] = usuario
+	repositorio.usuarios[usuario.Correo] = usuario
 	return nil
 }
 
-func (mensaje *mockUsuarioRepository) Contar(ctx context.Context) (int64, int64, error) {
+// Contar devuelve el total y las cuentas activas.
+func (repositorio *mockUsuarioRepository) Contar(contexto context.Context) (int64, int64, error) {
 	var total, activos int64
-	for _, usuarioLocal := range mensaje.usuarios {
+	for _, usuarioLocal := range repositorio.usuarios {
 		total++
 		if usuarioLocal.EstaActivo {
 			activos++
@@ -69,8 +76,9 @@ func (mensaje *mockUsuarioRepository) Contar(ctx context.Context) (int64, int64,
 	return total, activos, nil
 }
 
-func (mensaje *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
-	for _, usuarioLocal := range mensaje.usuarios {
+// buscarPorID localiza la cuenta sin copiarla, para modificarla en el lugar.
+func (repositorio *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
+	for _, usuarioLocal := range repositorio.usuarios {
 		if usuarioLocal.ID.String() == id {
 			return usuarioLocal
 		}
@@ -78,76 +86,80 @@ func (mensaje *mockUsuarioRepository) buscarPorID(id string) *domain.Usuario {
 	return nil
 }
 
-func (mensaje *mockUsuarioRepository) aplicarDatos(target *domain.Usuario, datos map[string]interface{}) {
-	if nombre, ok := datos["nombre_completo"].(string); ok {
-		target.NombreCompleto = nombre
+// aplicarDatos replica el Updates de GORM sobre las columnas conocidas.
+func (repositorio *mockUsuarioRepository) aplicarDatos(objetivo *domain.Usuario, datos map[string]interface{}) {
+	if nombre, valido := datos["nombre_completo"].(string); valido {
+		objetivo.NombreCompleto = nombre
 	}
-	if correo, ok := datos["correo"].(string); ok {
-		delete(mensaje.usuarios, target.Correo)
-		target.Correo = correo
-		mensaje.usuarios[correo] = target
+	if correo, valido := datos["correo"].(string); valido {
+		delete(repositorio.usuarios, objetivo.Correo)
+		objetivo.Correo = correo
+		repositorio.usuarios[correo] = objetivo
 	}
-	if tel, ok := datos["telefono"].(string); ok {
-		target.Telefono = &tel
+	if telefono, valido := datos["telefono"].(string); valido {
+		objetivo.Telefono = &telefono
 	}
-	if dir, ok := datos["direccion"].(string); ok {
-		target.Direccion = &dir
+	if directorio, valido := datos["direccion"].(string); valido {
+		objetivo.Direccion = &directorio
 	}
-	if pwd, ok := datos["password_hash"].(string); ok {
-		target.PasswordHash = &pwd
-	} else if value, ok := datos["password_hash"]; ok && value == nil {
-		target.PasswordHash = nil
+	if contrasena, existe := datos["password_hash"].(string); existe {
+		objetivo.PasswordHash = &contrasena
+	} else if valor, valido := datos["password_hash"]; valido && valor == nil {
+		objetivo.PasswordHash = nil
 	}
-	if googleID, ok := datos["google_id"].(string); ok {
-		target.GoogleID = &googleID
+	if googleID, valido := datos["google_id"].(string); valido {
+		objetivo.GoogleID = &googleID
 	}
-	if activo, ok := datos["esta_activo"].(bool); ok {
-		target.EstaActivo = activo
+	if activo, valido := datos["esta_activo"].(bool); valido {
+		objetivo.EstaActivo = activo
 	}
-	if rol, ok := datos["rol"].(string); ok {
-		target.Rol = rol
+	if rol, valido := datos["rol"].(string); valido {
+		objetivo.Rol = rol
 	}
-	if plan, ok := datos["plan"].(string); ok {
-		target.Plan = plan
+	if plan, valido := datos["plan"].(string); valido {
+		objetivo.Plan = plan
 	}
-	if ultimo, ok := datos["ultimo_acceso"].(time.Time); ok {
-		target.UltimoAcceso = &ultimo
+	if ultimo, valido := datos["ultimo_acceso"].(time.Time); valido {
+		objetivo.UltimoAcceso = &ultimo
 	}
 }
 
-func (mensaje *mockUsuarioRepository) Actualizar(ctx context.Context, id string, datos map[string]interface{}) error {
-	target := mensaje.buscarPorID(id)
-	if target == nil {
+// Actualizar aplica cambios parciales y falla si la cuenta no existe.
+func (repositorio *mockUsuarioRepository) Actualizar(contexto context.Context, id string, datos map[string]interface{}) error {
+	objetivo := repositorio.buscarPorID(id)
+	if objetivo == nil {
 		return gorm.ErrRecordNotFound
 	}
-	mensaje.aplicarDatos(target, datos)
+	repositorio.aplicarDatos(objetivo, datos)
 	return nil
 }
 
-func (mensaje *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error {
-	actorUUID, err := uuid.Parse(strings.TrimSpace(actorID))
-	if err != nil {
+// ActualizarConGuarda reproduce la guarda del último admin y la auditoría
+// del repositorio real, para probar el servicio sin PostgreSQL.
+func (repositorio *mockUsuarioRepository) ActualizarConGuarda(contexto context.Context, id string, datos map[string]interface{}, actorID string) error {
+	actorUUID, errorObtenido := uuid.Parse(strings.TrimSpace(actorID))
+	if errorObtenido != nil {
 		return errors.New("actor de auditoría inválido")
 	}
 
-	target := mensaje.buscarPorID(id)
-	if target == nil {
+	objetivo := repositorio.buscarPorID(id)
+	if objetivo == nil {
 		return gorm.ErrRecordNotFound
 	}
 
-	rolActual, _ := domain.NormalizarRol(target.Rol)
+	rolActual, _ := domain.NormalizarRol(objetivo.Rol)
 	if _, cambiaRol := datos["rol"]; !cambiaRol {
-		if canonico, ok := domain.NormalizarRol(target.Rol); ok && strings.TrimSpace(target.Rol) != canonico {
+		if canonico, valido := domain.NormalizarRol(objetivo.Rol); valido && strings.TrimSpace(objetivo.Rol) != canonico {
 			datos["rol"] = canonico
 		}
 	}
 
 	dejaDeSerAdmin := false
-	if rolActual == domain.RolAdmin && target.EstaActivo {
-		if activo, ok := datos["esta_activo"].(bool); ok && !activo {
+	if rolActual == domain.RolAdmin && objetivo.EstaActivo {
+		if activo, valido := datos["esta_activo"].(bool); valido && !activo {
 			dejaDeSerAdmin = true
 		}
-		if nuevoRol, ok := datos["rol"].(string); ok {
+		if nuevoRol, valido := datos["rol"].(string); valido {
 			if canonico, _ := domain.NormalizarRol(nuevoRol); canonico != domain.RolAdmin {
 				dejaDeSerAdmin = true
 			}
@@ -156,40 +168,40 @@ func (mensaje *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, i
 
 	if dejaDeSerAdmin {
 		var otros int64
-		for _, usuarioLocal := range mensaje.usuarios {
-			if usuarioLocal.ID == target.ID {
+		for _, usuarioLocal := range repositorio.usuarios {
+			if usuarioLocal.ID == objetivo.ID {
 				continue
 			}
-			rol, ok := domain.NormalizarRol(usuarioLocal.Rol)
-			if ok && rol == domain.RolAdmin && usuarioLocal.EstaActivo {
+			rol, valido := domain.NormalizarRol(usuarioLocal.Rol)
+			if valido && rol == domain.RolAdmin && usuarioLocal.EstaActivo {
 				otros++
 			}
 		}
 		if otros == 0 {
 			return domain.ErrUltimoAdmin
 		}
-		if actorUUID == target.ID {
+		if actorUUID == objetivo.ID {
 			return domain.ErrAutoModificacionAdmin
 		}
 	}
 
-	anteriorRol := target.Rol
-	anteriorActivo := target.EstaActivo
-	anteriorPlan := target.Plan
-	mensaje.aplicarDatos(target, datos)
+	anteriorRol := objetivo.Rol
+	anteriorActivo := objetivo.EstaActivo
+	anteriorPlan := objetivo.Plan
+	repositorio.aplicarDatos(objetivo, datos)
 
 	cambios := map[string]interface{}{}
-	if nuevo, ok := datos["rol"]; ok {
+	if nuevo, valido := datos["rol"]; valido {
 		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorRol) {
 			cambios["rol"] = map[string]interface{}{"anterior": anteriorRol, "nuevo": nuevo}
 		}
 	}
-	if nuevo, ok := datos["esta_activo"]; ok {
+	if nuevo, valido := datos["esta_activo"]; valido {
 		if activo, esBool := nuevo.(bool); !esBool || activo != anteriorActivo {
 			cambios["esta_activo"] = map[string]interface{}{"anterior": anteriorActivo, "nuevo": nuevo}
 		}
 	}
-	if nuevo, ok := datos["plan"]; ok {
+	if nuevo, valido := datos["plan"]; valido {
 		if texto, esTexto := nuevo.(string); !esTexto || strings.TrimSpace(texto) != strings.TrimSpace(anteriorPlan) {
 			cambios["plan"] = map[string]interface{}{"anterior": anteriorPlan, "nuevo": nuevo}
 		}
@@ -198,29 +210,30 @@ func (mensaje *mockUsuarioRepository) ActualizarConGuarda(ctx context.Context, i
 	if len(cambios) == 0 {
 		return nil
 	}
-	mensaje.auditorias = append(mensaje.auditorias, domain.AuditoriaAdminUsuario{
+	repositorio.auditorias = append(repositorio.auditorias, domain.AuditoriaAdminUsuario{
 		ActorID:    actorUUID,
-		ObjetivoID: target.ID,
+		ObjetivoID: objetivo.ID,
 		Cambios:    cambios,
 	})
 	return nil
 }
 
-func (mensaje *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
+// Listar aplica filtros, orden y paginación como la consulta real.
+func (repositorio *mockUsuarioRepository) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) ([]domain.Usuario, int64, error) {
 	var resultado []domain.Usuario
 	patron := strings.ToLower(strings.TrimSpace(filtro.Query))
 	rolFiltro := ""
 	if filtro.Rol != "" {
-		if canonico, ok := domain.NormalizarRol(filtro.Rol); ok {
+		if canonico, valido := domain.NormalizarRol(filtro.Rol); valido {
 			rolFiltro = canonico
 		} else {
 			rolFiltro = strings.ToLower(strings.TrimSpace(filtro.Rol))
 		}
 	}
-	for _, usuarioLocal := range mensaje.usuarios {
+	for _, usuarioLocal := range repositorio.usuarios {
 		if rolFiltro != "" {
-			rolUsuario, ok := domain.NormalizarRol(usuarioLocal.Rol)
-			if !ok {
+			rolUsuario, valido := domain.NormalizarRol(usuarioLocal.Rol)
+			if !valido {
 				rolUsuario = strings.ToLower(strings.TrimSpace(usuarioLocal.Rol))
 			}
 			if rolUsuario != rolFiltro {
@@ -252,13 +265,14 @@ func (mensaje *mockUsuarioRepository) Listar(ctx context.Context, filtro domain.
 	return resultado, total, nil
 }
 
-func (mensaje *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, excluirID string) (int64, error) {
+// ContarAdminsActivos cuenta admins activos distintos de excluirID.
+func (repositorio *mockUsuarioRepository) ContarAdminsActivos(contexto context.Context, excluirID string) (int64, error) {
 	var total int64
-	for _, usuarioLocal := range mensaje.usuarios {
+	for _, usuarioLocal := range repositorio.usuarios {
 		if usuarioLocal.ID.String() == excluirID {
 			continue
 		}
-		if rol, ok := domain.NormalizarRol(usuarioLocal.Rol); ok && rol == domain.RolAdmin && usuarioLocal.EstaActivo {
+		if rol, valido := domain.NormalizarRol(usuarioLocal.Rol); valido && rol == domain.RolAdmin && usuarioLocal.EstaActivo {
 			total++
 		}
 	}
@@ -266,8 +280,8 @@ func (mensaje *mockUsuarioRepository) ContarAdminsActivos(ctx context.Context, e
 }
 
 func TestAuthService_PasswordComplexity(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
-	service := nuevoServicioAuth(repo)
+	repositorio := newMockUsuarioRepository()
+	servicio := nuevoServicioAuth(repositorio)
 
 	casos := []struct {
 		nombre      string
@@ -281,48 +295,48 @@ func TestAuthService_PasswordComplexity(prueba *testing.T) {
 		{"Valida", "Vicho159107!", false},
 	}
 
-	for _, tc := range casos {
-		prueba.Run(tc.nombre, func(prueba *testing.T) {
-			_, err := service.Registrar(context.Background(), services.RegistroDTO{
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			_, errorObtenido := servicio.Registrar(context.Background(), services.RegistroDTO{
 				Correo:         "test@uct.cl",
-				Password:       tc.password,
+				Password:       caso.password,
 				NombreCompleto: "Test User",
 			})
 
-			if tc.esperaError && err == nil {
-				prueba.Errorf("Se esperaba error para la clave '%s', pero no ocurrió", tc.password)
+			if caso.esperaError && errorObtenido == nil {
+				prueba.Errorf("Se esperaba error para la clave '%s', pero no ocurrió", caso.password)
 			}
-			if !tc.esperaError && err != nil {
-				prueba.Errorf("No se esperaba error para la clave '%s', pero ocurrió: %v", tc.password, err)
+			if !caso.esperaError && errorObtenido != nil {
+				prueba.Errorf("No se esperaba error para la clave '%s', pero ocurrió: %v", caso.password, errorObtenido)
 			}
 		})
 	}
 }
 
 func TestAuthService_RegistroExitoso(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
-	service := nuevoServicioAuth(repo)
+	repositorio := newMockUsuarioRepository()
+	servicio := nuevoServicioAuth(repositorio)
 
-	out, err := service.Registrar(context.Background(), services.RegistroDTO{
+	resultado, errorObtenido := servicio.Registrar(context.Background(), services.RegistroDTO{
 		Correo:         "Vicente@Uct.CL ",
 		Password:       "SuperClave2026#",
 		NombreCompleto: "<script>Vicente Matu</script>",
 	})
 
-	if err != nil {
-		prueba.Fatalf("Error inesperado en registro: %v", err)
+	if errorObtenido != nil {
+		prueba.Fatalf("Error inesperado en registro: %v", errorObtenido)
 	}
 
-	if out.Correo != "vicente@uct.cl" {
-		prueba.Errorf("Esperaba correo normalizado 'vicente@uct.cl', obtuve '%s'", out.Correo)
+	if resultado.Correo != "vicente@uct.cl" {
+		prueba.Errorf("Esperaba correo normalizado 'vicente@uct.cl', obtuve '%s'", resultado.Correo)
 	}
 
-	if out.EstaActivo != true {
+	if resultado.EstaActivo != true {
 		prueba.Errorf("Esperaba que EstaActivo fuera true por auto-login temporal, pero fue false")
 	}
 
 	// Verificar persistencia en repo
-	usuarioLocal := repo.usuarios["vicente@uct.cl"]
+	usuarioLocal := repositorio.usuarios["vicente@uct.cl"]
 	if usuarioLocal == nil {
 		prueba.Fatalf("Usuario no persistido en el repositorio")
 	}
@@ -335,85 +349,85 @@ func TestAuthService_RegistroExitoso(prueba *testing.T) {
 	}
 
 	// Intento de registro duplicado
-	_, errDuplicado := service.Registrar(context.Background(), services.RegistroDTO{
+	_, errorDuplicado := servicio.Registrar(context.Background(), services.RegistroDTO{
 		Correo:         "vicente@uct.cl",
 		Password:       "SuperClave2026#",
 		NombreCompleto: "Vicente Duplicado",
 	})
 
-	if !errors.Is(errDuplicado, services.ErrCorreoDuplicado) {
-		prueba.Errorf("Esperaba ErrCorreoDuplicado, obtuve %v", errDuplicado)
+	if !errors.Is(errorDuplicado, services.ErrCorreoDuplicado) {
+		prueba.Errorf("Esperaba ErrCorreoDuplicado, obtuve %v", errorDuplicado)
 	}
 }
 
 func TestAuthService_Login(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
-	service := nuevoServicioAuth(repo)
+	repositorio := newMockUsuarioRepository()
+	servicio := nuevoServicioAuth(repositorio)
 
-	hashPass, _ := security.HashPassword("Password123#")
+	hashContrasena, _ := security.HashPassword("Password123#")
 
 	// 1. Usuario activo normal
-	userActivo := &domain.Usuario{
+	usuarioActivo := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "activo@uct.cl",
-		PasswordHash:   &hashPass,
+		PasswordHash:   &hashContrasena,
 		NombreCompleto: "Usuario Activo",
 		EstaActivo:     true,
 	}
-	repo.usuarios[userActivo.Correo] = userActivo
+	repositorio.usuarios[usuarioActivo.Correo] = usuarioActivo
 
 	// 2. Usuario con PasswordHash nulo (Login social previo con Google)
-	userGoogle := &domain.Usuario{
+	usuarioGoogle := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "google@uct.cl",
 		PasswordHash:   nil,
 		NombreCompleto: "Usuario Google",
 		EstaActivo:     true,
 	}
-	repo.usuarios[userGoogle.Correo] = userGoogle
+	repositorio.usuarios[usuarioGoogle.Correo] = usuarioGoogle
 
 	// 3. Usuario inactivo pendiente de verificación
-	userInactivo := &domain.Usuario{
+	usuarioInactivo := &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "inactivo@uct.cl",
-		PasswordHash:   &hashPass,
+		PasswordHash:   &hashContrasena,
 		NombreCompleto: "Usuario Inactivo",
 		EstaActivo:     false,
 	}
-	repo.usuarios[userInactivo.Correo] = userInactivo
+	repositorio.usuarios[usuarioInactivo.Correo] = usuarioInactivo
 
 	prueba.Run("Usuario inexistente", func(prueba *testing.T) {
-		_, err := service.LoginWithContext(context.Background(), "noexiste@uct.cl", "Password123#")
-		if !errors.Is(err, services.ErrCredencialesInvalidas) {
-			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", err)
+		_, errorObtenido := servicio.LoginWithContext(context.Background(), "noexiste@uct.cl", "Password123#")
+		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Usuario con PasswordHash nulo (sin panic)", func(prueba *testing.T) {
-		_, err := service.LoginWithContext(context.Background(), "google@uct.cl", "CualquierPass123#")
-		if !errors.Is(err, services.ErrCredencialesInvalidas) {
-			prueba.Errorf("Esperaba ErrCredencialesInvalidas ante cuenta sin password local, obtuve %v", err)
+		_, errorObtenido := servicio.LoginWithContext(context.Background(), "google@uct.cl", "CualquierPass123#")
+		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+			prueba.Errorf("Esperaba ErrCredencialesInvalidas ante cuenta sin password local, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Cuenta inactiva pendiente de confirmacion", func(prueba *testing.T) {
-		_, err := service.LoginWithContext(context.Background(), "inactivo@uct.cl", "Password123#")
-		if !errors.Is(err, services.ErrCuentaInactiva) {
-			prueba.Errorf("Esperaba ErrCuentaInactiva, obtuve %v", err)
+		_, errorObtenido := servicio.LoginWithContext(context.Background(), "inactivo@uct.cl", "Password123#")
+		if !errors.Is(errorObtenido, services.ErrCuentaInactiva) {
+			prueba.Errorf("Esperaba ErrCuentaInactiva, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Contraseña incorrecta", func(prueba *testing.T) {
-		_, err := service.LoginWithContext(context.Background(), "activo@uct.cl", "PasswordErronea123#")
-		if !errors.Is(err, services.ErrCredencialesInvalidas) {
-			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", err)
+		_, errorObtenido := servicio.LoginWithContext(context.Background(), "activo@uct.cl", "PasswordErronea123#")
+		if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+			prueba.Errorf("Esperaba ErrCredencialesInvalidas, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Login exitoso", func(prueba *testing.T) {
-		usuarioLocal, err := service.LoginWithContext(context.Background(), "ACTIVO@UCT.CL ", "Password123#")
-		if err != nil {
-			prueba.Fatalf("Login exitoso falló inesperadamente: %v", err)
+		usuarioLocal, errorObtenido := servicio.LoginWithContext(context.Background(), "ACTIVO@UCT.CL ", "Password123#")
+		if errorObtenido != nil {
+			prueba.Fatalf("Login exitoso falló inesperadamente: %v", errorObtenido)
 		}
 		if usuarioLocal.Correo != "activo@uct.cl" {
 			prueba.Errorf("Esperaba correo activo@uct.cl, obtuve %s", usuarioLocal.Correo)
@@ -425,26 +439,26 @@ func TestAuthService_Login(prueba *testing.T) {
 }
 
 func TestAuthService_ActualizarPerfil(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
-	service := nuevoServicioAuth(repo)
+	repositorio := newMockUsuarioRepository()
+	servicio := nuevoServicioAuth(repositorio)
 
-	hashPass, _ := security.HashPassword("Password123#")
-	userID := uuid.New()
-	userOriginal := &domain.Usuario{
-		ID:             userID,
+	hashContrasena, _ := security.HashPassword("Password123#")
+	usuarioID := uuid.New()
+	usuarioOriginal := &domain.Usuario{
+		ID:             usuarioID,
 		Correo:         "original@uct.cl",
-		PasswordHash:   &hashPass,
+		PasswordHash:   &hashContrasena,
 		NombreCompleto: "Nombre Original",
 		Rol:            "registrado",
 		EstaActivo:     true,
 	}
-	repo.usuarios[userOriginal.Correo] = userOriginal
+	repositorio.usuarios[usuarioOriginal.Correo] = usuarioOriginal
 
 	// Usuario secundario para probar conflicto de correo
-	repo.usuarios["otro@uct.cl"] = &domain.Usuario{
+	repositorio.usuarios["otro@uct.cl"] = &domain.Usuario{
 		ID:             uuid.New(),
 		Correo:         "otro@uct.cl",
-		PasswordHash:   &hashPass,
+		PasswordHash:   &hashContrasena,
 		NombreCompleto: "Otro Usuario",
 		EstaActivo:     true,
 	}
@@ -454,57 +468,57 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 		nuevoTel := "+56912345678"
 		nuevaDir := "Av. Alemania 1234, Temuco"
 
-		res, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
+		resultado, errorObtenido := servicio.ActualizarPerfil(context.Background(), usuarioID.String(), domain.ActualizarPerfilDTO{
 			NombreCompleto: &nuevoNombre,
 			Telefono:       &nuevoTel,
 			Direccion:      &nuevaDir,
 		})
-		if err != nil {
-			prueba.Fatalf("Error inesperado en actualizacion: %v", err)
+		if errorObtenido != nil {
+			prueba.Fatalf("Error inesperado en actualizacion: %v", errorObtenido)
 		}
 
-		if res.NombreCompleto != nuevoNombre {
-			prueba.Errorf("Esperaba nombre %s, obtuve %s", nuevoNombre, res.NombreCompleto)
+		if resultado.NombreCompleto != nuevoNombre {
+			prueba.Errorf("Esperaba nombre %s, obtuve %s", nuevoNombre, resultado.NombreCompleto)
 		}
-		if res.Telefono == nil || *res.Telefono != nuevoTel {
-			prueba.Errorf("Esperaba telefono %s, obtuve %v", nuevoTel, res.Telefono)
+		if resultado.Telefono == nil || *resultado.Telefono != nuevoTel {
+			prueba.Errorf("Esperaba telefono %s, obtuve %v", nuevoTel, resultado.Telefono)
 		}
-		if res.Direccion == nil || *res.Direccion != nuevaDir {
-			prueba.Errorf("Esperaba direccion %s, obtuve %v", nuevaDir, res.Direccion)
+		if resultado.Direccion == nil || *resultado.Direccion != nuevaDir {
+			prueba.Errorf("Esperaba direccion %s, obtuve %v", nuevaDir, resultado.Direccion)
 		}
-		if res.Correo != "original@uct.cl" {
+		if resultado.Correo != "original@uct.cl" {
 			prueba.Errorf("El correo no debio haber cambiado")
 		}
-		if !res.EstaActivo {
+		if !resultado.EstaActivo {
 			prueba.Errorf("EstaActivo no debio alterarse")
 		}
 	})
 
 	prueba.Run("Actualizacion de contraseña con validacion", func(prueba *testing.T) {
 		actual := "Password123#"
-		passInvalida := "corta"
-		_, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
-			Password:       &passInvalida,
+		contrasenaInvalida := "corta"
+		_, errorObtenido := servicio.ActualizarPerfil(context.Background(), usuarioID.String(), domain.ActualizarPerfilDTO{
+			Password:       &contrasenaInvalida,
 			PasswordActual: &actual,
 		})
-		if !errors.Is(err, services.ErrPasswordInvalido) {
-			prueba.Errorf("Esperaba ErrPasswordInvalido, obtuve %v", err)
+		if !errors.Is(errorObtenido, services.ErrPasswordInvalido) {
+			prueba.Errorf("Esperaba ErrPasswordInvalido, obtuve %v", errorObtenido)
 		}
 
-		passValida := "NuevaClaveSegura2026!"
-		res, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
-			Password:       &passValida,
+		contrasenaValida := "NuevaClaveSegura2026!"
+		resultado, errorObtenido := servicio.ActualizarPerfil(context.Background(), usuarioID.String(), domain.ActualizarPerfilDTO{
+			Password:       &contrasenaValida,
 			PasswordActual: &actual,
 		})
-		if err != nil {
-			prueba.Fatalf("Actualizacion con clave valida falló: %v", err)
+		if errorObtenido != nil {
+			prueba.Fatalf("Actualizacion con clave valida falló: %v", errorObtenido)
 		}
-		if res == nil {
+		if resultado == nil {
 			prueba.Fatalf("Respuesta nula")
 		}
 
 		// Verificar que el hash se actualizo en el usuario
-		usuarioLocal := repo.usuarios["original@uct.cl"]
+		usuarioLocal := repositorio.usuarios["original@uct.cl"]
 		if !security.CheckPasswordHash("NuevaClaveSegura2026!", *usuarioLocal.PasswordHash) {
 			prueba.Errorf("El hash en repositorio no coincide con la nueva contraseña")
 		}
@@ -513,51 +527,51 @@ func TestAuthService_ActualizarPerfil(prueba *testing.T) {
 	prueba.Run("Conflicto al intentar cambiar a correo existente", func(prueba *testing.T) {
 		correoTomado := "otro@uct.cl"
 		actual := "NuevaClaveSegura2026!"
-		_, err := service.ActualizarPerfil(context.Background(), userID.String(), domain.ActualizarPerfilDTO{
+		_, errorObtenido := servicio.ActualizarPerfil(context.Background(), usuarioID.String(), domain.ActualizarPerfilDTO{
 			Correo:         &correoTomado,
 			PasswordActual: &actual,
 		})
-		if !errors.Is(err, services.ErrCorreoDuplicado) {
-			prueba.Errorf("Esperaba ErrCorreoDuplicado, obtuve %v", err)
+		if !errors.Is(errorObtenido, services.ErrCorreoDuplicado) {
+			prueba.Errorf("Esperaba ErrCorreoDuplicado, obtuve %v", errorObtenido)
 		}
 	})
 
 	prueba.Run("Usuario no existente", func(prueba *testing.T) {
 		nombre := "Fantasma"
-		_, err := service.ActualizarPerfil(context.Background(), uuid.New().String(), domain.ActualizarPerfilDTO{
+		_, errorObtenido := servicio.ActualizarPerfil(context.Background(), uuid.New().String(), domain.ActualizarPerfilDTO{
 			NombreCompleto: &nombre,
 		})
-		if !errors.Is(err, services.ErrUsuarioNoEncontrado) {
-			prueba.Errorf("Esperaba ErrUsuarioNoEncontrado, obtuve %v", err)
+		if !errors.Is(errorObtenido, services.ErrUsuarioNoEncontrado) {
+			prueba.Errorf("Esperaba ErrUsuarioNoEncontrado, obtuve %v", errorObtenido)
 		}
 	})
 }
 
 func TestPasswordBeyondBcryptLimitIsValidationError(prueba *testing.T) {
 	servicio := nuevoServicioAuth(newMockUsuarioRepository())
-	_, err := servicio.Registrar(prueba.Context(), services.RegistroDTO{Correo: "fixture@example.test", NombreCompleto: "Fixture", Password: "A1!" + strings.Repeat("a", 70)})
-	if !errors.Is(err, services.ErrPasswordInvalido) {
-		prueba.Fatal(err)
+	_, errorObtenido := servicio.Registrar(prueba.Context(), services.RegistroDTO{Correo: "fixture@example.test", NombreCompleto: "Fixture", Password: "A1!" + strings.Repeat("a", 70)})
+	if !errors.Is(errorObtenido, services.ErrPasswordInvalido) {
+		prueba.Fatal(errorObtenido)
 	}
 }
 
 // W4 (#99): con una cookie robada no se puede cambiar correo ni contraseña.
 func TestActualizarPerfilExigeContrasenaActual(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
-	service := nuevoServicioAuth(repo)
+	repositorio := newMockUsuarioRepository()
+	servicio := nuevoServicioAuth(repositorio)
 	hash, _ := security.HashPassword("Password123#")
 	local := &domain.Usuario{ID: uuid.New(), Correo: "local@uct.cl", PasswordHash: &hash, NombreCompleto: "Local", EstaActivo: true}
 	googleID := "google-only"
 	sso := &domain.Usuario{ID: uuid.New(), Correo: "sso@uct.cl", GoogleID: &googleID, NombreCompleto: "SSO", EstaActivo: true}
-	repo.usuarios[local.Correo] = local
-	repo.usuarios[sso.Correo] = sso
+	repositorio.usuarios[local.Correo] = local
+	repositorio.usuarios[sso.Correo] = sso
 
 	nueva := "OtraClaveSegura2026!"
 	correo := "nuevo@uct.cl"
 	mismoCorreo := " LOCAL@uct.cl "
 	incorrecta := "NoEsLaClave123#"
 	correcta := "Password123#"
-	for _, tc := range []struct {
+	for _, caso := range []struct {
 		name    string
 		user    *domain.Usuario
 		input   domain.ActualizarPerfilDTO
@@ -569,55 +583,55 @@ func TestActualizarPerfilExigeContrasenaActual(prueba *testing.T) {
 		{"cuenta Google sin contraseña", sso, domain.ActualizarPerfilDTO{Password: &nueva, PasswordActual: &correcta}, services.ErrReautenticacionRequerida},
 		{"mismo correo no es un cambio", local, domain.ActualizarPerfilDTO{Correo: &mismoCorreo}, nil},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			antes := tc.user.PasswordHash
-			_, err := service.ActualizarPerfil(context.Background(), tc.user.ID.String(), tc.input)
-			if !errors.Is(err, tc.wantErr) {
-				prueba.Fatalf("error %v; esperado %v", err, tc.wantErr)
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			antes := caso.user.PasswordHash
+			_, errorObtenido := servicio.ActualizarPerfil(context.Background(), caso.user.ID.String(), caso.input)
+			if !errors.Is(errorObtenido, caso.wantErr) {
+				prueba.Fatalf("error %v; esperado %v", errorObtenido, caso.wantErr)
 			}
-			if tc.wantErr != nil && tc.user.PasswordHash != antes {
+			if caso.wantErr != nil && caso.user.PasswordHash != antes {
 				prueba.Fatal("la contraseña cambió sin reautenticación")
 			}
 		})
 	}
-	if repo.usuarios["local@uct.cl"] == nil {
+	if repositorio.usuarios["local@uct.cl"] == nil {
 		prueba.Fatal("el correo cambió sin reautenticación")
 	}
 }
 
 func TestProfileNameValidationPreservesStoredName(prueba *testing.T) {
-	for _, name := range []string{"@@@;;;", " \t ", "@ @"} {
-		prueba.Run(name, func(prueba *testing.T) {
-			repo := newMockUsuarioRepository()
-			user := &domain.Usuario{ID: uuid.New(), Correo: "profile@example.test", NombreCompleto: "Original"}
-			repo.usuarios[user.Correo] = user
-			manejador := handlers.NewAuthHandler(nuevoServicioAuth(repo), false, claveJWTDePrueba)
-			peticion := gin.New()
-			peticion.PUT("/profile", func(contexto *gin.Context) { contexto.Set("user_id", user.ID.String()) }, manejador.ActualizarPerfil)
-			body, _ := json.Marshal(map[string]string{"nombre_completo": name})
-			request := httptest.NewRequest(http.MethodPut, "/profile", strings.NewReader(string(body)))
-			request.Header.Set("Content-Type", "application/json")
-			response := httptest.NewRecorder()
-			peticion.ServeHTTP(response, request)
-			if response.Code != http.StatusBadRequest || user.NombreCompleto != "Original" {
-				prueba.Fatalf("status=%d name=%q body=%s", response.Code, user.NombreCompleto, response.Body)
+	for _, nombre := range []string{"@@@;;;", " \t ", "@ @"} {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			usuario := &domain.Usuario{ID: uuid.New(), Correo: "profile@example.test", NombreCompleto: "Original"}
+			repositorio.usuarios[usuario.Correo] = usuario
+			manejador := handlers.NewAuthHandler(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+			enrutador := gin.New()
+			enrutador.PUT("/profile", func(contexto *gin.Context) { contexto.Set("user_id", usuario.ID.String()) }, manejador.ActualizarPerfil)
+			cuerpo, _ := json.Marshal(map[string]string{"nombre_completo": nombre})
+			solicitud := httptest.NewRequest(http.MethodPut, "/profile", strings.NewReader(string(cuerpo)))
+			solicitud.Header.Set("Content-Type", "application/json")
+			respuestaHTTP := httptest.NewRecorder()
+			enrutador.ServeHTTP(respuestaHTTP, solicitud)
+			if respuestaHTTP.Code != http.StatusBadRequest || usuario.NombreCompleto != "Original" {
+				prueba.Fatalf("status=%d name=%q body=%s", respuestaHTTP.Code, usuario.NombreCompleto, respuestaHTTP.Body)
 			}
 		})
 	}
 }
 
 func TestNameSanitizationPreservesUnicodeBoundaries(prueba *testing.T) {
-	for _, tc := range []struct{ name, input, want string }{
+	for _, caso := range []struct{ name, input, want string }{
 		{"multibyte boundary", strings.Repeat("a", 99) + "ñz", strings.Repeat("a", 99) + "ñ"},
 		{"one hundred accents", strings.Repeat("á", 101), strings.Repeat("á", 100)},
 		{"allowed alphabet", "  María Ñúñez-23  ", "María Ñúñez-23"},
 		{"invalid UTF8", "A\xffB", "AB"},
 		{"filtered whitespace", "@ @", ""},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			got := services.SanitizarInputBusqueda(tc.input)
-			if got != tc.want || !utf8.ValidString(got) {
-				prueba.Fatalf("got=%q want=%q", got, tc.want)
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			obtenido := services.SanitizarInputBusqueda(caso.input)
+			if obtenido != caso.want || !utf8.ValidString(obtenido) {
+				prueba.Fatalf("got=%q want=%q", obtenido, caso.want)
 			}
 		})
 	}

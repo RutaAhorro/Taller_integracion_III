@@ -1,5 +1,6 @@
 // Recuperación de contraseña (SUP-184): emite el token de restablecimiento y
 // despacha su correo. El endpoint que la expone es SUP-233.
+
 package services
 
 import (
@@ -28,7 +29,7 @@ type RecuperacionService interface {
 	// Google. Sólo devuelve ErrCorreoInvalido.
 	Solicitar(correo string) error
 	// Cerrar espera los envíos en curso; se llama al apagar Identidad.
-	Cerrar(ctx context.Context) error
+	Cerrar(contexto context.Context) error
 }
 
 // recuperacionService procesa cada solicitud en su propia goroutine. No hay
@@ -50,16 +51,16 @@ type recuperacionService struct {
 
 // NewRecuperacionService arma el servicio. Sin transporte de correo o sin URL de
 // restablecimiento queda apagado: valida el formato pero no emite tokens ni correos.
-func NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.RecuperacionRepository, correo mailer.Mailer, urlRestablecer string, log *slog.Logger, ajustes config.Ajustes) RecuperacionService {
-	if log == nil {
-		log = slog.Default()
+func NewRecuperacionService(usuarios domain.UsuarioRepository, tokens domain.RecuperacionRepository, correo mailer.Mailer, urlRestablecer string, registrador *slog.Logger, ajustes config.Ajustes) RecuperacionService {
+	if registrador == nil {
+		registrador = slog.Default()
 	}
 	return &recuperacionService{
 		usuarios:       usuarios,
 		tokens:         tokens,
 		correo:         correo,
 		urlRestablecer: urlRestablecer,
-		log:            log,
+		log:            registrador,
 		ajustes:        ajustes,
 		activa:         correo != nil && urlRestablecer != "" && usuarios != nil && tokens != nil,
 	}
@@ -83,7 +84,7 @@ func (servicio *recuperacionService) Solicitar(correo string) error {
 }
 
 // Cerrar espera los envíos en curso hasta que venza el plazo del apagado.
-func (servicio *recuperacionService) Cerrar(ctx context.Context) error {
+func (servicio *recuperacionService) Cerrar(contexto context.Context) error {
 	terminado := make(chan struct{})
 	go func() {
 		servicio.enCurso.Wait()
@@ -92,48 +93,48 @@ func (servicio *recuperacionService) Cerrar(ctx context.Context) error {
 	select {
 	case <-terminado:
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-contexto.Done():
+		return contexto.Err()
 	}
 }
 
 // procesar emite el token y envía el correo. Las cuentas inexistentes o inactivas se
 // ignoran en silencio. Nunca registra el correo: los logs usan el UUID de la cuenta.
 func (servicio *recuperacionService) procesar(correo string) {
-	ctx, cancel := context.WithTimeout(context.Background(), servicio.ajustes.RecuperacionTimeout)
-	defer cancel()
-	usuario, err := servicio.usuarios.FindByEmail(ctx, correo)
-	if err != nil {
-		servicio.log.Error("recuperacion_fallida", "etapa", "cuenta", "error", err)
+	contexto, cancelar := context.WithTimeout(context.Background(), servicio.ajustes.RecuperacionTimeout)
+	defer cancelar()
+	usuario, errorOperacion := servicio.usuarios.FindByEmail(contexto, correo)
+	if errorOperacion != nil {
+		servicio.log.Error("recuperacion_fallida", "etapa", "cuenta", "error", errorOperacion)
 		return
 	}
 	if usuario == nil || !usuario.EstaActivo {
 		return
 	}
-	enVentana, enEspera, err := servicio.tokens.SolicitudesRecientes(ctx, usuario.ID, servicio.ajustes.RecuperacionVentana, servicio.ajustes.RecuperacionEspera)
-	if err != nil {
-		servicio.log.Error("recuperacion_fallida", "etapa", "limite", "usuario_id", usuario.ID, "error", err)
+	enVentana, enEspera, errorOperacion := servicio.tokens.SolicitudesRecientes(contexto, usuario.ID, servicio.ajustes.RecuperacionVentana, servicio.ajustes.RecuperacionEspera)
+	if errorOperacion != nil {
+		servicio.log.Error("recuperacion_fallida", "etapa", "limite", "usuario_id", usuario.ID, "error", errorOperacion)
 		return
 	}
 	if enEspera || enVentana >= servicio.ajustes.RecuperacionMax {
 		servicio.log.Info("recuperacion_limitada", "usuario_id", usuario.ID)
 		return
 	}
-	token, hash, err := security.GenerarTokenRecuperacion()
-	if err != nil {
-		servicio.log.Error("recuperacion_fallida", "etapa", "token", "usuario_id", usuario.ID, "error", err)
+	token, hash, errorOperacion := security.GenerarTokenRecuperacion()
+	if errorOperacion != nil {
+		servicio.log.Error("recuperacion_fallida", "etapa", "token", "usuario_id", usuario.ID, "error", errorOperacion)
 		return
 	}
-	if err := servicio.tokens.EmitirToken(ctx, usuario.ID, hash, servicio.ajustes.RecuperacionVigencia); err != nil {
-		servicio.log.Error("recuperacion_fallida", "etapa", "guardar_token", "usuario_id", usuario.ID, "error", err)
+	if errorObtenido := servicio.tokens.EmitirToken(contexto, usuario.ID, hash, servicio.ajustes.RecuperacionVigencia); errorObtenido != nil {
+		servicio.log.Error("recuperacion_fallida", "etapa", "guardar_token", "usuario_id", usuario.ID, "error", errorObtenido)
 		return
 	}
-	mensaje, err := mensajeRecuperacion(usuario, servicio.urlRestablecer, token, servicio.ajustes.RecuperacionVigencia)
-	if err == nil {
-		err = servicio.correo.Enviar(ctx, mensaje)
+	mensaje, errorOperacion := mensajeRecuperacion(usuario, servicio.urlRestablecer, token, servicio.ajustes.RecuperacionVigencia)
+	if errorOperacion == nil {
+		errorOperacion = servicio.correo.Enviar(contexto, mensaje)
 	}
-	if err != nil {
-		servicio.log.Warn("recuperacion_correo_no_enviado", "usuario_id", usuario.ID, "error", err)
+	if errorOperacion != nil {
+		servicio.log.Warn("recuperacion_correo_no_enviado", "usuario_id", usuario.ID, "error", errorOperacion)
 		return
 	}
 	servicio.log.Info("recuperacion_enviada", "usuario_id", usuario.ID)
@@ -150,6 +151,8 @@ var plantillaRecuperacion = template.Must(template.New("recuperacion").Parse(`<!
 <p>Si no lo pediste, ignora este correo: tu contraseña no cambia.</p>
 </body></html>`))
 
+// mensajeRecuperacion arma el correo de restablecimiento en texto y HTML
+// escapado, con el enlace y la vigencia del token.
 func mensajeRecuperacion(usuario *domain.Usuario, urlRestablecer, token string, vigencia time.Duration) (mailer.Mensaje, error) {
 	enlace := urlRestablecer + "?token=" + url.QueryEscape(token)
 	saludo := "Hola"
@@ -157,13 +160,13 @@ func mensajeRecuperacion(usuario *domain.Usuario, urlRestablecer, token string, 
 		saludo += ", " + nombre
 	}
 	minutos := int(vigencia.Minutes())
-	var html bytes.Buffer
+	var cuerpoHTML bytes.Buffer
 	// html/template escapa el nombre y filtra esquemas peligrosos en el href.
-	if err := plantillaRecuperacion.Execute(&html, map[string]any{"Saludo": saludo, "Enlace": enlace, "Minutos": minutos}); err != nil {
-		return mailer.Mensaje{}, err
+	if errorObtenido := plantillaRecuperacion.Execute(&cuerpoHTML, map[string]any{"Saludo": saludo, "Enlace": enlace, "Minutos": minutos}); errorObtenido != nil {
+		return mailer.Mensaje{}, errorObtenido
 	}
 	texto := fmt.Sprintf("%s:\n\nRecibimos una solicitud para restablecer la contraseña de tu cuenta de RutaAhorro.\n"+
 		"Abre este enlace para elegir una nueva. Vence en %d minutos y sirve una sola vez:\n\n%s\n\n"+
 		"Si no lo pediste, ignora este correo: tu contraseña no cambia.\n", saludo, minutos, enlace)
-	return mailer.Mensaje{Para: usuario.Correo, Asunto: "Restablece tu contraseña de RutaAhorro", Texto: texto, HTML: html.String()}, nil
+	return mailer.Mensaje{Para: usuario.Correo, Asunto: "Restablece tu contraseña de RutaAhorro", Texto: texto, HTML: cuerpoHTML.String()}, nil
 }

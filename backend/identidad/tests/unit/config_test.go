@@ -1,3 +1,6 @@
+// Carga y validación del entorno: valores obligatorios, CORS, proxies y
+// ajustes fijos que no dependen del entorno.
+
 package unit_test
 
 import (
@@ -8,10 +11,11 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 )
 
+// valid fija un entorno mínimo válido; cada prueba cambia sólo lo que evalúa.
 func valid(prueba *testing.T) {
 	prueba.Helper()
-	for key, value := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": ""} {
-		prueba.Setenv(key, value)
+	for clave, valor := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": ""} {
+		prueba.Setenv(clave, valor)
 	}
 	sinCorreo(prueba)
 	prueba.Setenv("IDENTIDAD_URL_RESTABLECER", "")
@@ -19,25 +23,25 @@ func valid(prueba *testing.T) {
 func TestURLRestablecer(prueba *testing.T) {
 	valid(prueba)
 	prueba.Setenv("IDENTIDAD_URL_RESTABLECER", "https://frontend.example/restablecer-contrasena")
-	if contexto, err := config.Load(); err != nil || contexto.URLRestablecer != "https://frontend.example/restablecer-contrasena" {
-		prueba.Fatalf("%q %v", contexto.URLRestablecer, err)
+	if contexto, errorObtenido := config.Load(); errorObtenido != nil || contexto.URLRestablecer != "https://frontend.example/restablecer-contrasena" {
+		prueba.Fatalf("%q %v", contexto.URLRestablecer, errorObtenido)
 	}
 	for _, invalida := range []string{"ftp://frontend.example/r", "/restablecer", "https://frontend.example/r?token=x", "https://frontend.example/r#x", "https://user:fixture-private@frontend.example/r", "https://frontend.example/r x"} {
 		prueba.Setenv("IDENTIDAD_URL_RESTABLECER", invalida)
-		if _, err := config.Load(); err == nil || strings.Contains(err.Error(), "fixture-private") {
-			prueba.Fatalf("%q aceptada o con secreto en el error: %v", invalida, err)
+		if _, errorObtenido := config.Load(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
+			prueba.Fatalf("%q aceptada o con secreto en el error: %v", invalida, errorObtenido)
 		}
 	}
 }
 func TestValidDefaults(prueba *testing.T) {
 	valid(prueba)
-	contexto, err := config.Load()
-	if err != nil || !contexto.CookieSecure || contexto.ListenAddr != ":8080" || len(contexto.TrustedProxies) != 1 {
-		prueba.Fatalf("%+v %v", contexto, err)
+	contexto, errorObtenido := config.Load()
+	if errorObtenido != nil || !contexto.CookieSecure || contexto.ListenAddr != ":8080" || len(contexto.TrustedProxies) != 1 {
+		prueba.Fatalf("%+v %v", contexto, errorObtenido)
 	}
 }
 func TestInvalidConfigFailsWithoutSecrets(prueba *testing.T) {
-	for _, tc := range []struct{ key, value string }{
+	for _, caso := range []struct{ key, value string }{
 		{"IDENTITY_DB_URL", ""}, {"IDENTITY_DB_URL", "postgres://postgres:fixture-private@db/test"}, {"IDENTITY_DB_URL", "postgres://app_scraping:fixture-private@db/test"}, {"IDENTITY_DB_URL", "postgres://app_identity@db/test"},
 		{"JWT_SECRET", ""}, {"JWT_SECRET", "too-short"}, {"REDIS_URL", ""}, {"PORT", "0"}, {"PORT", "65536"}, {"PORT", "invalid"}, {"IDENTIDAD_COOKIE_SECURE", "maybe"},
 		{"REDIS_URL", "redis://user:fixture-private@bad host"},
@@ -46,12 +50,12 @@ func TestInvalidConfigFailsWithoutSecrets(prueba *testing.T) {
 		{"IDENTIDAD_TRUSTED_PROXIES", "::/0"},
 		{"IDENTIDAD_TRUSTED_PROXIES", "*"}, {"IDENTIDAD_TRUSTED_PROXIES", "172.30.0.2,"}, {"CORS_ALLOWED_ORIGINS", "*"}, {"CORS_ALLOWED_ORIGINS", "null"}, {"CORS_ALLOWED_ORIGINS", "https://frontend.example/path"}, {"CORS_ALLOWED_ORIGINS", "https://user:fixture-private@frontend.example"},
 	} {
-		prueba.Run(tc.key+tc.value, func(prueba *testing.T) {
+		prueba.Run(caso.key+caso.value, func(prueba *testing.T) {
 			valid(prueba)
-			prueba.Setenv(tc.key, tc.value)
-			_, err := config.Load()
-			if err == nil || strings.Contains(err.Error(), "fixture-private") {
-				prueba.Fatalf("config aceptada o secretos expuestos: %v", err)
+			prueba.Setenv(caso.key, caso.value)
+			_, errorObtenido := config.Load()
+			if errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
+				prueba.Fatalf("config aceptada o secretos expuestos: %v", errorObtenido)
 			}
 		})
 	}
@@ -61,9 +65,9 @@ func TestExplicitLocalAndProxyConfig(prueba *testing.T) {
 	prueba.Setenv("IDENTIDAD_COOKIE_SECURE", "false")
 	prueba.Setenv("IDENTIDAD_TRUSTED_PROXIES", "172.30.0.2,10.0.0.0/24")
 	prueba.Setenv("CORS_ALLOWED_ORIGINS", "https://frontend.example,http://localhost:3000")
-	contexto, err := config.Load()
-	if err != nil || contexto.CookieSecure || len(contexto.TrustedProxies) != 2 || len(contexto.AllowedOrigins) != 2 {
-		prueba.Fatalf("%+v %v", contexto, err)
+	contexto, errorObtenido := config.Load()
+	if errorObtenido != nil || contexto.CookieSecure || len(contexto.TrustedProxies) != 2 || len(contexto.AllowedOrigins) != 2 {
+		prueba.Fatalf("%+v %v", contexto, errorObtenido)
 	}
 }
 

@@ -1,3 +1,5 @@
+// Hash y verificación de contraseñas con bcrypt.
+
 package security
 
 import "golang.org/x/crypto/bcrypt"
@@ -9,16 +11,16 @@ const (
 )
 
 // HashPassword genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
-func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return "", err
+func HashPassword(contrasena string) (string, error) {
+	cantidadBytes, errorObtenido := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
+	if errorObtenido != nil {
+		return "", errorObtenido
 	}
-	return string(bytes), nil
+	return string(cantidadBytes), nil
 }
 
 // CheckPasswordHash compara una contraseña en texto plano contra un hash bcrypt almacenado
-func CheckPasswordHash(password, hash string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
-	return err == nil
+func CheckPasswordHash(contrasena, hash string) bool {
+	errorObtenido := bcrypt.CompareHashAndPassword([]byte(hash), []byte(contrasena))
+	return errorObtenido == nil
 }

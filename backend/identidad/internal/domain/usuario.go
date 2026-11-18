@@ -1,3 +1,5 @@
+// DTO del perfil propio: lo que el usuario puede leer y modificar de su cuenta.
+
 package domain
 
 // ActualizarPerfilDTO define los campos opcionales para la actualización parcial del perfil de usuario

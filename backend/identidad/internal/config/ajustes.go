@@ -2,6 +2,7 @@
 // Son valores fijos del servicio y no variables de entorno, porque ningún
 // ambiente los cambia. El arranque los inyecta en cada componente y las pruebas
 // pueden acortarlos sin tocar el entorno.
+
 package config
 
 import "time"

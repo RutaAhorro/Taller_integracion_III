@@ -1,3 +1,5 @@
+// Configuración del transporte de correo: modo, servidor SMTP, TLS y credenciales.
+
 package config
 
 import (
@@ -8,6 +10,8 @@ import (
 	"strings"
 	"time"
 )
+
+// ===== Constantes =====
 
 // TimeoutSMTPPredeterminado acota cada envío por el transporte SMTP.
 const TimeoutSMTPPredeterminado = 30 * time.Second
@@ -32,6 +36,8 @@ type Correo struct {
 	Puerto                                     int
 	Timeout                                    time.Duration
 }
+
+// ===== Carga =====
 
 // LoadCorreo lee y valida sólo la configuración de correo; Load la incorpora al arrancar.
 // Sin IDENTIDAD_CORREO_MODO, hay SMTP cuando existen credenciales: así el Deployment
@@ -63,9 +69,9 @@ func LoadCorreo() (Correo, error) {
 		return Correo{}, errors.New("SMTP_HOST requiere un nombre de servidor sin esquema ni espacios")
 	}
 	configuracion.Puerto = 587
-	if raw := strings.TrimSpace(os.Getenv("SMTP_PORT")); raw != "" {
-		cantidad, err := strconv.Atoi(raw)
-		if err != nil || cantidad < 1 || cantidad > 65535 {
+	if texto := strings.TrimSpace(os.Getenv("SMTP_PORT")); texto != "" {
+		cantidad, errorObtenido := strconv.Atoi(texto)
+		if errorObtenido != nil || cantidad < 1 || cantidad > 65535 {
 			return Correo{}, errors.New("SMTP_PORT debe estar entre 1 y 65535")
 		}
 		configuracion.Puerto = cantidad
@@ -86,7 +92,7 @@ func LoadCorreo() (Correo, error) {
 	if configuracion.Remitente == "" {
 		configuracion.Remitente = configuracion.Usuario
 	}
-	if _, err := mail.ParseAddress(configuracion.Remitente); err != nil || strings.ContainsAny(configuracion.Remitente, "\r\n") {
+	if _, errorObtenido := mail.ParseAddress(configuracion.Remitente); errorObtenido != nil || strings.ContainsAny(configuracion.Remitente, "\r\n") {
 		return Correo{}, errors.New("SMTP_FROM requiere una dirección de correo válida")
 	}
 	return configuracion, nil

@@ -1,3 +1,5 @@
+// Límite de arquitectura: Identidad no importa código de otros servicios.
+
 package unit_test
 
 import (
@@ -11,26 +13,26 @@ import (
 )
 
 func TestIdentityDoesNotDependOnOtherServices(prueba *testing.T) {
-	err := filepath.WalkDir(filepath.Join("..", ".."), func(path string, entrada fs.DirEntry, err error) error {
-		if err != nil {
-			return err
+	errorOperacion := filepath.WalkDir(filepath.Join("..", ".."), func(ruta string, entrada fs.DirEntry, errorObtenido error) error {
+		if errorObtenido != nil {
+			return errorObtenido
 		}
-		if entrada.IsDir() || !strings.HasSuffix(path, ".go") {
+		if entrada.IsDir() || !strings.HasSuffix(ruta, ".go") {
 			return nil
 		}
-		archivo, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-		if err != nil {
-			return err
+		archivo, errorObtenido := parser.ParseFile(token.NewFileSet(), ruta, nil, parser.ImportsOnly)
+		if errorObtenido != nil {
+			return errorObtenido
 		}
 		for _, indice := range archivo.Imports {
-			dependency, _ := strconv.Unquote(indice.Path.Value)
-			if strings.HasPrefix(dependency, "github.com/danirc2024/Taller_integracion_III/backend/") && !strings.HasPrefix(dependency, "github.com/danirc2024/Taller_integracion_III/backend/identidad/") {
-				prueba.Errorf("%s importa otro servicio: %s", path, dependency)
+			dependencia, _ := strconv.Unquote(indice.Path.Value)
+			if strings.HasPrefix(dependencia, "github.com/danirc2024/Taller_integracion_III/backend/") && !strings.HasPrefix(dependencia, "github.com/danirc2024/Taller_integracion_III/backend/identidad/") {
+				prueba.Errorf("%s importa otro servicio: %s", ruta, dependencia)
 			}
 		}
 		return nil
 	})
-	if err != nil {
-		prueba.Fatal(err)
+	if errorOperacion != nil {
+		prueba.Fatal(errorOperacion)
 	}
 }

@@ -1,3 +1,5 @@
+// Autorización por rol sobre la sesión ya revalidada por RequireAuth.
+
 package middleware
 
 import (
@@ -13,8 +15,8 @@ import (
 // Si no se encuentra el rol o no coincide con los autorizados, interrumpe el flujo retornando HTTP 403 Forbidden.
 func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
 	return func(contexto *gin.Context) {
-		rolVal, exists := contexto.Get("rol")
-		if !exists {
+		valorRol, existe := contexto.Get("rol")
+		if !existe {
 			httperrors.ResponderError(
 				contexto,
 				http.StatusForbidden,
@@ -24,8 +26,8 @@ func RequireRole(rolesPermitidos ...string) gin.HandlerFunc {
 			return
 		}
 
-		rolUsuario, ok := rolVal.(string)
-		if !ok || strings.TrimSpace(rolUsuario) == "" {
+		rolUsuario, valido := valorRol.(string)
+		if !valido || strings.TrimSpace(rolUsuario) == "" {
 			httperrors.ResponderError(
 				contexto,
 				http.StatusForbidden,

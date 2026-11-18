@@ -1,3 +1,5 @@
+// Persistencia de tokens de recuperación en api.tokens_recuperacion.
+
 package repositories
 
 import (
@@ -9,34 +11,40 @@ import (
 	"gorm.io/gorm"
 )
 
+// gormRecuperacionRepository implementa domain.RecuperacionRepository.
 type gormRecuperacionRepository struct {
-	db *gorm.DB
+	baseDatos *gorm.DB
 }
 
-func NewRecuperacionRepository(db *gorm.DB) domain.RecuperacionRepository {
-	return &gormRecuperacionRepository{db: db}
+// NewRecuperacionRepository crea el repositorio de tokens sobre la conexión dada.
+func NewRecuperacionRepository(baseDatos *gorm.DB) domain.RecuperacionRepository {
+	return &gormRecuperacionRepository{baseDatos: baseDatos}
 }
 
-func (repositorio *gormRecuperacionRepository) SolicitudesRecientes(ctx context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
+// SolicitudesRecientes cuenta los tokens emitidos dentro de la ventana con el
+// reloj de PostgreSQL, igual que la expiración.
+func (repositorio *gormRecuperacionRepository) SolicitudesRecientes(contexto context.Context, usuarioID uuid.UUID, ventana, espera time.Duration) (int, bool, error) {
 	var fila struct {
 		EnVentana int
 		EnEspera  bool
 	}
-	err := repositorio.db.WithContext(ctx).Raw(`SELECT count(*) AS en_ventana,
+	errorObtenido := repositorio.baseDatos.WithContext(contexto).Raw(`SELECT count(*) AS en_ventana,
             coalesce(bool_or(creado_el > now() - make_interval(secs => ?)), false) AS en_espera
         FROM api.tokens_recuperacion
         WHERE usuario_id = ? AND creado_el > now() - make_interval(secs => ?)`,
 		espera.Seconds(), usuarioID, ventana.Seconds()).Scan(&fila).Error
-	return fila.EnVentana, fila.EnEspera, err
+	return fila.EnVentana, fila.EnEspera, errorObtenido
 }
 
-func (repositorio *gormRecuperacionRepository) EmitirToken(ctx context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
-	return repositorio.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// EmitirToken invalida los tokens pendientes de la cuenta y guarda el hash
+// nuevo en una sola transacción.
+func (repositorio *gormRecuperacionRepository) EmitirToken(contexto context.Context, usuarioID uuid.UUID, hash []byte, vigencia time.Duration) error {
+	return repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		// Sólo sirve el enlace más reciente: los anteriores pendientes quedan inutilizados.
-		if err := tx.Exec(`UPDATE api.tokens_recuperacion SET usado_el = now() WHERE usuario_id = ? AND usado_el IS NULL`, usuarioID).Error; err != nil {
-			return err
+		if errorObtenido := transaccion.Exec(`UPDATE api.tokens_recuperacion SET usado_el = now() WHERE usuario_id = ? AND usado_el IS NULL`, usuarioID).Error; errorObtenido != nil {
+			return errorObtenido
 		}
-		return tx.Exec(`INSERT INTO api.tokens_recuperacion (usuario_id, token_hash, expira_el) VALUES (?, ?, now() + make_interval(secs => ?))`,
+		return transaccion.Exec(`INSERT INTO api.tokens_recuperacion (usuario_id, token_hash, expira_el) VALUES (?, ?, now() + make_interval(secs => ?))`,
 			usuarioID, hash, vigencia.Seconds()).Error
 	})
 }

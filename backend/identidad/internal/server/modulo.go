@@ -1,4 +1,5 @@
 // Armado del módulo de Identidad: repositorios, servicios y handlers.
+
 package server
 
 import (
@@ -18,6 +19,8 @@ import (
 	"google.golang.org/api/idtoken"
 	"gorm.io/gorm"
 )
+
+// ===== Módulo =====
 
 // Module arma Identidad completa (repositorios, servicios y handlers) y es lo
 // único que main y server ven del servicio.
@@ -56,21 +59,23 @@ func NewModule(base *gorm.DB, redisCliente *redis.Client, recuperacion Recuperac
 }
 
 // Cerrar despacha las solicitudes de recuperación pendientes antes de apagar el proceso.
-func (modulo *Module) Cerrar(ctx context.Context) error {
-	return modulo.recuperacion.Cerrar(ctx)
+func (modulo *Module) Cerrar(contexto context.Context) error {
+	return modulo.recuperacion.Cerrar(contexto)
 }
 
 // RegisterRoutes monta /auth/* y /admin/usuarios/* bajo group.
-func (modulo *Module) RegisterRoutes(group *gin.RouterGroup) {
-	handlers.RegistrarRutasAuth(group, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
-	handlers.RegistrarRutasAdminUsuarios(group, modulo.adminHandler, modulo.repo, modulo.configuracion.JWTSecret)
+func (modulo *Module) RegisterRoutes(grupo *gin.RouterGroup) {
+	handlers.RegistrarRutasAuth(grupo, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
+	handlers.RegistrarRutasAdminUsuarios(grupo, modulo.adminHandler, modulo.repo, modulo.configuracion.JWTSecret)
 }
+
+// ===== Verificación de almacenamiento =====
 
 // VerifyStorage comprueba las tablas que utiliza Identidad, incluida la
 // auditoría administrativa agregada en SUP-242.
-func VerifyStorage(ctx context.Context, db *gorm.DB) error {
-	var permitted bool
-	err := db.WithContext(ctx).Raw(`SELECT
+func VerifyStorage(contexto context.Context, baseDatos *gorm.DB) error {
+	var permitido bool
+	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT
         has_schema_privilege(current_user, 'api', 'USAGE') AND
         has_table_privilege(current_user, 'api.usuarios', 'SELECT') AND
         has_table_privilege(current_user, 'api.usuarios', 'INSERT') AND
@@ -81,12 +86,12 @@ func VerifyStorage(ctx context.Context, db *gorm.DB) error {
         has_sequence_privilege(current_user, 'api.auditoria_admin_usuarios_id_seq', 'USAGE') AND
         (SELECT COUNT(*) FROM information_schema.columns
             WHERE table_schema = 'api' AND table_name = 'usuarios'
-              AND column_name IN ('plan', 'ultimo_acceso')) = 2`).Scan(&permitted).Error
-	if err != nil {
+              AND column_name IN ('plan', 'ultimo_acceso')) = 2`).Scan(&permitido).Error
+	if errorObtenido != nil {
 		// Conexión, timeout o credenciales: no es un problema de migraciones.
-		return fmt.Errorf("no se pudo verificar el almacenamiento de Identidad: %w", err)
+		return fmt.Errorf("no se pudo verificar el almacenamiento de Identidad: %w", errorObtenido)
 	}
-	if !permitted {
+	if !permitido {
 		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql y 09_plan_y_ultimo_acceso.sql antes de iniciar Identidad")
 	}
 	return nil
@@ -94,16 +99,16 @@ func VerifyStorage(ctx context.Context, db *gorm.DB) error {
 
 // VerificarRecuperacion comprueba api.tokens_recuperacion. A diferencia de VerifyStorage,
 // su ausencia no impide iniciar: el login sigue disponible y sólo se apaga la recuperación.
-func VerificarRecuperacion(ctx context.Context, db *gorm.DB) error {
-	var permitted bool
-	err := db.WithContext(ctx).Raw(`SELECT to_regclass('api.tokens_recuperacion') IS NOT NULL AND
+func VerificarRecuperacion(contexto context.Context, baseDatos *gorm.DB) error {
+	var permitido bool
+	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT to_regclass('api.tokens_recuperacion') IS NOT NULL AND
         has_table_privilege(current_user, 'api.tokens_recuperacion', 'SELECT') AND
         has_table_privilege(current_user, 'api.tokens_recuperacion', 'INSERT') AND
-        has_table_privilege(current_user, 'api.tokens_recuperacion', 'UPDATE')`).Scan(&permitted).Error
-	if err != nil {
-		return fmt.Errorf("no se pudo verificar la recuperación: %w", err)
+        has_table_privilege(current_user, 'api.tokens_recuperacion', 'UPDATE')`).Scan(&permitido).Error
+	if errorObtenido != nil {
+		return fmt.Errorf("no se pudo verificar la recuperación: %w", errorObtenido)
 	}
-	if !permitted {
+	if !permitido {
 		return errors.New("aplicar 05_tokens_recuperacion.sql y 06_propiedad_permisos.sql para activar la recuperación")
 	}
 	return nil

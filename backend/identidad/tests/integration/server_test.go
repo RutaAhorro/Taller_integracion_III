@@ -1,3 +1,6 @@
+// Límites HTTP del router completo: CORS, sesión que falla cerrada sin base,
+// sondas y errores internos que no exponen SQL.
+
 package integration_test
 
 import (
@@ -14,16 +17,16 @@ import (
 )
 
 func TestHTTPBoundariesCorsAndJWT(prueba *testing.T) {
-	cfg := config.Config{JWTSecret: strings.Repeat("j", 32), AllowedOrigins: []string{"https://frontend.example"}}
-	peticion := enrutadorDePrueba(prueba, cfg, func(context.Context) error { return nil })
+	configuracion := config.Config{JWTSecret: strings.Repeat("j", 32), AllowedOrigins: []string{"https://frontend.example"}}
+	enrutador := enrutadorDePrueba(prueba, configuracion, func(context.Context) error { return nil })
 	// Con la base inalcanzable un token válido no se autoriza y la
 	// petición termina en 500 fail-closed, nunca en un bypass de la revalidación.
 	const usuarioID = "c14bd236-294a-41b8-8cbb-5473bb610415"
-	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": usuarioID, "rol": "registrado", "provider": "local", "exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte(strings.Repeat("j", 32)))
-	if err != nil {
-		prueba.Fatal(err)
+	token, errorObtenido := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"user_id": usuarioID, "rol": "registrado", "provider": "local", "exp": time.Now().Add(time.Hour).Unix()}).SignedString([]byte(strings.Repeat("j", 32)))
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	for _, tc := range []struct {
+	for _, caso := range []struct {
 		name, method, path, origin, body, cookie string
 		status                                   int
 	}{
@@ -35,21 +38,21 @@ func TestHTTPBoundariesCorsAndJWT(prueba *testing.T) {
 		{"fail closed registration", "POST", "/api/v1/auth/register", "", `{}`, "", 500}, {"fail closed login", "POST", "/api/v1/auth/login", "", `{}`, "", 500}, {"fail closed google", "POST", "/api/v1/auth/google", "", `{}`, "", 500},
 		{"catalog not owned", "GET", "/api/v1/productos", "", "", "", 404}, {"scraping not owned", "POST", "/api/v1/scraper/trabajos", "", `{}`, "", 404}, {"method not allowed", "DELETE", "/api/v1/auth/me", "", "", "", 405},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Origin", tc.origin)
-			req.Header.Set("X-User-ID", "forged")
-			req.Header.Set("X-Role", "admin")
-			if tc.cookie != "" {
-				req.AddCookie(&http.Cookie{Name: "jwt", Value: tc.cookie})
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			peticionHTTP := httptest.NewRequest(caso.method, caso.path, strings.NewReader(caso.body))
+			peticionHTTP.Header.Set("Content-Type", "application/json")
+			peticionHTTP.Header.Set("Origin", caso.origin)
+			peticionHTTP.Header.Set("X-User-ID", "forged")
+			peticionHTTP.Header.Set("X-Role", "admin")
+			if caso.cookie != "" {
+				peticionHTTP.AddCookie(&http.Cookie{Name: "jwt", Value: caso.cookie})
 			}
 			escritor := httptest.NewRecorder()
-			peticion.ServeHTTP(escritor, req)
-			if escritor.Code != tc.status {
+			enrutador.ServeHTTP(escritor, peticionHTTP)
+			if escritor.Code != caso.status {
 				prueba.Fatalf("%d %s", escritor.Code, escritor.Body)
 			}
-			if tc.origin != "https://frontend.example" && escritor.Header().Get("Access-Control-Allow-Credentials") != "" {
+			if caso.origin != "https://frontend.example" && escritor.Header().Get("Access-Control-Allow-Credentials") != "" {
 				prueba.Fatal("credenciales CORS fuera de allowlist")
 			}
 			if escritor.Header().Get("X-Request-ID") == "" {
@@ -62,37 +65,41 @@ func TestHTTPBoundariesCorsAndJWT(prueba *testing.T) {
 	}
 }
 func TestRecoveryDoesNotExposePanic(prueba *testing.T) {
-	peticion := enrutadorDePrueba(prueba, config.Config{}, nil)
-	peticion.GET("/panic", func(contexto *gin.Context) { panic("private SQL table and credentials") })
+	enrutador := enrutadorDePrueba(prueba, config.Config{}, nil)
+	enrutador.GET("/panic", func(contexto *gin.Context) { panic("private SQL table and credentials") })
 	escritor := httptest.NewRecorder()
-	peticion.ServeHTTP(escritor, httptest.NewRequest("GET", "/panic", nil))
+	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/panic", nil))
 	if escritor.Code != 500 || strings.Contains(escritor.Body.String(), "private") {
 		prueba.Fatal(escritor.Code, escritor.Body)
 	}
 }
 func TestReadinessDeadlineAndLiveness(prueba *testing.T) {
-	calls := 0
-	peticion := enrutadorDePrueba(prueba, config.Config{}, func(ctx context.Context) error { calls++; <-ctx.Done(); return errors.New("private diagnostic") })
-	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Millisecond)
-	defer cancel()
+	llamadas := 0
+	enrutador := enrutadorDePrueba(prueba, config.Config{}, func(contextoOperacion context.Context) error {
+		llamadas++
+		<-contextoOperacion.Done()
+		return errors.New("private diagnostic")
+	})
+	contexto, cancelar := context.WithTimeout(context.Background(), 40*time.Millisecond)
+	defer cancelar()
 	escritor := httptest.NewRecorder()
-	start := time.Now()
-	peticion.ServeHTTP(escritor, httptest.NewRequest("GET", "/_identidad/ready", nil).WithContext(ctx))
-	if escritor.Code != 503 || time.Since(start) > time.Second {
+	inicio := time.Now()
+	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/_identidad/ready", nil).WithContext(contexto))
+	if escritor.Code != 503 || time.Since(inicio) > time.Second {
 		prueba.Fatal("deadline perdido")
 	}
 	escritor = httptest.NewRecorder()
-	peticion.ServeHTTP(escritor, httptest.NewRequest("GET", "/_identidad/live", nil))
-	if calls != 1 || escritor.Code != 200 {
+	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/_identidad/live", nil))
+	if llamadas != 1 || escritor.Code != 200 {
 		prueba.Fatal("live consulta DB")
 	}
 }
 
 func TestUnclassifiedContextErrorDoesNotExposeSQL(prueba *testing.T) {
-	peticion := enrutadorDePrueba(prueba, config.Config{}, nil)
-	peticion.GET("/context-error", func(contexto *gin.Context) { _ = contexto.Error(errors.New("private SQL table and credentials")) })
+	enrutador := enrutadorDePrueba(prueba, config.Config{}, nil)
+	enrutador.GET("/context-error", func(contexto *gin.Context) { _ = contexto.Error(errors.New("private SQL table and credentials")) })
 	escritor := httptest.NewRecorder()
-	peticion.ServeHTTP(escritor, httptest.NewRequest("GET", "/context-error", nil))
+	enrutador.ServeHTTP(escritor, httptest.NewRequest("GET", "/context-error", nil))
 	if escritor.Code != 500 || strings.Contains(escritor.Body.String(), "private") || strings.Contains(escritor.Body.String(), "detalle") {
 		prueba.Fatal(escritor.Code, escritor.Body)
 	}

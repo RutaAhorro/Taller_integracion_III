@@ -29,7 +29,7 @@ import (
 )
 
 func TestGoogleClaimsAndInactiveAccounts(prueba *testing.T) {
-	for _, tc := range []struct {
+	for _, caso := range []struct {
 		name      string
 		payload   *idtoken.Payload
 		wantError bool
@@ -45,47 +45,47 @@ func TestGoogleClaimsAndInactiveAccounts(prueba *testing.T) {
 		{"wrong issuer", &idtoken.Payload{Issuer: "https://evil.example", Subject: "google-123", Claims: map[string]any{"email": "fixture@example.test", "email_verified": true}}, true},
 		{"nil", nil, true},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			repo := newMockUsuarioRepository()
-			servicio := services.NewAuthService(repo, func(ctx context.Context, token, audience string) (*idtoken.Payload, error) {
-				if audience != "fixture-google-client" {
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			servicio := services.NewAuthService(repositorio, func(contexto context.Context, token, audiencia string) (*idtoken.Payload, error) {
+				if audiencia != "fixture-google-client" {
 					prueba.Fatal("audience perdido")
 				}
-				deadline, ok := ctx.Deadline()
-				if !ok || time.Until(deadline) > 5*time.Second {
+				plazo, valido := contexto.Deadline()
+				if !valido || time.Until(plazo) > 5*time.Second {
 					prueba.Fatal("Google sin deadline")
 				}
-				return tc.payload, nil
+				return caso.payload, nil
 			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
-			user, err := servicio.GoogleLogin(prueba.Context(), "fixture")
-			if (err != nil) != tc.wantError {
-				prueba.Fatalf("%v %v", user, err)
+			usuario, errorObtenido := servicio.GoogleLogin(prueba.Context(), "fixture")
+			if (errorObtenido != nil) != caso.wantError {
+				prueba.Fatalf("%v %v", usuario, errorObtenido)
 			}
-			if !tc.wantError {
-				if user.PasswordHash != nil {
+			if !caso.wantError {
+				if usuario.PasswordHash != nil {
 					prueba.Fatal("SSO con password local")
 				}
-				if _, err = servicio.LoginWithContext(prueba.Context(), user.Correo, "anything"); !errors.Is(err, services.ErrCredencialesInvalidas) {
+				if _, errorObtenido = servicio.LoginWithContext(prueba.Context(), usuario.Correo, "anything"); !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
 					prueba.Fatal("SSO provocó panic o aceptó password")
 				}
 			}
 		})
 	}
-	for _, name := range []string{"inactive", "different google subject"} {
-		prueba.Run(name, func(prueba *testing.T) {
-			repo := newMockUsuarioRepository()
-			subject := "another-subject"
-			user := &domain.Usuario{ID: uuid.New(), Correo: "fixture@example.test", EstaActivo: true}
-			if name == "inactive" {
-				user.EstaActivo = false
+	for _, nombre := range []string{"inactive", "different google subject"} {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			sujeto := "another-subject"
+			usuario := &domain.Usuario{ID: uuid.New(), Correo: "fixture@example.test", EstaActivo: true}
+			if nombre == "inactive" {
+				usuario.EstaActivo = false
 			} else {
-				user.GoogleID = &subject
+				usuario.GoogleID = &sujeto
 			}
-			repo.usuarios[user.Correo] = user
-			servicio := services.NewAuthService(repo, func(context.Context, string, string) (*idtoken.Payload, error) {
-				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "google-123", Claims: map[string]any{"email": user.Correo, "email_verified": true}}, nil
+			repositorio.usuarios[usuario.Correo] = usuario
+			servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "google-123", Claims: map[string]any{"email": usuario.Correo, "email_verified": true}}, nil
 			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
-			if _, err := servicio.GoogleLogin(prueba.Context(), "fixture"); err == nil {
+			if _, errorObtenido := servicio.GoogleLogin(prueba.Context(), "fixture"); errorObtenido == nil {
 				prueba.Fatal("cuenta no autorizada aceptada")
 			}
 		})
@@ -100,96 +100,100 @@ type googleRaceRepository struct {
 	created   bool
 }
 
-func (peticion *googleRaceRepository) FindByEmail(ctx context.Context, email string) (*domain.Usuario, error) {
-	if !peticion.created {
+// FindByEmail no encuentra la cuenta en la primera consulta y sí en la
+// segunda, como si otra petición la hubiera creado en medio.
+func (repositorio *googleRaceRepository) FindByEmail(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
+	if !repositorio.created {
 		return nil, nil
 	}
-	return peticion.competing, nil
+	return repositorio.competing, nil
 }
 
-func (peticion *googleRaceRepository) Create(ctx context.Context, user *domain.Usuario) error {
-	peticion.created = true
+// Create falla con correo duplicado para forzar la ruta de carrera.
+func (repositorio *googleRaceRepository) Create(contexto context.Context, usuario *domain.Usuario) error {
+	repositorio.created = true
 	return domain.ErrCorreoDuplicado
 }
 
 func TestGoogleConcurrentCreationRechecksAccount(prueba *testing.T) {
-	for _, name := range []string{"same account", "inactive competitor", "different subject"} {
-		prueba.Run(name, func(prueba *testing.T) {
-			subject := "google-123"
-			if name == "different subject" {
-				subject = "other-google"
+	for _, nombre := range []string{"same account", "inactive competitor", "different subject"} {
+		prueba.Run(nombre, func(prueba *testing.T) {
+			sujeto := "google-123"
+			if nombre == "different subject" {
+				sujeto = "other-google"
 			}
-			competing := &domain.Usuario{ID: uuid.New(), Correo: "race@example.test", GoogleID: &subject, EstaActivo: name != "inactive competitor"}
-			repo := &googleRaceRepository{mockUsuarioRepository: newMockUsuarioRepository(), competing: competing}
-			servicio := services.NewAuthService(repo, func(context.Context, string, string) (*idtoken.Payload, error) {
+			competidor := &domain.Usuario{ID: uuid.New(), Correo: "race@example.test", GoogleID: &sujeto, EstaActivo: nombre != "inactive competitor"}
+			repositorio := &googleRaceRepository{mockUsuarioRepository: newMockUsuarioRepository(), competing: competidor}
+			servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "google-123", Claims: map[string]any{"email": "race@example.test", "email_verified": true}}, nil
 			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
-			user, err := servicio.GoogleLogin(prueba.Context(), "fixture")
-			if name == "same account" {
-				if err != nil || user.ID != competing.ID {
-					prueba.Fatalf("%v %v", user, err)
+			usuario, errorObtenido := servicio.GoogleLogin(prueba.Context(), "fixture")
+			if nombre == "same account" {
+				if errorObtenido != nil || usuario.ID != competidor.ID {
+					prueba.Fatalf("%v %v", usuario, errorObtenido)
 				}
-			} else if err == nil {
+			} else if errorObtenido == nil {
 				prueba.Fatal("conflicto autorizó cuenta incorrecta")
 			}
 		})
 	}
 }
 
-func googlePayload(subject, email string) *idtoken.Payload {
-	return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: subject,
-		Claims: map[string]any{"email": email, "email_verified": true, "name": "Fixture"}}
+// googlePayload arma claims válidos de Google para un sujeto y correo.
+func googlePayload(sujeto, direccionCorreo string) *idtoken.Payload {
+	return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: sujeto,
+		Claims: map[string]any{"email": direccionCorreo, "email_verified": true, "name": "Fixture"}}
 }
 
 // W1 (#99), medida provisoria: la primera vinculación con Google invalida la
 // contraseña local, porque el registro local nunca verificó el correo.
 func TestGoogleVinculaCuentaLocalEInvalidaContrasena(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
+	repositorio := newMockUsuarioRepository()
 	hash, _ := security.HashPassword("Atacante2026#")
 	victima := &domain.Usuario{ID: uuid.New(), Correo: "victima@uct.cl", PasswordHash: &hash, NombreCompleto: "Pre-registro", EstaActivo: true}
-	repo.usuarios[victima.Correo] = victima
-	servicio := services.NewAuthService(repo, func(context.Context, string, string) (*idtoken.Payload, error) {
+	repositorio.usuarios[victima.Correo] = victima
+	servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 		return googlePayload("google-victima", "victima@uct.cl"), nil
 	}, clienteGoogleDePrueba, plazoGoogleDePrueba)
 
-	user, err := servicio.GoogleLogin(context.Background(), "token")
-	if err != nil {
-		prueba.Fatal(err)
+	usuario, errorOperacion := servicio.GoogleLogin(context.Background(), "token")
+	if errorOperacion != nil {
+		prueba.Fatal(errorOperacion)
 	}
-	if user.GoogleID == nil || *user.GoogleID != "google-victima" || user.PasswordHash != nil {
+	if usuario.GoogleID == nil || *usuario.GoogleID != "google-victima" || usuario.PasswordHash != nil {
 		prueba.Fatal("la cuenta no quedó vinculada con la contraseña invalidada")
 	}
 	if victima.PasswordHash != nil || victima.GoogleID == nil {
 		prueba.Fatal("la vinculación no se persistió")
 	}
-	if _, err := servicio.LoginWithContext(context.Background(), "victima@uct.cl", "Atacante2026#"); !errors.Is(err, services.ErrCredencialesInvalidas) {
-		prueba.Fatal("la contraseña pre-registrada sigue sirviendo:", err)
+	if _, errorObtenido := servicio.LoginWithContext(context.Background(), "victima@uct.cl", "Atacante2026#"); !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+		prueba.Fatal("la contraseña pre-registrada sigue sirviendo:", errorObtenido)
 	}
 	// Logins posteriores con la misma identidad no vuelven a escribir.
-	if _, err := servicio.GoogleLogin(context.Background(), "token"); err != nil {
-		prueba.Fatal(err)
+	if _, errorObtenido := servicio.GoogleLogin(context.Background(), "token"); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 }
 
 func TestGoogleRechazaOtraIdentidadVinculada(prueba *testing.T) {
-	repo := newMockUsuarioRepository()
+	repositorio := newMockUsuarioRepository()
 	vinculado := "google-original"
 	hash, _ := security.HashPassword("Password123#")
-	user := &domain.Usuario{ID: uuid.New(), Correo: "linked@uct.cl", GoogleID: &vinculado, PasswordHash: &hash, NombreCompleto: "Linked", EstaActivo: true}
-	repo.usuarios[user.Correo] = user
-	servicio := services.NewAuthService(repo, func(context.Context, string, string) (*idtoken.Payload, error) {
+	usuario := &domain.Usuario{ID: uuid.New(), Correo: "linked@uct.cl", GoogleID: &vinculado, PasswordHash: &hash, NombreCompleto: "Linked", EstaActivo: true}
+	repositorio.usuarios[usuario.Correo] = usuario
+	servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 		return googlePayload("google-otro", "linked@uct.cl"), nil
 	}, clienteGoogleDePrueba, plazoGoogleDePrueba)
-	if _, err := servicio.GoogleLogin(context.Background(), "token"); !errors.Is(err, services.ErrCredencialesInvalidas) {
-		prueba.Fatal("se aceptó otra identidad Google:", err)
+	if _, errorObtenido := servicio.GoogleLogin(context.Background(), "token"); !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+		prueba.Fatal("se aceptó otra identidad Google:", errorObtenido)
 	}
-	if user.PasswordHash == nil || *user.GoogleID != vinculado {
+	if usuario.PasswordHash == nil || *usuario.GoogleID != vinculado {
 		prueba.Fatal("un rechazo no debe modificar la cuenta")
 	}
 }
 
 func TestGoogleAvatarFitsPostgresWithoutBreakingLogin(prueba *testing.T) {
-	for _, tc := range []struct {
+	for _, caso := range []struct {
 		name    string
 		picture any
 		keep    bool
@@ -203,112 +207,117 @@ func TestGoogleAvatarFitsPostgresWithoutBreakingLogin(prueba *testing.T) {
 		{"missing", nil, false},
 		{"invalid UTF8", "https://example.test/\xff", false},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			repo := newMockUsuarioRepository()
-			servicio := services.NewAuthService(repo, func(context.Context, string, string) (*idtoken.Payload, error) {
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			servicio := services.NewAuthService(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "fixture-subject", Claims: map[string]any{
-					"email": "avatar@example.test", "email_verified": true, "name": "Fixture", "picture": tc.picture,
+					"email": "avatar@example.test", "email_verified": true, "name": "Fixture", "picture": caso.picture,
 				}}, nil
 			}, "fixture-client", plazoGoogleDePrueba)
-			user, err := servicio.GoogleLogin(prueba.Context(), "fixture")
-			if err != nil || user == nil || repo.usuarios[user.Correo] != user {
-				prueba.Fatalf("login or persistence failed: %v", err)
+			usuario, errorObtenido := servicio.GoogleLogin(prueba.Context(), "fixture")
+			if errorObtenido != nil || usuario == nil || repositorio.usuarios[usuario.Correo] != usuario {
+				prueba.Fatalf("login or persistence failed: %v", errorObtenido)
 			}
-			if (user.URLAvatar != nil) != tc.keep {
-				prueba.Fatalf("unexpected avatar: %v", user.URLAvatar)
+			if (usuario.URLAvatar != nil) != caso.keep {
+				prueba.Fatalf("unexpected avatar: %v", usuario.URLAvatar)
 			}
-			if tc.keep && *user.URLAvatar != tc.picture.(string) {
+			if caso.keep && *usuario.URLAvatar != caso.picture.(string) {
 				prueba.Fatal("avatar URL was truncated")
 			}
 		})
 	}
 }
 
+// googleErrorService devuelve siempre el mismo error, para probar cómo lo
+// clasifica el handler.
 type googleErrorService struct {
 	services.AuthService
-	err error
+	errorDevuelto error
 }
 
+// GoogleLogin devuelve el error configurado.
 func (servicio googleErrorService) GoogleLogin(context.Context, string) (*domain.Usuario, error) {
-	return nil, servicio.err
+	return nil, servicio.errorDevuelto
 }
 
 func TestGoogleErrorClassificationDoesNotExposeStorage(prueba *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		err    error
-		status int
+	for _, caso := range []struct {
+		name          string
+		errorEsperado error
+		status        int
 	}{{"token rejected", services.ErrCredencialesInvalidas, 401}, {"inactive", services.ErrCuentaInactiva, 401}, {"configuration", services.ErrGoogleNoConfigurado, 503}, {"database", errors.New("private SQL database table and constraint"), 500}} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			peticion := gin.New()
-			peticion.POST("/google", handlers.NewAuthHandler(googleErrorService{err: tc.err}, false, claveJWTDePrueba).GoogleLoginUsuario)
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			enrutador := gin.New()
+			enrutador.POST("/google", handlers.NewAuthHandler(googleErrorService{errorDevuelto: caso.errorEsperado}, false, claveJWTDePrueba).GoogleLoginUsuario)
 			escritor := httptest.NewRecorder()
-			req := httptest.NewRequest("POST", "/google", strings.NewReader(`{"id_token":"fixture"}`))
-			req.Header.Set("Content-Type", "application/json")
-			peticion.ServeHTTP(escritor, req)
-			if escritor.Code != tc.status || strings.Contains(escritor.Body.String(), "detalle") || strings.Contains(escritor.Body.String(), "private") {
+			peticionHTTP := httptest.NewRequest("POST", "/google", strings.NewReader(`{"id_token":"fixture"}`))
+			peticionHTTP.Header.Set("Content-Type", "application/json")
+			enrutador.ServeHTTP(escritor, peticionHTTP)
+			if escritor.Code != caso.status || strings.Contains(escritor.Body.String(), "detalle") || strings.Contains(escritor.Body.String(), "private") {
 				prueba.Fatal(escritor.Code, escritor.Body)
 			}
 		})
 	}
 }
 
+// jwksFixture responde las claves públicas de Google sin salir a la red.
 type jwksFixture struct{ body string }
 
-func (archivo jwksFixture) RoundTrip(peticion *http.Request) (*http.Response, error) {
+// RoundTrip entrega el JWKS de prueba para cualquier petición.
+func (respuestaJWKS jwksFixture) RoundTrip(peticion *http.Request) (*http.Response, error) {
 	if peticion.URL.String() != "https://www.googleapis.com/oauth2/v3/certs" {
 		return nil, io.ErrUnexpectedEOF
 	}
-	return &http.Response{StatusCode: 200, Header: http.Header{"Cache-Control": []string{"max-age=3600"}}, Body: io.NopCloser(strings.NewReader(archivo.body)), Request: peticion}, nil
+	return &http.Response{StatusCode: 200, Header: http.Header{"Cache-Control": []string{"max-age=3600"}}, Body: io.NopCloser(strings.NewReader(respuestaJWKS.body)), Request: peticion}, nil
 }
 
 // Usar el validador real de Google y firmas RSA; sólo la respuesta de JWKS es
 // una fixture. Nunca se cambia el transporte TLS de la aplicación.
 func TestGoogleCryptographicValidation(prueba *testing.T) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		prueba.Fatal(err)
+	clave, errorObtenido := rsa.GenerateKey(rand.Reader, 2048)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	other, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		prueba.Fatal(err)
+	otro, errorObtenido := rsa.GenerateKey(rand.Reader, 2048)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	jwks, _ := json.Marshal(map[string]any{"keys": []map[string]string{{"alg": "RS256", "kid": "fixture-key", "kty": "RSA", "use": "sig", "n": base64.RawURLEncoding.EncodeToString(key.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(key.E)).Bytes())}}})
-	validator, err := idtoken.NewValidator(prueba.Context(), option.WithHTTPClient(&http.Client{Transport: jwksFixture{string(jwks)}}))
-	if err != nil {
-		prueba.Fatal(err)
+	jwks, _ := json.Marshal(map[string]any{"keys": []map[string]string{{"alg": "RS256", "kid": "fixture-key", "kty": "RSA", "use": "sig", "n": base64.RawURLEncoding.EncodeToString(clave.N.Bytes()), "e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(clave.E)).Bytes())}}})
+	validador, errorObtenido := idtoken.NewValidator(prueba.Context(), option.WithHTTPClient(&http.Client{Transport: jwksFixture{string(jwks)}}))
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	for _, tc := range []struct {
+	for _, caso := range []struct {
 		name, aud, issuer string
 		exp               int64
 		signingKey        *rsa.PrivateKey
 		verified          bool
 		wantsError        bool
 	}{
-		{"valid", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), key, true, false},
-		{"wrong audience", "wrong-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), key, true, true},
-		{"wrong issuer", "fixture-google-client", "https://evil.example", time.Now().Add(time.Hour).Unix(), key, true, true},
-		{"wrong signature", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), other, true, true},
-		{"expired", "fixture-google-client", "https://accounts.google.com", time.Now().Add(-time.Minute).Unix(), key, true, true},
-		{"unverified email", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), key, false, true},
+		{"valid", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), clave, true, false},
+		{"wrong audience", "wrong-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), clave, true, true},
+		{"wrong issuer", "fixture-google-client", "https://evil.example", time.Now().Add(time.Hour).Unix(), clave, true, true},
+		{"wrong signature", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), otro, true, true},
+		{"expired", "fixture-google-client", "https://accounts.google.com", time.Now().Add(-time.Minute).Unix(), clave, true, true},
+		{"unverified email", "fixture-google-client", "https://accounts.google.com", time.Now().Add(time.Hour).Unix(), clave, false, true},
 	} {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			claims := jwt.MapClaims{"iss": tc.issuer, "aud": tc.aud, "sub": "google-fixture", "exp": tc.exp, "iat": time.Now().Unix(), "email": "crypto@example.test", "email_verified": tc.verified, "name": "Crypto Fixture"}
-			token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		prueba.Run(caso.name, func(prueba *testing.T) {
+			datosToken := jwt.MapClaims{"iss": caso.issuer, "aud": caso.aud, "sub": "google-fixture", "exp": caso.exp, "iat": time.Now().Unix(), "email": "crypto@example.test", "email_verified": caso.verified, "name": "Crypto Fixture"}
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, datosToken)
 			token.Header["kid"] = "fixture-key"
-			encoded, err := token.SignedString(tc.signingKey)
-			if err != nil {
-				prueba.Fatal(err)
+			codificado, errorOperacion := token.SignedString(caso.signingKey)
+			if errorOperacion != nil {
+				prueba.Fatal(errorOperacion)
 			}
-			repo := newMockUsuarioRepository()
-			servicio := services.NewAuthService(repo, func(ctx context.Context, token, audience string) (*idtoken.Payload, error) {
-				return validator.Validate(ctx, token, audience)
+			repositorio := newMockUsuarioRepository()
+			servicio := services.NewAuthService(repositorio, func(contexto context.Context, token, audiencia string) (*idtoken.Payload, error) {
+				return validador.Validate(contexto, token, audiencia)
 			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
-			user, err := servicio.GoogleLogin(prueba.Context(), encoded)
-			if (err != nil) != tc.wantsError {
-				prueba.Fatalf("%v %v", user, err)
+			usuario, errorOperacion := servicio.GoogleLogin(prueba.Context(), codificado)
+			if (errorOperacion != nil) != caso.wantsError {
+				prueba.Fatalf("%v %v", usuario, errorOperacion)
 			}
-			if tc.wantsError && len(repo.usuarios) != 0 {
+			if caso.wantsError && len(repositorio.usuarios) != 0 {
 				prueba.Fatal("token rechazado persistió usuario")
 			}
 		})

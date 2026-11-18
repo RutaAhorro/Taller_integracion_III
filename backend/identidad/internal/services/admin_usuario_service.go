@@ -1,3 +1,5 @@
+// Casos de uso del panel de administración: listado, métricas y cambios de cuenta.
+
 package services
 
 import (
@@ -10,6 +12,8 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
+
+// ===== Errores =====
 
 var (
 	// ErrRolInvalido se emite cuando se intenta asignar un rol fuera de api.usuarios.
@@ -26,28 +30,33 @@ var (
 	ErrUltimoAdmin = domain.ErrUltimoAdmin
 )
 
+// ===== Contrato del servicio =====
+
 // AdminUsuarioService define los casos de uso del panel de administración de cuentas.
 type AdminUsuarioService interface {
-	Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)
-	Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error)
-	Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
+	Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error)
+	Metricas(contexto context.Context) (*domain.MetricasUsuariosDTO, error)
+	Actualizar(contexto context.Context, id string, entrada domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error)
 }
 
+// adminUsuarioService implementa AdminUsuarioService.
 type adminUsuarioService struct {
 	usuarioRepo domain.AdminUsuarioRepository
 }
 
 // NewAdminUsuarioService inicializa el servicio administrativo con su repositorio.
-func NewAdminUsuarioService(usuarioRepo domain.AdminUsuarioRepository) AdminUsuarioService {
-	return &adminUsuarioService{usuarioRepo: usuarioRepo}
+func NewAdminUsuarioService(repositorio domain.AdminUsuarioRepository) AdminUsuarioService {
+	return &adminUsuarioService{usuarioRepo: repositorio}
 }
 
+// ===== Casos de uso =====
+
 // Listar devuelve una página de cuentas con los filtros recibidos, sin exponer credenciales.
-func (servicio *adminUsuarioService) Listar(ctx context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
+func (servicio *adminUsuarioService) Listar(contexto context.Context, filtro domain.FiltroUsuariosAdminDTO) (*domain.PaginaUsuariosAdminDTO, error) {
 	if filtro.Rol != "" {
-		rol, err := normalizarRol(filtro.Rol)
-		if err != nil {
-			return nil, err
+		rol, errorObtenido := normalizarRol(filtro.Rol)
+		if errorObtenido != nil {
+			return nil, errorObtenido
 		}
 		filtro.Rol = rol
 	}
@@ -61,9 +70,9 @@ func (servicio *adminUsuarioService) Listar(ctx context.Context, filtro domain.F
 		filtro.Offset = 0
 	}
 
-	usuarios, total, err := servicio.usuarioRepo.Listar(ctx, filtro)
-	if err != nil {
-		return nil, err
+	usuarios, total, errorOperacion := servicio.usuarioRepo.Listar(contexto, filtro)
+	if errorOperacion != nil {
+		return nil, errorOperacion
 	}
 
 	resultado := make([]domain.UsuarioAdminDTO, 0, len(usuarios))
@@ -87,19 +96,19 @@ func (servicio *adminUsuarioService) Listar(ctx context.Context, filtro domain.F
 }
 
 // Metricas devuelve el total de cuentas y las activas para el panel.
-func (servicio *adminUsuarioService) Metricas(ctx context.Context) (*domain.MetricasUsuariosDTO, error) {
-	total, activos, err := servicio.usuarioRepo.Contar(ctx)
-	if err != nil {
-		return nil, err
+func (servicio *adminUsuarioService) Metricas(contexto context.Context) (*domain.MetricasUsuariosDTO, error) {
+	total, activos, errorObtenido := servicio.usuarioRepo.Contar(contexto)
+	if errorObtenido != nil {
+		return nil, errorObtenido
 	}
 	return &domain.MetricasUsuariosDTO{TotalUsuarios: total, UsuariosActivos: activos}, nil
 }
 
 // Actualizar aplica esta_activo y/o rol sobre una cuenta existente. La guarda
 // del último admin y la auditoría se ejecutan juntas en el repositorio.
-func (servicio *adminUsuarioService) Actualizar(ctx context.Context, id string, input domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
+func (servicio *adminUsuarioService) Actualizar(contexto context.Context, id string, entrada domain.ActualizarUsuarioAdminDTO, actorID string) (*domain.UsuarioAdminDTO, error) {
 	id = strings.TrimSpace(id)
-	if _, err := uuid.Parse(id); err != nil {
+	if _, errorObtenido := uuid.Parse(id); errorObtenido != nil {
 		return nil, ErrIDUsuarioInvalido
 	}
 	actorID = strings.TrimSpace(actorID)
@@ -108,20 +117,20 @@ func (servicio *adminUsuarioService) Actualizar(ctx context.Context, id string, 
 	}
 
 	datos := make(map[string]interface{})
-	if input.Rol != nil {
-		rol, err := normalizarRol(*input.Rol)
-		if err != nil {
-			return nil, err
+	if entrada.Rol != nil {
+		rol, errorObtenido := normalizarRol(*entrada.Rol)
+		if errorObtenido != nil {
+			return nil, errorObtenido
 		}
 		datos["rol"] = rol
 	}
-	if input.EstaActivo != nil {
-		datos["esta_activo"] = *input.EstaActivo
+	if entrada.EstaActivo != nil {
+		datos["esta_activo"] = *entrada.EstaActivo
 	}
-	if input.Plan != nil {
-		plan, err := normalizarPlan(*input.Plan)
-		if err != nil {
-			return nil, err
+	if entrada.Plan != nil {
+		plan, errorObtenido := normalizarPlan(*entrada.Plan)
+		if errorObtenido != nil {
+			return nil, errorObtenido
 		}
 		datos["plan"] = plan
 	}
@@ -130,19 +139,19 @@ func (servicio *adminUsuarioService) Actualizar(ctx context.Context, id string, 
 	}
 
 	datos["actualizado_el"] = time.Now()
-	if err := servicio.usuarioRepo.ActualizarConGuarda(ctx, id, datos, actorID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	if errorObtenido := servicio.usuarioRepo.ActualizarConGuarda(contexto, id, datos, actorID); errorObtenido != nil {
+		if errors.Is(errorObtenido, gorm.ErrRecordNotFound) {
 			return nil, ErrUsuarioNoEncontrado
 		}
-		if errors.Is(err, domain.ErrUltimoAdmin) {
+		if errors.Is(errorObtenido, domain.ErrUltimoAdmin) {
 			return nil, ErrUltimoAdmin
 		}
-		return nil, err
+		return nil, errorObtenido
 	}
 
-	actualizado, err := servicio.usuarioRepo.FindByID(ctx, id)
-	if err != nil {
-		return nil, err
+	actualizado, errorOperacion := servicio.usuarioRepo.FindByID(contexto, id)
+	if errorOperacion != nil {
+		return nil, errorOperacion
 	}
 	if actualizado == nil {
 		return nil, ErrUsuarioNoEncontrado
@@ -152,10 +161,12 @@ func (servicio *adminUsuarioService) Actualizar(ctx context.Context, id string, 
 	return &dto, nil
 }
 
+// ===== Normalización y mapeo =====
+
 // normalizarRol valida y normaliza un rol antes de persistirlo.
 func normalizarRol(rol string) (string, error) {
-	normalizado, ok := domain.NormalizarRol(rol)
-	if !ok {
+	normalizado, valido := domain.NormalizarRol(rol)
+	if !valido {
 		return "", ErrRolInvalido
 	}
 	return normalizado, nil
@@ -163,8 +174,8 @@ func normalizarRol(rol string) (string, error) {
 
 // normalizarPlan valida y normaliza el plan comercial antes de persistirlo.
 func normalizarPlan(plan string) (string, error) {
-	normalizado, ok := domain.NormalizarPlan(plan)
-	if !ok {
+	normalizado, valido := domain.NormalizarPlan(plan)
+	if !valido {
 		return "", ErrPlanInvalido
 	}
 	return normalizado, nil
@@ -172,12 +183,12 @@ func normalizarPlan(plan string) (string, error) {
 
 // mapearUsuarioAdmin convierte la entidad privada en su DTO de administración.
 func mapearUsuarioAdmin(usuario *domain.Usuario) domain.UsuarioAdminDTO {
-	rol, ok := domain.NormalizarRol(usuario.Rol)
-	if !ok {
+	rol, valido := domain.NormalizarRol(usuario.Rol)
+	if !valido {
 		rol = usuario.Rol
 	}
-	plan, ok := domain.NormalizarPlan(usuario.Plan)
-	if !ok {
+	plan, valido := domain.NormalizarPlan(usuario.Plan)
+	if !valido {
 		plan = usuario.Plan
 	}
 	return domain.UsuarioAdminDTO{

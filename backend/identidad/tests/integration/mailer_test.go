@@ -1,3 +1,6 @@
+// Transporte SMTP contra un servidor local con certificados efímeros: STARTTLS,
+// TLS implícito, autenticación, plazos y errores por etapa, sin red externa.
+
 package integration_test
 
 import (
@@ -72,11 +75,13 @@ type servidorFalso struct {
 	datos      string
 }
 
+// certificadoLocal crea una CA y un certificado efímeros para 127.0.0.1 y
+// devuelve la configuración del servidor y el pool de confianza del cliente.
 func certificadoLocal(pruebaLocal *testing.T) (*tls.Config, *x509.CertPool) {
 	pruebaLocal.Helper()
-	clave, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	clave, errorObtenido := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
 	plantilla := &x509.Certificate{
 		SerialNumber:          big.NewInt(1),
@@ -89,65 +94,67 @@ func certificadoLocal(pruebaLocal *testing.T) (*tls.Config, *x509.CertPool) {
 		BasicConstraintsValid: true,
 		IsCA:                  true,
 	}
-	der, err := x509.CreateCertificate(rand.Reader, plantilla, plantilla, &clave.PublicKey, clave)
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	der, errorObtenido := x509.CreateCertificate(rand.Reader, plantilla, plantilla, &clave.PublicKey, clave)
+	if errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	certificado, errorObtenido := x509.ParseCertificate(der)
+	if errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
 	pool := x509.NewCertPool()
-	pool.AddCert(cert)
-	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: clave, Leaf: cert}}}, pool
+	pool.AddCert(certificado)
+	return &tls.Config{Certificates: []tls.Certificate{{Certificate: [][]byte{der}, PrivateKey: clave, Leaf: certificado}}}, pool
 }
 
-func (servicio *servidorFalso) iniciar(pruebaLocal *testing.T) int {
+// iniciar escucha en un puerto libre de loopback y atiende una conexión por vez.
+func (servidor *servidorFalso) iniciar(pruebaLocal *testing.T) int {
 	pruebaLocal.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	escucha, errorOperacion := net.Listen("tcp", "127.0.0.1:0")
+	if errorOperacion != nil {
+		pruebaLocal.Fatal(errorOperacion)
 	}
-	pruebaLocal.Cleanup(func() { _ = ln.Close() })
+	pruebaLocal.Cleanup(func() { _ = escucha.Close() })
 	go func() {
 		for {
-			conn, err := ln.Accept()
-			if err != nil {
+			conexion, errorObtenido := escucha.Accept()
+			if errorObtenido != nil {
 				return
 			}
-			go servicio.atender(conn)
+			go servidor.atender(conexion)
 		}
 	}()
-	return ln.Addr().(*net.TCPAddr).Port
+	return escucha.Addr().(*net.TCPAddr).Port
 }
 
-func (servicio *servidorFalso) atender(conn net.Conn) {
-	defer conn.Close()
-	servicio.mu.Lock()
-	servicio.conexiones++
-	servicio.mu.Unlock()
-	if servicio.colgado {
-		_, _ = io.Copy(io.Discard, conn)
+// atender simula el diálogo SMTP mínimo y guarda lo recibido para las aserciones.
+func (servidor *servidorFalso) atender(conexion net.Conn) {
+	defer conexion.Close()
+	servidor.mu.Lock()
+	servidor.conexiones++
+	servidor.mu.Unlock()
+	if servidor.colgado {
+		_, _ = io.Copy(io.Discard, conexion)
 		return
 	}
-	cifrado := servicio.implicito
-	if servicio.implicito {
-		seguro := tls.Server(conn, servicio.cfgTLS)
+	cifrado := servidor.implicito
+	if servidor.implicito {
+		seguro := tls.Server(conexion, servidor.cfgTLS)
 		if seguro.Handshake() != nil {
 			return
 		}
-		conn = seguro
+		conexion = seguro
 	}
-	peticion := bufio.NewReader(conn)
+	peticion := bufio.NewReader(conexion)
 	responder := func(lineas ...string) {
 		for _, lineaLocal := range lineas {
-			_, _ = io.WriteString(conn, lineaLocal+"\r\n")
+			_, _ = io.WriteString(conexion, lineaLocal+"\r\n")
 		}
 	}
 	responder("220 smtp-prueba ESMTP")
 	for {
-		linea, err := peticion.ReadString('\n')
-		if err != nil {
+		linea, errorOperacion := peticion.ReadString('\n')
+		if errorOperacion != nil {
 			return
 		}
 		linea = strings.TrimRight(linea, "\r\n")
@@ -155,47 +162,47 @@ func (servicio *servidorFalso) atender(conn net.Conn) {
 		switch {
 		case strings.HasPrefix(mayus, "EHLO"):
 			extensiones := []string{"250-smtp-prueba"}
-			if servicio.starttls && !cifrado {
+			if servidor.starttls && !cifrado {
 				extensiones = append(extensiones, "250-STARTTLS")
 			}
 			responder(append(extensiones, "250 AUTH PLAIN")...)
 		case mayus == "STARTTLS":
 			responder("220 listo para TLS")
-			seguro := tls.Server(conn, servicio.cfgTLS)
+			seguro := tls.Server(conexion, servidor.cfgTLS)
 			if seguro.Handshake() != nil {
 				return
 			}
-			conn, cifrado, peticion = seguro, true, bufio.NewReader(seguro)
+			conexion, cifrado, peticion = seguro, true, bufio.NewReader(seguro)
 		case strings.HasPrefix(mayus, "AUTH PLAIN "):
 			crudo, _ := base64.StdEncoding.DecodeString(strings.TrimSpace(linea[len("AUTH PLAIN "):]))
 			usuario, clave := "", ""
 			if partes := strings.SplitN(string(crudo), "\x00", 3); len(partes) == 3 {
 				usuario, clave = partes[1], partes[2]
 			}
-			servicio.mu.Lock()
-			servicio.usuarios = append(servicio.usuarios, usuario)
-			servicio.mu.Unlock()
+			servidor.mu.Lock()
+			servidor.usuarios = append(servidor.usuarios, usuario)
+			servidor.mu.Unlock()
 			if usuario == "emisor@example.com" && clave == claveFalsa {
 				responder("235 2.7.0 aceptado")
 			} else {
 				responder("535 5.7.8 Username and Password not accepted")
 			}
 		case strings.HasPrefix(mayus, "MAIL FROM:"):
-			servicio.mu.Lock()
-			servicio.desde = linea[len("MAIL FROM:"):]
-			servicio.mu.Unlock()
+			servidor.mu.Lock()
+			servidor.desde = linea[len("MAIL FROM:"):]
+			servidor.mu.Unlock()
 			responder("250 ok")
 		case strings.HasPrefix(mayus, "RCPT TO:"):
-			servicio.mu.Lock()
-			servicio.para = append(servicio.para, linea[len("RCPT TO:"):])
-			servicio.mu.Unlock()
+			servidor.mu.Lock()
+			servidor.para = append(servidor.para, linea[len("RCPT TO:"):])
+			servidor.mu.Unlock()
 			responder("250 ok")
 		case mayus == "DATA":
 			responder("354 terminar con punto")
 			var buffer strings.Builder
 			for {
-				lineaLocal, err := peticion.ReadString('\n')
-				if err != nil {
+				lineaLocal, errorObtenido := peticion.ReadString('\n')
+				if errorObtenido != nil {
 					return
 				}
 				if lineaLocal == ".\r\n" {
@@ -203,9 +210,9 @@ func (servicio *servidorFalso) atender(conn net.Conn) {
 				}
 				buffer.WriteString(strings.TrimPrefix(lineaLocal, "."))
 			}
-			servicio.mu.Lock()
-			servicio.datos = buffer.String()
-			servicio.mu.Unlock()
+			servidor.mu.Lock()
+			servidor.datos = buffer.String()
+			servidor.mu.Unlock()
 			responder("250 ok en cola")
 		case mayus == "QUIT":
 			responder("221 adiós")
@@ -216,11 +223,12 @@ func (servicio *servidorFalso) atender(conn net.Conn) {
 	}
 }
 
+// nuevoSMTPDePrueba arma el transporte real apuntando al servidor local.
 func nuevoSMTPDePrueba(pruebaLocal *testing.T, puerto int, modoTLS string, clave string, pool *x509.CertPool) *mailer.SMTP {
 	pruebaLocal.Helper()
-	servicio, err := mailer.NuevoSMTP(config.Correo{Modo: config.CorreoSMTP, Host: "127.0.0.1", Puerto: puerto, TLS: modoTLS, Usuario: "emisor@example.com", Clave: clave, Remitente: "RutaAhorro <emisor@example.com>"})
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	servicio, errorObtenido := mailer.NuevoSMTP(config.Correo{Modo: config.CorreoSMTP, Host: "127.0.0.1", Puerto: puerto, TLS: modoTLS, Usuario: "emisor@example.com", Clave: clave, Remitente: "RutaAhorro <emisor@example.com>"})
+	if errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
 	// Las raíces se configuran por la API pública de x509 en un proceso aislado.
 	if pool == nil {
@@ -230,9 +238,10 @@ func nuevoSMTPDePrueba(pruebaLocal *testing.T, puerto int, modoTLS string, clave
 	return servicio
 }
 
-func etapa(err error) string {
+// etapa extrae la etapa de un *mailer.ErrorSMTP, o vacío si no lo es.
+func etapa(errorObtenido error) string {
 	var entrada *mailer.ErrorSMTP
-	if errors.As(err, &entrada) {
+	if errors.As(errorObtenido, &entrada) {
 		return entrada.Etapa
 	}
 	return ""
@@ -242,32 +251,32 @@ func TestSMTPEntregaPorSTARTTLSConTildes(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, starttls: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, starttls: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
 	mensaje := mailer.Mensaje{Para: "Destino <destino@example.com>", Asunto: "Recuperación de contraseña", Texto: "Hola, ñandú.\n.línea que empieza con punto\nFin."}
-	if err := servicio.Enviar(context.Background(), mensaje); err != nil {
-		pruebaLocal.Fatal(err)
+	if errorOperacion := servicio.Enviar(context.Background(), mensaje); errorOperacion != nil {
+		pruebaLocal.Fatal(errorOperacion)
 	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if len(srv.usuarios) != 1 || srv.desde != "<emisor@example.com>" || len(srv.para) != 1 || srv.para[0] != "<destino@example.com>" {
-		pruebaLocal.Fatalf("sobre SMTP inesperado: %v %q %v", srv.usuarios, srv.desde, srv.para)
+	servidor.mu.Lock()
+	defer servidor.mu.Unlock()
+	if len(servidor.usuarios) != 1 || servidor.desde != "<emisor@example.com>" || len(servidor.para) != 1 || servidor.para[0] != "<destino@example.com>" {
+		pruebaLocal.Fatalf("sobre SMTP inesperado: %v %q %v", servidor.usuarios, servidor.desde, servidor.para)
 	}
-	msg, err := mail.ReadMessage(strings.NewReader(srv.datos))
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	mensajeError, errorObtenido := mail.ReadMessage(strings.NewReader(servidor.datos))
+	if errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
-	asunto, err := new(mime.WordDecoder).DecodeHeader(msg.Header.Get("Subject"))
-	if err != nil || asunto != mensaje.Asunto {
-		pruebaLocal.Fatalf("asunto %q %v", asunto, err)
+	asunto, errorObtenido := new(mime.WordDecoder).DecodeHeader(mensajeError.Header.Get("Subject"))
+	if errorObtenido != nil || asunto != mensaje.Asunto {
+		pruebaLocal.Fatalf("asunto %q %v", asunto, errorObtenido)
 	}
-	cuerpo, err := io.ReadAll(quotedprintable.NewReader(msg.Body))
-	if err != nil || strings.TrimRight(string(cuerpo), "\r\n") != "Hola, ñandú.\r\n.línea que empieza con punto\r\nFin." {
-		pruebaLocal.Fatalf("cuerpo %q %v", cuerpo, err)
+	cuerpo, errorObtenido := io.ReadAll(quotedprintable.NewReader(mensajeError.Body))
+	if errorObtenido != nil || strings.TrimRight(string(cuerpo), "\r\n") != "Hola, ñandú.\r\n.línea que empieza con punto\r\nFin." {
+		pruebaLocal.Fatalf("cuerpo %q %v", cuerpo, errorObtenido)
 	}
-	if !strings.HasSuffix(msg.Header.Get("Message-ID"), "@example.com>") || msg.Header.Get("Date") == "" {
-		pruebaLocal.Fatalf("cabeceras incompletas: %v", msg.Header)
+	if !strings.HasSuffix(mensajeError.Header.Get("Message-ID"), "@example.com>") || mensajeError.Header.Get("Date") == "" {
+		pruebaLocal.Fatalf("cabeceras incompletas: %v", mensajeError.Header)
 	}
 }
 
@@ -275,16 +284,16 @@ func TestSMTPEntregaConTLSImplicito(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, implicito: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSImplicito, claveFalsa, pool)
-	if err := servicio.Enviar(context.Background(), mensajeDePrueba()); err != nil {
-		pruebaLocal.Fatal(err)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, implicito: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSImplicito, claveFalsa, pool)
+	if errorObtenido := servicio.Enviar(context.Background(), mensajeDePrueba()); errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if !strings.Contains(srv.datos, "Identidad puede enviar mensajes") {
-		pruebaLocal.Fatalf("mensaje de prueba no entregado: %q", srv.datos)
+	servidor.mu.Lock()
+	defer servidor.mu.Unlock()
+	if !strings.Contains(servidor.datos, "Identidad puede enviar mensajes") {
+		pruebaLocal.Fatalf("mensaje de prueba no entregado: %q", servidor.datos)
 	}
 }
 
@@ -292,14 +301,14 @@ func TestSMTPNoEnviaCredencialesSinSTARTTLS(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
-	err := servicio.Enviar(context.Background(), mensajeDePrueba())
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if etapa(err) != "starttls" || len(srv.usuarios) != 0 {
-		pruebaLocal.Fatalf("debió abortar antes de AUTH: %v, usuarios=%v", err, srv.usuarios)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
+	errorObtenido := servicio.Enviar(context.Background(), mensajeDePrueba())
+	servidor.mu.Lock()
+	defer servidor.mu.Unlock()
+	if etapa(errorObtenido) != "starttls" || len(servidor.usuarios) != 0 {
+		pruebaLocal.Fatalf("debió abortar antes de AUTH: %v, usuarios=%v", errorObtenido, servidor.usuarios)
 	}
 }
 
@@ -307,14 +316,14 @@ func TestSMTPRechazaCertificadoNoConfiable(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, _ := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, starttls: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, nil)
-	err := servicio.Enviar(context.Background(), mensajeDePrueba())
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if etapa(err) != "starttls" || len(srv.usuarios) != 0 {
-		pruebaLocal.Fatalf("aceptó un certificado sin validar: %v", err)
+	configuracionTLS, _ := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, starttls: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, nil)
+	errorObtenido := servicio.Enviar(context.Background(), mensajeDePrueba())
+	servidor.mu.Lock()
+	defer servidor.mu.Unlock()
+	if etapa(errorObtenido) != "starttls" || len(servidor.usuarios) != 0 {
+		pruebaLocal.Fatalf("aceptó un certificado sin validar: %v", errorObtenido)
 	}
 }
 
@@ -322,12 +331,12 @@ func TestSMTPCredencialesRechazadasNoExponenClave(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, starttls: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, "fixture-private", pool)
-	err := servicio.Enviar(context.Background(), mensajeDePrueba())
-	if etapa(err) != "autenticacion" || strings.Contains(err.Error(), "fixture-private") {
-		pruebaLocal.Fatalf("esperaba fallo de autenticación sin la clave: %v", err)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, starttls: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, "fixture-private", pool)
+	errorObtenido := servicio.Enviar(context.Background(), mensajeDePrueba())
+	if etapa(errorObtenido) != "autenticacion" || strings.Contains(errorObtenido.Error(), "fixture-private") {
+		pruebaLocal.Fatalf("esperaba fallo de autenticación sin la clave: %v", errorObtenido)
 	}
 }
 
@@ -335,14 +344,14 @@ func TestSMTPServidorColgadoRespetaDeadline(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	srv := &servidorFalso{colgado: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, nil)
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
+	servidor := &servidorFalso{colgado: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, nil)
+	contexto, cancelar := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancelar()
 	inicio := time.Now()
-	err := servicio.Enviar(ctx, mensajeDePrueba())
-	if etapa(err) != "saludo" || time.Since(inicio) > 3*time.Second {
-		pruebaLocal.Fatalf("el envío no respetó el deadline: %v tras %v", err, time.Since(inicio))
+	errorObtenido := servicio.Enviar(contexto, mensajeDePrueba())
+	if etapa(errorObtenido) != "saludo" || time.Since(inicio) > 3*time.Second {
+		pruebaLocal.Fatalf("el envío no respetó el deadline: %v tras %v", errorObtenido, time.Since(inicio))
 	}
 }
 
@@ -350,15 +359,15 @@ func TestSMTPConexionRechazadaIndicaEtapa(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	escucha, errorOperacion := net.Listen("tcp", "127.0.0.1:0")
+	if errorOperacion != nil {
+		pruebaLocal.Fatal(errorOperacion)
 	}
-	puerto := ln.Addr().(*net.TCPAddr).Port
-	_ = ln.Close()
+	puerto := escucha.Addr().(*net.TCPAddr).Port
+	_ = escucha.Close()
 	servicio := nuevoSMTPDePrueba(pruebaLocal, puerto, config.TLSStartTLS, claveFalsa, nil)
-	if err := servicio.Enviar(context.Background(), mensajeDePrueba()); etapa(err) != "conexion" {
-		pruebaLocal.Fatalf("esperaba etapa conexion: %v", err)
+	if errorObtenido := servicio.Enviar(context.Background(), mensajeDePrueba()); etapa(errorObtenido) != "conexion" {
+		pruebaLocal.Fatalf("esperaba etapa conexion: %v", errorObtenido)
 	}
 }
 
@@ -366,9 +375,9 @@ func TestMensajesInvalidosNoAbrenConexion(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, starttls: true}
-	servicio := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, starttls: true}
+	servicio := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
 	for nombre, mensaje := range map[string]mailer.Mensaje{
 		"destinatario vacío":    {Asunto: "a", Texto: "b"},
 		"destinatario inválido": {Para: "no-es-correo", Asunto: "a", Texto: "b"},
@@ -376,14 +385,14 @@ func TestMensajesInvalidosNoAbrenConexion(pruebaLocal *testing.T) {
 		"inyección en asunto":   {Para: "a@example.com", Asunto: "hola\r\nBcc: b@example.com", Texto: "b"},
 		"sin cuerpo":            {Para: "a@example.com", Asunto: "a", Texto: "  "},
 	} {
-		if err := servicio.Enviar(context.Background(), mensaje); !errors.Is(err, mailer.ErrMensajeInvalido) {
-			pruebaLocal.Errorf("%s: esperaba mailer.ErrMensajeInvalido, obtuvo %v", nombre, err)
+		if errorObtenido := servicio.Enviar(context.Background(), mensaje); !errors.Is(errorObtenido, mailer.ErrMensajeInvalido) {
+			pruebaLocal.Errorf("%s: esperaba mailer.ErrMensajeInvalido, obtuvo %v", nombre, errorObtenido)
 		}
 	}
-	srv.mu.Lock()
-	defer srv.mu.Unlock()
-	if srv.conexiones != 0 {
-		pruebaLocal.Fatalf("mensajes inválidos abrieron %d conexiones", srv.conexiones)
+	servidor.mu.Lock()
+	defer servidor.mu.Unlock()
+	if servidor.conexiones != 0 {
+		pruebaLocal.Fatalf("mensajes inválidos abrieron %d conexiones", servidor.conexiones)
 	}
 }
 
@@ -391,28 +400,28 @@ func TestConstruirAlternativaTextoYHTML(pruebaLocal *testing.T) {
 	if !ejecutarSMTPAislado(pruebaLocal) {
 		return
 	}
-	cfgTLS, pool := certificadoLocal(pruebaLocal)
-	srv := &servidorFalso{cfgTLS: cfgTLS, starttls: true}
-	transporte := nuevoSMTPDePrueba(pruebaLocal, srv.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
-	if err := transporte.Enviar(pruebaLocal.Context(), mailer.Mensaje{Para: "destino@example.com", Asunto: "Verificación", Texto: "Código: ñ", HTML: "<p>Código: ñ</p>"}); err != nil {
-		pruebaLocal.Fatal(err)
+	configuracionTLS, pool := certificadoLocal(pruebaLocal)
+	servidor := &servidorFalso{cfgTLS: configuracionTLS, starttls: true}
+	transporte := nuevoSMTPDePrueba(pruebaLocal, servidor.iniciar(pruebaLocal), config.TLSStartTLS, claveFalsa, pool)
+	if errorObtenido := transporte.Enviar(pruebaLocal.Context(), mailer.Mensaje{Para: "destino@example.com", Asunto: "Verificación", Texto: "Código: ñ", HTML: "<p>Código: ñ</p>"}); errorObtenido != nil {
+		pruebaLocal.Fatal(errorObtenido)
 	}
-	srv.mu.Lock()
-	datos := srv.datos
-	srv.mu.Unlock()
-	msg, err := mail.ReadMessage(strings.NewReader(datos))
-	if err != nil {
-		pruebaLocal.Fatal(err)
+	servidor.mu.Lock()
+	datos := servidor.datos
+	servidor.mu.Unlock()
+	mensaje, errorOperacion := mail.ReadMessage(strings.NewReader(datos))
+	if errorOperacion != nil {
+		pruebaLocal.Fatal(errorOperacion)
 	}
-	tipo, params, err := mime.ParseMediaType(msg.Header.Get("Content-Type"))
-	if err != nil || tipo != "multipart/alternative" {
-		pruebaLocal.Fatalf("%s %v", tipo, err)
+	tipo, parametros, errorOperacion := mime.ParseMediaType(mensaje.Header.Get("Content-Type"))
+	if errorOperacion != nil || tipo != "multipart/alternative" {
+		pruebaLocal.Fatalf("%s %v", tipo, errorOperacion)
 	}
-	lector := multipart.NewReader(msg.Body, params["boundary"])
+	lector := multipart.NewReader(mensaje.Body, parametros["boundary"])
 	for _, esperado := range []struct{ tipo, cuerpo string }{{"text/plain", "Código: ñ"}, {"text/html", "<p>Código: ñ</p>"}} {
-		parte, err := lector.NextPart()
-		if err != nil {
-			pruebaLocal.Fatal(err)
+		parte, errorObtenido := lector.NextPart()
+		if errorObtenido != nil {
+			pruebaLocal.Fatal(errorObtenido)
 		}
 		// multipart.Reader decodifica quoted-printable y retira la cabecera de transferencia.
 		cuerpo, _ := io.ReadAll(parte)
@@ -424,21 +433,21 @@ func TestConstruirAlternativaTextoYHTML(pruebaLocal *testing.T) {
 
 func TestNuevoSegunModo(pruebaLocal *testing.T) {
 	var salida bytes.Buffer
-	log := slog.New(slog.NewJSONHandler(&salida, nil))
-	mensaje, err := mailer.Nuevo(config.Correo{Modo: config.CorreoDeshabilitado}, log)
-	if err != nil || !errors.Is(mensaje.Enviar(context.Background(), mensajeDePrueba()), mailer.ErrDeshabilitado) {
-		pruebaLocal.Fatalf("deshabilitado: %v", err)
+	registrador := slog.New(slog.NewJSONHandler(&salida, nil))
+	mensaje, errorObtenido := mailer.Nuevo(config.Correo{Modo: config.CorreoDeshabilitado}, registrador)
+	if errorObtenido != nil || !errors.Is(mensaje.Enviar(context.Background(), mensajeDePrueba()), mailer.ErrDeshabilitado) {
+		pruebaLocal.Fatalf("deshabilitado: %v", errorObtenido)
 	}
-	mensaje, err = mailer.Nuevo(config.Correo{Modo: config.CorreoLog}, log)
-	if err != nil || mensaje.Enviar(context.Background(), mailer.Mensaje{Para: "a@example.com", Asunto: "Verificación", Texto: "https://app/verificar?token=abc"}) != nil {
-		pruebaLocal.Fatalf("log: %v", err)
+	mensaje, errorObtenido = mailer.Nuevo(config.Correo{Modo: config.CorreoLog}, registrador)
+	if errorObtenido != nil || mensaje.Enviar(context.Background(), mailer.Mensaje{Para: "a@example.com", Asunto: "Verificación", Texto: "https://app/verificar?token=abc"}) != nil {
+		pruebaLocal.Fatalf("log: %v", errorObtenido)
 	}
 	if !strings.Contains(salida.String(), "correo_modo_log") || !strings.Contains(salida.String(), "token=abc") {
 		pruebaLocal.Fatalf("el modo log debe mostrar el mensaje en desarrollo: %s", salida.String())
 	}
-	mensaje, err = mailer.Nuevo(config.Correo{Modo: config.CorreoSMTP, Host: "smtp.example.com", Puerto: 587, TLS: config.TLSStartTLS, Usuario: "a@example.com", Clave: "x", Remitente: "a@example.com"}, log)
-	if _, ok := mensaje.(*mailer.SMTP); err != nil || !ok {
-		pruebaLocal.Fatalf("smtp: %T %v", mensaje, err)
+	mensaje, errorObtenido = mailer.Nuevo(config.Correo{Modo: config.CorreoSMTP, Host: "smtp.example.com", Puerto: 587, TLS: config.TLSStartTLS, Usuario: "a@example.com", Clave: "x", Remitente: "a@example.com"}, registrador)
+	if _, valido := mensaje.(*mailer.SMTP); errorObtenido != nil || !valido {
+		pruebaLocal.Fatalf("smtp: %T %v", mensaje, errorObtenido)
 	}
 }
 

@@ -1,3 +1,5 @@
+// Registro de auditoría de los cambios administrativos sobre cuentas.
+
 package domain
 
 import (
@@ -16,6 +18,7 @@ type AuditoriaAdminUsuario struct {
 	CreadoEl   time.Time              `gorm:"default:now();not null" json:"creado_el"`
 }
 
+// TableName fija la tabla con esquema, porque GORM no lo infiere.
 func (AuditoriaAdminUsuario) TableName() string {
 	return "api.auditoria_admin_usuarios"
 }

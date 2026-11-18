@@ -19,54 +19,54 @@ import (
 // W3 (#99): los logins exitosos no consumen intentos; los fallidos sí.
 // Requiere Redis real: IDENTIDAD_TEST_REDIS_URL (p. ej. redis://localhost:6379/15).
 func TestRateLimitLoginSoloCuentaFallidos(prueba *testing.T) {
-	url := os.Getenv("IDENTIDAD_TEST_REDIS_URL")
-	if url == "" {
+	direccion := os.Getenv("IDENTIDAD_TEST_REDIS_URL")
+	if direccion == "" {
 		prueba.Skip("IDENTIDAD_TEST_REDIS_URL no definido")
 	}
-	opt, err := redis.ParseURL(url)
-	if err != nil {
-		prueba.Fatal(err)
+	opciones, errorObtenido := redis.ParseURL(direccion)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	rdb := redis.NewClient(opt)
-	defer rdb.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	key := "rate_limit:login:192.0.2.10"
-	if err := rdb.Del(ctx, key).Err(); err != nil {
-		prueba.Skip("Redis no disponible:", err)
+	redisCliente := redis.NewClient(opciones)
+	defer redisCliente.Close()
+	contextoOperacion, cancelar := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelar()
+	clave := "rate_limit:login:192.0.2.10"
+	if errorOperacion := redisCliente.Del(contextoOperacion, clave).Err(); errorOperacion != nil {
+		prueba.Skip("Redis no disponible:", errorOperacion)
 	}
-	defer rdb.Del(context.Background(), key)
+	defer redisCliente.Del(context.Background(), clave)
 
 	gin.SetMode(gin.TestMode)
-	status := http.StatusOK
-	peticion := gin.New()
-	peticion.POST("/login", middleware.RateLimitLogin(rdb, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(status) })
+	estado := http.StatusOK
+	enrutador := gin.New()
+	enrutador.POST("/login", middleware.RateLimitLogin(redisCliente, config.AjustesPredeterminados()), func(contexto *gin.Context) { contexto.Status(estado) })
 	login := func() int {
-		req := httptest.NewRequest("POST", "/login", strings.NewReader("{}"))
-		req.RemoteAddr = "192.0.2.10:1234"
+		peticionHTTP := httptest.NewRequest("POST", "/login", strings.NewReader("{}"))
+		peticionHTTP.RemoteAddr = "192.0.2.10:1234"
 		escritor := httptest.NewRecorder()
-		peticion.ServeHTTP(escritor, req)
+		enrutador.ServeHTTP(escritor, peticionHTTP)
 		return escritor.Code
 	}
 	for indice := 0; indice < 20; indice++ {
-		if code := login(); code != http.StatusOK {
-			prueba.Fatalf("login exitoso %d bloqueado con %d", indice+1, code)
+		if codigo := login(); codigo != http.StatusOK {
+			prueba.Fatalf("login exitoso %d bloqueado con %d", indice+1, codigo)
 		}
 	}
-	status = http.StatusUnauthorized
+	estado = http.StatusUnauthorized
 	for indice := 0; indice < 5; indice++ {
-		if code := login(); code != http.StatusUnauthorized {
-			prueba.Fatalf("fallo %d: %d", indice+1, code)
+		if codigo := login(); codigo != http.StatusUnauthorized {
+			prueba.Fatalf("fallo %d: %d", indice+1, codigo)
 		}
 	}
-	if code := login(); code != http.StatusTooManyRequests {
-		prueba.Fatalf("el sexto fallo debe bloquear: %d", code)
+	if codigo := login(); codigo != http.StatusTooManyRequests {
+		prueba.Fatalf("el sexto fallo debe bloquear: %d", codigo)
 	}
-	status = http.StatusOK
-	if code := login(); code != http.StatusTooManyRequests {
-		prueba.Fatalf("con el límite alcanzado tampoco entra un login correcto: %d", code)
+	estado = http.StatusOK
+	if codigo := login(); codigo != http.StatusTooManyRequests {
+		prueba.Fatalf("con el límite alcanzado tampoco entra un login correcto: %d", codigo)
 	}
-	if ttl := rdb.PTTL(ctx, key).Val(); ttl <= 0 {
+	if ttl := redisCliente.PTTL(contextoOperacion, clave).Val(); ttl <= 0 {
 		prueba.Fatal("la clave quedó sin TTL")
 	}
 }

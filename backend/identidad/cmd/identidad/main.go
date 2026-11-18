@@ -1,3 +1,5 @@
+// Comando identidad: carga la configuración, abre PostgreSQL y Redis,
+// verifica tablas y permisos, sirve HTTP y apaga ordenadamente con SIGINT/SIGTERM.
 package main
 
 import (
@@ -17,97 +19,103 @@ import (
 	"syscall"
 )
 
+// ===== Entrada =====
+
+// main configura el log JSON y termina con código 1 si el servicio no arranca.
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(log)
-	if err := run(log); err != nil {
-		log.Error("identidad_stopped", "error", err)
+	registrador := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(registrador)
+	if errorObtenido := run(registrador); errorObtenido != nil {
+		registrador.Error("identidad_stopped", "error", errorObtenido)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+// run arma y sirve Identidad hasta recibir una señal de apagado.
+func run(registrador *slog.Logger) error {
+	configuracion, errorObtenido := config.Load()
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	log.Info("identidad_correo", "modo", cfg.Correo.Modo, "host", cfg.Correo.Host, "puerto", cfg.Correo.Puerto)
-	if cfg.Correo.Modo == config.CorreoLog {
-		log.Warn("identidad_correo_modo_log", "detalle", "los correos se imprimen completos en el log; sólo para desarrollo local")
+	registrador.Info("identidad_correo", "modo", configuracion.Correo.Modo, "host", configuracion.Correo.Host, "puerto", configuracion.Correo.Puerto)
+	if configuracion.Correo.Modo == config.CorreoLog {
+		registrador.Warn("identidad_correo_modo_log", "detalle", "los correos se imprimen completos en el log; sólo para desarrollo local")
 	}
-	opt, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
+	opciones, errorObtenido := redis.ParseURL(configuracion.RedisURL)
+	if errorObtenido != nil {
 		return errors.New("REDIS_URL inválido")
 	}
-	opt.ContextTimeoutEnabled = true
-	opt.MaxRetries = -1
-	opt.DialTimeout = cfg.Ajustes.RedisTimeout
-	opt.ReadTimeout = cfg.Ajustes.RedisTimeout
-	opt.WriteTimeout = cfg.Ajustes.RedisTimeout
-	rdb := redis.NewClient(opt)
-	defer rdb.Close()
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	startup, cancel := context.WithTimeout(ctx, cfg.Ajustes.InicioTimeout)
-	db, err := repositories.Open(startup, cfg.DatabaseURL, cfg.Ajustes)
-	if err != nil {
-		cancel()
-		return err
+	opciones.ContextTimeoutEnabled = true
+	opciones.MaxRetries = -1
+	opciones.DialTimeout = configuracion.Ajustes.RedisTimeout
+	opciones.ReadTimeout = configuracion.Ajustes.RedisTimeout
+	opciones.WriteTimeout = configuracion.Ajustes.RedisTimeout
+	redisCliente := redis.NewClient(opciones)
+	defer redisCliente.Close()
+	contexto, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer detener()
+	contextoInicio, cancelar := context.WithTimeout(contexto, configuracion.Ajustes.InicioTimeout)
+	baseDatos, errorObtenido := repositories.Open(contextoInicio, configuracion.DatabaseURL, configuracion.Ajustes)
+	if errorObtenido != nil {
+		cancelar()
+		return errorObtenido
 	}
-	pool, err := db.DB()
-	if err != nil {
-		cancel()
+	pool, errorObtenido := baseDatos.DB()
+	if errorObtenido != nil {
+		cancelar()
 		return errors.New("pool de Identidad inválido")
 	}
 	defer pool.Close()
-	if err := server.VerifyStorage(startup, db); err != nil {
-		cancel()
-		log.Error("identidad_storage_invalid", "error", err)
+	if errorOperacion := server.VerifyStorage(contextoInicio, baseDatos); errorOperacion != nil {
+		cancelar()
+		registrador.Error("identidad_storage_invalid", "error", errorOperacion)
 		return errors.New("Identidad requiere tablas y permisos antes de iniciar")
 	}
-	recuperacion, err := recuperacionDesde(startup, cfg, db, log)
-	cancel()
-	if err != nil {
-		return err
+	recuperacion, errorObtenido := recuperacionDesde(contextoInicio, configuracion, baseDatos, registrador)
+	cancelar()
+	if errorObtenido != nil {
+		return errorObtenido
 	}
-	modulo := server.NewModule(db, rdb, recuperacion, cfg)
-	httpServer := &http.Server{Addr: cfg.ListenAddr, Handler: server.NewRouter(cfg, modulo, rdb, pool.PingContext, log), ReadHeaderTimeout: cfg.Ajustes.ReadHeaderTimeout, ReadTimeout: cfg.Ajustes.ReadTimeout, WriteTimeout: cfg.Ajustes.WriteTimeout, IdleTimeout: cfg.Ajustes.IdleTimeout, MaxHeaderBytes: cfg.Ajustes.MaxHeaderBytes}
-	done := make(chan error, 1)
-	go func() { done <- httpServer.ListenAndServe() }()
+	modulo := server.NewModule(baseDatos, redisCliente, recuperacion, configuracion)
+	servidorHTTP := &http.Server{Addr: configuracion.ListenAddr, Handler: server.NewRouter(configuracion, modulo, redisCliente, pool.PingContext, registrador), ReadHeaderTimeout: configuracion.Ajustes.ReadHeaderTimeout, ReadTimeout: configuracion.Ajustes.ReadTimeout, WriteTimeout: configuracion.Ajustes.WriteTimeout, IdleTimeout: configuracion.Ajustes.IdleTimeout, MaxHeaderBytes: configuracion.Ajustes.MaxHeaderBytes}
+	terminado := make(chan error, 1)
+	go func() { terminado <- servidorHTTP.ListenAndServe() }()
 	select {
-	case err := <-done:
-		if !errors.Is(err, http.ErrServerClosed) {
-			return fmt.Errorf("no se pudo iniciar HTTP de Identidad: %w", err)
+	case errorOperacion := <-terminado:
+		if !errors.Is(errorOperacion, http.ErrServerClosed) {
+			return fmt.Errorf("no se pudo iniciar HTTP de Identidad: %w", errorOperacion)
 		}
-	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), cfg.Ajustes.ApagadoTimeout)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdown); err != nil {
-			_ = httpServer.Close()
+	case <-contexto.Done():
+		contextoApagado, cancelarOperacion := context.WithTimeout(context.Background(), configuracion.Ajustes.ApagadoTimeout)
+		defer cancelarOperacion()
+		if errorOperacion := servidorHTTP.Shutdown(contextoApagado); errorOperacion != nil {
+			_ = servidorHTTP.Close()
 			return errors.New("Identidad agotó el plazo de apagado")
 		}
-		if err := modulo.Cerrar(shutdown); err != nil {
-			log.Warn("identidad_recuperacion_pendiente", "error", err)
+		if errorOperacion := modulo.Cerrar(contextoApagado); errorOperacion != nil {
+			registrador.Warn("identidad_recuperacion_pendiente", "error", errorOperacion)
 		}
 	}
 	return nil
 }
 
+// ===== Recuperación de contraseña =====
+
 // recuperacionDesde decide si la recuperación de contraseña (SUP-184) queda activa.
 // Cualquier falta la apaga con un log explícito, sin impedir el login.
-func recuperacionDesde(ctx context.Context, cfg config.Config, db *gorm.DB, log *slog.Logger) (server.Recuperacion, error) {
-	if cfg.Correo.Modo == config.CorreoDeshabilitado || cfg.URLRestablecer == "" {
-		log.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
+func recuperacionDesde(contexto context.Context, configuracion config.Config, baseDatos *gorm.DB, registrador *slog.Logger) (server.Recuperacion, error) {
+	if configuracion.Correo.Modo == config.CorreoDeshabilitado || configuracion.URLRestablecer == "" {
+		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", "requiere correo (smtp o log) e IDENTIDAD_URL_RESTABLECER")
 		return server.Recuperacion{}, nil
 	}
-	if err := server.VerificarRecuperacion(ctx, db); err != nil {
-		log.Warn("identidad_recuperacion_deshabilitada", "detalle", err.Error())
+	if errorOperacion := server.VerificarRecuperacion(contexto, baseDatos); errorOperacion != nil {
+		registrador.Warn("identidad_recuperacion_deshabilitada", "detalle", errorOperacion.Error())
 		return server.Recuperacion{}, nil
 	}
-	correo, err := mailer.Nuevo(cfg.Correo, log)
-	if err != nil {
-		return server.Recuperacion{}, err
+	correo, errorObtenido := mailer.Nuevo(configuracion.Correo, registrador)
+	if errorObtenido != nil {
+		return server.Recuperacion{}, errorObtenido
 	}
-	log.Info("identidad_recuperacion_activa", "url_restablecer", cfg.URLRestablecer)
-	return server.Recuperacion{Correo: correo, URLRestablecer: cfg.URLRestablecer, Log: log}, nil
+	registrador.Info("identidad_recuperacion_activa", "url_restablecer", configuracion.URLRestablecer)
+	return server.Recuperacion{Correo: correo, URLRestablecer: configuracion.URLRestablecer, Log: registrador}, nil
 }

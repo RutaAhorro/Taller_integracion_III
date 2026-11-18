@@ -1,4 +1,5 @@
 // Registro de rutas de Identidad: une cada endpoint con sus middlewares.
+
 package handlers
 
 import (

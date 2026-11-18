@@ -1,3 +1,5 @@
+// Configuración de correo: selección de modo, SMTP y validaciones sin secretos en errores.
+
 package unit_test
 
 import (
@@ -6,13 +8,15 @@ import (
 	"testing"
 )
 
+// sinCorreo vacía todas las variables de correo.
 func sinCorreo(prueba *testing.T) {
 	prueba.Helper()
-	for _, key := range []string{"IDENTIDAD_CORREO_MODO", "SMTP_HOST", "SMTP_PORT", "SMTP_TLS", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
-		prueba.Setenv(key, "")
+	for _, clave := range []string{"IDENTIDAD_CORREO_MODO", "SMTP_HOST", "SMTP_PORT", "SMTP_TLS", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"} {
+		prueba.Setenv(clave, "")
 	}
 }
 
+// conSMTP fija una configuración SMTP completa con valores de prueba.
 func conSMTP(prueba *testing.T) {
 	prueba.Helper()
 	sinCorreo(prueba)
@@ -25,36 +29,36 @@ func conSMTP(prueba *testing.T) {
 func TestCorreoSinCredencialesQuedaDeshabilitado(prueba *testing.T) {
 	sinCorreo(prueba)
 	prueba.Setenv("SMTP_HOST", "smtp.gmail.com")
-	contexto, err := config.LoadCorreo()
-	if err != nil || contexto.Modo != config.CorreoDeshabilitado || contexto.Clave != "" {
-		prueba.Fatalf("%+v %v", contexto, err)
+	contexto, errorObtenido := config.LoadCorreo()
+	if errorObtenido != nil || contexto.Modo != config.CorreoDeshabilitado || contexto.Clave != "" {
+		prueba.Fatalf("%+v %v", contexto, errorObtenido)
 	}
 }
 
 func TestCorreoSMTPConDefaults(prueba *testing.T) {
 	conSMTP(prueba)
-	contexto, err := config.LoadCorreo()
-	if err != nil || contexto.Modo != config.CorreoSMTP || contexto.Puerto != 587 || contexto.TLS != config.TLSStartTLS || contexto.Remitente != "emisor@example.com" {
-		prueba.Fatalf("%+v %v", contexto, err)
+	contexto, errorObtenido := config.LoadCorreo()
+	if errorObtenido != nil || contexto.Modo != config.CorreoSMTP || contexto.Puerto != 587 || contexto.TLS != config.TLSStartTLS || contexto.Remitente != "emisor@example.com" {
+		prueba.Fatalf("%+v %v", contexto, errorObtenido)
 	}
 	prueba.Setenv("SMTP_PORT", "465")
 	prueba.Setenv("SMTP_FROM", "RutaAhorro <emisor@example.com>")
-	contexto, err = config.LoadCorreo()
-	if err != nil || contexto.Puerto != 465 || contexto.TLS != config.TLSImplicito || contexto.Remitente != "RutaAhorro <emisor@example.com>" {
-		prueba.Fatalf("465 debe usar TLS implícito: %+v %v", contexto, err)
+	contexto, errorObtenido = config.LoadCorreo()
+	if errorObtenido != nil || contexto.Puerto != 465 || contexto.TLS != config.TLSImplicito || contexto.Remitente != "RutaAhorro <emisor@example.com>" {
+		prueba.Fatalf("465 debe usar TLS implícito: %+v %v", contexto, errorObtenido)
 	}
 }
 
 func TestCorreoLogNoExigeCredenciales(prueba *testing.T) {
 	sinCorreo(prueba)
 	prueba.Setenv("IDENTIDAD_CORREO_MODO", "log")
-	if contexto, err := config.LoadCorreo(); err != nil || contexto.Modo != config.CorreoLog {
-		prueba.Fatalf("%+v %v", contexto, err)
+	if contexto, errorObtenido := config.LoadCorreo(); errorObtenido != nil || contexto.Modo != config.CorreoLog {
+		prueba.Fatalf("%+v %v", contexto, errorObtenido)
 	}
 }
 
 func TestCorreoInvalidoNoExponeClave(prueba *testing.T) {
-	for nombre, tc := range map[string]map[string]string{
+	for nombre, caso := range map[string]map[string]string{
 		"modo desconocido":       {"IDENTIDAD_CORREO_MODO": "consola"},
 		"smtp sin credenciales":  {"SMTP_USER": "", "SMTP_PASS": "", "IDENTIDAD_CORREO_MODO": "smtp"},
 		"falta usuario":          {"SMTP_USER": ""},
@@ -71,11 +75,11 @@ func TestCorreoInvalidoNoExponeClave(prueba *testing.T) {
 	} {
 		prueba.Run(nombre, func(prueba *testing.T) {
 			conSMTP(prueba)
-			for key, value := range tc {
-				prueba.Setenv(key, value)
+			for clave, valor := range caso {
+				prueba.Setenv(clave, valor)
 			}
-			if contexto, err := config.LoadCorreo(); err == nil || strings.Contains(err.Error(), "fixture-private") {
-				prueba.Fatalf("config aceptada o clave expuesta: %+v %v", contexto, err)
+			if contexto, errorObtenido := config.LoadCorreo(); errorObtenido == nil || strings.Contains(errorObtenido.Error(), "fixture-private") {
+				prueba.Fatalf("config aceptada o clave expuesta: %+v %v", contexto, errorObtenido)
 			}
 		})
 	}
@@ -84,12 +88,12 @@ func TestCorreoInvalidoNoExponeClave(prueba *testing.T) {
 func TestLoadIncluyeCorreoYFallaSiEsInvalido(prueba *testing.T) {
 	valid(prueba)
 	conSMTP(prueba)
-	contexto, err := config.Load()
-	if err != nil || contexto.Correo.Modo != config.CorreoSMTP {
-		prueba.Fatalf("%+v %v", contexto.Correo.Modo, err)
+	contexto, errorOperacion := config.Load()
+	if errorOperacion != nil || contexto.Correo.Modo != config.CorreoSMTP {
+		prueba.Fatalf("%+v %v", contexto.Correo.Modo, errorOperacion)
 	}
 	prueba.Setenv("SMTP_TLS", "none")
-	if _, err := config.Load(); err == nil {
+	if _, errorObtenido := config.Load(); errorObtenido == nil {
 		prueba.Fatal("Load aceptó un transporte SMTP sin cifrado")
 	}
 }

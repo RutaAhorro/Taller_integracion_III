@@ -1,4 +1,5 @@
 // Saneamiento de nombres de perfil antes de guardarlos.
+
 package services
 
 import (
@@ -13,9 +14,9 @@ const maximoCaracteresNombre = 100
 
 // SanitizarInputBusqueda limita nombres a 100 caracteres y filtra su alfabeto.
 // La seguridad SQL depende de consultas parametrizadas; HTML debe escaparse al mostrarlo.
-func SanitizarInputBusqueda(input string) string {
+func SanitizarInputBusqueda(entrada string) string {
 	// 1. Quitar espacios en blanco al inicio y final
-	limpio := strings.TrimSpace(input)
+	limpio := strings.TrimSpace(entrada)
 
 	// 2. Limitar la longitud máxima a 100 caracteres para evitar desbordamientos o consultas pesadas
 	runas := []rune(limpio)

@@ -55,8 +55,8 @@ verificado. [Frontend](../frontend/web/README.md) ·
 [Catálogo](../backend/catalogo/README.md) · [Scraper Go](../backend/scraper_go/README.md) ·
 [Motor de rutas](../backend/motor_rutas/README.md).
 
-La guía de extracción de [Identidad](Guias/GUIA_IDENTIDAD_DESACOPLADA.md) (SUP-347)
-sigue vigente en parte y se fusiona en el README de su servicio durante el barrido.
+La guía de extracción de Identidad fue integrada en el [README de Identidad](../backend/identidad/README.md)
+en SUP-347.
 Las guías de Catálogo e ingesta fueron integradas en el [README de Catálogo](../backend/catalogo/README.md)
 en SUP-349. La guía de enrutamiento de Catálogo fue integrada en el [README de Gateway](../backend/gateway/README.md)
 en SUP-350.

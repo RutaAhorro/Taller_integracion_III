@@ -1,3 +1,5 @@
+// Roles, planes y contratos del panel de administración de cuentas.
+
 package domain
 
 import (
@@ -5,6 +7,8 @@ import (
 	"strings"
 	"time"
 )
+
+// ===== Roles y planes =====
 
 // Roles válidos para api.usuarios.rol. El plan comercial no forma parte del rol.
 const (
@@ -47,6 +51,8 @@ func NormalizarPlan(plan string) (string, bool) {
 		return "", false
 	}
 }
+
+// ===== DTO del panel =====
 
 // FiltroUsuariosAdminDTO contiene los criterios opcionales del listado administrativo.
 type FiltroUsuariosAdminDTO struct {
@@ -103,14 +109,16 @@ type MetricasUsuariosDTO struct {
 	UsuariosActivos int64 `json:"usuarios_activos"`
 }
 
+// ===== Contrato de repositorio =====
+
 // AdminUsuarioRepository define las operaciones de administración sobre api.usuarios.
 // Se mantiene separado de UsuarioRepository para no acoplar el perfil público.
 type AdminUsuarioRepository interface {
-	Listar(ctx context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, int64, error)
-	FindByID(ctx context.Context, id string) (*Usuario, error)
+	Listar(contexto context.Context, filtro FiltroUsuariosAdminDTO) ([]Usuario, int64, error)
+	FindByID(contexto context.Context, id string) (*Usuario, error)
 	// Contar devuelve el total de cuentas y cuántas están activas.
-	Contar(ctx context.Context) (total, activos int64, err error)
+	Contar(contexto context.Context) (total, activos int64, errorObtenido error)
 	// ActualizarConGuarda aplica el cambio y registra la auditoría en una sola
 	// transacción, impidiendo que se desactive o degrade al último admin activo.
-	ActualizarConGuarda(ctx context.Context, id string, datos map[string]interface{}, actorID string) error
+	ActualizarConGuarda(contexto context.Context, id string, datos map[string]interface{}, actorID string) error
 }

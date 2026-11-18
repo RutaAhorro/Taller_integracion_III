@@ -1,3 +1,5 @@
+// Contrato de acceso a api.usuarios y errores de negocio compartidos.
+
 package domain
 
 import (
@@ -7,10 +9,10 @@ import (
 
 // UsuarioRepository define el contrato para operaciones sobre la tabla api.usuarios
 type UsuarioRepository interface {
-	FindByEmail(ctx context.Context, email string) (*Usuario, error)
-	FindByID(ctx context.Context, id string) (*Usuario, error)
-	Create(ctx context.Context, usuario *Usuario) error
-	Actualizar(ctx context.Context, id string, datos map[string]interface{}) error
+	FindByEmail(contexto context.Context, direccionCorreo string) (*Usuario, error)
+	FindByID(contexto context.Context, id string) (*Usuario, error)
+	Create(contexto context.Context, usuario *Usuario) error
+	Actualizar(contexto context.Context, id string, datos map[string]interface{}) error
 }
 
 var ErrCorreoDuplicado = errors.New("el correo electrónico ya se encuentra registrado")

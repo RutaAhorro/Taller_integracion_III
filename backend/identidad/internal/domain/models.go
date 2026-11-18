@@ -1,3 +1,5 @@
+// Package domain define las entidades, contratos de repositorio y DTO de
+// Identidad. No depende de HTTP ni de la base de datos.
 package domain
 
 import (
@@ -35,6 +37,7 @@ type Usuario struct {
 	ActualizadoEl     time.Time  `gorm:"default:now();not null" json:"actualizado_el"`
 }
 
+// TableName fija la tabla con esquema, porque GORM no lo infiere.
 func (Usuario) TableName() string {
 	return "api.usuarios"
 }

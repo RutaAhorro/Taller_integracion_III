@@ -1,3 +1,5 @@
+// Package server arma el router HTTP: sondas, middlewares globales (CORS,
+// correlación, límites de petición) y las rutas del módulo de Identidad.
 package server
 
 import (
@@ -14,57 +16,63 @@ import (
 	"time"
 )
 
+// ===== Router =====
+
 // NewRouter monta sondas, middlewares globales y las rutas del módulo. Cada
 // petición protegida valida JWT localmente; no acepta identidad de headers.
 // Recibe el módulo ya armado para que main pueda cerrarlo al apagar
 // (despacho pendiente de correos de recuperación, SUP-184).
-func NewRouter(cfg config.Config, modulo *Module, redisClient *redis.Client, ping func(context.Context) error, log *slog.Logger) *gin.Engine {
-	ajustes := cfg.Ajustes
+func NewRouter(configuracion config.Config, modulo *Module, redisCliente *redis.Client, sondaBase func(context.Context) error, registrador *slog.Logger) *gin.Engine {
+	ajustes := configuracion.Ajustes
 	enrutador := gin.New()
-	_ = enrutador.SetTrustedProxies(cfg.TrustedProxies)
+	_ = enrutador.SetTrustedProxies(configuracion.TrustedProxies)
 	enrutador.RemoteIPHeaders = []string{"X-Forwarded-For"}
-	enrutador.Use(observe(log), httperrors.ErrorHandler(), cors(cfg.AllowedOrigins), boundedRequest(ajustes))
+	enrutador.Use(observe(registrador), httperrors.ErrorHandler(), cors(configuracion.AllowedOrigins), boundedRequest(ajustes))
 	enrutador.HandleMethodNotAllowed = true
 	enrutador.NoRoute(httperrors.NotFoundHandler())
 	enrutador.NoMethod(httperrors.MethodNotAllowedHandler())
 	enrutador.GET("/_identidad/live", func(contexto *gin.Context) { contexto.JSON(200, gin.H{"status": "ok", "service": "identidad"}) })
 	enrutador.GET("/_identidad/ready", func(contexto *gin.Context) {
-		ctx, cancel := context.WithTimeout(contexto.Request.Context(), ajustes.ReadinessTimeout)
-		defer cancel()
-		checks := gin.H{"database": "error", "redis": "error"}
+		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.ReadinessTimeout)
+		defer cancelar()
+		verificaciones := gin.H{"database": "error", "redis": "error"}
 		// Login falla cerrado sin Redis: readiness debe reflejar esa dependencia.
-		if ping != nil && ping(ctx) == nil {
-			checks["database"] = "ok"
+		if sondaBase != nil && sondaBase(contextoOperacion) == nil {
+			verificaciones["database"] = "ok"
 		}
-		if redisClient != nil && redisClient.Ping(ctx).Err() == nil {
-			checks["redis"] = "ok"
+		if redisCliente != nil && redisCliente.Ping(contextoOperacion).Err() == nil {
+			verificaciones["redis"] = "ok"
 		}
-		code, state := http.StatusOK, "ok"
-		if checks["database"] != "ok" || checks["redis"] != "ok" {
-			code, state = http.StatusServiceUnavailable, "error"
+		codigo, estado := http.StatusOK, "ok"
+		if verificaciones["database"] != "ok" || verificaciones["redis"] != "ok" {
+			codigo, estado = http.StatusServiceUnavailable, "error"
 		}
-		contexto.JSON(code, gin.H{"status": state, "service": "identidad", "checks": checks})
+		contexto.JSON(codigo, gin.H{"status": estado, "service": "identidad", "checks": verificaciones})
 	})
 	modulo.RegisterRoutes(enrutador.Group("/api/v1"))
 	return enrutador
 }
 
-func cors(origins []string) gin.HandlerFunc {
-	allowed := map[string]bool{}
-	for _, origin := range origins {
-		if origin != "" && origin != "*" && origin != "null" {
-			allowed[origin] = true
+// ===== Middlewares globales =====
+
+// cors rechaza con 403 los orígenes fuera de la allowlist antes de ejecutar
+// handlers y sólo concede credenciales a los orígenes exactos permitidos.
+func cors(origenes []string) gin.HandlerFunc {
+	permitidos := map[string]bool{}
+	for _, origen := range origenes {
+		if origen != "" && origen != "*" && origen != "null" {
+			permitidos[origen] = true
 		}
 	}
 	return func(contexto *gin.Context) {
 		contexto.Writer.Header().Add("Vary", "Origin")
-		origin := contexto.GetHeader("Origin")
-		if origin != "" {
-			if !allowed[origin] {
+		origen := contexto.GetHeader("Origin")
+		if origen != "" {
+			if !permitidos[origen] {
 				httperrors.ResponderError(contexto, 403, "Origen no permitido.", nil)
 				return
 			}
-			contexto.Header("Access-Control-Allow-Origin", origin)
+			contexto.Header("Access-Control-Allow-Origin", origen)
 			contexto.Header("Access-Control-Allow-Credentials", "true")
 			contexto.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-CSRF-Token")
 			contexto.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
@@ -77,11 +85,15 @@ func cors(origins []string) gin.HandlerFunc {
 	}
 }
 
+// requestIDPattern acepta un X-Request-ID recibido sólo si es corto y seguro
+// para escribirlo en logs; si no, se genera uno nuevo.
 var requestIDPattern = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
 
-func observe(log *slog.Logger) gin.HandlerFunc {
-	if log == nil {
-		log = slog.Default()
+// observe propaga o genera X-Request-ID y registra método, ruta de plantilla,
+// estado y duración, sin cuerpos ni cookies.
+func observe(registrador *slog.Logger) gin.HandlerFunc {
+	if registrador == nil {
+		registrador = slog.Default()
 	}
 	return func(contexto *gin.Context) {
 		id := contexto.GetHeader("X-Request-ID")
@@ -92,21 +104,22 @@ func observe(log *slog.Logger) gin.HandlerFunc {
 		}
 		contexto.Header("X-Request-ID", id)
 		contexto.Set("request_id", id)
-		start := time.Now()
+		inicio := time.Now()
 		contexto.Next()
-		path := contexto.FullPath()
-		if path == "" {
-			path = "unmatched"
+		ruta := contexto.FullPath()
+		if ruta == "" {
+			ruta = "unmatched"
 		}
-		log.Info("http_request", "request_id", id, "method", contexto.Request.Method, "path", path, "status", contexto.Writer.Status(), "duration_ms", time.Since(start).Milliseconds())
+		registrador.Info("http_request", "request_id", id, "method", contexto.Request.Method, "path", ruta, "status", contexto.Writer.Status(), "duration_ms", time.Since(inicio).Milliseconds())
 	}
 }
 
+// boundedRequest acota la duración y el tamaño del cuerpo de cada petición.
 func boundedRequest(ajustes config.Ajustes) gin.HandlerFunc {
 	return func(contexto *gin.Context) {
-		ctx, cancel := context.WithTimeout(contexto.Request.Context(), ajustes.RequestTimeout)
-		defer cancel()
-		contexto.Request = contexto.Request.WithContext(ctx)
+		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.RequestTimeout)
+		defer cancelar()
+		contexto.Request = contexto.Request.WithContext(contextoOperacion)
 		contexto.Request.Body = http.MaxBytesReader(contexto.Writer, contexto.Request.Body, int64(ajustes.MaxBodyBytes))
 		contexto.Next()
 	}

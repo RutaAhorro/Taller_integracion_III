@@ -1,3 +1,6 @@
+// Tokens de recuperación contra PostgreSQL real y desechable; se omite sin
+// IDENTIDAD_TEST_DB_URL e IDENTIDAD_TEST_ADMIN_URL.
+
 package integration_test
 
 import (
@@ -29,37 +32,37 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	if dsn == "" || adminDSN == "" {
 		prueba.Skip("requiere IDENTIDAD_TEST_DB_URL e IDENTIDAD_TEST_ADMIN_URL")
 	}
-	ctx := context.Background()
-	db, err := repositories.Open(ctx, dsn, config.AjustesPredeterminados())
-	if err != nil {
-		prueba.Fatal(err)
+	contexto := context.Background()
+	baseDatos, errorOperacion := repositories.Open(contexto, dsn, config.AjustesPredeterminados())
+	if errorOperacion != nil {
+		prueba.Fatal(errorOperacion)
 	}
-	admin, err := gorm.Open(postgres.Open(adminDSN), &gorm.Config{})
-	if err != nil {
-		prueba.Fatal(err)
+	admin, errorOperacion := gorm.Open(postgres.Open(adminDSN), &gorm.Config{})
+	if errorOperacion != nil {
+		prueba.Fatal(errorOperacion)
 	}
-	if err := server.VerificarRecuperacion(ctx, db); err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := server.VerificarRecuperacion(contexto, baseDatos); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	usuario := &domain.Usuario{Correo: "recuperacion-" + uuid.NewString()[:8] + "@example.com", NombreCompleto: "Prueba", EstaActivo: true}
-	if err := repositories.NewUsuarioRepository(db).Create(ctx, usuario); err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := repositories.NewUsuarioRepository(baseDatos).Create(contexto, usuario); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	prueba.Cleanup(func() { admin.Exec("DELETE FROM api.usuarios WHERE id = ?", usuario.ID) })
 
-	repo := repositories.NewRecuperacionRepository(db)
-	if cantidad, espera, err := repo.SolicitudesRecientes(ctx, usuario.ID, time.Hour, time.Minute); err != nil || cantidad != 0 || espera {
-		prueba.Fatalf("sin tokens: %d %v %v", cantidad, espera, err)
+	repositorio := repositories.NewRecuperacionRepository(baseDatos)
+	if cantidad, espera, errorObtenido := repositorio.SolicitudesRecientes(contexto, usuario.ID, time.Hour, time.Minute); errorObtenido != nil || cantidad != 0 || espera {
+		prueba.Fatalf("sin tokens: %d %v %v", cantidad, espera, errorObtenido)
 	}
 	_, primero, _ := security.GenerarTokenRecuperacion()
 	_, segundo, _ := security.GenerarTokenRecuperacion()
 	for _, hash := range [][]byte{primero, segundo} {
-		if err := repo.EmitirToken(ctx, usuario.ID, hash, 30*time.Minute); err != nil {
-			prueba.Fatal(err)
+		if errorObtenido := repositorio.EmitirToken(contexto, usuario.ID, hash, 30*time.Minute); errorObtenido != nil {
+			prueba.Fatal(errorObtenido)
 		}
 	}
-	if cantidad, espera, err := repo.SolicitudesRecientes(ctx, usuario.ID, time.Hour, time.Minute); err != nil || cantidad != 2 || !espera {
-		prueba.Fatalf("dos tokens recientes: %d %v %v", cantidad, espera, err)
+	if cantidad, espera, errorObtenido := repositorio.SolicitudesRecientes(contexto, usuario.ID, time.Hour, time.Minute); errorObtenido != nil || cantidad != 2 || !espera {
+		prueba.Fatalf("dos tokens recientes: %d %v %v", cantidad, espera, errorObtenido)
 	}
 
 	var filas []struct {
@@ -67,23 +70,23 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 		Vigente   bool
 		Minutos   float64
 	}
-	if err := admin.Raw(`SELECT token_hash, usado_el IS NULL AS vigente, extract(epoch FROM expira_el - creado_el) / 60 AS minutos
-        FROM api.tokens_recuperacion WHERE usuario_id = ? ORDER BY creado_el, vigente`, usuario.ID).Scan(&filas).Error; err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := admin.Raw(`SELECT token_hash, usado_el IS NULL AS vigente, extract(epoch FROM expira_el - creado_el) / 60 AS minutos
+        FROM api.tokens_recuperacion WHERE usuario_id = ? ORDER BY creado_el, vigente`, usuario.ID).Scan(&filas).Error; errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	if len(filas) != 2 || !bytes.Equal(filas[0].TokenHash, primero) || filas[0].Vigente || !bytes.Equal(filas[1].TokenHash, segundo) || !filas[1].Vigente || filas[1].Minutos < 29.9 || filas[1].Minutos > 30.1 {
 		prueba.Fatalf("sólo el último token debe quedar vigente por 30 minutos: %+v", filas)
 	}
-	if err := db.Exec("DELETE FROM api.tokens_recuperacion WHERE usuario_id = ?", usuario.ID).Error; err == nil {
+	if errorObtenido := baseDatos.Exec("DELETE FROM api.tokens_recuperacion WHERE usuario_id = ?", usuario.ID).Error; errorObtenido == nil {
 		prueba.Fatal("app_identity no debe poder borrar tokens")
 	}
-	if err := repo.EmitirToken(ctx, usuario.ID, primero, 30*time.Minute); err == nil {
+	if errorObtenido := repositorio.EmitirToken(contexto, usuario.ID, primero, 30*time.Minute); errorObtenido == nil {
 		prueba.Fatal("un hash repetido debe rechazarse")
 	}
 
 	// Flujo completo con el servicio: el hash vigente en la base corresponde al token del correo.
-	if err := admin.Exec("UPDATE api.tokens_recuperacion SET creado_el = now() - interval '2 hours' WHERE usuario_id = ?", usuario.ID).Error; err != nil {
-		prueba.Fatal(err)
+	if errorObtenido := admin.Exec("UPDATE api.tokens_recuperacion SET creado_el = now() - interval '2 hours' WHERE usuario_id = ?", usuario.ID).Error; errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
 	// El transporte de desarrollo permite inspeccionar el correo sin enviar a terceros.
 	var salidaCorreo bytes.Buffer
@@ -91,11 +94,11 @@ func TestRecuperacionRepositoryPostgres(prueba *testing.T) {
 	if errorCorreo != nil {
 		prueba.Fatal(errorCorreo)
 	}
-	servicio := services.NewRecuperacionService(repositories.NewUsuarioRepository(db), repo, correo, "https://frontend.example/restablecer-contrasena", nil, config.AjustesPredeterminados())
-	if err := servicio.Solicitar(usuario.Correo); err != nil {
-		prueba.Fatal(err)
+	servicio := services.NewRecuperacionService(repositories.NewUsuarioRepository(baseDatos), repositorio, correo, "https://frontend.example/restablecer-contrasena", nil, config.AjustesPredeterminados())
+	if errorObtenido := servicio.Solicitar(usuario.Correo); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
 	}
-	contextoCierre, cancelarCierre := context.WithTimeout(ctx, 5*time.Second)
+	contextoCierre, cancelarCierre := context.WithTimeout(contexto, 5*time.Second)
 	defer cancelarCierre()
 	if errorCierre := servicio.Cerrar(contextoCierre); errorCierre != nil {
 		prueba.Fatal(errorCierre)

@@ -7,8 +7,9 @@ Gateway enruta las solicitudes; la autorización efectiva pertenece a Identidad.
 No importa otros dominios ni consulta tablas ajenas; tampoco ejecuta migraciones.
 
 Este README reúne la documentación vigente de configuración, seguridad,
-contratos y operación consolidada en SUP-347. Los pasos de extracción del
-monolito de SUP-272 quedan como antecedentes en el historial de Git.
+contratos y operación consolidada en SUP-347, que absorbió y retiró la antigua
+`docs/Guias/GUIA_IDENTIDAD_DESACOPLADA.md`. Los pasos de extracción del
+monolito de SUP-272 y su procedimiento de corte quedan en el historial de Git.
 
 ## Contratos HTTP implementados
 
@@ -38,6 +39,8 @@ no conceden permisos administrativos.
 > | `GET /admin/usuarios` aceptaba `offset` (excluyente con `page`) | Sólo `page` y `limit`. Un `offset` recibido se ignora: ya no pagina ni devuelve 400 |
 > | `rol=administrador` se aceptaba como alias de `admin` en `PUT /admin/usuarios/{id}` y en el filtro `?rol=` | Responde 400: los únicos roles son `registrado`, `colaborador` y `admin` |
 > | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | Ya no se reconoce como admin. La migración `08_normalizar_rol_admin_y_auditoria.sql` debe estar aplicada |
+> | El registro generaba un UUID en `api.usuarios.token_verificacion` | Las cuentas nuevas lo dejan en `NULL`: no hay flujo que lo consuma. La columna se conserva y ninguna respuesta HTTP lo exponía |
+> | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor. El envío SMTP se prueba en `tests/integration/mailer_test.go` |
 >
 > Ningún consumidor del repositorio enviaba `offset` ni escribía `administrador`
 > al momento del cambio (el frontend usa `page` y `limit`).
@@ -53,7 +56,9 @@ los errores internos no incluyen SQL ni trazas en el JSON.
 Gateway conserva ruta, query, cuerpo, cookie y `Set-Cookie`, y elimina headers
 de identidad forjados. Una caída de Identidad responde 502
 `identidad_unavailable`; un timeout, 504 `identidad_timeout`, sin fallback a
-otro servicio. Sus probes no se publican por Gateway. `/health`,
+otro servicio. Toda ruta bajo `/api/v1/auth/` pertenece a Identidad aunque
+no exista (404 propio); prefijos parecidos como `/api/v1/authentication` no
+se enrutan allí. Sus probes no se publican por Gateway. `/health`,
 `/api/v1/health` y `/swagger/*` pertenecen a Control de scraping; no son rutas
 de salud ni una especificación agregada de Identidad.
 
@@ -88,6 +93,11 @@ de salud ni una especificación agregada de Identidad.
   símbolo. Los nombres se sanitizan hasta 100 caracteres Unicode; un nombre
   vacío tras sanitizar se rechaza antes de persistir. Un avatar opcional inválido
   o de más de 500 caracteres se omite sin bloquear el acceso con Google.
+
+Deudas conocidas, fuera de este servicio por ahora: HS256 obliga a compartir
+la clave con los validadores (pasar a firma asimétrica exige despliegue
+coordinado), y cambiar la contraseña o desactivar una cuenta no revoca los
+JWT ya emitidos fuera de las rutas que revalidan contra `api.usuarios`.
 
 ## Configuración
 
@@ -155,7 +165,9 @@ No se ejecuta AutoMigrate ni se amplían grants desde la aplicación.
 
 Cada réplica tiene su propio pool. Al cambiar su tamaño máximo o el
 número de réplicas, recalcular el presupuesto total de conexiones junto con
-los otros servicios. Los valores configurados no acreditan capacidad medida.
+los otros servicios. Como referencia, con 4 réplicas por dominio y pools de
+5 (Identidad y Control) y 10 (Catálogo) el runtime usa hasta 80 conexiones,
+más las sesiones administrativas. Los valores no acreditan capacidad medida.
 Ver [propiedad de datos y permisos](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md).
 
 ## IP real y rate limiting
@@ -201,18 +213,32 @@ en segundo plano con un plazo de 45 s. Correo no forma
 parte de readiness. El modo `log` imprime enlaces y tokens completos y sólo
 se admite para desarrollo; `deshabilitado` devuelve `mailer.ErrDeshabilitado`.
 
-Provisionar las credenciales con el procedimiento del equipo y el mecanismo
-del proveedor. En Kubernetes el Deployment referencia el Secret opcional
-`identidad-smtp` para `SMTP_USER`/`SMTP_PASS`; host y puerto vienen del ConfigMap.
-Un operador puede crear el Secret desde un archivo privado y reiniciar el
-Deployment. No escribir contraseñas en comandos literales, Git, issues ni logs.
-El mensaje de arranque `identidad_correo` permite revisar modo, host y puerto.
+**Cuenta emisora (SUP-188).** Activar la verificación en dos pasos y generar
+una App Password dedicada a Identidad (Cuenta de Google → Seguridad →
+Contraseñas de aplicaciones). Guardarla sin espacios en el gestor de secretos
+del equipo y revocarla en la misma pantalla si se filtra. Gmail limita los
+destinatarios diarios por cuenta (del orden de 500; 2000 en Workspace):
+confirmar la cuota en la cuenta real.
+
+**Kubernetes.** El Deployment referencia el Secret opcional `identidad-smtp`
+para `SMTP_USER`/`SMTP_PASS`; host y puerto vienen del ConfigMap. Crearlo desde
+un archivo privado con esas dos líneas, nunca con la clave como argumento:
+
+```bash
+kubectl create secret generic identidad-smtp --from-env-file=<archivo-privado>
+kubectl rollout restart deployment/identidad
+```
+
+El log de arranque `identidad_correo` debe mostrar `"modo":"smtp"`. La
+NetworkPolicy sólo restringe entrada: la salida al puerto SMTP depende de la
+red del clúster. No escribir contraseñas en Git, issues ni logs.
 
 Un error `smtp conexion`
 requiere revisar DNS, conectividad, firewall y plazo; `smtp autenticacion`,
 credenciales y permisos del proveedor; `smtp starttls`/`smtp tls`, certificado
-y negociación TLS. Ningún error por sí solo demuestra que el clúster bloquee
-un puerto concreto.
+y negociación TLS (por ejemplo, un proxy que intercepta). Ningún error por sí
+solo demuestra que el clúster bloquee un puerto concreto; ante `smtp conexion`
+persistente se puede probar `SMTP_PORT=465`.
 
 `RecuperacionService.Solicitar` normaliza y valida el correo y despacha el
 resto en segundo plano, sin esperar consultas ni envío: la respuesta no revela
@@ -229,6 +255,20 @@ cuando están disponibles correo, URL y permisos; los logs indican
 Esto no acredita endpoints públicos: solicitar recuperación es SUP-233 y
 consumir el token/restablecer la contraseña corresponde a SUP-185/SUP-234.
 No se presentan esas operaciones como implementadas ni como verificación de correo.
+
+Para quien implemente el consumo (SUP-185/SUP-234): calcular
+`security.HashTokenRecuperacion(token)` y marcarlo usado en una sola sentencia,
+para que dos peticiones simultáneas no lo consuman dos veces. Sin fila, el token
+es inválido, venció o ya se usó: responder lo mismo en los tres casos.
+
+```sql
+UPDATE api.tokens_recuperacion SET usado_el = now()
+WHERE token_hash = $1 AND usado_el IS NULL AND expira_el > now()
+RETURNING usuario_id;
+```
+
+`app_identity` ya tiene SELECT/INSERT/UPDATE en esa tabla, sin DELETE. El
+frontend (SUP-250) lee `token` del enlace y lo envía al endpoint de restablecimiento.
 
 ## Salud y operación
 

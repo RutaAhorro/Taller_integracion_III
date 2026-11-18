@@ -1,3 +1,5 @@
+// Package httperrors da el formato único de error JSON (estado, mensaje,
+// detalle) y evita que panics o errores internos expongan SQL o trazas.
 package httperrors
 
 import (
@@ -8,6 +10,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ===== Formato de error =====
+
 // RespuestaError representa la estructura estandarizada de respuestas de error en JSON para la API
 type RespuestaError struct {
 	Estado  int    `json:"estado"`            // Código numérico del estado HTTP (400, 404, 500, etc.)
@@ -15,13 +19,15 @@ type RespuestaError struct {
 	Detalle string `json:"detalle,omitempty"` // Información técnica u origen del error
 }
 
+// ===== Middlewares =====
+
 // ErrorHandler es el middleware global que intercepta panics no controlados y errores del contexto
 func ErrorHandler() gin.HandlerFunc {
 	return func(contexto *gin.Context) {
 		defer func() {
-			if peticion := recover(); peticion != nil {
+			if valorPanico := recover(); valorPanico != nil {
 				// Captura cualquier panic no controlado en el servidor
-				slog.Error("identidad_panic", "request_id", contexto.GetString("request_id"), "error", peticion)
+				slog.Error("identidad_panic", "request_id", contexto.GetString("request_id"), "error", valorPanico)
 
 				// Responder con estado HTTP 500 estandarizado
 				contexto.JSON(http.StatusInternalServerError, RespuestaError{
@@ -38,8 +44,8 @@ func ErrorHandler() gin.HandlerFunc {
 
 		// Procesar errores acumulados en el contexto Gin si aún no se ha escrito la respuesta
 		if len(contexto.Errors) > 0 && !contexto.Writer.Written() {
-			err := contexto.Errors.Last()
-			slog.Error("identidad_context_error", "request_id", contexto.GetString("request_id"), "error", err.Err)
+			errorObtenido := contexto.Errors.Last()
+			slog.Error("identidad_context_error", "request_id", contexto.GetString("request_id"), "error", errorObtenido.Err)
 
 			contexto.JSON(http.StatusInternalServerError, RespuestaError{
 				Estado:  http.StatusInternalServerError,
@@ -71,15 +77,17 @@ func MethodNotAllowedHandler() gin.HandlerFunc {
 	}
 }
 
+// ===== Respuesta desde handlers =====
+
 // ResponderError es una función utilitaria exportada para emitir errores estandarizados desde cualquier handler
-func ResponderError(contexto *gin.Context, estado int, mensaje string, err error) {
+func ResponderError(contexto *gin.Context, estado int, mensaje string, errorObtenido error) {
 	detalle := ""
-	if err != nil && estado == http.StatusBadRequest {
-		detalle = err.Error()
+	if errorObtenido != nil && estado == http.StatusBadRequest {
+		detalle = errorObtenido.Error()
 	}
 
-	if err != nil && estado >= 500 {
-		slog.Error("identidad_http_error", "request_id", contexto.GetString("request_id"), "status", estado, "error", err)
+	if errorObtenido != nil && estado >= 500 {
+		slog.Error("identidad_http_error", "request_id", contexto.GetString("request_id"), "status", estado, "error", errorObtenido)
 	}
 	contexto.JSON(estado, RespuestaError{
 		Estado:  estado,
