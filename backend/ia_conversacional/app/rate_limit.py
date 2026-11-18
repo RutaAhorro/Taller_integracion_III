@@ -8,11 +8,16 @@ from typing import Callable, Optional
 
 from fastapi import HTTPException, status
 
+from app.config import (
+    CHAT_RATE_LIMIT_SOLICITUDES_PREDETERMINADO,
+    CHAT_RATE_LIMIT_VENTANA_SEGUNDOS_PREDETERMINADA,
+)
+
 # --------------------------------------------------------------------------
 # Constantes de Limitación (SUP-336)
 # --------------------------------------------------------------------------
-MAXIMO_SOLICITUDES_PREDETERMINADO: int = 10
-VENTANA_SEGUNDOS_PREDETERMINADA: float = 60.0
+MAXIMO_SOLICITUDES_PREDETERMINADO: int = CHAT_RATE_LIMIT_SOLICITUDES_PREDETERMINADO
+VENTANA_SEGUNDOS_PREDETERMINADA: float = CHAT_RATE_LIMIT_VENTANA_SEGUNDOS_PREDETERMINADA
 INTERVALO_PURGA_PREDETERMINADO: int = 50
 
 
