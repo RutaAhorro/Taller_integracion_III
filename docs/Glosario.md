@@ -45,7 +45,7 @@
 | **Fail closed** | Ante una falla, rechazar en vez de permitir. | El rate limiter rechaza el login si Redis no responde. |
 | **Token de servicio** | Secreto compartido entre servicios internos (no usuarios). | `SCRAPING_SERVICE_TOKEN` (worker/bot → Control) y `CATALOGO_INTERNAL_TOKEN`. |
 | **Bearer** | Esquema del header `Authorization: Bearer <token>`. | Token de servicio de scraping. |
-| **TLS** | *Transport Layer Security*. Cifrado de la conexión (sucesor de SSL). | HTTPS y envío de correo (TLS ≥ 1.2). |
+| **TLS** | *Transport Layer Security*. Cifrado de la conexión (sucesor de SSL). | HTTPS (TLS ≥ 1.2). |
 | **Sanitización** | Limpiar la entrada del usuario antes de usarla. | `SanitizarNombre()` en Identidad y `SanitizarInputBusqueda()` en Catálogo; `normalizar_nombre()` en Python. |
 
 ## Redes y protocolos
