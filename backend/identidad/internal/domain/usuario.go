@@ -62,8 +62,8 @@ const (
 )
 
 // NormalizarRol devuelve el valor canónico almacenado en api.usuarios.rol.
-// Sólo existen admin, colaborador y registrado: la migración 08 eliminó el
-// alias histórico "administrador" de los datos.
+// Sólo existen admin, colaborador y registrado; la restricción usuarios_rol_check
+// (migración 10) impide que la base guarde otro valor.
 func NormalizarRol(rol string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(rol)) {
 	case RolAdmin:

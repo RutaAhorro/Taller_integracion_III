@@ -552,16 +552,15 @@ func TestAdminUsuariosRechazaAliasAdministrador(prueba *testing.T) {
 	}
 }
 
-// TestAdminUsuariosIgnoraOffset fija el contrato tras el barrido: la paginación
-// usa sólo page y limit; un offset heredado no altera la página devuelta.
-func TestAdminUsuariosIgnoraOffset(prueba *testing.T) {
+// TestAdminUsuariosRechazaOffset fija el contrato tras el barrido: la paginación
+// usa sólo page y limit, y un offset recibido responde 400 en vez de devolver
+// en silencio una página distinta de la pedida.
+func TestAdminUsuariosRechazaOffset(prueba *testing.T) {
 	enrutador, repositorio := newAdminUsuariosTestRouter(prueba)
-	respuesta := adminRequest(prueba, enrutador, repositorio, http.MethodGet, "/api/v1/admin/usuarios?offset=50", domain.RolAdmin, "")
-	if respuesta.Code != http.StatusOK {
-		prueba.Fatalf("se esperaba 200, se obtuvo %d. Body: %s", respuesta.Code, respuesta.Body.String())
-	}
-	var pagina domain.PaginaUsuariosAdminDTO
-	if errorLectura := json.Unmarshal(respuesta.Body.Bytes(), &pagina); errorLectura != nil || pagina.Paginacion.PaginaActual != 1 {
-		prueba.Fatalf("offset no debía cambiar la página: %+v %v", pagina.Paginacion, errorLectura)
+	for _, ruta := range []string{"/api/v1/admin/usuarios?offset=50", "/api/v1/admin/usuarios?offset=", "/api/v1/admin/usuarios?page=2&offset=0"} {
+		respuesta := adminRequest(prueba, enrutador, repositorio, http.MethodGet, ruta, domain.RolAdmin, "")
+		if respuesta.Code != http.StatusBadRequest {
+			prueba.Fatalf("%s: se esperaba 400, se obtuvo %d. Body: %s", ruta, respuesta.Code, respuesta.Body.String())
+		}
 	}
 }

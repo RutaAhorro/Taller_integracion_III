@@ -1,7 +1,7 @@
 # Identidad — contexto IA
 
 - Leer `README.md` del servicio y `.env.example`: configuración, contratos,
-  seguridad, operación y correo. Go/Gin/GORM, puerto 8080 por defecto,
+  seguridad y operación. Go/Gin/GORM, puerto 8080 por defecto,
   entrada `cmd/identidad/main.go`.
 - HTTP en `internal/api` (router, handlers, sesión JWT, RBAC, límites y errores);
   negocio en `services`; SQL y verificación de permisos en `repositories`;
@@ -10,15 +10,16 @@
   No Catálogo/Control por imports o SQL, ni AutoMigrate.
 - Cookie HttpOnly `jwt`, HS256 y expiración obligatoria. Las rutas protegidas
   revalidan estado y rol contra usuarios; no confiar en headers del cliente.
-- Roles `registrado`, `colaborador`, `admin`; plan comercial separado del rol.
+- Roles `registrado`, `colaborador`, `admin`, garantizados por `usuarios_rol_check`
+  (migración 10); plan comercial separado del rol.
 - Login/registro/Google usan contadores Redis; no desactivar límites para pruebas.
 - Conservar validación criptográfica Google, PasswordHash opcional para SSO y
   exigencia de contraseña actual al cambiar correo/contraseña local.
 - Admin: no permitir eliminar al último admin activo; registrar auditoría.
-- Correo en `internal/mailer`; tokens aleatorios se guardan como hash, no texto.
-  Tener servicio de correo no acredita endpoints completos de recuperación.
+- No hay recuperación de contraseña ni correo: se podaron por no tener endpoints.
+  Al reimplementarla, guardar tokens aleatorios sólo como hash.
 - Configurar proxies reales, CORS y Secure según entorno; no registrar cookies,
-  claves ni tokens. Modo correo `log` solo en desarrollo.
+  claves ni tokens.
 - Configuración validada en `internal/config`, inyectada al arrancar. Conservar
   defaults, nombres compartidos y duración de 24 h de JWT y cookie.
 - Pruebas en `tests/unit` y `tests/integration`, fuera de `internal/` y contra
@@ -38,9 +39,9 @@
 
 ## Índice breve generado
 
-33 archivos fuente, incluidos los de pruebas. Distribución:
+28 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 17 archivos.
-- `tests`: 15 archivos.
+- `internal`: 14 archivos.
+- `tests`: 13 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

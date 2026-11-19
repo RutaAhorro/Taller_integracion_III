@@ -252,11 +252,11 @@ func (repositorio *mockUsuarioRepository) Listar(contexto context.Context, filtr
 		return resultado[indice].Correo < resultado[indiceSecundario].Correo
 	})
 	total := int64(len(resultado))
-	if filtro.Offset > 0 {
-		if filtro.Offset >= len(resultado) {
+	if desplazamiento := filtro.Desplazamiento(); desplazamiento > 0 {
+		if desplazamiento >= len(resultado) {
 			return nil, total, nil
 		}
-		resultado = resultado[filtro.Offset:]
+		resultado = resultado[desplazamiento:]
 	}
 	if filtro.Limit > 0 && filtro.Limit < len(resultado) {
 		resultado = resultado[:filtro.Limit]

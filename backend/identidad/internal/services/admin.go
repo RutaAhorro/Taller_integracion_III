@@ -59,9 +59,6 @@ func (servicio *ServicioAdmin) Listar(contexto context.Context, filtro domain.Fi
 	if filtro.Limit < 1 {
 		filtro.Limit = domain.UsuariosAdminPorPagina
 	}
-	if filtro.Offset < 0 {
-		filtro.Offset = 0
-	}
 
 	usuarios, total, errorOperacion := servicio.repositorio.Listar(contexto, filtro)
 	if errorOperacion != nil {

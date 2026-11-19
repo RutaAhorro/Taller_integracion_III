@@ -50,11 +50,11 @@ func Cargar() (Configuracion, error) {
 	if puerto == "" {
 		puerto = "8080"
 	}
-	cantidad, errorOperacion := strconv.Atoi(puerto)
-	if errorOperacion != nil || cantidad < 1 || cantidad > 65535 {
+	numeroPuerto, errorOperacion := strconv.Atoi(puerto)
+	if errorOperacion != nil || numeroPuerto < 1 || numeroPuerto > 65535 {
 		return Configuracion{}, errors.New("PORT debe estar entre 1 y 65535")
 	}
-	configuracion.DireccionEscucha = ":" + strconv.Itoa(cantidad)
+	configuracion.DireccionEscucha = ":" + strconv.Itoa(numeroPuerto)
 	if texto := os.Getenv("IDENTIDAD_COOKIE_SECURE"); texto != "" {
 		configuracion.CookieSegura, errorOperacion = strconv.ParseBool(texto)
 		if errorOperacion != nil {
@@ -64,8 +64,8 @@ func Cargar() (Configuracion, error) {
 	if texto := os.Getenv("CORS_ALLOWED_ORIGINS"); texto != "" {
 		for _, entrada := range strings.Split(texto, ",") {
 			origen := strings.TrimSpace(entrada)
-			usuario, errorObtenido := url.Parse(origen)
-			if errorObtenido != nil || usuario.Hostname() == "" || (usuario.Scheme != "http" && usuario.Scheme != "https") || usuario.User != nil || usuario.Path != "" || usuario.RawQuery != "" || usuario.ForceQuery || usuario.Fragment != "" || strings.ContainsAny(origen, "*?#\\ \t\r\n") {
+			origenAnalizado, errorObtenido := url.Parse(origen)
+			if errorObtenido != nil || origenAnalizado.Hostname() == "" || (origenAnalizado.Scheme != "http" && origenAnalizado.Scheme != "https") || origenAnalizado.User != nil || origenAnalizado.Path != "" || origenAnalizado.RawQuery != "" || origenAnalizado.ForceQuery || origenAnalizado.Fragment != "" || strings.ContainsAny(origen, "*?#\\ \t\r\n") {
 				return Configuracion{}, errors.New("CORS_ALLOWED_ORIGINS requiere orígenes HTTP(S) exactos")
 			}
 			configuracion.OrigenesPermitidos = append(configuracion.OrigenesPermitidos, origen)

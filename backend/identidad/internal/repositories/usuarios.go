@@ -72,8 +72,9 @@ func (repositorio *repositorioUsuarios) Listar(contexto context.Context, filtro 
 		patron := "%" + escaparPatronLike(strings.ToLower(texto)) + "%"
 		consulta = consulta.Where(`LOWER(correo) LIKE ? ESCAPE '!' OR LOWER(nombre_completo) LIKE ? ESCAPE '!'`, patron, patron)
 	}
-	if rol := strings.ToLower(strings.TrimSpace(filtro.Rol)); rol != "" {
-		consulta = consulta.Where("LOWER(TRIM(rol)) = ?", rol)
+	// El servicio ya validó y normalizó el rol del filtro.
+	if filtro.Rol != "" {
+		consulta = consulta.Where("rol = ?", filtro.Rol)
 	}
 	if filtro.EstaActivo != nil {
 		consulta = consulta.Where("esta_activo = ?", *filtro.EstaActivo)
@@ -89,8 +90,8 @@ func (repositorio *repositorioUsuarios) Listar(contexto context.Context, filtro 
 	if filtro.Limit > 0 {
 		consulta = consulta.Limit(filtro.Limit)
 	}
-	if filtro.Offset > 0 {
-		consulta = consulta.Offset(filtro.Offset)
+	if desplazamiento := filtro.Desplazamiento(); desplazamiento > 0 {
+		consulta = consulta.Offset(desplazamiento)
 	}
 
 	var usuarios []domain.Usuario
@@ -159,17 +160,9 @@ func (repositorio *repositorioUsuarios) ActualizarConGuarda(contexto context.Con
 			return errorOperacion
 		}
 
-		rolActual, _ := domain.NormalizarRol(usuario.Rol)
-		// Si no se está cambiando el rol, aprovechar la actualización para
-		// persistir el valor canónico (p. ej. " Admin" -> "admin").
-		if _, cambiaRol := datos["rol"]; !cambiaRol {
-			if canonico, valido := domain.NormalizarRol(usuario.Rol); valido && strings.TrimSpace(usuario.Rol) != canonico {
-				datos["rol"] = canonico
-			}
-		}
-
+		// usuarios_rol_check garantiza que usuario.Rol ya es un valor canónico.
 		dejaDeSerAdmin := false
-		if rolActual == domain.RolAdmin && usuario.EstaActivo {
+		if usuario.Rol == domain.RolAdmin && usuario.EstaActivo {
 			if activo, valido := datos["esta_activo"].(bool); valido && !activo {
 				dejaDeSerAdmin = true
 			}
@@ -183,7 +176,7 @@ func (repositorio *repositorioUsuarios) ActualizarConGuarda(contexto context.Con
 		if dejaDeSerAdmin {
 			var otros int64
 			if errorOperacion := transaccion.Model(&domain.Usuario{}).
-				Where("id <> ? AND LOWER(TRIM(rol)) = ? AND esta_activo = ?",
+				Where("id <> ? AND rol = ? AND esta_activo = ?",
 					id, domain.RolAdmin, true).
 				Count(&otros).Error; errorOperacion != nil {
 				return errorOperacion
@@ -248,11 +241,15 @@ func escaparPatronLike(texto string) string {
 	return strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(texto)
 }
 
-// clasificarErrorEscritura traduce la violación de unicidad de PostgreSQL (23505)
+// codigoViolacionUnicidad es el SQLSTATE con que PostgreSQL rechaza un valor
+// duplicado en una columna única.
+const codigoViolacionUnicidad = "23505"
+
+// clasificarErrorEscritura traduce la violación de unicidad de PostgreSQL
 // al error de negocio de correo duplicado.
 func clasificarErrorEscritura(errorObtenido error) error {
 	var errorPostgres *pgconn.PgError
-	if errors.As(errorObtenido, &errorPostgres) && errorPostgres.Code == "23505" {
+	if errors.As(errorObtenido, &errorPostgres) && errorPostgres.Code == codigoViolacionUnicidad {
 		return domain.ErrCorreoDuplicado
 	}
 	return errorObtenido

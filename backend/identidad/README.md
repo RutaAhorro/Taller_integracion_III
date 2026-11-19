@@ -36,9 +36,9 @@ no conceden permisos administrativos.
 >
 > | Antes | Ahora |
 > | --- | --- |
-> | `GET /admin/usuarios` aceptaba `offset` (excluyente con `page`) | Sólo `page` y `limit`. Un `offset` recibido se ignora: ya no pagina ni devuelve 400 |
+> | `GET /admin/usuarios` aceptaba `offset` (excluyente con `page`) | Sólo `page` y `limit`. Un `offset` recibido responde 400 con el mensaje "paginar con page y limit", para que ningún cliente reciba otra página sin enterarse |
 > | `rol=administrador` se aceptaba como alias de `admin` en `PUT /admin/usuarios/{id}` y en el filtro `?rol=` | Responde 400: los únicos roles son `registrado`, `colaborador` y `admin` |
-> | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | Ya no se reconoce como admin. La migración `08_normalizar_rol_admin_y_auditoria.sql` debe estar aplicada |
+> | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | La migración `10_restringir_rol_usuarios.sql` normaliza esas filas y agrega `usuarios_rol_check`: la base ya no acepta otro rol. Identidad no arranca sin esa restricción, así que no puede quedar una cuenta admin sin acceso |
 > | El registro generaba un UUID en `api.usuarios.token_verificacion` | Las cuentas nuevas lo dejan en `NULL`: no hay flujo que lo consuma. La columna se conserva y ninguna respuesta HTTP lo exponía |
 > | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor |
 > | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`, ni verifica `api.tokens_recuperacion`. La tabla y sus grants se conservan; la recuperación se reimplementará completa (SUP-233/185) |
@@ -153,6 +153,8 @@ El servicio comprueba tablas y permisos antes de abrir HTTP:
 - `08_normalizar_rol_admin_y_auditoria.sql`: normalización y auditoría;
   requiere SELECT/INSERT en `api.auditoria_admin_usuarios` y USAGE en su secuencia.
 - `09_plan_y_ultimo_acceso.sql`: columnas de plan comercial y último acceso.
+- `10_restringir_rol_usuarios.sql`: restricción `usuarios_rol_check` (sólo
+  `admin`, `colaborador` y `registrado`). Aplicar antes de desplegar esta versión.
 
 El rol runtime tiene SELECT/INSERT/UPDATE sobre usuarios, sin DELETE, DDL ni
 acceso a tablas de otros servicios. La ausencia de almacenamiento base o
@@ -245,7 +247,10 @@ Las pruebas Google usan el validador real con firmas RSA y una respuesta JWKS
 controlada, sin credenciales ni llamadas al proveedor. Ninguna reemplaza una
 prueba de Google en navegador.
 
-PostgreSQL real requiere `IDENTIDAD_TEST_DB_URL` y `IDENTIDAD_TEST_ADMIN_URL`;
+`admin_postgres_test.go` ejercita el panel contra PostgreSQL real (listado,
+cambios auditados, guarda del último admin, `usuarios_rol_check` y permisos de
+`app_identity`) y requiere `IDENTIDAD_TEST_DB_URL` (rol `app_identity`) e
+`IDENTIDAD_TEST_ADMIN_URL` (operador, sólo para preparar y limpiar);
 la prueba de contador Redis requiere `IDENTIDAD_TEST_REDIS_URL`. Sin ellas esos
 casos se omiten. Deben apuntar a infraestructura desechable y roles apropiados,
 nunca a una base compartida. Un resultado verde con casos omitidos no acredita

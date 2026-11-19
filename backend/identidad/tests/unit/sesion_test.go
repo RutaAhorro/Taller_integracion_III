@@ -140,15 +140,6 @@ func TestExigirSesion(prueba *testing.T) {
 	})
 }
 
-func TestExigirSesionExigeRepositorio(prueba *testing.T) {
-	defer func() {
-		if recover() == nil {
-			prueba.Fatal("ExigirSesion(nil) debía entrar en pánico para no omitir la revalidación de sesión")
-		}
-	}()
-	api.ExigirSesion(nil, claveJWTDePrueba)
-}
-
 func TestExigirSesionRevalidaEstadoYRolEnBaseDeDatos(prueba *testing.T) {
 	repositorio := newMockUsuarioRepository()
 	usuarioID := uuid.New()

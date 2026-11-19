@@ -35,7 +35,9 @@ func NuevoEnrutador(configuracion config.Configuracion, modulo *Modulo, redisCli
 	enrutador.HandleMethodNotAllowed = true
 	enrutador.NoRoute(RutaNoEncontrada())
 	enrutador.NoMethod(MetodoNoPermitido())
-	enrutador.GET("/_identidad/live", func(contexto *gin.Context) { contexto.JSON(200, gin.H{"status": "ok", "service": "identidad"}) })
+	enrutador.GET("/_identidad/live", func(contexto *gin.Context) {
+		contexto.JSON(http.StatusOK, gin.H{"status": "ok", "service": "identidad"})
+	})
 	enrutador.GET("/_identidad/ready", func(contexto *gin.Context) {
 		contextoOperacion, cancelar := context.WithTimeout(contexto.Request.Context(), ajustes.PlazoReadiness)
 		defer cancelar()
@@ -73,7 +75,7 @@ func cors(origenes []string) gin.HandlerFunc {
 		origen := contexto.GetHeader("Origin")
 		if origen != "" {
 			if !permitidos[origen] {
-				ResponderError(contexto, 403, "Origen no permitido.", nil)
+				ResponderError(contexto, http.StatusForbidden, "Origen no permitido.", nil)
 				return
 			}
 			contexto.Header("Access-Control-Allow-Origin", origen)
@@ -82,7 +84,7 @@ func cors(origenes []string) gin.HandlerFunc {
 			contexto.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		}
 		if contexto.Request.Method == http.MethodOptions {
-			contexto.AbortWithStatus(204)
+			contexto.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 		contexto.Next()

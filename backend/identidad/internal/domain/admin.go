@@ -17,8 +17,14 @@ type FiltroUsuariosAdminDTO struct {
 	EstaActivo *bool
 	Page       int
 	Limit      int
-	// Offset lo calcula el handler a partir de Page y Limit; no es un parámetro HTTP.
-	Offset int
+}
+
+// Desplazamiento es la cantidad de filas que se saltan para llegar a Page.
+func (filtro FiltroUsuariosAdminDTO) Desplazamiento() int {
+	if filtro.Page < 1 {
+		return 0
+	}
+	return (filtro.Page - 1) * filtro.Limit
 }
 
 // ActualizarUsuarioAdminDTO define los campos administrables de una cuenta.

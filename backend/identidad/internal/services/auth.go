@@ -74,10 +74,10 @@ func NuevoServicioAuth(repositorio domain.RepositorioUsuarios, validarGoogle Val
 // validarComplejidadContrasena exige al menos 8 caracteres, una mayúscula, un número y un símbolo
 func validarComplejidadContrasena(contrasena string) error {
 	if len(contrasena) > MaximoBytesContrasena {
-		return fmt.Errorf("%w: longitud máxima de 72 bytes", ErrContrasenaInvalida)
+		return fmt.Errorf("%w: longitud máxima de %d bytes", ErrContrasenaInvalida, MaximoBytesContrasena)
 	}
 	if len(contrasena) < MinimoBytesContrasena {
-		return fmt.Errorf("%w: longitud mínima de 8 caracteres", ErrContrasenaInvalida)
+		return fmt.Errorf("%w: longitud mínima de %d caracteres", ErrContrasenaInvalida, MinimoBytesContrasena)
 	}
 
 	var tieneMayuscula, tieneNumero, tieneSimbolo bool
@@ -126,8 +126,8 @@ func nuevoUsuarioRegistrado(correo, nombre string) *domain.Usuario {
 
 // formatoCorreoValido verifica que el correo tenga un formato sintácticamente válido
 func formatoCorreoValido(direccionCorreo string) bool {
-	valorNumerico, errorObtenido := mail.ParseAddress(direccionCorreo)
-	return errorObtenido == nil && valorNumerico.Address != "" && strings.Contains(direccionCorreo, "@") && strings.Contains(direccionCorreo, ".")
+	direccionAnalizada, errorObtenido := mail.ParseAddress(direccionCorreo)
+	return errorObtenido == nil && direccionAnalizada.Address != "" && strings.Contains(direccionCorreo, "@") && strings.Contains(direccionCorreo, ".")
 }
 
 // registrarUltimoAcceso deja constancia del acceso sin bloquear el login si
@@ -467,11 +467,11 @@ const (
 
 // HashearContrasena genera un hash seguro a partir de una contraseña en texto plano utilizando bcrypt
 func HashearContrasena(contrasena string) (string, error) {
-	cantidadBytes, errorObtenido := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
+	hash, errorObtenido := bcrypt.GenerateFromPassword([]byte(contrasena), bcrypt.DefaultCost)
 	if errorObtenido != nil {
 		return "", errorObtenido
 	}
-	return string(cantidadBytes), nil
+	return string(hash), nil
 }
 
 // ContrasenaCoincide compara una contraseña en texto plano contra un hash bcrypt almacenado

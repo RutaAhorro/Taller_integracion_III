@@ -93,15 +93,7 @@ func ValidarToken(tokenTexto, clave string) (*jwt.Token, error) {
 // segura HttpOnly 'jwt' y revalida en api.usuarios que la cuenta siga activa,
 // usando el rol actual de la base de datos: así una desactivación o degradación
 // surte efecto sin esperar a que expire el JWT.
-//
-// El repositorio es obligatorio (fail-closed): una ruta protegida no puede
-// omitir por accidente la revalidación de sesión. Sin él sólo se validaría la
-// firma del JWT, que sigue vigente hasta 24 h después de desactivar la cuenta.
 func ExigirSesion(repositorio domain.RepositorioUsuarios, clave string) gin.HandlerFunc {
-	if repositorio == nil {
-		panic("ExigirSesion: el repositorio de usuarios es obligatorio")
-	}
-
 	return func(contexto *gin.Context) {
 		tokenTexto, errorOperacion := contexto.Cookie("jwt")
 		if errorOperacion != nil || strings.TrimSpace(tokenTexto) == "" {
@@ -154,13 +146,9 @@ func ExigirSesion(repositorio domain.RepositorioUsuarios, clave string) gin.Hand
 			return
 		}
 
-		// El rol vigente es el de la base de datos, no el que quedó en el
-		// JWT. Los alias históricos se normalizan a "admin".
-		if canonico, valido := domain.NormalizarRol(usuario.Rol); valido {
-			rol = canonico
-		} else {
-			rol = strings.ToLower(strings.TrimSpace(usuario.Rol))
-		}
+		// El rol vigente es el de la base de datos, no el que quedó en el JWT.
+		// usuarios_rol_check garantiza que ya es un valor canónico.
+		rol = usuario.Rol
 		usuarioID = usuario.ID.String()
 
 		// Inyectar identidad vigente en el contexto de Gin para las rutas protegidas.

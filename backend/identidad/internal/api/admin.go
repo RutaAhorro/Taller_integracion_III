@@ -5,6 +5,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -40,6 +41,11 @@ func NuevoManejadorAdmin(servicioAdmin *services.ServicioAdmin) *ManejadorAdmin 
 // Devuelve las cuentas registradas en api.usuarios con filtros opcionales por texto, rol y estado. Sólo rol admin.
 func (manejador *ManejadorAdmin) ListarUsuarios(contexto *gin.Context) {
 	maximoEntero := int64(^uint(0) >> 1)
+	// offset se retiró en SUP-347: ignorarlo devolvería otra página sin avisar.
+	if _, presente := contexto.GetQuery("offset"); presente {
+		ResponderError(contexto, http.StatusBadRequest, "El parámetro offset ya no se admite; paginar con page y limit.", nil)
+		return
+	}
 	filtro := domain.FiltroUsuariosAdminDTO{
 		Query: contexto.Query("q"),
 		Rol:   contexto.Query("rol"),
@@ -64,7 +70,7 @@ func (manejador *ManejadorAdmin) ListarUsuarios(contexto *gin.Context) {
 		}
 		if valorNumerico > maxUsuariosAdminPorPagina {
 			ResponderError(contexto, http.StatusBadRequest,
-				"El parámetro limit no puede superar 200.", nil)
+				fmt.Sprintf("El parámetro limit no puede superar %d.", maxUsuariosAdminPorPagina), nil)
 			return
 		}
 		filtro.Limit = valorNumerico
@@ -83,13 +89,11 @@ func (manejador *ManejadorAdmin) ListarUsuarios(contexto *gin.Context) {
 		filtro.Page = int(valorNumerico)
 	}
 
-	if filtro.Page > 1 {
-		// Se divide antes de multiplicar para no desbordar int64.
-		if int64(filtro.Page-1) > maximoEntero/int64(filtro.Limit) {
-			ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
-			return
-		}
-		filtro.Offset = (filtro.Page - 1) * filtro.Limit
+	// El repositorio calcula (page-1)*limit: se divide antes de multiplicar para
+	// rechazar aquí las páginas cuyo desplazamiento desbordaría int64.
+	if int64(filtro.Page-1) > maximoEntero/int64(filtro.Limit) {
+		ResponderError(contexto, http.StatusBadRequest, "El parámetro page excede el rango admitido.", nil)
+		return
 	}
 
 	pagina, errorOperacion := manejador.servicio.Listar(contexto.Request.Context(), filtro)

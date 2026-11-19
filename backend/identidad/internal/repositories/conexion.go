@@ -39,7 +39,9 @@ func Abrir(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.
 // ===== Verificación de almacenamiento =====
 
 // VerificarAlmacenamiento comprueba las tablas que utiliza Identidad, incluida la
-// auditoría administrativa agregada en SUP-242.
+// auditoría administrativa agregada en SUP-242, y que la base sólo admita los
+// roles vigentes (10_restringir_rol_usuarios.sql). Sin esa restricción una fila
+// con un rol desconocido dejaría a su cuenta sin acceso.
 func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error {
 	var permitido bool
 	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT
@@ -53,13 +55,15 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
         has_sequence_privilege(current_user, 'api.auditoria_admin_usuarios_id_seq', 'USAGE') AND
         (SELECT COUNT(*) FROM information_schema.columns
             WHERE table_schema = 'api' AND table_name = 'usuarios'
-              AND column_name IN ('plan', 'ultimo_acceso')) = 2`).Scan(&permitido).Error
+              AND column_name IN ('plan', 'ultimo_acceso')) = 2 AND
+        EXISTS (SELECT 1 FROM pg_constraint
+            WHERE conrelid = 'api.usuarios'::regclass AND conname = 'usuarios_rol_check' AND convalidated)`).Scan(&permitido).Error
 	if errorObtenido != nil {
 		// Conexión, timeout o credenciales: no es un problema de migraciones.
 		return fmt.Errorf("no se pudo verificar el almacenamiento de Identidad: %w", errorObtenido)
 	}
 	if !permitido {
-		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql y 09_plan_y_ultimo_acceso.sql antes de iniciar Identidad")
+		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql, 09_plan_y_ultimo_acceso.sql y 10_restringir_rol_usuarios.sql antes de iniciar Identidad")
 	}
 	return nil
 }
