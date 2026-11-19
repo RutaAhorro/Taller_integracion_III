@@ -7,7 +7,7 @@
 | Servicio | Campos | Archivo |
 |---|---|---|
 | Gateway (evento `request`) | `request_id`, `method`, `path`, `status`, `duration_ms`, `response_bytes` | `backend/gateway/internal/proxy/gateway.go` |
-| Identidad (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/identidad/internal/server/server.go` |
+| Identidad (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/identidad/internal/api/rutas.go` |
 | Catálogo (evento `http_request`) | `request_id`, `path`, `status`, `duration_ms` | `backend/catalogo/internal/server/server.go` |
 | Control de scraping (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/control_scraping/internal/middleware/runtime.go` |
 | Motor de rutas (evento `http_request`) | `request_id`, `method`, `path`, `status`, `duration_ms` | `backend/motor_rutas/internal/httpapi/server.go` |
