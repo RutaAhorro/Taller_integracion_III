@@ -22,7 +22,7 @@ raiz = Path(__file__).resolve().parents[3]
 entorno = {nombre_variable: valor_variable for nombre_variable, valor_variable in os.environ.items() if nombre_variable not in {
     'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET', 'GOOGLE_CLIENT_ID',
     'IDENTITY_DB_PASSWORD', 'SCRAPING_DB_PASSWORD', 'CATALOGO_DB_PASSWORD',
-    'CATALOGO_INTERNAL_TOKEN', 'GATEWAY_TRUSTED_PROXIES', 'IDENTIDAD_GATEWAY_IP',
+    'CATALOGO_INTERNAL_TOKEN', 'CATALOGO_CONSULTA_TOKEN', 'GATEWAY_TRUSTED_PROXIES', 'IDENTIDAD_GATEWAY_IP',
     'IDENTIDAD_EDGE_SUBNET', 'IDENTIDAD_EDGE_RANGE', 'IDENTIDAD_COOKIE_SECURE'}}
 argumentosCompose = ['docker', 'compose', '--project-name', argumentos.project, '--env-file', argumentos.env_file,
                 '-f', str(raiz/'docker-compose.yml'), '-f', str(raiz/'docker-compose.catalogo-routing-test.yml')]

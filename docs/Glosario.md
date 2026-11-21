@@ -43,7 +43,7 @@
 | **Timing attack** | Deducir secretos midiendo cuánto tarda una respuesta. | Comparación en tiempo constante (`subtle.ConstantTimeCompare`). |
 | **Pre-account hijacking** | Registrar el correo de otra persona antes que ella para tomar su cuenta. | Al vincular con Google se invalida la contraseña local no verificada. |
 | **Fail closed** | Ante una falla, rechazar en vez de permitir. | El rate limiter rechaza el login si Redis no responde. |
-| **Token de servicio** | Secreto compartido entre servicios internos (no usuarios). | `SCRAPING_SERVICE_TOKEN` (worker/bot → Control) y `CATALOGO_INTERNAL_TOKEN`. |
+| **Token de servicio** | Secreto compartido entre servicios internos (no usuarios). | `SCRAPING_SERVICE_TOKEN` (worker/bot → Control), `CATALOGO_INTERNAL_TOKEN` (escritura) y `CATALOGO_CONSULTA_TOKEN` (sólo lectura). |
 | **Bearer** | Esquema del header `Authorization: Bearer <token>`. | Token de servicio de scraping. |
 | **TLS** | *Transport Layer Security*. Cifrado de la conexión (sucesor de SSL). | HTTPS (TLS ≥ 1.2). |
 | **Sanitización** | Limpiar la entrada del usuario antes de usarla. | `SanitizarNombre()` en Identidad y `SanitizarInputBusqueda()` en Catálogo; `normalizar_nombre()` en Python. |

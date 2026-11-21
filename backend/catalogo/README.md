@@ -25,7 +25,8 @@ go run ./cmd/catalogo
 | --- | --- | --- |
 | `DB_URL` | Obligatoria | Conexión PostgreSQL con usuario `app_catalogo` |
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
-| `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer para `/internal/v1/*`. Vacía activa el modo sólo lectura |
+| `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer de escritura para la ingesta interna. Vacía deshabilita `/internal/v1/ingestas` y las rutas de resolución |
+| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad`. Vacía deshabilita la consulta |
 | `PORT` | `8080` (ejemplo `8083`) | Puerto de escucha HTTP |
 | `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas. Si está vacía se usa `CORS_ALLOWED_ORIGINS`. Vacías ambas, se rechazan las peticiones con `Origin` |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
@@ -42,7 +43,9 @@ go run ./cmd/catalogo
 | `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
 | `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
 | `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
-| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en el cuerpo JSON de la ingesta; más allá responde 413 |
+| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en los cuerpos JSON internos; más allá responde 413 |
+| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en `/internal/v1/productos/disponibilidad` |
+| `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
 los límites, enteros positivos. Un valor inválido impide arrancar con un mensaje
@@ -93,24 +96,28 @@ en cabeceras arbitrarias.
 | GET | `/_catalogo/ready` | Público | Sonda de preparación (readiness); verifica PostgreSQL con timeout de 2 s (503 si falla) |
 | GET | `/health` | Público | Alias de preparación equivalente a `/_catalogo/ready` |
 
-### API interna de ingesta
+### API interna de ingesta y disponibilidad
 
 Rutas privadas bajo el prefijo `/internal/v1` destinadas a la coordinación de
-scraping. No se exponen a través del Gateway ni en Ingress público:
+scraping y a la consulta de disponibilidad de Listas e IA. No se exponen a
+través del Gateway ni en Ingress público:
 
 | Método | Ruta | Payload JSON | Descripción |
 | --- | --- | --- | --- |
 | POST | `/internal/v1/cadenas/resolver` | `{"cadena_id": int, "nombre": string}` | Resuelve o registra una cadena con lock transaccional |
 | POST | `/internal/v1/sucursales/resolver` | `{"cadena_id": int, "sucursal_id": *int, "codigo_sucursal": *string}` | Resuelve o registra una sucursal para la cadena |
 | POST | `/internal/v1/ingestas` | `{"sucursal_id": int, "lote_id": string, "productos": [...]}` | Persistencia atómica de 1 a 1000 productos y capturas de precio |
+| POST | `/internal/v1/productos/disponibilidad` | `{"producto_ids": ["uuid", ...]}` | Consulta en lote de existencia, stock, precio, sucursal y captura más reciente |
 
 ## Ingesta interna y token privado
 
 Las operaciones de `/internal/v1` aplican las siguientes reglas:
 
-1. **Autenticación en tiempo constante:** requieren la cabecera
-   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>`. La comparación es segura
-   frente a ataques de temporización (`subtle.ConstantTimeCompare`).
+1. **Autenticación en tiempo constante:** la ingesta exige
+   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>` y la consulta de
+   disponibilidad exige `Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>`. La
+   comparación es segura frente a ataques de temporización
+   (`subtle.ConstantTimeCompare`).
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
@@ -118,12 +125,102 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    por defecto, HTTP 413 si se supera), rechazo de campos JSON desconocidos
    (`DisallowUnknownFields`), rechazo de contenido extra tras el cierre del JSON
    y lote acotado de 1 a `CATALOGO_MAX_BATCH_PRODUCTOS` productos (1000 por defecto).
-4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío, el servidor
-   no registra las rutas internas y opera únicamente como lector.
-5. **Seguridad del token:** debe ser una cadena aleatoria de al menos 32
-   caracteres (generable con `openssl rand -hex 32`), privada y estrictamente
-   distinta de `JWT_SECRET`. En Kubernetes se inyecta desde el Secret
-   `catalogo-internal-secret` (clave `token`).
+4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío no se registra
+   la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registra la
+   consulta. Cada ruta depende sólo de su propio token.
+5. **Seguridad de los tokens:** ambos deben ser cadenas aleatorias de al menos
+   32 caracteres (generables con `openssl rand -hex 32`), privadas,
+   estrictamente distintas de `JWT_SECRET` y distintas entre sí. En Kubernetes
+   se inyectan desde el Secret `catalogo-internal-secret` (claves `token` y
+   `consulta-token`); `consulta-token` es opcional y, si falta, la consulta
+   queda deshabilitada sin impedir el arranque.
+
+## Consulta interna de disponibilidad (SUP-312)
+
+Listas e IA consultan esta ruta para verificar un producto antes de guardarlo o
+mostrarlo. No se publica en el Gateway: sólo responde en la red interna de los
+servicios y exige `CATALOGO_CONSULTA_TOKEN`, un token de sólo lectura distinto
+del token de ingesta.
+
+```http
+POST /internal/v1/productos/disponibilidad
+Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>
+Content-Type: application/json
+
+{
+  "producto_ids": [
+    "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+    "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+  ]
+}
+```
+
+- Acepta entre 1 y `CATALOGO_MAX_PRODUCTOS_CONSULTA` IDs (1000 por defecto).
+- Deduplica los IDs y conserva el orden de la primera aparición.
+- Lee siempre la captura más reciente de `scraper.capturas_precios`. El stock y
+  la fecha se toman de esa misma captura (`esta_disponible` y `capturado_el`),
+  para que ambos correspondan a la vigencia evaluada.
+- Una captura con antigüedad mayor a
+  `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` (48 h por defecto) no se presenta
+  como vigente.
+- Una captura con fecha futura se trata como no vigente, para no confiar en un
+  reloj desfasado o en un dato erróneo. Para no ampliar el contrato se informa
+  `estado_precio: "vencido"`; el consumidor debe tratarla como no vigente.
+- Si `esta_disponible` es `NULL`, el scraper no confirmó el stock: se informa
+  `estado_producto: "desconocido"` y `en_stock: null`, sin asumir disponibilidad.
+
+**Límite conocido:** la ingesta actual convierte un `en_stock` ausente del lote en
+`true` (`internal/ingesta/lote.go`) y `scraper.capturas_precios.esta_disponible`
+tiene `DEFAULT true`. Por eso, hoy `desconocido` por stock sólo aparece si la
+base contiene un `NULL` explícito. Cambiar ese valor por defecto exige modificar
+la ingesta y queda fuera del alcance de SUP-312.
+
+```json
+{
+  "productos": [
+    {
+      "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+      "estado_producto": "disponible",
+      "en_stock": true,
+      "capturado_el": "2026-11-16T10:00:00Z",
+      "estado_precio": "vigente",
+      "producto": {
+        "nombre": "Leche entera 1 L",
+        "marca": "Colún",
+        "categoria": "Lácteos",
+        "supermercado": "Lider",
+        "sucursal_id": 1,
+        "sucursal": "Lider Ñuñoa",
+        "unidad": "1 L",
+        "precio": 990,
+        "precio_normal": 1290,
+        "precio_oferta": 990,
+        "url_imagen": "https://..."
+      }
+    }
+  ]
+}
+```
+
+`estado_producto` puede ser:
+
+| Valor | Significado | `en_stock` | Precio |
+| --- | --- | --- | --- |
+| `disponible` | Existe y la captura vigente indica stock | `true` | Sí |
+| `sin_stock` | Existe y la captura vigente indica sin stock | `false` | Sí, si la captura es vigente |
+| `no_encontrado` | El UUID no existe en `productos_crudos` | `null` | `null` |
+| `desconocido` | Existe, pero no hay captura vigente o el scraper no confirmó el stock | `null` | `null` sin captura vigente; vigente si sólo falta el stock |
+
+`estado_precio` puede ser `vigente`, `vencido` o `sin_captura`. Para
+`desconocido` se conservan los datos descriptivos del producto y `capturado_el`.
+Si la captura falta, está vencida o tiene fecha futura, no se publican precios
+(`sin_captura` o `vencido`). Si sólo falta el stock, el precio vigente se
+conserva y `en_stock` queda `null`. Para `no_encontrado`, `producto` es `null`.
+
+Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
+`400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,
+`413` para cuerpos mayores a `CATALOGO_MAX_BODY_BYTES` y
+`500 catalogo_internal_error` sin detalle SQL.
 
 ## Base de datos y permisos (rol `app_catalogo`)
 
@@ -171,8 +268,8 @@ Catálogo persiste productos y precios de forma atómica:
   conflicto sobre `(sucursal_id, sku)`. Los campos descriptivos vacíos o nulos
   no sobrescriben información existente previa (`COALESCE`).
 - **Captura de precios y disponibilidad:** cada ítem inserta un registro en
-  `scraper.capturas_precios` con el estado `esta_disponible` explícito según el
-  stock informado, evitando valores predeterminados desalineados.
+  `scraper.capturas_precios` con `esta_disponible` según el stock informado. Si
+  el lote omite `en_stock`, la ingesta asume `true` (ver límite conocido).
 
 ## Ventanas de fallo con coordinación de scraping
 
@@ -198,7 +295,9 @@ En Kubernetes ([deployment.yaml](../../infrastructure/k8s/catalogo/deployment.ya
   - `livenessProbe`: `/_catalogo/live`, periodo 10 s, timeout 2 s.
   - `readinessProbe`: `/_catalogo/ready`, periodo 5 s, timeout 3 s.
 - **Secretos:** `DB_URL` proviene de `catalogo-db-secret`, `JWT_SECRET` de `db-secret`
-  y `CATALOGO_INTERNAL_TOKEN` de `catalogo-internal-secret`.
+  y `CATALOGO_INTERNAL_TOKEN`/`CATALOGO_CONSULTA_TOKEN` de
+  `catalogo-internal-secret` (claves `token` y `consulta-token`; la segunda es
+  opcional).
 
 ## Procedimientos de rollback
 

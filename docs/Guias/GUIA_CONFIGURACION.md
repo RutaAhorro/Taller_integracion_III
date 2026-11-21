@@ -36,7 +36,8 @@ Al trabajar con microservicios independientes, las variables compartidas constit
 
 | Nombre | Servicio Dueño | Servicios Consumidores | Propósito y formato requerido | Valor por defecto en Compose / local |
 | --- | --- | --- | --- | --- |
-| `CATALOGO_INTERNAL_TOKEN` | Catálogo (`/internal/v1/*`) | Control de scraping | Autoriza la ingesta durable de lotes de productos y precios directamente a Catálogo. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `SCRAPING_SERVICE_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${CATALOGO_INTERNAL_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
+| `CATALOGO_INTERNAL_TOKEN` | Catálogo (`/internal/v1/*`) | Control de scraping | Autoriza únicamente la ingesta durable de lotes de productos y precios (incluidas las rutas de resolución de cadenas y sucursales). Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET`, de `SCRAPING_SERVICE_TOKEN` y de `CATALOGO_CONSULTA_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${CATALOGO_INTERNAL_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
+| `CATALOGO_CONSULTA_TOKEN` | Catálogo (`/internal/v1/productos/disponibilidad`) | Consumidores previstos: IA conversacional y Motor de rutas (Listas) | Autoriza **sólo lectura** de la disponibilidad de productos. No permite ingestar ni modificar datos. Opcional: vacío deshabilita esta ruta; si se configura, debe tener al menos 32 caracteres sin espacios y ser estrictamente distinto de `JWT_SECRET` y `CATALOGO_INTERNAL_TOKEN`. Se envía como `Authorization` con esquema Bearer. Opcional, vacío por defecto (`${CATALOGO_CONSULTA_TOKEN:-}`). Generar con `openssl rand -hex 32` cuando se habilite un consumidor. |
 | `SCRAPING_SERVICE_TOKEN` | Control de scraping (`/api/v1/scraper/*`) | Scraper Go (`scraper_worker`), Bot de Discord (`bot_discord`) | Autoriza la ejecución de trabajos de scraping y el envío de resultados hacia Control. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `CATALOGO_INTERNAL_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${SCRAPING_SERVICE_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
 
 ### 3. Broker y colas
@@ -141,7 +142,7 @@ $$\langle\text{SERVICIO}\rangle\text{\_CORS\_ALLOWED\_ORIGINS}$$
 
 ### 1. Generación de secretos con `openssl`
 
-Todos los secretos (`JWT_SECRET`, contraseñas de PostgreSQL, `CATALOGO_INTERNAL_TOKEN`, `SCRAPING_SERVICE_TOKEN`) deben generarse mediante:
+Todos los secretos configurados (`JWT_SECRET`, contraseñas de PostgreSQL, `CATALOGO_INTERNAL_TOKEN`, `CATALOGO_CONSULTA_TOKEN`, `SCRAPING_SERVICE_TOKEN`) deben generarse mediante:
 
 ```bash
 openssl rand -hex 32

@@ -51,6 +51,14 @@ spec:
                 secretKeyRef:
                   name: catalogo-internal-secret
                   key: token
+            - name: CATALOGO_CONSULTA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: catalogo-internal-secret
+                  key: consulta-token
+                  # Opcional: sin la clave, Catálogo arranca y la consulta
+                  # de disponibilidad queda deshabilitada (404).
+                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

@@ -17,7 +17,8 @@ type Config struct {
 	ListenAddr         string
 	DatabaseURL        string
 	JWTSecret          string
-	InternalToken      string
+	InternalToken      string // token de escritura para la ingesta interna
+	ConsultaToken      string // token de sólo lectura para disponibilidad
 	CORSAllowedOrigins []string
 	MaxOpenConns       int
 	MaxIdleConns       int
@@ -38,6 +39,10 @@ type Config struct {
 	MaxSearchLength   int // bytes conservados del texto de búsqueda
 	MaxBatchProductos int // productos aceptados por lote de ingesta
 	MaxBodyBytes      int // bytes aceptados en el cuerpo JSON de la ingesta
+
+	// Límites de la consulta interna de disponibilidad que consumen Listas e IA.
+	MaxProductosConsulta           int           // IDs aceptados por lote de consulta
+	AntiguedadMaximaDisponibilidad time.Duration // vigencia máxima de la captura más reciente
 }
 
 // cuerpoIngestaPredeterminado son 8 MiB: cubre un lote completo de productos
@@ -64,6 +69,7 @@ func Load() (Config, error) {
 		DatabaseURL:   os.Getenv("DB_URL"),
 		JWTSecret:     os.Getenv("JWT_SECRET"),
 		InternalToken: os.Getenv("CATALOGO_INTERNAL_TOKEN"),
+		ConsultaToken: os.Getenv("CATALOGO_CONSULTA_TOKEN"),
 	}
 	if configuracion.DatabaseURL == "" {
 		return Config{}, errors.New("DB_URL es obligatorio")
@@ -74,6 +80,11 @@ func Load() (Config, error) {
 	tokenInterno := configuracion.InternalToken
 	if tokenInterno != "" && (len(tokenInterno) < 32 || strings.ContainsAny(tokenInterno, " \t\r\n") || tokenInterno == configuracion.JWTSecret) {
 		return Config{}, errors.New("CATALOGO_INTERNAL_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET")
+	}
+	tokenConsulta := configuracion.ConsultaToken
+	if tokenConsulta != "" && (len(tokenConsulta) < 32 || strings.ContainsAny(tokenConsulta, " \t\r\n") ||
+		tokenConsulta == configuracion.JWTSecret || tokenConsulta == tokenInterno) {
+		return Config{}, errors.New("CATALOGO_CONSULTA_TOKEN debe tener al menos 32 caracteres sin espacios y ser distinto de JWT_SECRET y CATALOGO_INTERNAL_TOKEN")
 	}
 
 	// --- CORS: primero la variable propia del servicio, luego la genérica ---
@@ -114,6 +125,7 @@ func Load() (Config, error) {
 		{"CATALOGO_MAX_SEARCH_LENGTH", &configuracion.MaxSearchLength, 100},
 		{"CATALOGO_MAX_BATCH_PRODUCTOS", &configuracion.MaxBatchProductos, 1000},
 		{"CATALOGO_MAX_BODY_BYTES", &configuracion.MaxBodyBytes, cuerpoIngestaPredeterminado},
+		{"CATALOGO_MAX_PRODUCTOS_CONSULTA", &configuracion.MaxProductosConsulta, 1000},
 	} {
 		*variable.destino = variable.predetermina
 		if valorCrudo := os.Getenv(variable.nombre); valorCrudo != "" {
@@ -141,6 +153,7 @@ func Load() (Config, error) {
 		{"CATALOGO_SHUTDOWN_TIMEOUT", &configuracion.ShutdownTimeout, 15 * time.Second},
 		{"CATALOGO_STARTUP_TIMEOUT", &configuracion.StartupTimeout, 5 * time.Second},
 		{"CATALOGO_READINESS_TIMEOUT", &configuracion.ReadinessTimeout, 2 * time.Second},
+		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", &configuracion.AntiguedadMaximaDisponibilidad, 48 * time.Hour},
 	} {
 		*variable.destino = variable.predetermina
 		if valorCrudo := os.Getenv(variable.nombre); valorCrudo != "" {

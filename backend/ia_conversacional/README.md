@@ -109,6 +109,13 @@ El servicio lee su configuración de variables de entorno (o desde un archivo `.
 | `IA_FALLBACK_JITTER_MAX` | `0.5` | No | Variación aleatoria máxima (segundos) agregada al backoff. |
 | `IA_CHAT_MAX_MENSAJE_LEN` | `1000` | No | Longitud máxima permitida en caracteres para el mensaje del usuario. |
 | `IA_EXPLICACION_MAX_PRODUCTOS` | `8` | No | Cantidad máxima de productos entregados en el prompt de explicación. |
+| `IA_CHAT_RATE_LIMIT_SOLICITUDES` | `10` | No | Máximo de peticiones permitidas por usuario autenticado en la ventana temporal. |
+| `IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS` | `60.0` | No | Duración de la ventana deslizante para el conteo de peticiones (segundos). |
+
+> [!NOTE]
+> **Limitación de tasa y réplicas (HPA):**  
+> El contador de `IA_CHAT_RATE_LIMIT_SOLICITUDES` se almacena en memoria local por réplica sin dependencia de Redis. Al escalar horizontalmente con Kubernetes HPA, el límite efectivo para un usuario corresponde a la cuota local multiplicada por el número de réplicas activas (`N × réplicas`), protegiendo cada instancia individualmente de saturación.
+
 
 ---
 
