@@ -128,7 +128,7 @@ elif args.mode == 'catalog-down':
     assert error['error'] == 'catalogo_unavailable'
     check(args.gateway_url, '/_gateway/ready')
     health, _ = check(args.gateway_url, '/_gateway/dependencies', 503)
-    assert health['checks']['backend'] == 'ok' and health['checks']['catalogo'] == 'error'
+    assert health['checks']['scraping'] == 'ok' and health['checks']['catalogo'] == 'error'
 elif args.mode == 'api-down':
     catalog(args.gateway_url)
     catalog(args.frontend_url)
@@ -138,7 +138,7 @@ elif args.mode == 'api-down':
     assert error['error'] == 'identidad_unavailable'
     check(args.gateway_url, '/_gateway/ready')
     health, _ = check(args.gateway_url, '/_gateway/dependencies', 503)
-    assert health['checks']['catalogo'] == 'ok' and health['checks']['backend'] == 'error'
+    assert health['checks']['catalogo'] == 'ok' and health['checks']['scraping'] == 'error'
 
 print(json.dumps({'task':'SUP-268','mode':args.mode,'passed':len(checks),'failed':0},ensure_ascii=False))
 

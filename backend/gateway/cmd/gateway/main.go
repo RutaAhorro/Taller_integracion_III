@@ -1,3 +1,5 @@
+// Command gateway arranca el Gateway HTTP de RutaAhorro: carga la
+// configuración, sirve el enrutador y se apaga ordenadamente con SIGTERM.
 package main
 
 import (
@@ -9,54 +11,62 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/gateway/internal/proxy"
 )
 
+// ===== Arranque =====
+
+// main sale con código 1 si la configuración es inválida o el servidor falla.
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "gateway")
-	c, err := config.Load(os.Getenv)
-	if err != nil {
-		logger.Error("invalid_configuration", "error", err.Error())
+	registro := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "gateway")
+	configuracion, errorConfiguracion := config.Cargar(os.Getenv)
+	if errorConfiguracion != nil {
+		registro.Error("invalid_configuration", "error", errorConfiguracion.Error())
 		os.Exit(1)
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	if err := run(ctx, c, logger); err != nil {
-		logger.Error("server_stopped", "error", err.Error())
+	contexto, detener := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer detener()
+	if errorServidor := servir(contexto, configuracion, registro); errorServidor != nil {
+		registro.Error("server_stopped", "error", errorServidor.Error())
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, c config.Config, logger *slog.Logger) error {
-	gateway := proxy.New(c, logger)
-	defer gateway.CloseIdleConnections()
-	server := &http.Server{
-		Addr: c.ListenAddr, Handler: gateway,
-		ReadHeaderTimeout: c.ReadHeaderTimeout,
-		ReadTimeout:       c.RequestTimeout,
-		WriteTimeout:      c.RequestTimeout + c.ReadHeaderTimeout,
-		IdleTimeout:       c.IdleTimeout,
-		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+// ===== Servidor =====
+
+// servir atiende hasta que el contexto se cancele y luego espera a que las
+// peticiones en curso terminen, como máximo GATEWAY_SHUTDOWN_TIMEOUT.
+func servir(contexto context.Context, configuracion config.Configuracion, registro *slog.Logger) error {
+	pasarela := api.Nueva(configuracion, registro)
+	defer pasarela.CerrarConexionesInactivas()
+	servidor := &http.Server{
+		Addr:              configuracion.DireccionEscucha,
+		Handler:           pasarela,
+		ReadHeaderTimeout: configuracion.LimiteLecturaCabeceras,
+		ReadTimeout:       configuracion.LimitePeticion,
+		// La escritura incluye el tiempo de leer cabeceras más el de la petición.
+		WriteTimeout: configuracion.LimitePeticion + configuracion.LimiteLecturaCabeceras,
+		IdleTimeout:  configuracion.LimiteInactividad,
+		ErrorLog:     slog.NewLogLogger(registro.Handler(), slog.LevelError),
 	}
-	stopped := make(chan error, 1)
-	go func() { stopped <- server.ListenAndServe() }()
-	logger.Info("server_starting", "listen_addr", c.ListenAddr)
+	detenido := make(chan error, 1)
+	go func() { detenido <- servidor.ListenAndServe() }()
+	registro.Info("server_starting", "listen_addr", configuracion.DireccionEscucha)
 	select {
-	case err := <-stopped:
-		return err
-	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), c.ShutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdown); err != nil {
-			_ = server.Close()
-			return err
+	case errorServidor := <-detenido:
+		return errorServidor
+	case <-contexto.Done():
+		contextoApagado, cancelar := context.WithTimeout(context.Background(), configuracion.LimiteApagado)
+		defer cancelar()
+		if errorApagado := servidor.Shutdown(contextoApagado); errorApagado != nil {
+			_ = servidor.Close()
+			return errorApagado
 		}
-		err := <-stopped
-		if !errors.Is(err, http.ErrServerClosed) {
-			return err
+		if errorServidor := <-detenido; !errors.Is(errorServidor, http.ErrServerClosed) {
+			return errorServidor
 		}
-		logger.Info("server_stopped")
+		registro.Info("server_stopped")
 		return nil
 	}
 }

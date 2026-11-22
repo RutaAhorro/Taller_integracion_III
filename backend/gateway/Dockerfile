@@ -4,6 +4,8 @@ ENV GOTOOLCHAIN=local
 COPY go.mod ./
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
+# Las suites viven en tests/; sin copiarlas, go test ./... no ejecuta ninguna.
+COPY tests/ ./tests/
 
 FROM source AS test
 RUN go test -race ./... && go vet ./...
