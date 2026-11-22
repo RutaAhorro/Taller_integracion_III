@@ -1,7 +1,8 @@
 # Guía del barrido de código (Sprint 3)
 
-> **Estado:** borrador para revisión del equipo · SUP-344
+> **Estado:** vigente: es el criterio para revisar los PR de barrido (SUP-344) y de compactación (SUP-384). Quedan abiertos los pendientes del final.
 > **Aplica a:** los barridos SUP-347 y SUP-349 a SUP-354, a la migración de Motor de rutas a Go (SUP-348) y a todo el código nuevo del Sprint 3.
+> La segunda fase (compactación) suma los criterios de la [sección 8](#8-anexo-criterios-de-compactación-segunda-fase).
 
 ## Para qué existe esta guía
 
@@ -137,8 +138,9 @@ si acaso".
 - **Ningún documento nuevo se crea fuera de `docs/`**, salvo el `README.md` de
   cada servicio y el `README.md` raíz. Guías, decisiones e investigaciones van
   en `docs/` y se enlazan desde `docs/README.md`.
-- Los archivos de contexto para asistentes de IA (`CLAUDE.md`, `GEMINI.md`) no
-  se tocan en el barrido: se unifican en una tarea aparte.
+- Los archivos de contexto para asistentes de IA no se tocaron en la primera
+  fase. Mientras SUP-360 no se fusione, se siguen editando como indica el
+  `CLAUDE.md` raíz (ver sección 8.7).
 
 ## 6. Qué NO se toca durante el barrido
 
@@ -157,9 +159,15 @@ Si encuentras uno de estos puntos mal nombrado, anótalo en la descripción de t
 PR. Se corrige después, en un cambio coordinado entre quien lo produce y quien
 lo consume.
 
+En la compactación hay dos excepciones acotadas, descritas en la sección 8:
+agregar restricciones en `infrastructure/db` coordinadas con su responsable
+(8.4) y responder 400 ante un parámetro retirado del propio servicio (8.5).
+Ninguna cambia nombres de rutas, campos, tablas, columnas ni variables
+compartidas.
+
 ## 7. Cómo se entrega cada barrido
 
-1. Rama desde `develop`: `[área]/refactor/sup-XXX-barrido-<nombre>`.
+1. Rama desde `develop`: `[área]/refactor/sup-XXX-barrido-<nombre>` (en la compactación, `[área]/refactor/sup-XXX-compactacion-<nombre>`).
 2. Un PR por servicio, **solo con limpieza**: sin funciones nuevas mezcladas.
 3. El PR está listo cuando:
    - [ ] CI en verde.
@@ -171,6 +179,132 @@ lo consume.
    - [ ] La descripción del PR lista lo que se eliminó y cualquier punto compartido mal nombrado que se haya encontrado.
 4. Tope de **dos días** por servicio. Lo que quede pendiente se anota en el
    issue y se termina en paralelo con la ola siguiente.
+
+## 8. Anexo: criterios de compactación (segunda fase)
+
+Los barridos de la primera fase se cerraron con las secciones 1 a 7 de esta
+guía y las cumplieron. El barrido de Identidad (SUP-347) mostró que se puede ir
+más lejos sin perder funcionalidad: de 15 paquetes de producción a 6 y de 31
+archivos Go de producción a 15 (de 51 a 28 contando las pruebas, que pasan a
+`tests/unit` y `tests/integration`).
+Esta sección recoge esos criterios para aplicarlos al resto de los servicios.
+No reemplaza las secciones anteriores: se suma a ellas.
+
+### 8.1 Diagnóstico antes de tocar nada
+
+- Partir del diagnóstico adjunto a la tarea paraguas y **confirmar cada
+  hallazgo** antes de actuar. El diagnóstico se generó con IA y no ejecutó
+  pruebas ni revisó todo el CI.
+- Confirmar significa buscar el símbolo en todo el repositorio, incluidas las
+  pruebas, `.github/workflows`, `scripts/`, Compose y K8s (sección 4).
+- Si el servicio ya cumple los criterios, la tarea se cierra como "sin cambios
+  necesarios". No se inventa trabajo.
+
+### 8.2 Estructura
+
+- La referencia es Identidad: `cmd/<servicio>` y, bajo `internal/`, `api`
+  (rutas, handlers, sesión, errores), `services`, `repositories`, `domain` y
+  `config`.
+- **Un archivo por tema**, no por tipo: `productos.go` reúne lo de productos en
+  cada capa, en vez de `producto_handler.go`, `producto_service.go`, etc.
+- **Sin paquetes de un solo archivo** salvo `cmd/<servicio>` y `config`. Un
+  paquete `utils`, `auth` o `server` con un archivo se fusiona en la capa que lo
+  usa.
+- Python y frontend aplican la misma idea con módulos y carpetas por tema.
+
+### 8.3 Poda
+
+- **Funcionalidad armada sin consumidores** se elimina aunque funcione: código
+  que se construye al arrancar pero que ningún endpoint, comando o job expone.
+  En Identidad fue la recuperación de contraseña y el correo.
+- Si es trabajo a medias de otra tarea abierta, **no se poda**: se anota en el
+  PR con el número de esa tarea. Ejemplo: `motor_rutas/internal/optimizacion`
+  espera el endpoint de SUP-316.
+- Una funcionalidad que sí se poda se acuerda antes con su autor y con el
+  equipo, y queda una tarea para reimplementarla después.
+- **Configuración huérfana:** se quita la variable que el código lee y ningún
+  manifiesto define, y la que los manifiestos definen y el código no lee. Si es
+  compartida, se coordina en la tarea de cierre (sección 6).
+
+### 8.4 Reglas de datos en la base, no en el código
+
+- Si el código normaliza o corrige datos guardados (alias de roles, `LOWER`,
+  `TRIM`, valores heredados), la regla se mueve a la base: una migración en
+  `infrastructure/db` que normaliza los datos y agrega una restricción (`CHECK`,
+  `NOT NULL`, `UNIQUE`).
+- La migración aborta si encuentra un valor sin traducción segura, para que un
+  operador lo revise en vez de asignar algo a ciegas.
+- El servicio comprueba al arrancar que la restricción exista. Así el orden de
+  despliegue lo exige el propio código.
+- Con la regla garantizada, se borra la normalización del código.
+- **Excepción a la sección 6:** agregar restricciones no cambia nombres de
+  tablas ni columnas, pero toca `infrastructure/db`. Se coordina con su
+  responsable (Esban) y se documenta como paso de despliegue en el PR.
+
+### 8.5 Contratos
+
+- Un parámetro o campo retirado **responde 400** con un mensaje que diga qué
+  usar en su lugar. Ignorarlo en silencio devolvería otro resultado sin avisar.
+- Cada cambio de contrato va en una tabla "Antes / Ahora" en el README del
+  servicio y en la descripción del PR.
+- Los contratos entre servicios (HTTP interno, Redis Streams, esquema `scraper`)
+  siguen sin cambiar dentro de una tarea de servicio (sección 6). Si hace falta,
+  se avisa en el PR y se resuelve en la tarea de cierre.
+
+### 8.6 Código
+
+- Comentario de paquete o archivo que explique su rol, comentario en cada
+  función o tipo (qué hace y por qué) y bloques `// ===== Sección =====` por tema.
+- Constantes con nombre en vez de números o textos sueltos, incluidos códigos
+  externos como SQLSTATE (`codigoViolacionUnicidad = "23505"`) y estados HTTP
+  (`http.StatusOK`, no `200`).
+- Los mensajes que citan un límite se construyen con la constante, no repiten
+  el número.
+- Nombres descriptivos en español, sin excepciones por convención del lenguaje
+  (`peticion`/`respuesta`, `contexto`, `errorObtenido`, `prueba`, `indice`).
+- Sin comprobaciones redundantes en cada petición contra estados que el propio
+  arranque impide (por ejemplo, un repositorio `nil` que `main` nunca pasa).
+  En cambio, un componente **sí debe fallar al construirse** si le falta una
+  dependencia de seguridad obligatoria (por ejemplo, la revalidación de sesión):
+  eso no es una guarda "por si acaso", es un error de configuración que no debe
+  llegar a producción.
+- En el frontend, si el renombrado al español es grande, va en un PR aparte del
+  de compactación para que ambos se puedan revisar.
+
+### 8.7 Documentación y contexto
+
+- El `README.md` del servicio es la fuente única: configuración, contratos,
+  operación y pruebas. Las guías duplicadas se fusionan en él (sección 5).
+- Contexto para asistentes de IA: **hoy** se edita el `CLAUDE.md` del servicio
+  y se corre `python3 scripts/gen_service_map.py`, que sincroniza `GEMINI.md` y
+  `.github/copilot-instructions.md`, como indica el `CLAUDE.md` raíz.
+- **Cuando SUP-360 se fusione**, cada servicio pasará a un único `AGENTS.md` y
+  un `CLAUDE.md` que solo contiene `@AGENTS.md`. Hasta entonces, no se crean
+  esos archivos en los PR de compactación.
+
+### 8.8 Validación
+
+- Go: `go test -race ./...` y `go vet ./...` en Docker, igual que el CI.
+- Python: `pytest` y `ruff`. Frontend: pruebas, `tsc` por separado y build.
+- Pruebas contra PostgreSQL y Redis reales y aislados cuando el servicio los usa,
+  con su rol de base de datos de runtime. Si una variable `*_TEST_*` documentada
+  no tiene prueba que la use, se agrega la prueba o se quita la variable.
+- Una prueba HTTP en vivo sobre la imagen construida, con el resultado en el PR.
+- Nunca contra una base o un clúster compartido.
+
+### 8.9 Cómo se entrega cada compactación
+
+Igual que la sección 7, más estas casillas:
+
+- [ ] Diagnóstico confirmado; cada hallazgo descartado tiene su motivo en el PR.
+- [ ] Estructura con la forma de 8.2, sin paquetes de un solo archivo.
+- [ ] Sin funcionalidad armada sin consumidores, o con su tarea pendiente anotada.
+- [ ] Normalizaciones de datos movidas a la base, con migración y comprobación al arrancar.
+- [ ] Tabla "Antes / Ahora" de contratos en el README, si hubo cambios.
+- [ ] Constantes con nombre, nombres en español y comentarios por sección.
+- [ ] Contexto de IA actualizado según 8.7 (`CLAUDE.md` + `gen_service_map.py` hasta que se fusione SUP-360).
+- [ ] Validación de 8.8 en verde, con los resultados en el PR.
+- [ ] Pasos de despliegue (migraciones, variables) en la descripción del PR.
 
 ## Pendientes antes de cerrar esta guía
 
