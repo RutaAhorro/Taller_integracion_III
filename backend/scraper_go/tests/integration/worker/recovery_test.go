@@ -1,3 +1,6 @@
+// recovery_test.go verifica la recuperación ante fallos del worker: trabajos
+// terminales, reanudación desde spool con crawl_done=1, límite de intentos y
+// respeto por execution.lock.
 package worker_test
 
 import (
@@ -7,149 +10,153 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spool"
+	cola "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/cola"
+	dominio "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/dominio"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 )
 
-func preseed(prueba *testing.T, arnes *harness, seed func(*spool.Spool) error) {
+// ===== Auxiliar de Presembrado =====
+
+func presembrarSpool(prueba *testing.T, arnes *arnesWorker, sembrar func(*cola.Spool) error) {
 	prueba.Helper()
-	store, err := spool.Open(arnes.workID, arnes.cfg.StateDir, arnes.cfg.MinFreeBytes)
-	if err != nil {
-		prueba.Fatalf("spool.Open() error = %v", err)
+	almacen, errorApertura := cola.Open(arnes.trabajoID, arnes.configuracion.StateDir, arnes.configuracion.MinFreeBytes)
+	if errorApertura != nil {
+		prueba.Fatalf("cola.Open() error = %v", errorApertura)
 	}
-	if err := seed(store); err != nil {
-		_ = store.Close()
-		prueba.Fatalf("preparar spool: %v", err)
+	if errorSembrado := sembrar(almacen); errorSembrado != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("preparar spool: %v", errorSembrado)
 	}
-	if err := store.Close(); err != nil {
-		prueba.Fatalf("Close() error = %v", err)
+	if errorCierre := almacen.Close(); errorCierre != nil {
+		prueba.Fatalf("Close() error = %v", errorCierre)
 	}
 }
 
+// ===== Pruebas de Recuperación y Concurrencia =====
+
 func TestDoesNotCrawlTerminalJob(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.JumboName}
-	arnes := newHarness(prueba, spider, nil)
-	arnes.apiState.Lock()
-	arnes.apiState.status = "completado"
-	arnes.apiState.Unlock()
+	spider := &spiderFalso{nombre: extraccion.JumboName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	arnes.estadoControl.Lock()
+	arnes.estadoControl.estado = "completado"
+	arnes.estadoControl.Unlock()
 
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	if spider.runCount() != 0 {
-		prueba.Errorf("el spider se ejecutó %d veces para un trabajo terminal", spider.runCount())
+	if spider.cantidadEjecuciones() != 0 {
+		prueba.Errorf("el spider se ejecutó %d veces para un trabajo terminal", spider.cantidadEjecuciones())
 	}
-	arnes.apiState.Lock()
-	finalized := arnes.apiState.finalized
-	arnes.apiState.Unlock()
-	if finalized != "" {
-		prueba.Errorf("no se debe finalizar de nuevo un trabajo terminal: %q", finalized)
+	arnes.estadoControl.Lock()
+	finalizado := arnes.estadoControl.finalizado
+	arnes.estadoControl.Unlock()
+	if finalizado != "" {
+		prueba.Errorf("no se debe finalizar de nuevo un trabajo terminal: %q", finalizado)
 	}
-	if length := arnes.streamLength(prueba); length != 0 {
-		prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+		prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 	}
-	if _, err := os.Stat(filepath.Join(arnes.cfg.StateDir, arnes.workID)); !os.IsNotExist(err) {
-		prueba.Errorf("un trabajo terminal no debe abrir el spool: %v", err)
+	if _, errorEstadistica := os.Stat(filepath.Join(arnes.configuracion.StateDir, arnes.trabajoID)); !os.IsNotExist(errorEstadistica) {
+		prueba.Errorf("un trabajo terminal no debe abrir el spool: %v", errorEstadistica)
 	}
 }
 
 func TestResumesWithCrawlDoneWithoutCrawling(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.JumboName}
-	arnes := newHarness(prueba, spider, nil)
-	preseed(prueba, arnes, func(store *spool.Spool) error {
-		market := "Jumbo"
-		if err := store.Add(domain.Product{Producto: "Producto recuperado", Precio: floatPtr(1000)}, &market); err != nil {
-			return err
+	spider := &spiderFalso{nombre: extraccion.JumboName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	presembrarSpool(prueba, arnes, func(almacen *cola.Spool) error {
+		supermercado := "Jumbo"
+		if errorAdicion := almacen.Add(dominio.Product{Producto: "Producto recuperado", Precio: punteroFlotante(1000)}, &supermercado); errorAdicion != nil {
+			return errorAdicion
 		}
-		return store.SetProgress("crawl_done", 1)
+		return almacen.SetProgress("crawl_done", 1)
 	})
 
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	if spider.runCount() != 0 {
-		prueba.Errorf("el spider se ejecutó %d veces con crawl_done=1", spider.runCount())
+	if spider.cantidadEjecuciones() != 0 {
+		prueba.Errorf("el spider se ejecutó %d veces con crawl_done=1", spider.cantidadEjecuciones())
 	}
-	arnes.apiState.Lock()
-	products := len(arnes.apiState.products)
-	finalized := arnes.apiState.finalized
-	arnes.apiState.Unlock()
-	if products != 1 {
-		prueba.Errorf("productos entregados = %d, want 1", products)
+	arnes.estadoControl.Lock()
+	productos := len(arnes.estadoControl.productos)
+	finalizado := arnes.estadoControl.finalizado
+	arnes.estadoControl.Unlock()
+	if productos != 1 {
+		prueba.Errorf("productos entregados = %d, esperado 1", productos)
 	}
-	if finalized != "completado" {
-		prueba.Errorf("estado final = %q, want completado", finalized)
+	if finalizado != "completado" {
+		prueba.Errorf("estado final = %q, esperado completado", finalizado)
 	}
-	if length := arnes.streamLength(prueba); length != 0 {
-		prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+		prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 	}
 }
 
 func TestStopsAfterCrawlAttempts(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.JumboName}
-	arnes := newHarness(prueba, spider, nil)
-	preseed(prueba, arnes, func(store *spool.Spool) error {
-		return store.SetProgress("crawl_attempts", arnes.cfg.CrawlAttempts)
+	spider := &spiderFalso{nombre: extraccion.JumboName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	presembrarSpool(prueba, arnes, func(almacen *cola.Spool) error {
+		return almacen.SetProgress("crawl_attempts", arnes.configuracion.CrawlAttempts)
 	})
 
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	if spider.runCount() != 0 {
-		prueba.Errorf("el spider se ejecutó %d veces con los intentos agotados", spider.runCount())
+	if spider.cantidadEjecuciones() != 0 {
+		prueba.Errorf("el spider se ejecutó %d veces con los intentos agotados", spider.cantidadEjecuciones())
 	}
-	arnes.apiState.Lock()
-	finalized := arnes.apiState.finalized
-	finalMessage := arnes.apiState.finalMessage
-	arnes.apiState.Unlock()
-	if finalized != "fallido" {
-		prueba.Errorf("estado final = %q, want fallido", finalized)
+	arnes.estadoControl.Lock()
+	finalizado := arnes.estadoControl.finalizado
+	mensajeFinal := arnes.estadoControl.mensajeFinal
+	arnes.estadoControl.Unlock()
+	if finalizado != "fallido" {
+		prueba.Errorf("estado final = %q, esperado fallido", finalizado)
 	}
-	if !strings.Contains(finalMessage, "crawl agotado") {
-		prueba.Errorf("registro_errores = %q", finalMessage)
+	if !strings.Contains(mensajeFinal, "crawl agotado") {
+		prueba.Errorf("registro_errores = %q", mensajeFinal)
 	}
-	messages := arnes.deadLetters(prueba)
-	if len(messages) != 1 || messages[0].Values["reason"] != "attempts_exhausted" {
-		prueba.Errorf("dead letter = %+v, want reason=attempts_exhausted", messages)
+	mensajes := arnes.mensajesMuertos(prueba)
+	if len(mensajes) != 1 || mensajes[0].Values["reason"] != "attempts_exhausted" {
+		prueba.Errorf("dead letter = %+v, esperado reason=attempts_exhausted", mensajes)
 	}
-	if _, err := os.Stat(filepath.Join(arnes.cfg.StateDir, arnes.workID)); err != nil {
-		prueba.Errorf("el spool debe conservarse cuando se agotan los intentos: %v", err)
+	if _, errorEstadistica := os.Stat(filepath.Join(arnes.configuracion.StateDir, arnes.trabajoID)); errorEstadistica != nil {
+		prueba.Errorf("el spool debe conservarse cuando se agotan los intentos: %v", errorEstadistica)
 	}
 }
 
 func TestRespectsExecutionLock(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.JumboName}
-	arnes := newHarness(prueba, spider, nil)
+	spider := &spiderFalso{nombre: extraccion.JumboName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
 
-	directory := filepath.Join(arnes.cfg.StateDir, arnes.workID)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		prueba.Fatal(err)
+	directorio := filepath.Join(arnes.configuracion.StateDir, arnes.trabajoID)
+	if errorDirectorio := os.MkdirAll(directorio, 0o700); errorDirectorio != nil {
+		prueba.Fatal(errorDirectorio)
 	}
-	lock, err := os.OpenFile(filepath.Join(directory, "execution.lock"), os.O_CREATE|os.O_RDWR, 0o600)
-	if err != nil {
-		prueba.Fatal(err)
+	archivoBloqueo, errorApertura := os.OpenFile(filepath.Join(directorio, "execution.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if errorApertura != nil {
+		prueba.Fatal(errorApertura)
 	}
-	defer lock.Close()
-	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		prueba.Fatal(err)
+	defer archivoBloqueo.Close()
+	if errorFlock := syscall.Flock(int(archivoBloqueo.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); errorFlock != nil {
+		prueba.Fatal(errorFlock)
 	}
 	defer func() {
-		_ = syscall.Flock(int(lock.Fd()), syscall.LOCK_UN)
+		_ = syscall.Flock(int(archivoBloqueo.Fd()), syscall.LOCK_UN)
 	}()
 
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	if spider.runCount() != 0 {
-		prueba.Errorf("el spider se ejecutó %d veces con el spool bloqueado", spider.runCount())
+	if spider.cantidadEjecuciones() != 0 {
+		prueba.Errorf("el spider se ejecutó %d veces con el spool bloqueado", spider.cantidadEjecuciones())
 	}
-	arnes.apiState.Lock()
-	finalized := arnes.apiState.finalized
-	arnes.apiState.Unlock()
-	if finalized != "" {
-		prueba.Errorf("no se debe finalizar un trabajo bloqueado: %q", finalized)
+	arnes.estadoControl.Lock()
+	finalizado := arnes.estadoControl.finalizado
+	arnes.estadoControl.Unlock()
+	if finalizado != "" {
+		prueba.Errorf("no se debe finalizar un trabajo bloqueado: %q", finalizado)
 	}
-	if pending := arnes.pendingMessages(prueba); pending != 1 {
-		prueba.Errorf("mensajes pendientes = %d, want 1 (sin ACK)", pending)
+	if pendientes := arnes.mensajesPendientes(prueba); pendientes != 1 {
+		prueba.Errorf("mensajes pendientes = %d, esperado 1 (sin ACK)", pendientes)
 	}
-	if length := arnes.streamLength(prueba); length != 1 {
-		prueba.Errorf("stream length = %d, want 1 (sin ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 1 {
+		prueba.Errorf("stream length = %d, esperado 1 (sin ACK)", longitud)
 	}
 }

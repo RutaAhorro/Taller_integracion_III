@@ -1,3 +1,5 @@
+// memory_test.go verifica el presupuesto de memoria (RSS y RssAnon) del
+// pipeline de spool, sellado y entrega cuando SCRAPER_MEMORY_GATE=1.
 package worker_test
 
 import (
@@ -20,15 +22,19 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spool"
+	cola "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/cola"
+	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
+	dominio "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/dominio"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 )
 
-func floatPtr(value float64) *float64 {
-	return &value
+// ===== Auxiliares de Prueba =====
+
+func punteroFlotante(valor float64) *float64 {
+	return &valor
 }
+
+// ===== Gate de Memoria =====
 
 // TestMemoryGate atraviesa el pipeline real de spool, lotes y entrega con un
 // catálogo sintético, usando sólo la API pública de los paquetes. No se
@@ -42,167 +48,169 @@ func TestMemoryGate(prueba *testing.T) {
 		prueba.Skip("la medición de VmHWM requiere Linux")
 	}
 
-	items := envInt("SCRAPER_MEMORY_ITEMS", 200_000)
-	limitMB := envFloat("SCRAPER_MEMORY_LIMIT_MB", 150)
-	compact := os.Getenv("SCRAPER_MEMORY_COMPACT") == "1"
-	if items < 1 {
+	cantidadElementos := leerEnteroEntorno("SCRAPER_MEMORY_ITEMS", 200_000)
+	limiteMB := leerFlotanteEntorno("SCRAPER_MEMORY_LIMIT_MB", 150)
+	compacto := os.Getenv("SCRAPER_MEMORY_COMPACT") == "1"
+	if cantidadElementos < 1 {
 		prueba.Fatal("SCRAPER_MEMORY_ITEMS debe ser mayor que cero")
 	}
-	const batchSize = 1000
+	const tamanoLote = config.MaxBatchSize
 
-	baseline := peakRSSMB(prueba)
-	anonSampler := startAnonSampler(10 * time.Millisecond)
-	workID := uuid.NewString()
+	lineaBaseMB := picoRSSMB(prueba)
+	muestreadorAnon := iniciarMuestreadorAnon(10 * time.Millisecond)
+	trabajoID := uuid.NewString()
 	var (
-		mu        sync.Mutex
-		finalized string
-		received  int
+		candado    sync.Mutex
+		finalizado string
+		recibidos  int
 	)
-	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
-		base := "/api/v1/scraper/trabajos/" + workID
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		rutaBase := "/api/v1/scraper/trabajos/" + trabajoID
 		switch {
-		case peticion.Method == http.MethodGet && peticion.URL.Path == base:
-			mu.Lock()
-			status := "en_progreso"
-			if finalized != "" {
-				status = finalized
+		case peticion.Method == http.MethodGet && peticion.URL.Path == rutaBase:
+			candado.Lock()
+			estado := "en_progreso"
+			if finalizado != "" {
+				estado = finalizado
 			}
-			mu.Unlock()
-			writeJSONResponse(respuesta, map[string]any{"id": workID, "estado": status})
-		case peticion.Method == http.MethodPost && peticion.URL.Path == base+"/productos":
-			var payload struct {
-				Productos []domain.Product `json:"productos"`
+			candado.Unlock()
+			escribirRespuestaJSON(respuesta, map[string]any{"id": trabajoID, "estado": estado})
+		case peticion.Method == http.MethodPost && peticion.URL.Path == rutaBase+"/productos":
+			var carga struct {
+				Productos []dominio.Product `json:"productos"`
 			}
-			if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
-				prueba.Errorf("decode productos: %v", err)
+			if errorDecodificacion := json.NewDecoder(peticion.Body).Decode(&carga); errorDecodificacion != nil {
+				prueba.Errorf("decode productos: %v", errorDecodificacion)
 				return
 			}
-			mu.Lock()
-			received += len(payload.Productos)
-			mu.Unlock()
-			writeJSONResponse(respuesta, map[string]any{
-				"total_recibidos":     len(payload.Productos),
-				"precios_registrados": len(payload.Productos),
-				"insertados":          len(payload.Productos),
+			candado.Lock()
+			recibidos += len(carga.Productos)
+			candado.Unlock()
+			escribirRespuestaJSON(respuesta, map[string]any{
+				"total_recibidos":     len(carga.Productos),
+				"precios_registrados": len(carga.Productos),
+				"insertados":          len(carga.Productos),
 				"actualizados":        0,
 			})
-		case peticion.Method == http.MethodPut && peticion.URL.Path == base+"/finalizar":
-			var payload struct {
+		case peticion.Method == http.MethodPut && peticion.URL.Path == rutaBase+"/finalizar":
+			var carga struct {
 				Estado string `json:"estado"`
 			}
-			if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
-				prueba.Errorf("decode finalizar: %v", err)
+			if errorDecodificacion := json.NewDecoder(peticion.Body).Decode(&carga); errorDecodificacion != nil {
+				prueba.Errorf("decode finalizar: %v", errorDecodificacion)
 				return
 			}
-			mu.Lock()
-			finalized = payload.Estado
-			mu.Unlock()
-			writeJSONResponse(respuesta, map[string]any{"id": workID, "estado": payload.Estado})
+			candado.Lock()
+			finalizado = carga.Estado
+			candado.Unlock()
+			escribirRespuestaJSON(respuesta, map[string]any{"id": trabajoID, "estado": carga.Estado})
 		default:
 			http.NotFound(respuesta, peticion)
 		}
 	}))
-	defer server.Close()
+	defer servidor.Close()
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	stateDir := prueba.TempDir()
-	api := controlscraping.New(server.URL+"/api/v1/scraper/productos", "test", 10*time.Second)
-	store, err := spool.Open(workID, stateDir, 1<<20)
-	if err != nil {
-		prueba.Fatalf("spool.Open() error = %v", err)
+	registrador := slog.New(slog.NewTextHandler(io.Discard, nil))
+	directorioEstado := prueba.TempDir()
+	clienteAPI := cola.NewControlClient(servidor.URL+"/api/v1/scraper/productos", "test", 10*time.Second)
+	almacen, errorApertura := cola.Open(trabajoID, directorioEstado, 1<<20)
+	if errorApertura != nil {
+		prueba.Fatalf("cola.Open() error = %v", errorApertura)
 	}
 
-	ctx := context.Background()
-	pending := 0
-	emit := func(item domain.Item) error {
-		item = spiders.CompleteItem(item)
-		market := item.Supermercado
-		if err := store.Add(item.Product, &market); err != nil {
-			return err
+	contexto := context.Background()
+	pendientes := 0
+	emitir := func(elemento dominio.Item) error {
+		elemento = extraccion.CompleteItem(elemento)
+		supermercado := elemento.Supermercado
+		if errorAdicion := almacen.Add(elemento.Product, &supermercado); errorAdicion != nil {
+			return errorAdicion
 		}
-		pending++
-		if pending >= batchSize {
-			if err := store.Seal(batchSize); err != nil {
-				return err
+		pendientes++
+		if pendientes >= tamanoLote {
+			if errorSellado := almacen.Seal(tamanoLote); errorSellado != nil {
+				return errorSellado
 			}
-			if err := store.Replay(ctx, api); err != nil {
-				return err
+			if errorReenvio := almacen.Replay(contexto, clienteAPI); errorReenvio != nil {
+				return errorReenvio
 			}
-			pending = 0
+			pendientes = 0
 		}
 		return nil
 	}
-	spider := memorySpider{items: items, compact: compact, logger: logger}
-	if err := spider.Run(ctx, domain.Job{WorkID: workID}, emit); err != nil {
-		_ = store.Close()
-		prueba.Fatalf("spider.Run() error = %v", err)
+	spider := spiderMemoria{elementos: cantidadElementos, compacto: compacto, registrador: registrador}
+	if errorSpider := spider.Run(contexto, dominio.Job{WorkID: trabajoID}, emitir); errorSpider != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("spider.Run() error = %v", errorSpider)
 	}
-	if err := store.SetProgress("crawl_done", 1); err != nil {
-		_ = store.Close()
-		prueba.Fatalf("SetProgress() error = %v", err)
+	if errorProgreso := almacen.SetProgress("crawl_done", 1); errorProgreso != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("SetProgress() error = %v", errorProgreso)
 	}
-	if err := store.Seal(batchSize); err != nil {
-		_ = store.Close()
-		prueba.Fatalf("Seal() error = %v", err)
+	if errorSellado := almacen.Seal(tamanoLote); errorSellado != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("Seal() error = %v", errorSellado)
 	}
-	if err := store.Replay(ctx, api); err != nil {
-		_ = store.Close()
-		prueba.Fatalf("Replay() error = %v", err)
+	if errorReenvio := almacen.Replay(contexto, clienteAPI); errorReenvio != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("Replay() error = %v", errorReenvio)
 	}
-	count, err := store.Count()
-	if err != nil {
-		_ = store.Close()
-		prueba.Fatalf("Count() error = %v", err)
+	conteoTotal, errorConteo := almacen.Count()
+	if errorConteo != nil {
+		_ = almacen.Close()
+		prueba.Fatalf("Count() error = %v", errorConteo)
 	}
-	if count != items {
-		_ = store.Close()
-		prueba.Fatalf("productos en spool = %d, want %d", count, items)
+	if conteoTotal != cantidadElementos {
+		_ = almacen.Close()
+		prueba.Fatalf("productos en spool = %d, esperado %d", conteoTotal, cantidadElementos)
 	}
-	state, err := api.FinalizeWork(ctx, workID, "completado", nil, nil, "")
-	_ = store.Close()
-	anonPeak := anonSampler.Stop()
-	if err != nil {
-		prueba.Fatalf("FinalizeWork() error = %v", err)
+	estadoFinal, errorFinalizacion := clienteAPI.FinalizeWork(contexto, trabajoID, "completado", nil, nil, "")
+	_ = almacen.Close()
+	picoAnonMB := muestreadorAnon.Detener()
+	if errorFinalizacion != nil {
+		prueba.Fatalf("FinalizeWork() error = %v", errorFinalizacion)
 	}
-	if state["estado"] != "completado" {
-		prueba.Errorf("estado = %v", state["estado"])
+	if estadoFinal["estado"] != "completado" {
+		prueba.Errorf("estado = %v", estadoFinal["estado"])
 	}
-	mu.Lock()
-	delivered := received
-	final := finalized
-	mu.Unlock()
-	if final != "completado" || delivered != items {
-		prueba.Fatalf("entrega incompleta: estado=%q productos=%d, want %d", final, delivered, items)
+	candado.Lock()
+	entregados := recibidos
+	estadoConfirmado := finalizado
+	candado.Unlock()
+	if estadoConfirmado != "completado" || entregados != cantidadElementos {
+		prueba.Fatalf("entrega incompleta: estado=%q productos=%d, esperado %d", estadoConfirmado, entregados, cantidadElementos)
 	}
 
-	peak := peakRSSMB(prueba)
-	cgroupLimit := envFloat("SCRAPER_MEMORY_CGROUP_LIMIT_MB", 0)
-	cgroupPeak := 0.0
-	if cgroupLimit > 0 {
-		cgroupPeak = cgroupPeakMB()
+	picoMB := picoRSSMB(prueba)
+	limiteCgroup := leerFlotanteEntorno("SCRAPER_MEMORY_CGROUP_LIMIT_MB", 0)
+	picoCgroup := 0.0
+	if limiteCgroup > 0 {
+		picoCgroup = picoCgroupMB()
 	}
-	result := memoryGateResult{
-		Items:         items,
-		Compact:       compact,
-		LimitMB:       limitMB,
-		BaselineRSSMB: baseline,
-		PeakRSSMB:     peak,
-		PeakAnonRSSMB: anonPeak,
-		CgroupLimitMB: cgroupLimit,
-		CgroupPeakMB:  cgroupPeak,
+	resultado := resultadoGateMemoria{
+		Items:         cantidadElementos,
+		Compact:       compacto,
+		LimitMB:       limiteMB,
+		BaselineRSSMB: lineaBaseMB,
+		PeakRSSMB:     picoMB,
+		PeakAnonRSSMB: picoAnonMB,
+		CgroupLimitMB: limiteCgroup,
+		CgroupPeakMB:  picoCgroup,
 		GoVersion:     runtime.Version(),
 		MeasuredAt:    time.Now().UTC().Format(time.RFC3339),
 	}
 	prueba.Logf("gate de RAM: %d productos (compacto=%t), RSS pico %.1f MB, RssAnon pico %.1f MB, cgroup pico %.1f MB / límite %.1f MB (base %.1f MB, límite RSS %.1f MB)",
-		items, compact, peak, anonPeak, cgroupPeak, cgroupLimit, baseline, limitMB)
-	writeMemoryGateResult(prueba, result)
-	if peak > limitMB || anonPeak > limitMB {
+		cantidadElementos, compacto, picoMB, picoAnonMB, picoCgroup, limiteCgroup, lineaBaseMB, limiteMB)
+	escribirResultadoGateMemoria(prueba, resultado)
+	if picoMB > limiteMB || picoAnonMB > limiteMB {
 		prueba.Fatalf("RAM pico fuera de límite: RSS %.1f MB, RssAnon %.1f MB, límite %.1f MB",
-			peak, anonPeak, limitMB)
+			picoMB, picoAnonMB, limiteMB)
 	}
 }
 
-type memoryGateResult struct {
+// ===== Reporte y Muestreo de Memoria =====
+
+type resultadoGateMemoria struct {
 	Items         int     `json:"items"`
 	Compact       bool    `json:"compact,omitempty"`
 	LimitMB       float64 `json:"limit_mb"`
@@ -215,81 +223,81 @@ type memoryGateResult struct {
 	MeasuredAt    string  `json:"measured_at"`
 }
 
-func writeMemoryGateResult(prueba *testing.T, result memoryGateResult) {
+func escribirResultadoGateMemoria(prueba *testing.T, resultado resultadoGateMemoria) {
 	prueba.Helper()
-	path := strings.TrimSpace(os.Getenv("SCRAPER_MEMORY_RESULT"))
-	if path == "" {
+	rutaDestino := strings.TrimSpace(os.Getenv("SCRAPER_MEMORY_RESULT"))
+	if rutaDestino == "" {
 		return
 	}
-	body, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		prueba.Fatalf("marshal resultado de RAM: %v", err)
+	cuerpo, errorSerializacion := json.MarshalIndent(resultado, "", "  ")
+	if errorSerializacion != nil {
+		prueba.Fatalf("marshal resultado de RAM: %v", errorSerializacion)
 	}
-	body = append(body, '\n')
-	if directory := filepath.Dir(path); directory != "." {
-		if err := os.MkdirAll(directory, 0o755); err != nil {
-			prueba.Fatalf("crear directorio para resultado de RAM: %v", err)
+	cuerpo = append(cuerpo, '\n')
+	if directorio := filepath.Dir(rutaDestino); directorio != "." {
+		if errorDirectorio := os.MkdirAll(directorio, 0o755); errorDirectorio != nil {
+			prueba.Fatalf("crear directorio para resultado de RAM: %v", errorDirectorio)
 		}
 	}
-	if err := os.WriteFile(path, body, 0o644); err != nil {
-		prueba.Fatalf("escribir resultado de RAM en %s: %v", path, err)
+	if errorEscritura := os.WriteFile(rutaDestino, cuerpo, 0o644); errorEscritura != nil {
+		prueba.Fatalf("escribir resultado de RAM en %s: %v", rutaDestino, errorEscritura)
 	}
 }
 
-type anonSampler struct {
-	stop chan struct{}
-	done chan struct{}
-	peak atomic.Uint64
+type muestreadorAnon struct {
+	detener   chan struct{}
+	terminado chan struct{}
+	pico      atomic.Uint64
 }
 
-func startAnonSampler(interval time.Duration) *anonSampler {
-	sampler := &anonSampler{stop: make(chan struct{}), done: make(chan struct{})}
+func iniciarMuestreadorAnon(intervalo time.Duration) *muestreadorAnon {
+	muestreador := &muestreadorAnon{detener: make(chan struct{}), terminado: make(chan struct{})}
 	go func() {
-		defer close(sampler.done)
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
+		defer close(muestreador.terminado)
+		temporizador := time.NewTicker(intervalo)
+		defer temporizador.Stop()
 		for {
-			if kb, ok := statusFieldKB("RssAnon"); ok {
-				value := uint64(kb)
+			if kilobytes, valido := campoEstadoKB("RssAnon"); valido {
+				valorActual := uint64(kilobytes)
 				for {
-					previous := sampler.peak.Load()
-					if value <= previous || sampler.peak.CompareAndSwap(previous, value) {
+					previo := muestreador.pico.Load()
+					if valorActual <= previo || muestreador.pico.CompareAndSwap(previo, valorActual) {
 						break
 					}
 				}
 			}
 			select {
-			case <-sampler.stop:
+			case <-muestreador.detener:
 				return
-			case <-ticker.C:
+			case <-temporizador.C:
 			}
 		}
 	}()
-	return sampler
+	return muestreador
 }
 
-func (muestreador *anonSampler) Stop() float64 {
-	close(muestreador.stop)
-	<-muestreador.done
-	return float64(muestreador.peak.Load()) / 1024
+func (muestreador *muestreadorAnon) Detener() float64 {
+	close(muestreador.detener)
+	<-muestreador.terminado
+	return float64(muestreador.pico.Load()) / 1024
 }
 
-func statusFieldKB(name string) (float64, bool) {
-	body, err := os.ReadFile("/proc/self/status")
-	if err != nil {
+func campoEstadoKB(nombreCampo string) (float64, bool) {
+	cuerpo, errorLectura := os.ReadFile("/proc/self/status")
+	if errorLectura != nil {
 		return 0, false
 	}
-	prefix := name + ":"
-	for _, line := range strings.Split(string(body), "\n") {
-		if !strings.HasPrefix(line, prefix) {
+	prefijo := nombreCampo + ":"
+	for _, linea := range strings.Split(string(cuerpo), "\n") {
+		if !strings.HasPrefix(linea, prefijo) {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		campos := strings.Fields(linea)
+		if len(campos) < 2 {
 			return 0, false
 		}
-		kilobytes, err := strconv.ParseFloat(fields[1], 64)
-		if err != nil {
+		kilobytes, errorParseo := strconv.ParseFloat(campos[1], 64)
+		if errorParseo != nil {
 			return 0, false
 		}
 		return kilobytes, true
@@ -297,85 +305,87 @@ func statusFieldKB(name string) (float64, bool) {
 	return 0, false
 }
 
-func cgroupPeakMB() float64 {
-	for _, path := range []string{
+func picoCgroupMB() float64 {
+	for _, ruta := range []string{
 		"/sys/fs/cgroup/memory.peak",
 		"/sys/fs/cgroup/memory/memory.max_usage_in_bytes",
 	} {
-		body, err := os.ReadFile(path)
-		if err != nil {
+		cuerpo, errorLectura := os.ReadFile(ruta)
+		if errorLectura != nil {
 			continue
 		}
-		bytes, err := strconv.ParseFloat(strings.TrimSpace(string(body)), 64)
-		if err != nil {
+		bytesLeidos, errorParseo := strconv.ParseFloat(strings.TrimSpace(string(cuerpo)), 64)
+		if errorParseo != nil {
 			continue
 		}
-		return bytes / (1024 * 1024)
+		return bytesLeidos / (1024 * 1024)
 	}
 	return 0
 }
 
-const memorySpiderName = "memory_rsc"
+// ===== Spider Sintético de Memoria =====
 
-type memorySpider struct {
-	items   int
-	compact bool
-	logger  *slog.Logger
+const nombreSpiderMemoria = "memory_rsc"
+
+type spiderMemoria struct {
+	elementos   int
+	compacto    bool
+	registrador *slog.Logger
 }
 
-func (espia memorySpider) Name() string {
-	return memorySpiderName
+func (espia spiderMemoria) Name() string {
+	return nombreSpiderMemoria
 }
 
-func (espia memorySpider) Run(_ context.Context, _ domain.Job, emit spiders.Emitter) error {
-	base := domain.Product{
-		Precio:       floatPtr(1990),
-		PrecioNormal: floatPtr(2490),
-		PrecioOferta: floatPtr(1990),
-		Marca:        domain.StringPtr("Marca de prueba"),
-		FormatoCrudo: domain.StringPtr("1 unidad"),
-		EnStock:      domain.BoolPtr(true),
+func (espia spiderMemoria) Run(_ context.Context, _ dominio.Job, emitir extraccion.Emitter) error {
+	productoBase := dominio.Product{
+		Precio:       punteroFlotante(1990),
+		PrecioNormal: punteroFlotante(2490),
+		PrecioOferta: punteroFlotante(1990),
+		Marca:        dominio.StringPtr("Marca de prueba"),
+		FormatoCrudo: dominio.StringPtr("1 unidad"),
+		EnStock:      dominio.BoolPtr(true),
 		Categoria:    "despensa",
 	}
-	for index := 0; index < espia.items; index++ {
-		product := base
-		if espia.compact {
+	for indice := 0; indice < espia.elementos; indice++ {
+		producto := productoBase
+		if espia.compacto {
 			// El gate de OOM corre sobre tmpfs para evitar miles de fsync
 			// lentos en el volumen de Docker. Como tmpfs se cobra al cgroup,
 			// se usa un payload mínimo; el gate del host mantiene el payload
 			// realista.
-			product = domain.Product{Producto: fmt.Sprintf("p%d", index)}
+			producto = dominio.Product{Producto: fmt.Sprintf("p%d", indice)}
 		} else {
-			product.Producto = fmt.Sprintf("Producto de prueba con nombre largo %d", index)
-			product.SKU = domain.StringPtr(fmt.Sprintf("%013d", index))
-			product.EanGtin = domain.StringPtr(fmt.Sprintf("%013d", index))
-			product.URLProducto = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/p/producto-%d", index))
-			product.Imagen = domain.StringPtr(fmt.Sprintf("https://www.jumbo.cl/img/%d.jpg", index))
+			producto.Producto = fmt.Sprintf("Producto de prueba con nombre largo %d", indice)
+			producto.SKU = dominio.StringPtr(fmt.Sprintf("%013d", indice))
+			producto.EanGtin = dominio.StringPtr(fmt.Sprintf("%013d", indice))
+			producto.URLProducto = dominio.StringPtr(fmt.Sprintf("https://www.jumbo.cl/p/producto-%d", indice))
+			producto.Imagen = dominio.StringPtr(fmt.Sprintf("https://www.jumbo.cl/img/%d.jpg", indice))
 		}
-		if err := emit(domain.Item{Product: product, Supermercado: "Jumbo"}); err != nil {
-			return err
+		if errorEmision := emitir(dominio.Item{Product: producto, Supermercado: "Jumbo"}); errorEmision != nil {
+			return errorEmision
 		}
 	}
 	return nil
 }
 
-func peakRSSMB(prueba *testing.T) float64 {
+func picoRSSMB(prueba *testing.T) float64 {
 	prueba.Helper()
-	body, err := os.ReadFile("/proc/self/status")
-	if err != nil {
-		prueba.Fatalf("leer /proc/self/status: %v", err)
+	cuerpo, errorLectura := os.ReadFile("/proc/self/status")
+	if errorLectura != nil {
+		prueba.Fatalf("leer /proc/self/status: %v", errorLectura)
 	}
-	for _, line := range strings.Split(string(body), "\n") {
-		if !strings.HasPrefix(line, "VmHWM:") {
+	for _, linea := range strings.Split(string(cuerpo), "\n") {
+		if !strings.HasPrefix(linea, "VmHWM:") {
 			continue
 		}
-		fields := strings.Fields(line)
-		if len(fields) < 2 {
+		campos := strings.Fields(linea)
+		if len(campos) < 2 {
 			break
 		}
-		kilobytes, err := strconv.ParseFloat(fields[1], 64)
-		if err != nil {
-			prueba.Fatalf("parsear VmHWM: %v", err)
+		kilobytes, errorParseo := strconv.ParseFloat(campos[1], 64)
+		if errorParseo != nil {
+			prueba.Fatalf("parsear VmHWM: %v", errorParseo)
 		}
 		return kilobytes / 1024
 	}
@@ -383,31 +393,31 @@ func peakRSSMB(prueba *testing.T) float64 {
 	return 0
 }
 
-func envInt(name string, fallback int) int {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
+func leerEnteroEntorno(nombre string, predeterminado int) int {
+	crudo := strings.TrimSpace(os.Getenv(nombre))
+	if crudo == "" {
+		return predeterminado
 	}
-	value, err := strconv.Atoi(raw)
-	if err != nil {
-		return fallback
+	valor, errorParseo := strconv.Atoi(crudo)
+	if errorParseo != nil {
+		return predeterminado
 	}
-	return value
+	return valor
 }
 
-func envFloat(name string, fallback float64) float64 {
-	raw := strings.TrimSpace(os.Getenv(name))
-	if raw == "" {
-		return fallback
+func leerFlotanteEntorno(nombre string, predeterminado float64) float64 {
+	crudo := strings.TrimSpace(os.Getenv(nombre))
+	if crudo == "" {
+		return predeterminado
 	}
-	value, err := strconv.ParseFloat(raw, 64)
-	if err != nil {
-		return fallback
+	valor, errorParseo := strconv.ParseFloat(crudo, 64)
+	if errorParseo != nil {
+		return predeterminado
 	}
-	return value
+	return valor
 }
 
-func writeJSONResponse(respuesta http.ResponseWriter, payload any) {
+func escribirRespuestaJSON(respuesta http.ResponseWriter, carga any) {
 	respuesta.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(respuesta).Encode(payload)
+	_ = json.NewEncoder(respuesta).Encode(carga)
 }

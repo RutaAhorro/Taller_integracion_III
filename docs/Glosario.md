@@ -173,7 +173,7 @@
 | **FastAPI** | Framework web asíncrono de Python. | Motor de rutas e IA conversacional. |
 | **Pydantic** | Validación de datos con tipos en Python. | Modelos `ListaCrear`, `ListaActualizar`. |
 | **Scrapy** | Framework de web scraping en Python. | Scraper original; **retirado en #126**, reemplazado por el Scraper Go. |
-| **Spider** | Componente que recorre un sitio y extrae sus datos. | `backend/scraper_go/internal/spiders/*.go` (Jumbo, Líder, Santa Isabel, Acuenta, Cugat). |
+| **Spider** | Componente que recorre un sitio y extrae sus datos. | `backend/scraper_go/internal/extraccion/<cadena>.go` (Jumbo, Líder, Santa Isabel, Acuenta, Cugat). |
 | **SQLite** | Base de datos embebida en un archivo, sin servidor. | Spool persistente del Scraper Go. |
 | **Swagger / OpenAPI** | Especificación y documentación interactiva de una API. | `swag` en los servicios Go. |
 | **Mock** | Objeto falso que simula una dependencia en los tests. | `mockUsuarioRepository`, `mockScraperRepository`. |

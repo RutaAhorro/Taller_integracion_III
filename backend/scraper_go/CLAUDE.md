@@ -2,11 +2,13 @@
 
 - Worker actual de Compose (`scraper_worker`), Go, sin servidor HTTP público ni
   SQL PostgreSQL. Entradas `cmd/worker` y `cmd/extract`.
-- Leer `README.md` distinguiendo contratos útiles de instrucciones históricas de
-  cutover: Python ya fue retirado del código; no recrear sus carpetas/servicios.
-- `internal/worker`: orquestación; `queue`: Redis Streams y leases; `spool`:
-  SQLite durable; `crawler`: HTTP/robots/reintentos; `spiders`: cinco cadenas;
-  `normalize`: normalización; `controlscraping`: cliente HTTP; `storage`: retención.
+- `README.md` es la fuente única (configuración, contratos, operación y
+  pruebas). Python ya fue retirado; no recrear sus carpetas/servicios.
+- `internal/worker`: orquestación; `config`: variables de entorno y validación;
+  `dominio`: contratos (`Product`, `Item`, `Job`) y normalización/recorte;
+  `extraccion`: catálogo (`spiders.json`), crawler HTTP/robots/reintentos y
+  spiders de las cinco cadenas; `cola`: Redis Streams/leases, spool SQLite
+  durable, cliente HTTP a Control y retención de spools.
 - Streams `scraper:jobs:stream`, grupo `scraper-workers`; no LPUSH/BRPOP.
 - Enviar resultados a Control vía Gateway con `SCRAPING_SERVICE_TOKEN`;
   nunca recibir JWT_SECRET o token privado de Catálogo como sustituto.
@@ -23,8 +25,9 @@
 
 ## Índice breve generado
 
-38 archivos fuente, incluidos los de pruebas. Distribución:
-- `cmd`: 3 archivos.
-- `internal`: 35 archivos.
+40 archivos fuente, incluidos los de pruebas. Distribución:
+- `cmd`: 2 archivos.
+- `internal`: 17 archivos.
+- `tests`: 21 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

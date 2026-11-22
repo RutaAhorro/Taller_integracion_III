@@ -4,10 +4,10 @@ import { AlertTriangle, RefreshCw, Home } from 'lucide-react';
 import { logger } from '@/lib/logger';
 
 export function ErrorBoundary() {
-  const error = useRouteError() as any;
+  const errorObtenido = useRouteError() as any;
   
   // Registramos el error en el logger profesional
-  logger.error('Error atrapado por el router:', error);
+  logger.error('Error atrapado por el router:', errorObtenido);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
@@ -26,9 +26,9 @@ export function ErrorBoundary() {
             </p>
           </div>
 
-          {import.meta.env.DEV && error && (
+          {import.meta.env.DEV && errorObtenido && (
             <div className="text-left bg-muted p-4 rounded-lg overflow-auto max-h-32 text-xs font-mono text-muted-foreground border border-border">
-              {error.statusText || error.message || error.toString()}
+              {errorObtenido.statusText || errorObtenido.message || errorObtenido.toString()}
             </div>
           )}
 

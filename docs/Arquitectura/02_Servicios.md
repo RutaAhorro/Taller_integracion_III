@@ -55,7 +55,7 @@ Emite la cookie `jwt`. Los roles son `registrado`, `colaborador` y `admin`. El p
 Reemplaza al scraper Python desde #126:
 
 - Consume trabajos desde Redis Streams.
-- Extrae datos de Jumbo, Líder, Santa Isabel, Acuenta y Cugat (`internal/spiders/*.go`).
+- Extrae datos de Jumbo, Líder, Santa Isabel, Acuenta y Cugat (`internal/extraccion/<cadena>.go`).
 - Guarda los lotes y el progreso en un **spool SQLite**.
 - Envía los resultados por HTTP. No tiene acceso a PostgreSQL.
 

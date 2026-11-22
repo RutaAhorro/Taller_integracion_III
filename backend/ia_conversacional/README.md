@@ -5,10 +5,11 @@ pedidos de compra en lenguaje natural con un pipeline de tres etapas pensado
 para no inventar productos, precios ni stock.
 
 > [!IMPORTANT]
-> **Estado de despliegue:** el servicio existe en `docker-compose.yml` y el
-> Gateway enruta `/api/v1/chat` si se define `IA_URL`, pero **no figura como
-> servicio desplegado en el inventario del Sprint 2** y no tiene manifiestos en
-> `infrastructure/k8s/`. Que las pruebas pasen no acredita integración ni
+> **Estado de despliegue:** el servicio existe en `docker-compose.yml`, el
+> Gateway enruta `/api/v1/chat` si se define `IA_URL` (SUP-278) y el frontend
+> llama a `${VITE_API_URL}/chat` a través de Gateway (no existe
+> `VITE_IA_URL`), pero **no figura como servicio desplegado en el inventario
+> del Sprint 2** y no tiene manifiestos en `infrastructure/k8s/`. Que las pruebas pasen no acredita integración ni
 > despliegue.
 
 ## Pipeline

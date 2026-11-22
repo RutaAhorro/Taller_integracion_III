@@ -3,8 +3,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { ROUTES } from '@/core/routes';
+import { useAuth } from '@/features/autenticacion/useAuth';
+import { ROUTES } from '@/app/routes';
 import {
   ADMIN_HAS_BACKEND,
   adminPlanToBackend,
@@ -30,39 +30,39 @@ import {
   type AdminUser,
 } from './admin-types';
 
-const BACKEND_NOT_CONFIGURED = 'Administración no disponible: falta configurar VITE_API_URL.';
+const BACKEND_NO_CONFIGURADO = 'Administración no disponible: falta configurar VITE_API_URL.';
 
-export type ServiceState<T> = {
-  data: T | null;
+export type ServiceState<Datos> = {
+  data: Datos | null;
   error: string | null;
 };
 
-function toMessage(error: unknown): string {
-  if (error instanceof DOMException && error.name === 'AbortError') return 'Petición cancelada.';
-  return error instanceof Error ? error.message : 'Error de red.';
+function obtenerMensajeError(errorObtenido: unknown): string {
+  if (errorObtenido instanceof DOMException && errorObtenido.name === 'AbortError') return 'Petición cancelada.';
+  return errorObtenido instanceof Error ? errorObtenido.message : 'Error de red.';
 }
 
 // Mensaje fail-closed para 401/403: sin mocks; la sesión se cierra y se
 // vuelve a /login (SUP-256).
-function authBlockedMessage(feature: string, err: unknown): string {
-  return `Acceso denegado al cargar ${feature} (${toMessage(err)}). La sesión expiró o no tiene permisos; vuelve a iniciar sesión.`;
+function mensajeAccesoDenegado(recurso: string, errorObtenido: unknown): string {
+  return `Acceso denegado al cargar ${recurso} (${obtenerMensajeError(errorObtenido)}). La sesión expiró o no tiene permisos; vuelve a iniciar sesión.`;
 }
 
 // Expiración de sesión (SUP-256): ante un 401/403 se cierra la sesión local y
 // se redirige a /login. logout/navigate se leen desde un ref actualizado tras
 // cada actualización para no recrear las funciones de carga ni repetir las consultas.
-function useExpireSession(): () => void {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
-  const sessionRef = useRef({ logout, navigate });
+function usarExpirarSesion(): () => void {
+  const { logout: cerrarSesion } = useAuth();
+  const navegar = useNavigate();
+  const referenciaSesion = useRef({ cerrarSesion, navegar });
 
   useEffect(() => {
-    sessionRef.current = { logout, navigate };
+    referenciaSesion.current = { cerrarSesion, navegar };
   });
 
   return useCallback(() => {
-    void sessionRef.current.logout().then(() => {
-      sessionRef.current.navigate(ROUTES.LOGIN, { replace: true });
+    void referenciaSesion.current.cerrarSesion().then(() => {
+      referenciaSesion.current.navegar(ROUTES.LOGIN, { replace: true });
     });
   }, []);
 }
@@ -82,12 +82,12 @@ export type AdminUsersPagination = {
   totalPages: number;
 };
 
-function userMutationMessage(prefix: string, err: unknown): string {
-  if (isAdminApiError(err)) {
-    if (err.status === 409) return err.message;
-    return `${prefix} ${err.message}${err.detail ? ` (${err.detail})` : ''}`;
+function mensajeMutacionUsuario(prefijo: string, errorObtenido: unknown): string {
+  if (isAdminApiError(errorObtenido)) {
+    if (errorObtenido.status === 409) return errorObtenido.message;
+    return `${prefijo} ${errorObtenido.message}${errorObtenido.detail ? ` (${errorObtenido.detail})` : ''}`;
   }
-  return `${prefix} (${toMessage(err)})`;
+  return `${prefijo} (${obtenerMensajeError(errorObtenido)})`;
 }
 
 // El hook serializa las mutaciones: si llega otra mientras hay una en vuelo,
@@ -97,287 +97,304 @@ const MUTACION_EN_CURSO =
 const MUTACION_EN_CURSO_FUENTE =
   'Hay otra actualización en curso. Espera a que termine antes de modificar otra fuente.';
 
-export function useAdminUsers(params: AdminUsersParams = {}) {
-  const page = Math.max(1, params.page ?? 1);
-  const limit = params.limit ?? 20;
-  const busqueda = (params.q ?? '').trim();
-  const rolFiltro = params.rol && params.rol !== 'Todos' ? adminRoleToBackend(params.rol) : '';
+export function useAdminUsers(parametros: AdminUsersParams = {}) {
+  const pagina = Math.max(1, parametros.page ?? 1);
+  const limite = parametros.limit ?? 20;
+  const busqueda = (parametros.q ?? '').trim();
+  const rolFiltro = parametros.rol && parametros.rol !== 'Todos' ? adminRoleToBackend(parametros.rol) : '';
 
-  const [users, setUsers] = useState<AdminUser[]>([]);
-  const [pagination, setPagination] = useState<AdminUsersPagination>({ page, limit, total: 0, totalPages: 0 });
-  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
+  const [usuarios, setUsuarios] = useState<AdminUser[]>([]);
+  const [paginacion, setPaginacion] = useState<AdminUsersPagination>({ page: pagina, limit: limite, total: 0, totalPages: 0 });
+  const [cargando, setCargando] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const seq = useRef(0);
-  const pendingRef = useRef<string | null>(null);
-  const expireSession = useExpireSession();
+  const [idPendiente, setIdPendiente] = useState<string | null>(null);
+  const secuencia = useRef(0);
+  const referenciaPendiente = useRef<string | null>(null);
+  const expirarSesion = usarExpirarSesion();
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const cargar = useCallback(async (senal?: AbortSignal) => {
     // Un refresh durante una mutación podría devolver el estado anterior y
     // pisar la actualización optimista. La mutación invalida cualquier load.
-    if (pendingRef.current) return;
+    if (referenciaPendiente.current) return;
 
     if (!ADMIN_HAS_BACKEND) {
-      setUsers([]);
-      setPagination({ page, limit, total: 0, totalPages: 0 });
-      setIsLoading(false);
-      setError(BACKEND_NOT_CONFIGURED);
+      setUsuarios([]);
+      setPaginacion({ page: pagina, limit: limite, total: 0, totalPages: 0 });
+      setCargando(false);
+      setError(BACKEND_NO_CONFIGURADO);
       return;
     }
 
-    const current = ++seq.current;
-    setIsLoading(true);
+    const actual = ++secuencia.current;
+    setCargando(true);
     setError(null);
     try {
-      const result = await fetchAdminUsers({ page, limit, q: busqueda, rol: rolFiltro }, signal);
-      if (seq.current === current) {
-        setUsers(result.users);
-        setPagination({ page: result.page, limit: result.limit, total: result.total, totalPages: result.totalPages });
+      const resultado = await fetchAdminUsers({ page: pagina, limit: limite, q: busqueda, rol: rolFiltro }, senal);
+      if (secuencia.current === actual) {
+        setUsuarios(resultado.users);
+        setPaginacion({ page: resultado.page, limit: resultado.limit, total: resultado.total, totalPages: resultado.totalPages });
       }
-    } catch (err) {
-      if (signal?.aborted) return;
+    } catch (errorObtenido) {
+      if (senal?.aborted) return;
       // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks ni mantienen
       // datos previos operativos; se vacía, se cierra sesión y se va a /login.
-      if (seq.current === current) {
-        if (isAdminAuthError(err)) {
-          setUsers([]);
-          setError(authBlockedMessage('usuarios', err));
-          expireSession();
+      if (secuencia.current === actual) {
+        if (isAdminAuthError(errorObtenido)) {
+          setUsuarios([]);
+          setError(mensajeAccesoDenegado('usuarios', errorObtenido));
+          expirarSesion();
         } else {
-          setUsers([]);
-          setPagination({ page: 1, limit, total: 0, totalPages: 0 });
-          setError(`No se pudo cargar usuarios del backend. (${toMessage(err)})`);
+          setUsuarios([]);
+          setPaginacion({ page: 1, limit: limite, total: 0, totalPages: 0 });
+          setError(`No se pudo cargar usuarios del backend. (${obtenerMensajeError(errorObtenido)})`);
         }
       }
     } finally {
-      if (seq.current === current) setIsLoading(false);
+      if (secuencia.current === actual) setCargando(false);
     }
-  }, [expireSession, page, limit, busqueda, rolFiltro]);
+  }, [expirarSesion, pagina, limite, busqueda, rolFiltro]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    const controlador = new AbortController();
+    void cargar(controlador.signal);
+    return () => controlador.abort();
+  }, [cargar]);
 
-  const beginMutation = useCallback((id: string) => {
+  const iniciarMutacion = useCallback((id: string) => {
     // Invalida cualquier GET en vuelo y bloquea refresh hasta terminar.
-    seq.current += 1;
-    pendingRef.current = id;
-    setPendingId(id);
-    setIsLoading(false);
+    secuencia.current += 1;
+    referenciaPendiente.current = id;
+    setIdPendiente(id);
+    setCargando(false);
   }, []);
 
-  const endMutation = useCallback(() => {
-    pendingRef.current = null;
-    setPendingId(null);
+  const finalizarMutacion = useCallback(() => {
+    referenciaPendiente.current = null;
+    setIdPendiente(null);
   }, []);
 
   const aplicarActualizado = useCallback((id: string, actualizado: AdminUser) => {
     if (rolFiltro && (actualizado.role === 'Desconocido' || adminRoleToBackend(actualizado.role) !== rolFiltro)) {
-      setUsers((prev) => prev.filter((user) => user.id !== id));
-      setPagination((prev) => {
-        const total = Math.max(0, prev.total - 1);
-        return { ...prev, total, totalPages: total === 0 ? 0 : Math.ceil(total / prev.limit) };
+      setUsuarios((anteriores) => anteriores.filter((usuario) => usuario.id !== id));
+      setPaginacion((anterior) => {
+        const total = Math.max(0, anterior.total - 1);
+        return { ...anterior, total, totalPages: total === 0 ? 0 : Math.ceil(total / anterior.limit) };
       });
       return;
     }
-    setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+    setUsuarios((anteriores) => anteriores.map((usuario) => (usuario.id === id ? actualizado : usuario)));
   }, [rolFiltro]);
 
-  const toggleUserStatus = useCallback(async (id: string) => {
-    const target = users.find((user) => user.id === id);
-    if (!target) return;
+  const alternarEstadoUsuario = useCallback(async (id: string) => {
+    const objetivo = usuarios.find((usuario) => usuario.id === id);
+    if (!objetivo) return;
     if (!ADMIN_HAS_BACKEND || !isPersistableId(id)) {
-      setError(!ADMIN_HAS_BACKEND ? BACKEND_NOT_CONFIGURED : 'Identificador de usuario inválido.');
+      setError(!ADMIN_HAS_BACKEND ? BACKEND_NO_CONFIGURADO : 'Identificador de usuario inválido.');
       return;
     }
-    if (pendingRef.current) {
+    if (referenciaPendiente.current) {
       setError(MUTACION_EN_CURSO);
       return;
     }
-    const nextActive = target.status !== 'Activo';
-    beginMutation(id);
-    setUsers((prev) =>
-      prev.map((user): AdminUser => (user.id === id ? { ...user, status: nextActive ? 'Activo' : 'Inactivo' } : user)),
+    const siguienteActivo = objetivo.status !== 'Activo';
+    iniciarMutacion(id);
+    setUsuarios((anteriores) =>
+      anteriores.map((usuario): AdminUser => (usuario.id === id ? { ...usuario, status: siguienteActivo ? 'Activo' : 'Inactivo' } : usuario)),
     );
     // El cambio optimista solo se conserva si el backend confirma la escritura.
     try {
-      const actualizado = await updateAdminUser(id, { esta_activo: nextActive });
+      const actualizado = await updateAdminUser(id, { esta_activo: siguienteActivo });
       aplicarActualizado(id, actualizado);
       setError(null);
-    } catch (err) {
-      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-      if (isAdminAuthError(err)) {
-        setError(authBlockedMessage('el usuario', err));
-        expireSession();
+    } catch (errorObtenido) {
+      setUsuarios((anteriores) => anteriores.map((usuario): AdminUser => (usuario.id === id ? objetivo : usuario)));
+      if (isAdminAuthError(errorObtenido)) {
+        setError(mensajeAccesoDenegado('el usuario', errorObtenido));
+        expirarSesion();
       } else {
-        setError(userMutationMessage('No se pudo actualizar el usuario.', err));
+        setError(mensajeMutacionUsuario('No se pudo actualizar el usuario.', errorObtenido));
       }
     } finally {
-      endMutation();
+      finalizarMutacion();
     }
-  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
+  }, [usuarios, iniciarMutacion, finalizarMutacion, aplicarActualizado, expirarSesion]);
 
-  const changeUserRole = useCallback(async (id: string, role: AdminRole) => {
-    const target = users.find((user) => user.id === id);
-    if (!target || target.role === role) return;
+  const cambiarRolUsuario = useCallback(async (id: string, rol: AdminRole) => {
+    const objetivo = usuarios.find((usuario) => usuario.id === id);
+    if (!objetivo || objetivo.role === rol) return;
     if (!ADMIN_HAS_BACKEND || !isPersistableId(id)) {
-      setError(!ADMIN_HAS_BACKEND ? BACKEND_NOT_CONFIGURED : 'Identificador de usuario inválido.');
+      setError(!ADMIN_HAS_BACKEND ? BACKEND_NO_CONFIGURADO : 'Identificador de usuario inválido.');
       return;
     }
-    if (pendingRef.current) {
+    if (referenciaPendiente.current) {
       setError(MUTACION_EN_CURSO);
       return;
     }
-    beginMutation(id);
-    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, role } : user)));
+    iniciarMutacion(id);
+    setUsuarios((anteriores) => anteriores.map((usuario): AdminUser => (usuario.id === id ? { ...usuario, role: rol } : usuario)));
     try {
-      const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(role) });
+      const actualizado = await updateAdminUser(id, { rol: adminRoleToBackend(rol) });
       aplicarActualizado(id, actualizado);
       setError(null);
-    } catch (err) {
-      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-      if (isAdminAuthError(err)) {
-        setError(authBlockedMessage('el rol', err));
-        expireSession();
+    } catch (errorObtenido) {
+      setUsuarios((anteriores) => anteriores.map((usuario): AdminUser => (usuario.id === id ? objetivo : usuario)));
+      if (isAdminAuthError(errorObtenido)) {
+        setError(mensajeAccesoDenegado('el rol', errorObtenido));
+        expirarSesion();
       } else {
-        setError(userMutationMessage('No se pudo asignar el rol.', err));
+        setError(mensajeMutacionUsuario('No se pudo asignar el rol.', errorObtenido));
       }
     } finally {
-      endMutation();
+      finalizarMutacion();
     }
-  }, [users, beginMutation, endMutation, aplicarActualizado, expireSession]);
+  }, [usuarios, iniciarMutacion, finalizarMutacion, aplicarActualizado, expirarSesion]);
 
-  const changeUserPlan = useCallback(async (id: string, plan: AdminPlan) => {
-    const target = users.find((user) => user.id === id);
-    if (!target || target.plan === plan) return;
+  const cambiarPlanUsuario = useCallback(async (id: string, plan: AdminPlan) => {
+    const objetivo = usuarios.find((usuario) => usuario.id === id);
+    if (!objetivo || objetivo.plan === plan) return;
     if (!ADMIN_HAS_BACKEND || !isPersistableId(id)) {
-      setError(!ADMIN_HAS_BACKEND ? BACKEND_NOT_CONFIGURED : 'Identificador de usuario inválido.');
+      setError(!ADMIN_HAS_BACKEND ? BACKEND_NO_CONFIGURADO : 'Identificador de usuario inválido.');
       return;
     }
-    if (pendingRef.current) {
+    if (referenciaPendiente.current) {
       setError(MUTACION_EN_CURSO);
       return;
     }
-    beginMutation(id);
-    setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? { ...user, plan } : user)));
+    iniciarMutacion(id);
+    setUsuarios((anteriores) => anteriores.map((usuario): AdminUser => (usuario.id === id ? { ...usuario, plan } : usuario)));
     try {
       const actualizado = await updateAdminUser(id, { plan: adminPlanToBackend(plan) });
-      setUsers((prev) => prev.map((user) => (user.id === id ? actualizado : user)));
+      setUsuarios((anteriores) => anteriores.map((usuario) => (usuario.id === id ? actualizado : usuario)));
       setError(null);
-    } catch (err) {
-      setUsers((prev) => prev.map((user): AdminUser => (user.id === id ? target : user)));
-      if (isAdminAuthError(err)) {
-        setError(authBlockedMessage('el plan', err));
-        expireSession();
+    } catch (errorObtenido) {
+      setUsuarios((anteriores) => anteriores.map((usuario): AdminUser => (usuario.id === id ? objetivo : usuario)));
+      if (isAdminAuthError(errorObtenido)) {
+        setError(mensajeAccesoDenegado('el plan', errorObtenido));
+        expirarSesion();
       } else {
-        setError(userMutationMessage('No se pudo asignar el plan.', err));
+        setError(mensajeMutacionUsuario('No se pudo asignar el plan.', errorObtenido));
       }
     } finally {
-      endMutation();
+      finalizarMutacion();
     }
-  }, [users, beginMutation, endMutation, expireSession]);
+  }, [usuarios, iniciarMutacion, finalizarMutacion, expirarSesion]);
 
-  const refresh = useCallback(() => {
-    if (!pendingRef.current) void load();
-  }, [load]);
+  const recargar = useCallback(() => {
+    if (!referenciaPendiente.current) void cargar();
+  }, [cargar]);
 
-  return { users, pagination, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan };
+  return {
+    users: usuarios,
+    pagination: paginacion,
+    isLoading: cargando,
+    error,
+    pendingId: idPendiente,
+    refresh: recargar,
+    toggleUserStatus: alternarEstadoUsuario,
+    changeUserRole: cambiarRolUsuario,
+    changeUserPlan: cambiarPlanUsuario,
+  };
 }
 
 // --- Fuentes (SUP-243: listar + habilitar/deshabilitar) ---
 export function useAdminSources() {
-  const [sources, setSources] = useState<AdminSource[]>([]);
-  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
+  const [fuentes, setFuentes] = useState<AdminSource[]>([]);
+  const [cargando, setCargando] = useState(ADMIN_HAS_BACKEND);
   const [error, setError] = useState<string | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const seq = useRef(0);
-  const pendingRef = useRef<string | null>(null);
-  const expireSession = useExpireSession();
+  const [idPendiente, setIdPendiente] = useState<string | null>(null);
+  const secuencia = useRef(0);
+  const referenciaPendiente = useRef<string | null>(null);
+  const expirarSesion = usarExpirarSesion();
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    if (pendingRef.current) return;
+  const cargar = useCallback(async (senal?: AbortSignal) => {
+    if (referenciaPendiente.current) return;
     if (!ADMIN_HAS_BACKEND) {
-      setSources([]);
-      setIsLoading(false);
-      setError(BACKEND_NOT_CONFIGURED);
+      setFuentes([]);
+      setCargando(false);
+      setError(BACKEND_NO_CONFIGURADO);
       return;
     }
-    const current = ++seq.current;
-    setIsLoading(true);
+    const actual = ++secuencia.current;
+    setCargando(true);
     setError(null);
     try {
-      const data = await fetchAdminSources(signal);
-      if (seq.current === current) setSources(data);
-    } catch (err) {
-      if (signal?.aborted) return;
-      if (seq.current === current) {
+      const datos = await fetchAdminSources(senal);
+      if (secuencia.current === actual) setFuentes(datos);
+    } catch (errorObtenido) {
+      if (senal?.aborted) return;
+      if (secuencia.current === actual) {
         // Auditoría H-03 (fail-closed): 401/403 no inyectan mocks; se cierra
         // sesión y se vuelve a /login.
-        if (isAdminAuthError(err)) {
-          setSources([]);
-          setError(authBlockedMessage('fuentes', err));
-          expireSession();
+        if (isAdminAuthError(errorObtenido)) {
+          setFuentes([]);
+          setError(mensajeAccesoDenegado('fuentes', errorObtenido));
+          expirarSesion();
         } else {
-          setSources([]);
-          setError(`No se pudo cargar fuentes del backend. (${toMessage(err)})`);
+          setFuentes([]);
+          setError(`No se pudo cargar fuentes del backend. (${obtenerMensajeError(errorObtenido)})`);
         }
       }
     } finally {
-      if (seq.current === current) setIsLoading(false);
+      if (secuencia.current === actual) setCargando(false);
     }
-  }, [expireSession]);
+  }, [expirarSesion]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    const controlador = new AbortController();
+    void cargar(controlador.signal);
+    return () => controlador.abort();
+  }, [cargar]);
 
-  const toggleSource = useCallback(async (id: string) => {
-    const target = sources.find((source) => source.id === id);
-    if (!target) return;
+  const alternarFuente = useCallback(async (id: string) => {
+    const objetivo = fuentes.find((fuente) => fuente.id === id);
+    if (!objetivo) return;
     if (!ADMIN_HAS_BACKEND) {
-      setError(BACKEND_NOT_CONFIGURED);
+      setError(BACKEND_NO_CONFIGURADO);
       return;
     }
-    if (pendingRef.current) {
+    if (referenciaPendiente.current) {
       setError(MUTACION_EN_CURSO_FUENTE);
       return;
     }
-    const habilitada = !target.habilitada;
+    const habilitada = !objetivo.habilitada;
     // Invalida lecturas previas y bloquea cambios simultáneos hasta confirmar el PUT.
-    seq.current += 1;
-    pendingRef.current = id;
-    setPendingId(id);
-    setIsLoading(false);
-    setSources((prev) =>
-      prev.map((source): AdminSource => (
-        source.id === id
-          ? { ...source, habilitada, status: habilitada ? (source.status === 'Inactiva' ? 'Operativa' : source.status) : 'Inactiva' }
-          : source
+    secuencia.current += 1;
+    referenciaPendiente.current = id;
+    setIdPendiente(id);
+    setCargando(false);
+    setFuentes((anteriores) =>
+      anteriores.map((fuente): AdminSource => (
+        fuente.id === id
+          ? { ...fuente, habilitada, status: habilitada ? (fuente.status === 'Inactiva' ? 'Operativa' : fuente.status) : 'Inactiva' }
+          : fuente
       )),
     );
     try {
       const actualizada = await updateAdminSource(id, { habilitada });
-      setSources((prev) => prev.map((source) => (source.id === id ? actualizada : source)));
+      setFuentes((anteriores) => anteriores.map((fuente) => (fuente.id === id ? actualizada : fuente)));
       setError(null);
-    } catch (err) {
-      setSources((prev) => prev.map((source) => (source.id === id ? target : source)));
-      if (isAdminAuthError(err)) {
-        setError(authBlockedMessage('la fuente', err));
-        expireSession();
+    } catch (errorObtenido) {
+      setFuentes((anteriores) => anteriores.map((fuente) => (fuente.id === id ? objetivo : fuente)));
+      if (isAdminAuthError(errorObtenido)) {
+        setError(mensajeAccesoDenegado('la fuente', errorObtenido));
+        expirarSesion();
       } else {
-        setError(`No se pudo actualizar la fuente. (${toMessage(err)})`);
+        setError(`No se pudo actualizar la fuente. (${obtenerMensajeError(errorObtenido)})`);
       }
     } finally {
-      pendingRef.current = null;
-      setPendingId(null);
+      referenciaPendiente.current = null;
+      setIdPendiente(null);
     }
-  }, [sources, expireSession]);
+  }, [fuentes, expirarSesion]);
 
-  return { sources, isLoading, error, pendingId, refresh: () => { void load(); }, toggleSource };
+  return {
+    sources: fuentes,
+    isLoading: cargando,
+    error,
+    pendingId: idPendiente,
+    refresh: () => { void cargar(); },
+    toggleSource: alternarFuente,
+  };
 }
 
 // --- Métricas por servicio (SUP-279 -> SUP-280) ---
@@ -399,61 +416,61 @@ export function useAdminMetrics(): AdminMetricsState {
   const [control, setControl] = useState<ServiceState<ControlMetrics>>(
     { data: null, error: null },
   );
-  const [isLoading, setIsLoading] = useState(ADMIN_HAS_BACKEND);
-  const seq = useRef(0);
-  const expireSession = useExpireSession();
+  const [cargando, setCargando] = useState(ADMIN_HAS_BACKEND);
+  const secuencia = useRef(0);
+  const expirarSesion = usarExpirarSesion();
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const cargar = useCallback(async (senal?: AbortSignal) => {
     if (!ADMIN_HAS_BACKEND) {
-      setIdentidad({ data: null, error: BACKEND_NOT_CONFIGURED });
-      setCatalogo({ data: null, error: BACKEND_NOT_CONFIGURED });
-      setControl({ data: null, error: BACKEND_NOT_CONFIGURED });
-      setIsLoading(false);
+      setIdentidad({ data: null, error: BACKEND_NO_CONFIGURADO });
+      setCatalogo({ data: null, error: BACKEND_NO_CONFIGURADO });
+      setControl({ data: null, error: BACKEND_NO_CONFIGURADO });
+      setCargando(false);
       return;
     }
-    const current = ++seq.current;
-    setIsLoading(true);
+    const actual = ++secuencia.current;
+    setCargando(true);
     try {
       // Tres llamadas en paralelo; el fallo de una no rompe las otras (SUP-280).
       // Auditoría H-08: try/finally para no congelar isLoading ante abort/carrera.
-      const [identidadRes, catalogoRes, controlRes] = await Promise.allSettled([
-        fetchIdentidadMetrics(signal),
-        fetchCatalogoMetrics(signal),
-        fetchControlMetrics(signal),
+      const [respuestaIdentidad, respuestaCatalogo, respuestaControl] = await Promise.allSettled([
+        fetchIdentidadMetrics(senal),
+        fetchCatalogoMetrics(senal),
+        fetchControlMetrics(senal),
       ]);
-      if (seq.current !== current || signal?.aborted) return;
+      if (secuencia.current !== actual || senal?.aborted) return;
       setIdentidad(
-        identidadRes.status === 'fulfilled'
-          ? { data: identidadRes.value, error: null }
+        respuestaIdentidad.status === 'fulfilled'
+          ? { data: respuestaIdentidad.value, error: null }
           // H-03: 401/403 sin mocks (fail-closed); resto con tarjeta "sin datos".
-          : { data: null, error: isAdminAuthError(identidadRes.reason) ? authBlockedMessage('métricas de identidad', identidadRes.reason) : toMessage(identidadRes.reason) },
+          : { data: null, error: isAdminAuthError(respuestaIdentidad.reason) ? mensajeAccesoDenegado('métricas de identidad', respuestaIdentidad.reason) : obtenerMensajeError(respuestaIdentidad.reason) },
       );
       setCatalogo(
-        catalogoRes.status === 'fulfilled'
-          ? { data: catalogoRes.value, error: null }
-          : { data: null, error: isAdminAuthError(catalogoRes.reason) ? authBlockedMessage('métricas de catálogo', catalogoRes.reason) : toMessage(catalogoRes.reason) },
+        respuestaCatalogo.status === 'fulfilled'
+          ? { data: respuestaCatalogo.value, error: null }
+          : { data: null, error: isAdminAuthError(respuestaCatalogo.reason) ? mensajeAccesoDenegado('métricas de catálogo', respuestaCatalogo.reason) : obtenerMensajeError(respuestaCatalogo.reason) },
       );
       setControl(
-        controlRes.status === 'fulfilled'
-          ? { data: controlRes.value, error: null }
-          : { data: null, error: isAdminAuthError(controlRes.reason) ? authBlockedMessage('métricas de control', controlRes.reason) : toMessage(controlRes.reason) },
+        respuestaControl.status === 'fulfilled'
+          ? { data: respuestaControl.value, error: null }
+          : { data: null, error: isAdminAuthError(respuestaControl.reason) ? mensajeAccesoDenegado('métricas de control', respuestaControl.reason) : obtenerMensajeError(respuestaControl.reason) },
       );
       // SUP-256: si alguna llamada respondió 401/403, se cierra la sesión y se
       // vuelve a /login (fail-closed) en vez de quedar en estado degradado.
-      const authExpired = [identidadRes, catalogoRes, controlRes].some(
-        (result) => result.status === 'rejected' && isAdminAuthError(result.reason),
+      const sesionExpirada = [respuestaIdentidad, respuestaCatalogo, respuestaControl].some(
+        (resultado) => resultado.status === 'rejected' && isAdminAuthError(resultado.reason),
       );
-      if (authExpired) expireSession();
+      if (sesionExpirada) expirarSesion();
     } finally {
-      if (seq.current === current) setIsLoading(false);
+      if (secuencia.current === actual) setCargando(false);
     }
-  }, [expireSession]);
+  }, [expirarSesion]);
 
   useEffect(() => {
-    const controller = new AbortController();
-    void load(controller.signal);
-    return () => controller.abort();
-  }, [load]);
+    const controlador = new AbortController();
+    void cargar(controlador.signal);
+    return () => controlador.abort();
+  }, [cargar]);
 
-  return { identidad, catalogo, control, isLoading, refresh: () => { void load(); } };
+  return { identidad, catalogo, control, isLoading: cargando, refresh: () => { void cargar(); } };
 }
