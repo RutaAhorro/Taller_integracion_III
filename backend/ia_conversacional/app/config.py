@@ -200,40 +200,37 @@ def _validar_origenes_cors() -> None:
 
 def _validar_limites_numericos() -> None:
     """Exige que timeouts y límites sean positivos, y que caché, reintentos y jitter no sean negativos."""
-    # Se leen del módulo en cada llamada para que las pruebas puedan sustituirlos con monkeypatch.
-    valores = globals()
+    # Pares (nombre, valor) con referencias directas: un renombre lo detecta el linter. Se arman en
+    # cada llamada para que las pruebas puedan sustituir los valores con monkeypatch.
     estrictamente_positivos = (
-        "CATALOGO_TIMEOUT",
-        "CATALOGO_PAGE_LIMIT",
-        "CATALOGO_MAX_PAGINAS",
-        "GROQ_TIMEOUT",
-        "GROQ_MAX_TOKENS_EXTRACCION",
-        "GROQ_MAX_TOKENS_EXPLICACION",
-        "GEMINI_TIMEOUT",
-        "GEMINI_MAX_TOKENS_EXTRACCION",
-        "GEMINI_MAX_TOKENS_EXPLICACION",
-        "FALLBACK_BACKOFF_BASE",
-        "CHAT_MAX_MENSAJE_LEN",
-        "EXPLICACION_MAX_PRODUCTOS",
+        ("CATALOGO_TIMEOUT", CATALOGO_TIMEOUT),
+        ("CATALOGO_PAGE_LIMIT", CATALOGO_PAGE_LIMIT),
+        ("CATALOGO_MAX_PAGINAS", CATALOGO_MAX_PAGINAS),
+        ("GROQ_TIMEOUT", GROQ_TIMEOUT),
+        ("GROQ_MAX_TOKENS_EXTRACCION", GROQ_MAX_TOKENS_EXTRACCION),
+        ("GROQ_MAX_TOKENS_EXPLICACION", GROQ_MAX_TOKENS_EXPLICACION),
+        ("GEMINI_TIMEOUT", GEMINI_TIMEOUT),
+        ("GEMINI_MAX_TOKENS_EXTRACCION", GEMINI_MAX_TOKENS_EXTRACCION),
+        ("GEMINI_MAX_TOKENS_EXPLICACION", GEMINI_MAX_TOKENS_EXPLICACION),
+        ("FALLBACK_BACKOFF_BASE", FALLBACK_BACKOFF_BASE),
+        ("CHAT_MAX_MENSAJE_LEN", CHAT_MAX_MENSAJE_LEN),
+        ("EXPLICACION_MAX_PRODUCTOS", EXPLICACION_MAX_PRODUCTOS),
+        # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
+        ("IA_CHAT_RATE_LIMIT_SOLICITUDES", CHAT_RATE_LIMIT_SOLICITUDES),
+        ("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", CHAT_RATE_LIMIT_VENTANA_SEGUNDOS),
     )
-    for nombre in estrictamente_positivos:
-        if valores[nombre] <= 0:
+    for nombre, valor in estrictamente_positivos:
+        if valor <= 0:
             raise RuntimeError(f"{nombre} debe ser mayor a 0.")
 
-    # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
-    if CHAT_RATE_LIMIT_SOLICITUDES <= 0:
-        raise RuntimeError("IA_CHAT_RATE_LIMIT_SOLICITUDES debe ser mayor a 0.")
-    if CHAT_RATE_LIMIT_VENTANA_SEGUNDOS <= 0:
-        raise RuntimeError("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS debe ser mayor a 0.")
-
     no_negativos = (
-        "CATALOGO_CACHE_TTL",
-        "FALLBACK_RETRIES_PRIMARIO",
-        "FALLBACK_RETRIES_SECUNDARIO",
-        "FALLBACK_JITTER_MAX",
+        ("CATALOGO_CACHE_TTL", CATALOGO_CACHE_TTL),
+        ("FALLBACK_RETRIES_PRIMARIO", FALLBACK_RETRIES_PRIMARIO),
+        ("FALLBACK_RETRIES_SECUNDARIO", FALLBACK_RETRIES_SECUNDARIO),
+        ("FALLBACK_JITTER_MAX", FALLBACK_JITTER_MAX),
     )
-    for nombre in no_negativos:
-        if valores[nombre] < 0:
+    for nombre, valor in no_negativos:
+        if valor < 0:
             raise RuntimeError(f"{nombre} debe ser mayor o igual a 0.")
 
 

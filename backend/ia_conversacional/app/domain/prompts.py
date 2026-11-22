@@ -93,9 +93,6 @@ DECLARACION_FUNCION_FILTROS = {
     },
 }
 
-# Groq (API compatible con OpenAI) envuelve la misma declaración.
-HERRAMIENTA_FILTROS_OPENAI = {"type": "function", "function": DECLARACION_FUNCION_FILTROS}
-
 
 # ===== Prompt de explicación (etapa 3) =====
 
