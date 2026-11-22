@@ -1,92 +1,144 @@
+// Package config lee y valida una sola vez el entorno de Identidad y fija sus
+// plazos y límites. Ningún otro paquete consulta variables de entorno: reciben
+// la configuración inyectada al arrancar.
 package config
 
 import (
 	"errors"
-	"github.com/jackc/pgx/v5"
-	"github.com/redis/go-redis/v9"
 	"net/netip"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/redis/go-redis/v9"
 )
 
-type Config struct {
-	ListenAddr, DatabaseURL, RedisURL, JWTSecret string
-	CookieSecure                                 bool
-	AllowedOrigins                               []string
-	TrustedProxies                               []string
-	Correo                                       Correo
-	// URLRestablecer es la página del frontend que recibe ?token= (SUP-184). Vacía apaga la recuperación.
-	URLRestablecer string
+// ===== Configuración del servicio =====
+
+// Configuracion es la instantánea validada del entorno que el arranque inyecta en
+// cada componente.
+type Configuracion struct {
+	DireccionEscucha, URLBaseDatos, URLRedis, ClaveJWT string
+	ClienteGoogle                                      string
+	Ajustes                                            Ajustes
+	CookieSegura                                       bool
+	OrigenesPermitidos                                 []string
+	ProxiesConfiables                                  []string
 }
 
-func Load() (Config, error) {
-	c := Config{DatabaseURL: os.Getenv("IDENTITY_DB_URL"), RedisURL: os.Getenv("REDIS_URL"), JWTSecret: os.Getenv("JWT_SECRET"), CookieSecure: true}
-	dsn, err := pgx.ParseConfig(c.DatabaseURL)
-	if c.DatabaseURL == "" || err != nil || dsn.User != "app_identity" || dsn.Database == "" || dsn.Password == "" {
-		return Config{}, errors.New("IDENTITY_DB_URL requiere rol app_identity, base y contraseña explícitos")
+// Cargar lee y valida el entorno. Falla al arrancar ante cualquier valor
+// inválido, sin reproducir secretos en el mensaje de error.
+func Cargar() (Configuracion, error) {
+	configuracion := Configuracion{URLBaseDatos: os.Getenv("IDENTITY_DB_URL"), URLRedis: os.Getenv("REDIS_URL"), ClaveJWT: os.Getenv("JWT_SECRET"), CookieSegura: true}
+	dsn, errorOperacion := pgx.ParseConfig(configuracion.URLBaseDatos)
+	if configuracion.URLBaseDatos == "" || errorOperacion != nil || dsn.User != "app_identity" || dsn.Database == "" || dsn.Password == "" {
+		return Configuracion{}, errors.New("IDENTITY_DB_URL requiere rol app_identity, base y contraseña explícitos")
 	}
-	if len(c.JWTSecret) < 32 || strings.TrimSpace(c.JWTSecret) != c.JWTSecret {
-		return Config{}, errors.New("JWT_SECRET requiere al menos 32 bytes y no admite espacios externos")
+	if len(configuracion.ClaveJWT) < 32 || strings.TrimSpace(configuracion.ClaveJWT) != configuracion.ClaveJWT {
+		return Configuracion{}, errors.New("JWT_SECRET requiere al menos 32 bytes y no admite espacios externos")
 	}
-	if c.RedisURL == "" {
-		return Config{}, errors.New("REDIS_URL es obligatorio para limitar login")
+	if configuracion.URLRedis == "" {
+		return Configuracion{}, errors.New("REDIS_URL es obligatorio para limitar login")
 	}
-	if _, err := redis.ParseURL(c.RedisURL); err != nil {
-		return Config{}, errors.New("REDIS_URL inválido")
+	if _, errorObtenido := redis.ParseURL(configuracion.URLRedis); errorObtenido != nil {
+		return Configuracion{}, errors.New("REDIS_URL inválido")
 	}
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	puerto := os.Getenv("PORT")
+	if puerto == "" {
+		puerto = "8080"
 	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
-		return Config{}, errors.New("PORT debe estar entre 1 y 65535")
+	numeroPuerto, errorOperacion := strconv.Atoi(puerto)
+	if errorOperacion != nil || numeroPuerto < 1 || numeroPuerto > 65535 {
+		return Configuracion{}, errors.New("PORT debe estar entre 1 y 65535")
 	}
-	c.ListenAddr = ":" + strconv.Itoa(n)
-	if raw := os.Getenv("IDENTIDAD_COOKIE_SECURE"); raw != "" {
-		c.CookieSecure, err = strconv.ParseBool(raw)
-		if err != nil {
-			return Config{}, errors.New("IDENTIDAD_COOKIE_SECURE debe ser booleano")
+	configuracion.DireccionEscucha = ":" + strconv.Itoa(numeroPuerto)
+	if texto := os.Getenv("IDENTIDAD_COOKIE_SECURE"); texto != "" {
+		configuracion.CookieSegura, errorOperacion = strconv.ParseBool(texto)
+		if errorOperacion != nil {
+			return Configuracion{}, errors.New("IDENTIDAD_COOKIE_SECURE debe ser booleano")
 		}
 	}
-	if raw := os.Getenv("CORS_ALLOWED_ORIGINS"); raw != "" {
-		for _, entry := range strings.Split(raw, ",") {
-			origin := strings.TrimSpace(entry)
-			u, err := url.Parse(origin)
-			if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(origin, "*?#\\ \t\r\n") {
-				return Config{}, errors.New("CORS_ALLOWED_ORIGINS requiere orígenes HTTP(S) exactos")
+	if texto := os.Getenv("CORS_ALLOWED_ORIGINS"); texto != "" {
+		for _, entrada := range strings.Split(texto, ",") {
+			origen := strings.TrimSpace(entrada)
+			origenAnalizado, errorObtenido := url.Parse(origen)
+			if errorObtenido != nil || origenAnalizado.Hostname() == "" || (origenAnalizado.Scheme != "http" && origenAnalizado.Scheme != "https") || origenAnalizado.User != nil || origenAnalizado.Path != "" || origenAnalizado.RawQuery != "" || origenAnalizado.ForceQuery || origenAnalizado.Fragment != "" || strings.ContainsAny(origen, "*?#\\ \t\r\n") {
+				return Configuracion{}, errors.New("CORS_ALLOWED_ORIGINS requiere orígenes HTTP(S) exactos")
 			}
-			c.AllowedOrigins = append(c.AllowedOrigins, origin)
+			configuracion.OrigenesPermitidos = append(configuracion.OrigenesPermitidos, origen)
 		}
 	}
-	if raw := os.Getenv("IDENTIDAD_TRUSTED_PROXIES"); raw != "" {
-		for _, entry := range strings.Split(raw, ",") {
-			entry = strings.TrimSpace(entry)
-			if prefix, err := netip.ParsePrefix(entry); err == nil && prefix.Bits() == 0 {
-				return Config{}, errors.New("IDENTIDAD_TRUSTED_PROXIES no puede confiar en todas las IPs")
+	if texto := os.Getenv("IDENTIDAD_TRUSTED_PROXIES"); texto != "" {
+		for _, entrada := range strings.Split(texto, ",") {
+			entrada = strings.TrimSpace(entrada)
+			if prefijo, errorObtenido := netip.ParsePrefix(entrada); errorObtenido == nil && prefijo.Bits() == 0 {
+				return Configuracion{}, errors.New("IDENTIDAD_TRUSTED_PROXIES no puede confiar en todas las IPs")
 			}
-			if _, err := netip.ParsePrefix(entry); err != nil {
-				if _, err := netip.ParseAddr(entry); err != nil {
-					return Config{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere IPs o CIDRs explícitos")
+			if _, errorInterno := netip.ParsePrefix(entrada); errorInterno != nil {
+				if _, errorObtenido := netip.ParseAddr(entrada); errorObtenido != nil {
+					return Configuracion{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere IPs o CIDRs explícitos")
 				}
 			}
-			c.TrustedProxies = append(c.TrustedProxies, entry)
+			configuracion.ProxiesConfiables = append(configuracion.ProxiesConfiables, entrada)
 		}
 	}
-	if len(c.TrustedProxies) == 0 {
-		return Config{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere los proxies Gateway reales antes del corte")
+	if len(configuracion.ProxiesConfiables) == 0 {
+		return Configuracion{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere los proxies Gateway reales antes del corte")
 	}
-	if c.Correo, err = LoadCorreo(); err != nil {
-		return Config{}, err
+	configuracion.ClienteGoogle = os.Getenv("GOOGLE_CLIENT_ID")
+	configuracion.Ajustes = AjustesPredeterminados()
+	return configuracion, nil
+}
+
+// ===== Plazos y límites fijos =====
+
+// DuracionSesion es parte del contrato compartido: JWT y cookie duran lo mismo.
+const DuracionSesion = 24 * time.Hour
+
+// Ajustes reúne límites y plazos locales; no contiene credenciales.
+type Ajustes struct {
+	PlazoInicio, PlazoApagado, PlazoRedis                                                        time.Duration
+	PlazoCabeceras, PlazoLectura, PlazoEscritura, PlazoInactividad                               time.Duration
+	PlazoPeticion, PlazoReadiness, VidaMaximaConexion, PlazoGoogle                               time.Duration
+	PlazoContador, VentanaContador                                                               time.Duration
+	MaximoBytesCabeceras, MaximoBytesCuerpo, MaximoConexionesAbiertas, MaximoConexionesInactivas int
+	MaximoLogin, MaximoRegistro, MaximoGoogle                                                    int
+}
+
+// AjustesPredeterminados son los valores con que corre el servicio.
+func AjustesPredeterminados() Ajustes {
+	return Ajustes{
+		// Arranque y apagado del proceso.
+		PlazoInicio:  5 * time.Second,
+		PlazoApagado: 15 * time.Second,
+
+		// Servidor HTTP y presupuesto de cada petición.
+		PlazoCabeceras:       5 * time.Second,
+		PlazoLectura:         15 * time.Second,
+		PlazoEscritura:       20 * time.Second,
+		PlazoInactividad:     time.Minute,
+		PlazoPeticion:        10 * time.Second,
+		MaximoBytesCabeceras: 64 * 1024,
+		MaximoBytesCuerpo:    64 * 1024,
+
+		// Dependencias: Redis, sonda de readiness y validación de Google.
+		PlazoRedis:     time.Second,
+		PlazoReadiness: 2 * time.Second,
+		PlazoGoogle:    5 * time.Second,
+
+		// Pool de PostgreSQL por réplica.
+		MaximoConexionesAbiertas:  5,
+		MaximoConexionesInactivas: 2,
+		VidaMaximaConexion:        30 * time.Minute,
+
+		// Contadores por IP: login cuenta fallos; registro y Google, todo.
+		PlazoContador:   time.Second,
+		VentanaContador: 15 * time.Minute,
+		MaximoLogin:     5,
+		MaximoRegistro:  30,
+		MaximoGoogle:    30,
 	}
-	if raw := strings.TrimSpace(os.Getenv("IDENTIDAD_URL_RESTABLECER")); raw != "" {
-		u, err := url.Parse(raw)
-		if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.ContainsAny(raw, "?# \t\r\n") {
-			return Config{}, errors.New("IDENTIDAD_URL_RESTABLECER requiere una URL HTTP(S) absoluta sin query ni fragmento")
-		}
-		c.URLRestablecer = raw
-	}
-	return c, nil
 }

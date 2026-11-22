@@ -6,7 +6,8 @@ SET LOCAL lock_timeout = '5s';
 SET LOCAL statement_timeout = '60s';
 
 -- El alias "administrador" deja de existir como valor de negocio: se persiste
--- siempre como "admin". El código también lo normaliza al leer datos históricos.
+-- siempre como "admin". Desde 10_restringir_rol_usuarios.sql la base rechaza
+-- cualquier rol fuera de admin, colaborador y registrado.
 UPDATE api.usuarios
 SET rol = 'admin'
 WHERE LOWER(TRIM(rol)) = 'administrador'
