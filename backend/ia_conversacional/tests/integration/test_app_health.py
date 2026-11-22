@@ -8,8 +8,8 @@ Verifica:
 4. El ciclo lifespan inicializa la aplicación correctamente cuando JWT_SECRET es válido.
 """
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from app import config
 from app.main import app
@@ -57,8 +57,8 @@ def test_lifespan_arranca_exitosamente_si_configuracion_valida(monkeypatch):
 
 
 def test_repositorio_productos_modulo_main_no_autocarga_en_import(monkeypatch):
-    """Verifica que repositorio_productos en app.main se configure con auto_cargar=False."""
+    """Verifica que importar app.main no llame a Catálogo: la carga espera al ciclo de vida."""
     from app.main import repositorio_productos
+
     assert hasattr(repositorio_productos, "cargar_productos")
-    # Al estar configurado con auto_cargar=False, el repositorio espera al lifespan para cargar
-    assert repositorio_productos._page_limit == config.CATALOGO_PAGE_LIMIT
+    assert repositorio_productos._limite_pagina == config.CATALOGO_PAGE_LIMIT

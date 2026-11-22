@@ -19,7 +19,7 @@ se cumple hoy.
 | ID | Requisito | Condición | Cómo se cumple hoy |
 | --- | --- | --- | --- |
 | RNF-05 | Límite de acción de la IA | La IA nunca modifica, infiere ni altera precios ni disponibilidad | Patrón anti-alucinación de las [reglas de negocio](Reglas_de_Negocio.md). *Cambio:* la versión original limitaba la IA a normalizar nombres; hoy también extrae filtros y redacta recetas, siempre sobre datos validados |
-| RNF-06 | Resiliencia de servicios externos | Si la IA o un servicio externo rechaza peticiones, el sistema se recupera sin caerse | Parcial: respaldo entre Gemini y Groq (`fallback_proveedor.py`); los reintentos acotados y los casos de fallo van en SUP-315 |
+| RNF-06 | Resiliencia de servicios externos | Si la IA o un servicio externo rechaza peticiones, el sistema se recupera sin caerse | Parcial: respaldo entre Gemini y Groq (`app/services/fallback.py`); los reintentos acotados y los casos de fallo van en SUP-315 |
 
 ## Mapas y ubicación
 

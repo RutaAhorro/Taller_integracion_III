@@ -14,8 +14,8 @@ from unittest.mock import AsyncMock, MagicMock
 import httpx
 import pytest
 
-from app.proveedores.base import ProveedorIA, ResultadoExtraccion
-from app.proveedores.fallback_proveedor import FallbackProveedor
+from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
+from app.services.fallback import FallbackProveedor
 
 
 class ProveedorFalso(ProveedorIA):
@@ -66,7 +66,7 @@ def test_es_error_recuperable_clasificacion():
 async def test_generar_explicacion_reintenta_primario_recuperable_y_conmuta_a_secundario(monkeypatch):
     """Verifica que un error recuperable reintente según max_retries y luego conmute al secundario."""
     mock_dormir = AsyncMock()
-    monkeypatch.setattr("app.proveedores.fallback_proveedor.asyncio.sleep", mock_dormir)
+    monkeypatch.setattr("app.services.fallback.asyncio.sleep", mock_dormir)
 
     proveedor_primario = ProveedorFalso("primario")
     proveedor_secundario = ProveedorFalso("secundario")
@@ -80,10 +80,10 @@ async def test_generar_explicacion_reintenta_primario_recuperable_y_conmuta_a_se
 
     orquestador = FallbackProveedor(
         proveedores=[proveedor_primario, proveedor_secundario],
-        max_retries_primario=2,
-        max_retries_secundario=1,
-        backoff_base=0.01,
-        jitter_max=0.0,
+        reintentos_primario=2,
+        reintentos_secundario=1,
+        espera_base=0.01,
+        variacion_maxima=0.0,
     )
 
     resultado = await orquestador.generar_explicacion(
@@ -104,7 +104,7 @@ async def test_generar_explicacion_reintenta_primario_recuperable_y_conmuta_a_se
 async def test_generar_explicacion_no_reintenta_error_400_no_recuperable(monkeypatch):
     """Verifica que un error HTTP 400 en primario no realice reintentos y conmute inmediatamente al secundario."""
     mock_dormir = AsyncMock()
-    monkeypatch.setattr("app.proveedores.fallback_proveedor.asyncio.sleep", mock_dormir)
+    monkeypatch.setattr("app.services.fallback.asyncio.sleep", mock_dormir)
 
     proveedor_primario = ProveedorFalso("primario")
     proveedor_secundario = ProveedorFalso("secundario")
@@ -121,8 +121,8 @@ async def test_generar_explicacion_no_reintenta_error_400_no_recuperable(monkeyp
 
     orquestador = FallbackProveedor(
         proveedores=[proveedor_primario, proveedor_secundario],
-        max_retries_primario=3,
-        max_retries_secundario=1,
+        reintentos_primario=3,
+        reintentos_secundario=1,
     )
 
     resultado = await orquestador.generar_explicacion(

@@ -136,7 +136,9 @@ def test_validar_configuracion_timeouts_y_limites_menores_o_iguales_a_cero(monke
         with pytest.raises(RuntimeError, match=f"{nombre_parametro} debe ser mayor a 0"):
             config.validar_configuracion()
         # Restaurar a valor válido antes del siguiente chequeo
-        monkeypatch.setattr(config, nombre_parametro, 10.0 if "TIMEOUT" in nombre_parametro or "BASE" in nombre_parametro else 10)
+        monkeypatch.setattr(
+            config, nombre_parametro, 10.0 if "TIMEOUT" in nombre_parametro or "BASE" in nombre_parametro else 10
+        )
 
 
 def test_validar_configuracion_acepta_catalogo_cache_ttl_cero(monkeypatch):
@@ -227,7 +229,9 @@ def test_validar_configuracion_cors_invalido_formato_estricto(monkeypatch):
 
 def test_validar_configuracion_advertencia_gemini_endpoint_vs_modelo(monkeypatch, caplog):
     """Verifica que se emita advertencia si GEMINI_ENDPOINT y GEMINI_MODEL divergen."""
-    monkeypatch.setenv("GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/models/otro-modelo:generateContent")
+    monkeypatch.setenv(
+        "GEMINI_ENDPOINT", "https://generativelanguage.googleapis.com/v1beta/models/otro-modelo:generateContent"
+    )
     monkeypatch.setenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
     with caplog.at_level("WARNING"):
         config.validar_configuracion()
