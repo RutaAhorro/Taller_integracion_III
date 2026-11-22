@@ -4,103 +4,103 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import ts from 'typescript';
 
-const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const reactUrl = moduleUrl(`
-  export const states = [];
+const crearUrlModulo = codigo => `data:text/javascript;base64,${Buffer.from(codigo).toString('base64')}`;
+const urlReact = crearUrlModulo(`
+  export const estados = [];
   export const createContext = () => ({ Provider: 'auth-provider' });
-  export function useState(initial) {
-    const index = states.length;
-    states.push(typeof initial === 'function' ? initial() : initial);
-    return [states[index], value => { states[index] = value; }];
+  export function useState(inicial) {
+    const indice = estados.length;
+    estados.push(typeof inicial === 'function' ? inicial() : inicial);
+    return [estados[indice], valor => { estados[indice] = valor; }];
   }
   export const useEffect = () => {};
-  export const useRef = initial => ({ current: initial });
-  export const useCallback = callback => callback;
+  export const useRef = inicial => ({ current: inicial });
+  export const useCallback = funcion => funcion;
 `);
-const toastUrl = moduleUrl(`
-  export const notices = [];
-  export const useToast = () => ({ toast: (message, type) => notices.push({ message, type }) });
+const urlAvisos = crearUrlModulo(`
+  export const avisos = [];
+  export const useToast = () => ({ toast: (mensaje, tipo) => avisos.push({ message: mensaje, type: tipo }) });
 `);
-const source = await readFile(new URL('../src/contexts/AuthContext.tsx', import.meta.url), 'utf8');
-const { outputText } = ts.transpileModule(
-  source.replace("from 'react'", `from '${reactUrl}'`)
-    .replace("from '@/contexts/ToastContext'", `from '${toastUrl}'`)
+const codigoFuente = await readFile(new URL('../src/features/autenticacion/AuthContext.tsx', import.meta.url), 'utf8');
+const { outputText: codigoTranspilado } = ts.transpileModule(
+  codigoFuente.replace("from 'react'", `from '${urlReact}'`)
+    .replace("from '@/components/ToastContext'", `from '${urlAvisos}'`)
     .replace('import.meta.env.VITE_API_URL', '"/api/v1/"'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX } },
 );
-const { AuthProvider } = await import(moduleUrl(
-  outputText.replace('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime'))),
+const { AuthProvider } = await import(crearUrlModulo(
+  codigoTranspilado.replace('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime'))),
 ));
-const { states } = await import(reactUrl);
-const { notices } = await import(toastUrl);
-const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+const { estados } = await import(urlReact);
+const { avisos } = await import(urlAvisos);
+const descriptorAlmacenamiento = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
 
-function session(prueba) {
-  states.length = 0;
-  notices.length = 0;
-  const user = { id: 'cuenta-prueba', nombre_completo: 'Cuenta de prueba' };
-  const stored = new Map([['auth_user', JSON.stringify(user)]]);
+function prepararSesion(prueba) {
+  estados.length = 0;
+  avisos.length = 0;
+  const usuario = { id: 'cuenta-prueba', nombre_completo: 'Cuenta de prueba' };
+  const almacenado = new Map([['auth_user', JSON.stringify(usuario)]]);
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
     value: {
-      getItem: key => stored.get(key) ?? null,
-      setItem: (key, value) => stored.set(key, value),
-      removeItem: key => stored.delete(key),
+      getItem: clave => almacenado.get(clave) ?? null,
+      setItem: (clave, valor) => almacenado.set(clave, valor),
+      removeItem: clave => almacenado.delete(clave),
     },
   });
   prueba.after(() => {
-    if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);
+    if (descriptorAlmacenamiento) Object.defineProperty(globalThis, 'localStorage', descriptorAlmacenamiento);
     else delete globalThis.localStorage;
   });
-  return { stored, auth: AuthProvider({ children: null }).props.value, user };
+  return { almacenado, autenticacion: AuthProvider({ children: null }).props.value, usuario };
 }
 
 test('logout espera el 204 sin leer JSON, comparte petición y elimina el usuario local', async prueba => {
-  const { auth, stored, user } = session(prueba);
-  let resolve;
-  let calls = 0;
-  prueba.mock.method(globalThis, 'fetch', (url, init) => {
-    calls += 1;
+  const { autenticacion, almacenado, usuario } = prepararSesion(prueba);
+  let resolver;
+  let llamadas = 0;
+  prueba.mock.method(globalThis, 'fetch', (url, opciones) => {
+    llamadas += 1;
     assert.equal(url, '/api/v1/auth/logout');
-    assert.deepEqual(init, { method: 'POST', credentials: 'include' });
-    if (calls > 1) return Promise.resolve(new Response(null, { status: 204 }));
-    return new Promise(done => { resolve = done; });
+    assert.deepEqual(opciones, { method: 'POST', credentials: 'include' });
+    if (llamadas > 1) return Promise.resolve(new Response(null, { status: 204 }));
+    return new Promise(completar => { resolver = completar; });
   });
-  const first = auth.logout();
-  assert.equal(auth.logout(), first);
-  assert.deepEqual(states[0], user, 'no limpia la cuenta antes de recibir respuesta');
-  assert.equal(stored.has('auth_user'), true);
+  const primeraPeticion = autenticacion.logout();
+  assert.equal(autenticacion.logout(), primeraPeticion);
+  assert.deepEqual(estados[0], usuario, 'no limpia la cuenta antes de recibir respuesta');
+  assert.equal(almacenado.has('auth_user'), true);
   // El adaptador sigue el orden de estado del proveedor: usuario, error, carga y cierre.
-  assert.equal(states[3], true);
-  const response = new Response(null, { status: 204 });
-  response.json = () => { throw new Error('Un 204 no contiene JSON'); };
-  resolve(response);
-  await first;
-  assert.equal(calls, 1);
-  assert.equal(states[0], null);
-  assert.equal(states[1], null);
-  assert.equal(states[3], false);
-  assert.equal(stored.has('auth_user'), false);
-  assert.deepEqual(notices, []);
-  await auth.logout(); // Libera la petición compartida y permite otro intento.
-  assert.equal(calls, 2);
+  assert.equal(estados[3], true);
+  const respuesta = new Response(null, { status: 204 });
+  respuesta.json = () => { throw new Error('Un 204 no contiene JSON'); };
+  resolver(respuesta);
+  await primeraPeticion;
+  assert.equal(llamadas, 1);
+  assert.equal(estados[0], null);
+  assert.equal(estados[1], null);
+  assert.equal(estados[3], false);
+  assert.equal(almacenado.has('auth_user'), false);
+  assert.deepEqual(avisos, []);
+  await autenticacion.logout(); // Libera la petición compartida y permite otro intento.
+  assert.equal(llamadas, 2);
 });
 
 test('un fallo HTTP o de red limpia la sesión local y advierte sin fingir cierre del servidor', async prueba => {
-  for (const status of [200, 401, 403, 502, null]) {
-    const { auth, stored } = session(prueba);
-    const mock = prueba.mock.method(globalThis, 'fetch', async () => {
-      if (status === null) throw new TypeError('Sin conexión');
-      return new Response('<html>Error</html>', { status });
+  for (const estado of [200, 401, 403, 502, null]) {
+    const { autenticacion, almacenado } = prepararSesion(prueba);
+    const simulacion = prueba.mock.method(globalThis, 'fetch', async () => {
+      if (estado === null) throw new TypeError('Sin conexión');
+      return new Response('<html>Error</html>', { status: estado });
     });
-    await auth.logout();
-    assert.equal(states[0], null);
-    assert.equal(states[3], false);
-    assert.equal(stored.has('auth_user'), false);
-    assert.match(states[1], /no se pudo confirmar el cierre en el servidor/);
-    assert.equal(notices.length, 1);
-    assert.equal(notices[0].type, 'warning');
-    assert.match(notices[0].message, /cookie podría seguir activa/);
-    mock.mock.restore();
+    await autenticacion.logout();
+    assert.equal(estados[0], null);
+    assert.equal(estados[3], false);
+    assert.equal(almacenado.has('auth_user'), false);
+    assert.match(estados[1], /no se pudo confirmar el cierre en el servidor/);
+    assert.equal(avisos.length, 1);
+    assert.equal(avisos[0].type, 'warning');
+    assert.match(avisos[0].message, /cookie podría seguir activa/);
+    simulacion.mock.restore();
   }
 });

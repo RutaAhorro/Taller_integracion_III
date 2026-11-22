@@ -6,11 +6,10 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-from app.auth import UsuarioAutenticado, obtener_usuario_actual
-from app.productos import ProductoRepositorio
-from app.proveedores.base import ResultadoExtraccion
-from app.rate_limit import LimitadorSolicitudes
-from app.routers.chat import crear_router_chat
+from app.api.chat import crear_router_chat
+from app.api.sesion import LimitadorSolicitudes, UsuarioAutenticado, obtener_usuario_actual
+from app.domain.proveedores import ResultadoExtraccion
+from app.repositories.catalogo import ProductoRepositorio
 
 
 class RelojManual:
@@ -72,23 +71,6 @@ def test_se_recupera_al_superar_la_ventana() -> None:
     limitador.verificar("usuario-a")
 
 
-def test_purgar_inactivos_libera_memoria() -> None:
-    """Verifica que purgar_inactivos elimine del almacenamiento interno a usuarios con ventana expirada."""
-    reloj = RelojManual()
-    limitador = LimitadorSolicitudes(maximo_solicitudes=2, ventana_segundos=60, reloj=reloj)
-    limitador.verificar("usuario-activo")
-    limitador.verificar("usuario-inactivo")
-
-    # Avanzamos tiempo para que usuario-inactivo expire, pero usuario-activo renueva
-    reloj.avanzar(70)
-    limitador.verificar("usuario-activo")
-
-    assert "usuario-inactivo" in limitador._solicitudes
-    limitador.purgar_inactivos()
-    assert "usuario-inactivo" not in limitador._solicitudes
-    assert "usuario-activo" in limitador._solicitudes
-
-
 def test_purga_oportunista_en_verificar() -> None:
     """Verifica que verificar ejecute automáticamente la purga tras alcanzar el intervalo configurado."""
     reloj = RelojManual()
@@ -119,7 +101,7 @@ def test_purga_oportunista_en_verificar() -> None:
 def test_validacion_parametros_invalidos() -> None:
     """Verifica que el constructor rechace valores negativos o nulos en sus argumentos."""
     with pytest.raises(ValueError, match="maximo_solicitudes"):
-        LimitadorSolicitudes(maximo_solicitudes=0)
+        LimitadorSolicitudes(maximo_solicitudes=0, ventana_segundos=60)
 
     with pytest.raises(ValueError, match="ventana_segundos"):
         LimitadorSolicitudes(maximo_solicitudes=5, ventana_segundos=-1)
@@ -133,18 +115,12 @@ def test_endpoint_retorna_429_sin_llamar_al_proveedor() -> None:
     reloj = RelojManual()
     limitador = LimitadorSolicitudes(maximo_solicitudes=1, ventana_segundos=60, reloj=reloj)
     proveedor = type("ProveedorPrueba", (), {})()
-    proveedor.extraer_filtros = AsyncMock(
-        return_value=ResultadoExtraccion(filtros=None, tiempo_extraccion_ms=1)
-    )
+    proveedor.extraer_filtros = AsyncMock(return_value=ResultadoExtraccion(filtros=None, tiempo_extraccion_ms=1))
     proveedor.generar_explicacion = AsyncMock()
 
     aplicacion = FastAPI()
-    aplicacion.include_router(
-        crear_router_chat(ProductoRepositorio("http://catalogo:8080"), proveedor, limitador)
-    )
-    aplicacion.dependency_overrides[obtener_usuario_actual] = lambda: UsuarioAutenticado(
-        user_id="usuario-a", rol="registrado"
-    )
+    aplicacion.include_router(crear_router_chat(ProductoRepositorio("http://catalogo:8080"), proveedor, limitador))
+    aplicacion.dependency_overrides[obtener_usuario_actual] = lambda: UsuarioAutenticado(user_id="usuario-a")
     cliente = TestClient(aplicacion)
 
     assert cliente.post("/api/v1/chat", json={"mensaje": "hola"}).status_code == 200

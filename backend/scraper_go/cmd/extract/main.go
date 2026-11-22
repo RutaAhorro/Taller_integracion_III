@@ -16,23 +16,22 @@ import (
 	"syscall"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/input"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
+	dominio "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/dominio"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 )
-
-type stringList []string
 
 // ===== Argumentos CLI =====
 
+// listaCadenas acumula múltiples banderas -url pasadas por línea de comandos.
+type listaCadenas []string
+
 // String implementa flag.Value formateando la lista de cadenas.
-func (lista *stringList) String() string {
+func (lista *listaCadenas) String() string {
 	return strings.Join(*lista, ",")
 }
 
 // Set implementa flag.Value acumulando valores pasados por línea de comandos.
-func (lista *stringList) Set(valor string) error {
+func (lista *listaCadenas) Set(valor string) error {
 	valor = strings.TrimSpace(valor)
 	if valor == "" {
 		return fmt.Errorf("la URL no puede estar vacía")
@@ -45,16 +44,16 @@ func (lista *stringList) Set(valor string) error {
 
 // main es el punto de entrada para extracción puntual desde terminal.
 func main() {
-	if errorObtenido := run(); errorObtenido != nil {
+	if errorObtenido := ejecutar(); errorObtenido != nil {
 		fmt.Fprintln(os.Stderr, "error:", errorObtenido)
 		os.Exit(1)
 	}
 }
 
-// run ejecuta el bucle de procesamiento continuo o la tarea solicitada.
-func run() error {
-	var urls stringList
-	nombreSpider := flag.String("spider", spiders.JumboName, "spider a ejecutar")
+// ejecutar procesa los argumentos CLI y lanza la extracción puntual solicitada.
+func ejecutar() error {
+	var urls listaCadenas
+	nombreSpider := flag.String("spider", extraccion.JumboName, "spider a ejecutar")
 	archivo := flag.String("file", "", "archivo con URLs, una por línea")
 	producto := flag.Bool("product", false, "tratar la URL como ficha de producto")
 	enriquecerEAN := flag.Bool("enrich-ean", false, "consultar la ficha para completar EAN cuando falte (Jumbo)")
@@ -70,7 +69,7 @@ func run() error {
 		return fmt.Errorf("-max-pages debe ser mayor que cero")
 	}
 
-	recolectados, errorObtenido := input.Collect(urls, *archivo)
+	recolectados, errorObtenido := extraccion.CollectURLs(urls, *archivo)
 	if errorObtenido != nil {
 		return errorObtenido
 	}
@@ -93,7 +92,7 @@ func run() error {
 	}
 
 	registrador := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: configuracion.LogLevel}))
-	clienteHTTP := crawler.New(crawler.Options{
+	clienteHTTP := extraccion.New(extraccion.Options{
 		UserAgent:        configuracion.UserAgent,
 		Delay:            configuracion.DownloadDelay,
 		Timeout:          configuracion.DownloadTimeout,
@@ -110,12 +109,12 @@ func run() error {
 	directorio := *directorioCategorias
 	if directorio == "" {
 		directorio = configuracion.CategoryDir
-		if directorio == "" || !directoryExists(directorio) {
+		if directorio == "" || !existeDirectorio(directorio) {
 			for _, candidato := range []string{
 				filepath.Join("backend", "scraper_go", "categories"),
 				"categories",
 			} {
-				if directoryExists(candidato) {
+				if existeDirectorio(candidato) {
 					directorio = candidato
 					break
 				}
@@ -123,7 +122,7 @@ func run() error {
 		}
 	}
 
-	registro, errorObtenido := spiders.NewRegistryFromEnv(clienteHTTP, directorio, *maxPaginas, registrador)
+	registro, errorObtenido := extraccion.NewRegistryFromConfig(configuracion, clienteHTTP, directorio, *maxPaginas, registrador)
 	if errorObtenido != nil {
 		return errorObtenido
 	}
@@ -137,8 +136,8 @@ func run() error {
 
 	codificador := json.NewEncoder(os.Stdout)
 	emitidos := 0
-	emitir := func(elemento domain.Item) error {
-		elemento = spiders.CompleteItem(elemento)
+	emitir := func(elemento dominio.Item) error {
+		elemento = extraccion.CompleteItem(elemento)
 		if errorObtenido := codificador.Encode(elemento); errorObtenido != nil {
 			return errorObtenido
 		}
@@ -146,7 +145,7 @@ func run() error {
 		return nil
 	}
 
-	trabajo := domain.Job{
+	trabajo := dominio.Job{
 		Spider:    *nombreSpider,
 		EnrichEAN: *enriquecerEAN,
 	}
@@ -164,8 +163,8 @@ func run() error {
 
 // ===== Utilidades =====
 
-// directoryExists comprueba la existencia de un directorio en el sistema de archivos.
-func directoryExists(ruta string) bool {
+// existeDirectorio comprueba la existencia de un directorio en el sistema de archivos.
+func existeDirectorio(ruta string) bool {
 	informacion, errorObtenido := os.Stat(ruta)
 	return errorObtenido == nil && informacion.IsDir()
 }

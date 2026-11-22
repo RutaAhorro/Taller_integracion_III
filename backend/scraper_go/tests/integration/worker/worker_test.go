@@ -1,118 +1,124 @@
+// worker_test.go verifica el flujo de extremo a extremo del worker: ingesta de
+// lotes, validación de payloads, bloqueo HTTP y rechazo de crawls vacíos.
 package worker_test
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
+	dominio "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/dominio"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 )
 
+// ===== Ejecución de Extremo a Extremo =====
+
 func TestProcessesJobEndToEnd(prueba *testing.T) {
-	spider := &fakeSpider{
-		name: spiders.SantaIsabelName,
-		items: []domain.Item{
-			{Product: domain.Product{Producto: "Leche", Categoria: "lacteos", Precio: floatPtr(1290)}, Supermercado: "Santa Isabel"},
-			{Product: domain.Product{Producto: "Pan", Categoria: "panaderia", Precio: floatPtr(990)}, Supermercado: "Santa Isabel"},
+	spider := &spiderFalso{
+		nombre: extraccion.SantaIsabelName,
+		elementos: []dominio.Item{
+			{Product: dominio.Product{Producto: "Leche", Categoria: "lacteos", Precio: punteroFlotante(1290)}, Supermercado: "Santa Isabel"},
+			{Product: dominio.Product{Producto: "Pan", Categoria: "panaderia", Precio: punteroFlotante(990)}, Supermercado: "Santa Isabel"},
 		},
 	}
-	arnes := newHarness(prueba, spider, nil)
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	arnes.apiState.Lock()
-	finalized := arnes.apiState.finalized
-	batches := arnes.apiState.batches
-	products := len(arnes.apiState.products)
-	supermarket := arnes.apiState.supermarket
-	idempotency := arnes.apiState.idempotency
-	arnes.apiState.Unlock()
+	arnes.estadoControl.Lock()
+	finalizado := arnes.estadoControl.finalizado
+	lotes := arnes.estadoControl.lotes
+	productos := len(arnes.estadoControl.productos)
+	supermercado := arnes.estadoControl.supermercado
+	idempotencia := arnes.estadoControl.idempotencia
+	arnes.estadoControl.Unlock()
 
-	if finalized != "completado" {
-		prueba.Errorf("estado final = %q, want completado", finalized)
+	if finalizado != "completado" {
+		prueba.Errorf("estado final = %q, esperado completado", finalizado)
 	}
-	if batches != 1 || products != 2 {
-		prueba.Errorf("lotes = %d, productos = %d; want 1/2", batches, products)
+	if lotes != 1 || productos != 2 {
+		prueba.Errorf("lotes = %d, productos = %d; esperado 1/2", lotes, productos)
 	}
-	if supermarket != "Santa Isabel" {
-		prueba.Errorf("supermercado = %q", supermarket)
+	if supermercado != "Santa Isabel" {
+		prueba.Errorf("supermercado = %q", supermercado)
 	}
-	if idempotency == "" {
+	if idempotencia == "" {
 		prueba.Error("el lote debe enviar Idempotency-Key")
 	}
-	if length := arnes.streamLength(prueba); length != 0 {
-		prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+		prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 	}
-	if messages := arnes.deadLetters(prueba); len(messages) != 0 {
-		prueba.Errorf("dead letter = %d mensajes, want 0", len(messages))
+	if mensajes := arnes.mensajesMuertos(prueba); len(mensajes) != 0 {
+		prueba.Errorf("dead letter = %d mensajes, esperado 0", len(mensajes))
 	}
-	if spider.runCount() != 1 {
-		prueba.Errorf("spider ejecutado %d veces, want 1", spider.runCount())
+	if spider.cantidadEjecuciones() != 1 {
+		prueba.Errorf("spider ejecutado %d veces, esperado 1", spider.cantidadEjecuciones())
 	}
 }
 
+// ===== Validación de Payloads y Parámetros =====
+
 func TestSendsInvalidPayloadsToDeadLetter(prueba *testing.T) {
-	cases := map[string]func(arnes *harness) string{
-		"json inválido": func(*harness) string {
+	casos := map[string]func(arnes *arnesWorker) string{
+		"json inválido": func(*arnesWorker) string {
 			return `{`
 		},
-		"trabajo_id inválido": func(*harness) string {
+		"trabajo_id inválido": func(*arnesWorker) string {
 			return `{"trabajo_id":"no-es-uuid","spider":"santa_isabel_rsc"}`
 		},
-		"spider desconocido": func(arnes *harness) string {
-			return `{"trabajo_id":"` + arnes.workID + `","spider":"desconocido"}`
+		"spider desconocido": func(arnes *arnesWorker) string {
+			return `{"trabajo_id":"` + arnes.trabajoID + `","spider":"desconocido"}`
 		},
-		"product_id sin url": func(arnes *harness) string {
-			return `{"trabajo_id":"` + arnes.workID + `","product_id":"123"}`
+		"product_id sin url": func(arnes *arnesWorker) string {
+			return `{"trabajo_id":"` + arnes.trabajoID + `","product_id":"123"}`
 		},
 	}
-	for name, payload := range cases {
-		prueba.Run(name, func(prueba *testing.T) {
-			spider := &fakeSpider{name: spiders.SantaIsabelName}
-			arnes := newHarness(prueba, spider, nil)
-			arnes.runJob(prueba, payload(arnes))
+	for nombreCaso, construirCarga := range casos {
+		prueba.Run(nombreCaso, func(prueba *testing.T) {
+			spider := &spiderFalso{nombre: extraccion.SantaIsabelName}
+			arnes := nuevoArnesWorker(prueba, spider, nil)
+			arnes.ejecutarTrabajo(prueba, construirCarga(arnes))
 
-			if spider.runCount() != 0 {
-				prueba.Errorf("el spider se ejecutó %d veces con un payload inválido", spider.runCount())
+			if spider.cantidadEjecuciones() != 0 {
+				prueba.Errorf("el spider se ejecutó %d veces con un payload inválido", spider.cantidadEjecuciones())
 			}
-			arnes.apiState.Lock()
-			finalized := arnes.apiState.finalized
-			arnes.apiState.Unlock()
-			if finalized != "" {
-				prueba.Errorf("no se debe finalizar el trabajo: %q", finalized)
+			arnes.estadoControl.Lock()
+			finalizado := arnes.estadoControl.finalizado
+			arnes.estadoControl.Unlock()
+			if finalizado != "" {
+				prueba.Errorf("no se debe finalizar el trabajo: %q", finalizado)
 			}
-			if length := arnes.streamLength(prueba); length != 0 {
-				prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+			if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+				prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 			}
-			messages := arnes.deadLetters(prueba)
-			if len(messages) != 1 {
-				prueba.Fatalf("dead letter = %d mensajes, want 1", len(messages))
+			mensajes := arnes.mensajesMuertos(prueba)
+			if len(mensajes) != 1 {
+				prueba.Fatalf("dead letter = %d mensajes, esperado 1", len(mensajes))
 			}
-			if messages[0].Values["reason"] != "invalid_payload" {
-				prueba.Errorf("reason = %v, want invalid_payload", messages[0].Values["reason"])
+			if mensajes[0].Values["reason"] != "invalid_payload" {
+				prueba.Errorf("reason = %v, esperado invalid_payload", mensajes[0].Values["reason"])
 			}
 		})
 	}
 }
 
 func TestUsesDefaultSpiderWhenMissing(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.JumboName}
-	arnes := newHarness(prueba, spider, nil)
-	arnes.runJob(prueba, `{"trabajo_id":"`+arnes.workID+`"}`)
+	spider := &spiderFalso{nombre: extraccion.JumboName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	arnes.ejecutarTrabajo(prueba, `{"trabajo_id":"`+arnes.trabajoID+`"}`)
 
-	if spider.runCount() != 1 {
-		prueba.Fatalf("spider ejecutado %d veces, want 1", spider.runCount())
+	if spider.cantidadEjecuciones() != 1 {
+		prueba.Fatalf("spider ejecutado %d veces, esperado 1", spider.cantidadEjecuciones())
 	}
-	if job := spider.lastJob(); job.Spider != spiders.JumboName {
-		prueba.Errorf("Spider = %q, want %q", job.Spider, spiders.JumboName)
+	if trabajo := spider.trabajoRecibido(); trabajo.Spider != extraccion.JumboName {
+		prueba.Errorf("Spider = %q, esperado %q", trabajo.Spider, extraccion.JumboName)
 	}
 }
 
 func TestParsesEnrichEANFromPayload(prueba *testing.T) {
-	cases := []struct {
-		name  string
-		value string
-		want  bool
+	casos := []struct {
+		nombre   string
+		valor    string
+		esperado bool
 	}{
 		{"true", `true`, true},
 		{"string true", `"true"`, true},
@@ -124,78 +130,80 @@ func TestParsesEnrichEANFromPayload(prueba *testing.T) {
 		{"uno numérico", `1`, true},
 		{"nulo", `null`, false},
 	}
-	for _, tc := range cases {
-		prueba.Run(tc.name, func(prueba *testing.T) {
-			spider := &fakeSpider{name: spiders.SantaIsabelName}
-			arnes := newHarness(prueba, spider, nil)
-			arnes.runJob(prueba, arnes.jobPayload(`"enrich_ean":`+tc.value))
-			if spider.runCount() != 1 {
-				prueba.Fatalf("spider ejecutado %d veces, want 1", spider.runCount())
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			spider := &spiderFalso{nombre: extraccion.SantaIsabelName}
+			arnes := nuevoArnesWorker(prueba, spider, nil)
+			arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(`"enrich_ean":`+caso.valor))
+			if spider.cantidadEjecuciones() != 1 {
+				prueba.Fatalf("spider ejecutado %d veces, esperado 1", spider.cantidadEjecuciones())
 			}
-			if got := spider.lastJob().EnrichEAN; got != tc.want {
-				prueba.Errorf("EnrichEAN = %t, want %t", got, tc.want)
+			if obtenido := spider.trabajoRecibido().EnrichEAN; obtenido != caso.esperado {
+				prueba.Errorf("EnrichEAN = %t, esperado %t", obtenido, caso.esperado)
 			}
 		})
 	}
 }
 
+// ===== Cierre por Bloqueo o Crawl Vacío =====
+
 func TestFinalizesBlockedJob(prueba *testing.T) {
-	spider := &fakeSpider{
-		name: spiders.SantaIsabelName,
-		err: &crawler.BlockedError{
+	spider := &spiderFalso{
+		nombre: extraccion.SantaIsabelName,
+		errorForzado: &extraccion.BlockedError{
 			URL:              "https://www.santaisabel.cl/despensa",
-			Status:           429,
+			Status:           http.StatusTooManyRequests,
 			Reason:           "http_429",
 			BlockedResponses: 3,
 		},
 	}
-	arnes := newHarness(prueba, spider, nil)
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	arnes.apiState.Lock()
-	defer arnes.apiState.Unlock()
-	if arnes.apiState.finalized != "fallido" {
-		prueba.Errorf("estado final = %q, want fallido", arnes.apiState.finalized)
+	arnes.estadoControl.Lock()
+	defer arnes.estadoControl.Unlock()
+	if arnes.estadoControl.finalizado != "fallido" {
+		prueba.Errorf("estado final = %q, esperado fallido", arnes.estadoControl.finalizado)
 	}
-	if !strings.Contains(arnes.apiState.finalMessage, "bloqueo: 3 respuestas bloqueadas") {
-		prueba.Errorf("registro_errores = %q", arnes.apiState.finalMessage)
+	if !strings.Contains(arnes.estadoControl.mensajeFinal, "bloqueo: 3 respuestas bloqueadas") {
+		prueba.Errorf("registro_errores = %q", arnes.estadoControl.mensajeFinal)
 	}
-	if arnes.apiState.blocked != 3 {
-		prueba.Errorf("respuestas_bloqueadas = %d, want 3", arnes.apiState.blocked)
+	if arnes.estadoControl.bloqueadas != 3 {
+		prueba.Errorf("respuestas_bloqueadas = %d, esperado 3", arnes.estadoControl.bloqueadas)
 	}
-	if arnes.apiState.batches != 0 {
-		prueba.Errorf("lotes = %d, want 0", arnes.apiState.batches)
+	if arnes.estadoControl.lotes != 0 {
+		prueba.Errorf("lotes = %d, esperado 0", arnes.estadoControl.lotes)
 	}
-	if length := arnes.streamLength(prueba); length != 0 {
-		prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+		prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 	}
-	messages := arnes.deadLetters(prueba)
-	if len(messages) != 1 || messages[0].Values["reason"] != "blocked" {
-		prueba.Errorf("dead letter = %+v, want reason=blocked", messages)
+	mensajes := arnes.mensajesMuertos(prueba)
+	if len(mensajes) != 1 || mensajes[0].Values["reason"] != "blocked" {
+		prueba.Errorf("dead letter = %+v, esperado reason=blocked", mensajes)
 	}
 }
 
 func TestRejectsEmptyCrawl(prueba *testing.T) {
-	spider := &fakeSpider{name: spiders.CugatName}
-	arnes := newHarness(prueba, spider, nil)
-	arnes.runJob(prueba, arnes.jobPayload(""))
+	spider := &spiderFalso{nombre: extraccion.CugatName}
+	arnes := nuevoArnesWorker(prueba, spider, nil)
+	arnes.ejecutarTrabajo(prueba, arnes.cargaTrabajo(""))
 
-	arnes.apiState.Lock()
-	defer arnes.apiState.Unlock()
-	if arnes.apiState.finalized != "fallido" {
-		prueba.Errorf("estado final = %q, want fallido", arnes.apiState.finalized)
+	arnes.estadoControl.Lock()
+	defer arnes.estadoControl.Unlock()
+	if arnes.estadoControl.finalizado != "fallido" {
+		prueba.Errorf("estado final = %q, esperado fallido", arnes.estadoControl.finalizado)
 	}
-	if !strings.Contains(arnes.apiState.finalMessage, "sin productos") {
-		prueba.Errorf("registro_errores = %q", arnes.apiState.finalMessage)
+	if !strings.Contains(arnes.estadoControl.mensajeFinal, "sin productos") {
+		prueba.Errorf("registro_errores = %q", arnes.estadoControl.mensajeFinal)
 	}
-	if arnes.apiState.batches != 0 {
-		prueba.Errorf("lotes = %d, want 0", arnes.apiState.batches)
+	if arnes.estadoControl.lotes != 0 {
+		prueba.Errorf("lotes = %d, esperado 0", arnes.estadoControl.lotes)
 	}
-	if length := arnes.streamLength(prueba); length != 0 {
-		prueba.Errorf("stream length = %d, want 0 (mensaje ACK)", length)
+	if longitud := arnes.longitudFlujo(prueba); longitud != 0 {
+		prueba.Errorf("stream length = %d, esperado 0 (mensaje ACK)", longitud)
 	}
-	messages := arnes.deadLetters(prueba)
-	if len(messages) != 1 || messages[0].Values["reason"] != "no_products" {
-		prueba.Errorf("dead letter = %+v, want reason=no_products", messages)
+	mensajes := arnes.mensajesMuertos(prueba)
+	if len(mensajes) != 1 || mensajes[0].Values["reason"] != "no_products" {
+		prueba.Errorf("dead letter = %+v, esperado reason=no_products", mensajes)
 	}
 }

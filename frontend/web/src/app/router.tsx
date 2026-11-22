@@ -1,30 +1,30 @@
 // Define las rutas públicas y protegidas y reúne los proveedores de la aplicación.
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { ROUTES } from '@/core/routes';
+import { ROUTES } from '@/app/routes';
 
 // Estructuras compartidas de navegación y sesión.
 import { MainLayout } from '@/layouts/MainLayout';
-import { CartProvider } from '@/contexts/CartContext';
-import { ToastProvider } from '@/contexts/ToastContext';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { CartProvider } from '@/features/catalogo/CartContext';
+import { ToastProvider } from '@/components/ToastContext';
+import { AuthProvider } from '@/features/autenticacion/AuthContext';
+import { ProtectedRoute } from '@/features/autenticacion/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ROLE_ADMIN, ROLE_COLABORADOR } from '@/lib/roles';
+import { ROLE_ADMIN, ROLE_COLABORADOR } from '@/features/autenticacion/roles';
 
 // Sprint 1 — vistas funcionales
-import Home from '@/pages/Home';
-import Dashboard from '@/pages/Dashboard';
-import ProductDetail from '@/pages/ProductDetail';
-import Login from '@/pages/Login';
+import Home from '@/features/landing/Home';
+import Dashboard from '@/features/catalogo/Dashboard';
+import ProductDetail from '@/features/catalogo/ProductDetail';
+import Login from '@/features/autenticacion/Login';
 import Onboarding from '@/pages/Onboarding';
-import Profile from '@/pages/Profile';
-import ShoppingLists from '@/pages/ShoppingLists';
+import Profile from '@/features/autenticacion/Profile';
+import ShoppingLists from '@/features/listas/ShoppingLists';
 import NotFound from '@/pages/NotFound';
 import Terms from '@/pages/Terms';
 
 // Vistas integradas o con estado explícito de no disponibilidad.
-import Chatbot from '@/pages/Chatbot';
+import Chatbot from '@/features/chat/Chatbot';
 import Crowdsourcing from '@/pages/Crowdsourcing';
 import RouteViewer from '@/pages/RouteViewer';
 import History from '@/pages/History';
@@ -32,7 +32,7 @@ import Planes from '@/pages/Planes';
 import AdminDashboard from '@/features/admin/AdminDashboard';
 
 
-const router = createBrowserRouter([
+const enrutador = createBrowserRouter([
   // ───────────────────────────────────────────────────────────
   // Grupo A: MainLayout (TopNav + SideBar + BottomNav)
   // Para vistas que se benefician del buscador y filtros por supermercado
@@ -118,15 +118,15 @@ const router = createBrowserRouter([
 ]);
 
 export default function AppRouter() {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'your_google_client_id_here';
+  const idClienteGoogle = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'your_google_client_id_here';
 
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
+    <GoogleOAuthProvider clientId={idClienteGoogle}>
       {/* Los avisos de sesión permanecen visibles después de redirigir o limpiar la cuenta. */}
       <ToastProvider>
         <AuthProvider>
           <CartProvider>
-            <RouterProvider router={router} />
+            <RouterProvider router={enrutador} />
           </CartProvider>
         </AuthProvider>
       </ToastProvider>

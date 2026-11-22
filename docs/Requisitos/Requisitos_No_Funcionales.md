@@ -12,14 +12,14 @@ se cumple hoy.
 | RNF-01 | Extracción concurrente | La extracción no bloquea las demás operaciones | Scraper Go como worker separado, con trabajos por Redis Streams |
 | RNF-02 | Integridad de la información | Si la tienda se cae a mitad de la extracción, no se pierden los precios anteriores | Ingesta transaccional e idempotente en Catálogo ([D07](../Decisiones/07_Ingesta_idempotente.md)) |
 | RNF-03 | Frecuencia de actualización | Las actualizaciones masivas corren en horarios de baja demanda, sin detener la plataforma | **Parcial:** los trabajos corren en segundo plano, pero no hay programación horaria (no existe un CronJob); hoy se lanzan a mano con el bot |
-| RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un spider por cadena en `scraper_go/internal/spiders/` |
+| RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un archivo por cadena (spider y parser) en `scraper_go/internal/extraccion/` |
 
 ## IA y servicios externos
 
 | ID | Requisito | Condición | Cómo se cumple hoy |
 | --- | --- | --- | --- |
 | RNF-05 | Límite de acción de la IA | La IA nunca modifica, infiere ni altera precios ni disponibilidad | Patrón anti-alucinación de las [reglas de negocio](Reglas_de_Negocio.md). *Cambio:* la versión original limitaba la IA a normalizar nombres; hoy también extrae filtros y redacta recetas, siempre sobre datos validados |
-| RNF-06 | Resiliencia de servicios externos | Si la IA o un servicio externo rechaza peticiones, el sistema se recupera sin caerse | Parcial: respaldo entre Gemini y Groq (`fallback_proveedor.py`); los reintentos acotados y los casos de fallo van en SUP-315 |
+| RNF-06 | Resiliencia de servicios externos | Si la IA o un servicio externo rechaza peticiones, el sistema se recupera sin caerse | Parcial: respaldo entre Gemini y Groq (`app/services/fallback.py`); los reintentos acotados y los casos de fallo van en SUP-315 |
 
 ## Mapas y ubicación
 

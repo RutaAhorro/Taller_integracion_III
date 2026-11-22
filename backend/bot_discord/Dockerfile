@@ -11,7 +11,7 @@ RUN go mod download
 COPY . .
 
 # Compilar binario optimizado
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bot_discord .
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o bot_discord ./cmd/bot_discord
 
 # Etapa final (Imagen enana)
 FROM alpine:3.19

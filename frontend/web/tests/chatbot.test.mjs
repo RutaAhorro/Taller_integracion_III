@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import ts from 'typescript';
 
-const moduleUrl = codigo => `data:text/javascript;base64,${Buffer.from(codigo).toString('base64')}`;
-const reactUrl = moduleUrl(`
+const crearUrlModulo = codigo => `data:text/javascript;base64,${Buffer.from(codigo).toString('base64')}`;
+const urlReact = crearUrlModulo(`
   const estados = [];
   const referencias = [];
   let indiceEstado = 0;
@@ -29,20 +29,20 @@ const reactUrl = moduleUrl(`
   }
   export const useEffect = () => {};
 `);
-const authUrl = moduleUrl(`
+const urlAutenticacion = crearUrlModulo(`
   export const sesion = { isGuest: false };
   export const useAuth = () => sesion;
 `);
-const codigo = await readFile(new URL('../src/hooks/useChatbot.ts', import.meta.url), 'utf8');
-const { outputText } = ts.transpileModule(
-  codigo.replace("from 'react'", `from '${reactUrl}'`)
-    .replace("from '@/hooks/useAuth'", `from '${authUrl}'`)
+const codigo = await readFile(new URL('../src/features/chat/useChatbot.ts', import.meta.url), 'utf8');
+const { outputText: codigoTranspilado } = ts.transpileModule(
+  codigo.replace("from 'react'", `from '${urlReact}'`)
+    .replace("from '@/features/autenticacion/useAuth'", `from '${urlAutenticacion}'`)
     .replace('import.meta.env.VITE_API_URL', '"/api/v1/"'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } },
 );
-const { useChatbot } = await import(moduleUrl(outputText));
-const { prepararRender } = await import(reactUrl);
-const { sesion } = await import(authUrl);
+const { useChatbot } = await import(crearUrlModulo(codigoTranspilado));
+const { prepararRender } = await import(urlReact);
+const { sesion } = await import(urlAutenticacion);
 const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.';
 
 function montarChat(invitado = false) {

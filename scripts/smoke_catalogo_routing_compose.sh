@@ -164,7 +164,7 @@ if [[ "${SUP270_RECOVERY:-0}" == 1 ]]; then
   (
     cd "$repo_root/backend/scraper_go"
     REDIS_TEST_URL="redis://127.0.0.1:${SUP270_REDIS_PORT:-18079}/15" \
-      go test -count=1 ./internal/worker ./internal/queue
+      go test -count=1 ./tests/integration/worker ./tests/integration/cola
   )
 fi
 

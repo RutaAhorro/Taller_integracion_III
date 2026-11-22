@@ -3,8 +3,8 @@
 
 import type { AdminPlan, AdminRole, AdminSource, AdminUser, AdminUserRole } from './admin-types';
 
-const API_BASE = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
-export const ADMIN_HAS_BACKEND = API_BASE.length > 0;
+const URL_BASE_API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+export const ADMIN_HAS_BACKEND = URL_BASE_API.length > 0;
 
 // Rutas relativas a VITE_API_URL, que ya incluye el prefijo `/api/v1` igual
 // que AuthContext y products-api. Concatenar otro `/api/v1` producía
@@ -33,21 +33,19 @@ export const ADMIN_ENDPOINTS = {
 // UI RBAC: Administrador | Colaborador | Usuario.
 // Backend api.usuarios: 'admin' | 'colaborador' | 'registrado'.
 // El plan (Básico/Premium) es ortogonal al rol y viaja en su propio campo.
-export function adminRoleToBackend(role: AdminRole): string {
-  if (role === 'Administrador') return 'admin';
-  if (role === 'Colaborador') return 'colaborador';
+export function adminRoleToBackend(rol: AdminRole): string {
+  if (rol === 'Administrador') return 'admin';
+  if (rol === 'Colaborador') return 'colaborador';
   return 'registrado';
 }
 
 export function adminRoleFromBackend(rol: string): AdminUserRole {
   switch (rol.trim().toLowerCase()) {
     case 'admin':
-    case 'administrador':
       return 'Administrador';
     case 'colaborador':
       return 'Colaborador';
     case 'registrado':
-    case 'usuario':
       return 'Usuario';
     default:
       return 'Desconocido';
@@ -60,10 +58,8 @@ export function adminPlanFromBackend(plan?: string | null): AdminPlan | null {
   if (!plan) return null;
   switch (plan.trim().toLowerCase()) {
     case 'basico':
-    case 'básico':
       return 'Básico';
     case 'premium':
-    case 'plus':
       return 'Premium';
     default:
       return null;
@@ -109,28 +105,28 @@ export type AdminUsersPage = {
 };
 
 // Identidad utiliza UUID para los identificadores de usuario.
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const EXPRESION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function isPersistableId(id: string): boolean {
-  return UUID_RE.test(id);
+  return EXPRESION_UUID.test(id);
 }
 
-function initialsFromName(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return '?';
-  const first = parts[0]?.[0] ?? '';
-  const last = parts.length > 1 ? parts[parts.length - 1]?.[0] ?? '' : '';
-  return (first + last).toUpperCase() || '?';
+function inicialesDesdeNombre(nombre: string): string {
+  const partes = nombre.trim().split(/\s+/).filter(Boolean);
+  if (partes.length === 0) return '?';
+  const primera = partes[0]?.[0] ?? '';
+  const ultima = partes.length > 1 ? partes[partes.length - 1]?.[0] ?? '' : '';
+  return (primera + ultima).toUpperCase() || '?';
 }
 
 // `ultimo_acceso` se actualiza al iniciar sesión. Si no existe todavía para una
 // cuenta antigua se muestra "Sin registros"; no se usa `actualizado_el` como
 // sustituto porque no representa un acceso.
-function formatLastAccess(value?: string | null): string {
-  if (!value) return 'Sin registros';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Sin registros';
-  return date.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+function formatearUltimoAcceso(valor?: string | null): string {
+  if (!valor) return 'Sin registros';
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return 'Sin registros';
+  return fecha.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 export function adminUserFromBackend(usuario: UsuarioBackend): AdminUser {
@@ -141,8 +137,8 @@ export function adminUserFromBackend(usuario: UsuarioBackend): AdminUser {
     role: adminRoleFromBackend(usuario.rol),
     plan: adminPlanFromBackend(usuario.plan),
     status: usuario.esta_activo ? 'Activo' : 'Inactivo',
-    lastAccess: formatLastAccess(usuario.ultimo_acceso),
-    initials: initialsFromName(usuario.nombre_completo),
+    lastAccess: formatearUltimoAcceso(usuario.ultimo_acceso),
+    initials: inicialesDesdeNombre(usuario.nombre_completo),
   };
 }
 
@@ -161,15 +157,15 @@ export type ControlMetrics = {
 // usan para cerrar la sesión y volver a /login (SUP-256).
 export class AdminAuthError extends Error {
   readonly status: 401 | 403;
-  constructor(status: 401 | 403, path: string) {
-    super(`Sin autorización en ${path} (${status})`);
+  constructor(estado: 401 | 403, ruta: string) {
+    super(`Sin autorización en ${ruta} (${estado})`);
     this.name = 'AdminAuthError';
-    this.status = status;
+    this.status = estado;
   }
 }
 
-export function isAdminAuthError(error: unknown): error is AdminAuthError {
-  return error instanceof AdminAuthError;
+export function isAdminAuthError(errorObtenido: unknown): errorObtenido is AdminAuthError {
+  return errorObtenido instanceof AdminAuthError;
 }
 
 // Error no autoritativo del backend con el mensaje de negocio (por ejemplo,
@@ -177,50 +173,50 @@ export function isAdminAuthError(error: unknown): error is AdminAuthError {
 export class AdminApiError extends Error {
   readonly status: number;
   readonly detail?: string;
-  constructor(status: number, message: string, detail?: string) {
-    super(message);
+  constructor(estado: number, mensaje: string, detalle?: string) {
+    super(mensaje);
     this.name = 'AdminApiError';
-    this.status = status;
-    this.detail = detail;
+    this.status = estado;
+    this.detail = detalle;
   }
 }
 
-export function isAdminApiError(error: unknown): error is AdminApiError {
-  return error instanceof AdminApiError;
+export function isAdminApiError(errorObtenido: unknown): errorObtenido is AdminApiError {
+  return errorObtenido instanceof AdminApiError;
 }
 
 type ErrorBackend = { mensaje?: string; error?: string; detalle?: string };
 
 /** Envía la cookie de sesión y distingue errores de permisos de los errores de negocio o conexión. */
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function solicitar<Respuesta>(ruta: string, opciones?: RequestInit): Promise<Respuesta> {
   // Auditoría: no enviar Content-Type en GET sin cuerpo (evita preflights
   // OPTIONS innecesarios) y combinar headers en vez de sobrescribirlos.
-  const hasBody = init?.body !== undefined && init?.body !== null;
-  const headers = {
-    ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
-    ...init?.headers,
+  const tieneCuerpo = opciones?.body !== undefined && opciones?.body !== null;
+  const cabeceras = {
+    ...(tieneCuerpo ? { 'Content-Type': 'application/json' } : {}),
+    ...opciones?.headers,
   };
-  const response = await fetch(`${API_BASE}${path}`, {
+  const respuesta = await fetch(`${URL_BASE_API}${ruta}`, {
     credentials: 'include',
-    ...init,
-    headers,
+    ...opciones,
+    headers: cabeceras,
   });
-  if (response.status === 401 || response.status === 403) {
-    throw new AdminAuthError(response.status, path);
+  if (respuesta.status === 401 || respuesta.status === 403) {
+    throw new AdminAuthError(respuesta.status, ruta);
   }
-  if (!response.ok) {
-    let message = `La API respondió con ${response.status} en ${path}`;
-    let detail: string | undefined;
+  if (!respuesta.ok) {
+    let mensaje = `La API respondió con ${respuesta.status} en ${ruta}`;
+    let detalle: string | undefined;
     try {
-      const body = await response.json() as ErrorBackend;
-      message = body.mensaje || body.error || message;
-      detail = body.detalle;
+      const cuerpo = await respuesta.json() as ErrorBackend;
+      mensaje = cuerpo.mensaje || cuerpo.error || mensaje;
+      detalle = cuerpo.detalle;
     } catch {
       // Respuesta sin JSON: conservar el mensaje con el estado.
     }
-    throw new AdminApiError(response.status, message, detail);
+    throw new AdminApiError(respuesta.status, mensaje, detalle);
   }
-  return response.json() as Promise<T>;
+  return respuesta.json() as Promise<Respuesta>;
 }
 
 // Usuarios (SUP-242). GET paginado con búsqueda/rol del servidor.
@@ -232,14 +228,14 @@ export type AdminUsersQuery = {
   rol?: string;
 };
 
-export async function fetchAdminUsers(query: AdminUsersQuery = {}, signal?: AbortSignal): Promise<AdminUsersPage> {
-  const params = new URLSearchParams();
-  if (query.page) params.set('page', String(query.page));
-  if (query.limit) params.set('limit', String(query.limit));
-  if (query.q) params.set('q', query.q);
-  if (query.rol) params.set('rol', query.rol);
-  const suffix = params.toString() ? `?${params.toString()}` : '';
-  const pagina = await request<PaginaUsuariosBackend>(`${ADMIN_ENDPOINTS.usuarios}${suffix}`, { signal });
+export async function fetchAdminUsers(consulta: AdminUsersQuery = {}, senal?: AbortSignal): Promise<AdminUsersPage> {
+  const parametros = new URLSearchParams();
+  if (consulta.page) parametros.set('page', String(consulta.page));
+  if (consulta.limit) parametros.set('limit', String(consulta.limit));
+  if (consulta.q) parametros.set('q', consulta.q);
+  if (consulta.rol) parametros.set('rol', consulta.rol);
+  const sufijo = parametros.toString() ? `?${parametros.toString()}` : '';
+  const pagina = await solicitar<PaginaUsuariosBackend>(`${ADMIN_ENDPOINTS.usuarios}${sufijo}`, { signal: senal });
   return {
     users: pagina.data.map(adminUserFromBackend),
     total: pagina.paginacion.total_registros,
@@ -251,11 +247,11 @@ export async function fetchAdminUsers(query: AdminUsersQuery = {}, signal?: Abor
 
 export async function updateAdminUser(
   id: string,
-  patch: { esta_activo?: boolean; rol?: string; plan?: string },
+  cambios: { esta_activo?: boolean; rol?: string; plan?: string },
 ): Promise<AdminUser> {
-  const usuario = await request<UsuarioBackend>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
+  const usuario = await solicitar<UsuarioBackend>(`${ADMIN_ENDPOINTS.usuarios}/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify(patch),
+    body: JSON.stringify(cambios),
   });
   return adminUserFromBackend(usuario);
 }
@@ -271,11 +267,11 @@ type FuenteBackend = {
   ultima_extraccion?: string | null;
 };
 
-function formatLastSync(value?: string | null): string {
-  if (!value) return 'Sin registros';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Sin registros';
-  return date.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+function formatearUltimaSincronizacion(valor?: string | null): string {
+  if (!valor) return 'Sin registros';
+  const fecha = new Date(valor);
+  if (Number.isNaN(fecha.getTime())) return 'Sin registros';
+  return fecha.toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
 }
 
 export function adminSourceFromBackend(fuente: FuenteBackend): AdminSource {
@@ -284,7 +280,7 @@ export function adminSourceFromBackend(fuente: FuenteBackend): AdminSource {
     name: fuente.nombre,
     type: 'Supermercado',
     status: fuente.habilitada ? 'Operativa' : 'Inactiva',
-    lastSync: formatLastSync(fuente.ultima_extraccion),
+    lastSync: formatearUltimaSincronizacion(fuente.ultima_extraccion),
     products: fuente.productos,
     branches: fuente.sucursales,
     habilitada: fuente.habilitada,
@@ -292,32 +288,32 @@ export function adminSourceFromBackend(fuente: FuenteBackend): AdminSource {
 }
 
 // Fuentes (SUP-243). GET lista, PUT { habilitada } por id.
-export async function fetchAdminSources(signal?: AbortSignal): Promise<AdminSource[]> {
-  const fuentes = await request<FuenteBackend[]>(ADMIN_ENDPOINTS.fuentes, { signal });
+export async function fetchAdminSources(senal?: AbortSignal): Promise<AdminSource[]> {
+  const fuentes = await solicitar<FuenteBackend[]>(ADMIN_ENDPOINTS.fuentes, { signal: senal });
   return fuentes.map(adminSourceFromBackend);
 }
 
-export async function updateAdminSource(id: string, patch: { habilitada: boolean }): Promise<AdminSource> {
-  const fuente = await request<FuenteBackend>(`${ADMIN_ENDPOINTS.fuentes}/${encodeURIComponent(id)}`, {
+export async function updateAdminSource(id: string, cambios: { habilitada: boolean }): Promise<AdminSource> {
+  const fuente = await solicitar<FuenteBackend>(`${ADMIN_ENDPOINTS.fuentes}/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify(patch),
+    body: JSON.stringify(cambios),
   });
   return adminSourceFromBackend(fuente);
 }
 
 // Métricas (SUP-279/SUP-242). Identidad expone el conteo real de cuentas;
 // Catálogo y Control siguen pendientes de sus tickets.
-export function fetchIdentidadMetrics(signal?: AbortSignal): Promise<IdentidadMetrics> {
-  return request<{ total_usuarios: number; usuarios_activos: number }>(
+export function fetchIdentidadMetrics(senal?: AbortSignal): Promise<IdentidadMetrics> {
+  return solicitar<{ total_usuarios: number; usuarios_activos: number }>(
     ADMIN_ENDPOINTS.metricasIdentidad,
-    { signal },
-  ).then((data) => ({ totalUsuarios: data.total_usuarios, usuariosActivos: data.usuarios_activos }));
+    { signal: senal },
+  ).then((datos) => ({ totalUsuarios: datos.total_usuarios, usuariosActivos: datos.usuarios_activos }));
 }
 
-export function fetchCatalogoMetrics(signal?: AbortSignal): Promise<CatalogoMetrics> {
-  return request<CatalogoMetrics>(ADMIN_ENDPOINTS.metricasCatalogo, { signal });
+export function fetchCatalogoMetrics(senal?: AbortSignal): Promise<CatalogoMetrics> {
+  return solicitar<CatalogoMetrics>(ADMIN_ENDPOINTS.metricasCatalogo, { signal: senal });
 }
 
-export function fetchControlMetrics(signal?: AbortSignal): Promise<ControlMetrics> {
-  return request<ControlMetrics>(ADMIN_ENDPOINTS.metricasControl, { signal });
+export function fetchControlMetrics(senal?: AbortSignal): Promise<ControlMetrics> {
+  return solicitar<ControlMetrics>(ADMIN_ENDPOINTS.metricasControl, { signal: senal });
 }

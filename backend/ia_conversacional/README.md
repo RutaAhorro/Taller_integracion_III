@@ -1,210 +1,197 @@
-# IA Conversacional — SUP-344, SUP-345, SUP-353
+# IA Conversacional
 
-Microservicio FastAPI independiente (puerto `8002`, punto de entrada `app/main.py`) que implementa un asistente de compras conversacional con un pipeline determinista de 3 etapas diseñado para prevenir alucinaciones de precios, stock y productos.
+Microservicio FastAPI (puerto `8002`, entrada `app.main:app`) que responde
+pedidos de compra en lenguaje natural con un pipeline de tres etapas pensado
+para no inventar productos, precios ni stock.
 
-## Arquitectura y Principios de Diseño
+> [!IMPORTANT]
+> **Estado de despliegue:** el servicio existe en `docker-compose.yml`, el
+> Gateway enruta `/api/v1/chat` si se define `IA_URL` (SUP-278) y el frontend
+> llama a `${VITE_API_URL}/chat` a través de Gateway (no existe
+> `VITE_IA_URL`), pero **no figura como servicio desplegado en el inventario
+> del Sprint 2** y no tiene manifiestos en `infrastructure/k8s/`. Que las pruebas pasen no acredita integración ni
+> despliegue.
 
-El servicio aplica estrictamente el principio de mínimo privilegio y separación de dominios:
+## Pipeline
 
-1. **Pipeline Determinista de 3 Etapas:**
-   - **Etapa 1 (Extracción estructurada):** El LLM procesa la solicitud del usuario mediante *function calling* forzado para extraer parámetros de búsqueda normalizados (categoría, rango de precios, términos de búsqueda, ordenamiento). Si el modelo no emite *function calling*, el sistema rechaza el texto libre para evitar alucinaciones.
-   - **Etapa 2 (Filtrado determinista):** El código del servicio (`app/filtros.py`) aplica los filtros de forma determinista sobre el catálogo de productos reales vigentes con stock.
-   - **Etapa 3 (Explicación controlada):** El LLM genera una redacción natural explicativa recibiendo como contexto **únicamente** la lista acotada de productos reales validados en la etapa 2. Si no hay productos que coincidan o si la etapa de explicación falla, se devuelve el resultado filtrado sin interrumpir la respuesta.
+1. **Extracción (LLM)** — función declarada en `app/domain/prompts.py`. El
+   modelo debe llamar `extraer_filtros_busqueda` (function calling forzado) y
+   devuelve `precio_max`, `categoria`, `distancia_max` y `palabras_clave`.
+   `app/domain/filtros.py` descarta los campos mal tipados. Si responde texto
+   libre, el chat lo ignora.
+2. **Filtrado determinista** — `app/domain/filtros.py`. El código filtra los
+   productos reales de Catálogo por precio máximo, categoría (texto contra
+   categoría o nombre) y distancia, y ordena por precio ascendente.
+   `palabras_clave` se extrae pero hoy no filtra.
+3. **Explicación (LLM)** — prompt en `app/domain/prompts.py`, ejecución en
+   `app/services/chat.py`. El modelo redacta solo
+   con los productos ya filtrados (máximo `IA_EXPLICACION_MAX_PRODUCTOS`). Si
+   falla, se responde con los productos y un texto de respaldo.
 
-2. **Aislamiento de Datos (RNF-05 / SUP-246):**
-   - El servicio **no se conecta a PostgreSQL** ni posee credenciales directas de base de datos (`DATABASE_URL`, drivers `psycopg2` o `asyncpg`).
-   - Obtiene los productos vigentes mediante HTTP interno hacia el microservicio de Catálogo (`CATALOGO_INTERNAL_URL`).
-   - En caso de indisponibilidad o timeout de Catálogo, aplica degradación elegante: mantiene los productos previos en caché de memoria (`fuente: memoria`) o reporta lista vacía (`fuente: sin_datos`), sin interrumpir la API ni inventar datos.
+**Proveedores**: Gemini primario y Groq secundario (`app/repositories`). El
+respaldo (`app/services/fallback.py`) reintenta con backoff exponencial los errores
+transitorios (red, timeout, HTTP 429/500/502/503/504) y luego cambia de
+proveedor.
 
-3. **Resiliencia de Proveedores LLM:**
-   - Implementa un orquestador de fallback (`app/proveedores/fallback_proveedor.py`): intenta primero con el proveedor primario (**Gemini 3.1 Flash-Lite** en Google AI Studio) con reintentos y backoff exponencial ante errores transitorios (`429`, `503`, timeouts), y conmuta al proveedor secundario (**Groq / Llama 3.1 / 3.3**) si el primario no logra responder.
+**Catálogo** (`app/repositories/catalogo.py`): solo HTTP interno a
+`GET {CATALOGO_INTERNAL_URL}/api/v1/productos?en_stock=true&page=&limit=`, con
+caché en memoria. El servicio no tiene drivers ni credenciales de PostgreSQL.
+Si Catálogo falla, conserva los productos previos (`fuente: memoria`) o informa
+`sin_datos`.
 
----
+### Limitaciones conocidas
 
-## Endpoints HTTP
+- Catálogo no entrega distancia: `distancia_km` queda en `0.0` y `distancia_max`
+  no descarta productos (SUP-315).
+- El filtrado por categoría compara en minúsculas sin normalizar tildes.
+- Los errores HTTP de Gemini y Groq en la extracción se devuelven como resultado
+  con `error` en vez de excepción, así que el respaldo no reintenta ni cambia de
+  proveedor en esa etapa (SUP-315).
+
+## Estructura
+
+Misma organización por capas que Identidad (`api`, `services`,
+`repositories`, `domain`, `config`), con un archivo por tema.
+
+```
+app/
+  main.py            Arma la aplicación, CORS, /health y el router
+  config.py          Lectura y validación del entorno al arrancar
+  api/
+    chat.py          POST /api/v1/chat: cuerpo, sesión, límite y 503
+    sesion.py        Validación JWT de Identidad y límite por usuario
+  services/
+    chat.py          Orquestación de las tres etapas y texto de respaldo
+    fallback.py      Reintentos y cambio de proveedor
+  repositories/
+    catalogo.py      Cliente HTTP de Catálogo con caché y degradación
+    gemini.py        Cliente REST de Gemini
+    groq.py          Cliente REST de Groq y rescate de errores de esquema
+  domain/
+    filtros.py       Saneamiento de filtros y filtrado determinista
+    prompts.py       Función de extracción y prompt de explicación
+    proveedores.py   Interfaz ProveedorIA y ResultadoExtraccion
+tests/
+  unit/              Configuración, filtros, Catálogo, respaldo y límite
+  integration/       /health, autenticación y endpoint de chat con dobles
+```
+
+## Endpoints
 
 | Método | Ruta | Autenticación | Descripción |
 |---|---|---|---|
-| `GET` | `/health` | Pública | Healthcheck de liveness y estado de caché de catálogo (`status`, `service`, `productos_cargados`, `fuente`: `catalogo`, `memoria` o `sin_datos`). |
-| `POST` | `/api/v1/chat` | JWT (Identidad) | Endpoint principal del pipeline conversacional. Valida payload `ChatRequest` y devuelve recomendaciones y filtros. |
+| `GET` | `/health` | Pública | `status`, `service`, `productos_cargados` y `fuente` (`catalogo`, `memoria` o `sin_datos`). No llama a la red. |
+| `POST` | `/api/v1/chat` | JWT de Identidad | Ejecuta el pipeline. Cuerpo `{"mensaje": "..."}` (1 a `IA_CHAT_MAX_MENSAJE_LEN` caracteres). |
 
-### Detalle de `/health`
+El JWT se acepta en la cookie HttpOnly `jwt` (navegador) o en
+`Authorization: Bearer <token>`, firmado con HS256 y `JWT_SECRET`, con los
+claims `exp` y `user_id` obligatorios.
 
-Responde con el estado del proceso y la fuente del catálogo en memoria:
-
-```json
-{
-  "status": "ok",
-  "service": "ia_conversacional",
-  "productos_cargados": 120,
-  "fuente": "catalogo"
-}
-```
-
-Valores posibles de `fuente`:
-- `catalogo`: datos sincronizados exitosamente desde el microservicio Catálogo.
-- `memoria`: Catálogo no respondió en el último ciclo; se conservan datos previos en caché.
-- `sin_datos`: sin conexión con Catálogo y sin datos previos; responde 0 productos sin inventar datos.
-
-### Detalle de `/api/v1/chat`
-
-Protegido mediante token JWT emitido por el servicio de Identidad (algoritmo HMAC-SHA256 con `JWT_SECRET`). Acepta el token mediante:
-1. Cookie HttpOnly `jwt` (mecanismo estándar del frontend web).
-2. Header `Authorization: Bearer <token>` (fallback para clientes de API o pruebas).
-
-**Request Body (`ChatRequest`):**
+Respuesta 200 de `/api/v1/chat`:
 
 ```json
 {
-  "mensaje": "Quiero comprar fideos y salsa de tomate bajo $2000"
+  "respuesta": "texto para el usuario",
+  "filtros_aplicados": {"categoria": "verduras", "precio_max": 2000},
+  "productos_recomendados": [{"id": "...", "nombre": "...", "precio": 890.0}],
+  "tiempo_extraccion_ms": 420,
+  "tiempo_explicacion_ms": 610
 }
 ```
 
-*Restricciones:* `mensaje` obligatorio, longitud entre 1 y 1000 caracteres.
+`filtros_aplicados` es `null` si el modelo no extrajo filtros. Errores: `401`
+sin sesión válida, `422` mensaje inválido, `429` con `Retry-After` al exceder
+el límite por usuario y `503` si ningún proveedor pudo extraer filtros.
 
-> [!NOTE]
-> **Estado de Desacople y Enrutamiento:**  
-> La Gateway actualmente **no** enruta el tráfico hacia `/api/v1/chat` (la unificación de rutas en Gateway está programada bajo SUP-278). Los antiguos endpoints experimentales de desarrollo (`/chat/gemini` y `/chat/groq`) fueron completamente retirados. El frontend o las pruebas interactúan directamente contra el puerto `8002` (vía `VITE_IA_URL`).
+### Cambios de contrato (SUP-387)
 
----
+El frontend solo lee `respuesta`; ningún consumidor del repositorio lee las
+claves retiradas.
 
-## Configuración y Variables de Entorno
+| Antes | Ahora |
+|---|---|
+| `filtros` duplicaba `filtros_aplicados` | Retirado: usar `filtros_aplicados` |
+| `productos` duplicaba `productos_recomendados` | Retirado: usar `productos_recomendados` |
+| Con catálogo vacío faltaban `tiempo_extraccion_ms` y `tiempo_explicacion_ms` | Siempre presentes (`0` si la etapa no corrió) |
 
-El servicio lee su configuración de variables de entorno (o desde un archivo `.env` en la raíz).
+## Configuración
 
-### Variables Compartidas (SUP-345)
+Todas las variables tienen un ejemplo en [`.env.example`](.env.example). Las
+compartidas siguen [la guía de configuración](../../docs/Guias/GUIA_CONFIGURACION.md).
 
-| Variable | Valor por defecto | Obligatoria | Propósito y Formato |
+### Compartidas
+
+| Variable | Defecto | Obligatoria | Uso |
 |---|---|---|---|
-| `JWT_SECRET` | *(Sin fallback)* | **Sí** | Secreto de firma y validación de tokens JWT de usuario (HMAC-SHA256). Mínimo 32 caracteres (generar con `openssl rand -hex 32`). Debe coincidir con Identidad. |
-| `IA_CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | No | Lista separada por comas de orígenes exactos permitidos (sin comodín `*` ni barra final). Fallback a `CORS_ALLOWED_ORIGINS`. |
-| `CATALOGO_INTERNAL_URL` | `http://catalogo:8080` | No | Origen HTTP interno limpio hacia el microservicio Catálogo (sin path). En ejecución local usar `http://localhost:8080` o `http://localhost:8083`. |
-| `GEMINI_API_KEY` | *(Vacío)* | Condicional | Clave de API de Google AI Studio para el proveedor primario (Gemini). |
-| `GROQ_API_KEY` | *(Vacío)* | Condicional | Clave de API de Groq Cloud para el proveedor secundario de resiliencia (Groq). |
+| `JWT_SECRET` | — | **Sí** | Verificación HS256 de la sesión de Identidad; mínimo 32 caracteres. |
+| `IA_CORS_ALLOWED_ORIGINS` | `http://localhost:3000,http://localhost:5173` | No | Orígenes exactos, sin `*` ni barra final. Respaldo: `CORS_ALLOWED_ORIGINS`. |
+| `CATALOGO_INTERNAL_URL` | `http://catalogo:8080` | No | Origen HTTP de Catálogo, sin path ni credenciales. |
+| `GEMINI_API_KEY` | vacío | Condicional | Clave del proveedor primario. Solo backend. |
+| `GROQ_API_KEY` | vacío | Condicional | Clave del proveedor secundario. Solo backend. |
 
-### Variables Específicas del Servicio
+Sin ninguna clave el servicio arranca con una advertencia, y el chat responde 503.
 
-| Variable | Valor por defecto | Obligatoria | Propósito |
-|---|---|---|---|
-| `CATALOGO_TIMEOUT` | `5.0` | No | Tiempo máximo de espera (segundos) para consultas HTTP hacia Catálogo. |
-| `IA_CATALOGO_CACHE_TTL` | `60.0` | No | Tiempo de vida de la caché local de productos en memoria (segundos). |
-| `IA_CATALOGO_PAGE_LIMIT` | `100` | No | Cantidad de productos solicitados por página al endpoint de Catálogo. |
-| `IA_CATALOGO_MAX_PAGINAS` | `10` | No | Límite de seguridad de páginas a recorrer desde Catálogo. |
-| `GROQ_ENDPOINT` | `https://api.groq.com/openai/v1/chat/completions` | No | Endpoint de API de inferencia de Groq. |
-| `GROQ_MODEL_EXTRACCION` | `llama-3.1-8b-instant` | No | Modelo Groq para extracción estructurada de filtros. |
-| `GROQ_MODEL_EXPLICACION` | `llama-3.3-70b-versatile` | No | Modelo Groq para redacción de explicación de recomendaciones. |
-| `IA_GROQ_TIMEOUT` | `15.0` | No | Timeout de llamadas HTTP hacia Groq (segundos). |
-| `IA_GROQ_MAX_TOKENS_EXTRACCION` | `512` | No | Límite de tokens de salida para extracción de filtros en Groq. |
-| `IA_GROQ_MAX_TOKENS_EXPLICACION` | `200` | No | Límite de tokens de salida para la explicación en Groq. |
-| `IA_GROQ_FREQUENCY_PENALTY` | `0.4` | No | Penalización de frecuencia en Groq para evitar repeticiones. |
-| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | No | Modelo de Gemini utilizado en Google AI Studio. |
-| `GEMINI_API_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | No | URL base de la API REST de Google Generative Language. |
-| `IA_GEMINI_TIMEOUT` | `15.0` | No | Timeout de llamadas HTTP hacia Gemini (segundos). |
-| `IA_GEMINI_THINKING_LEVEL` | `low` | No | Nivel de pensamiento en Gemini 3.1 Flash-Lite para minimizar latencia. |
-| `IA_GEMINI_MAX_TOKENS_EXTRACCION` | `1200` | No | Límite de tokens de salida para extracción en Gemini. |
-| `IA_GEMINI_MAX_TOKENS_EXPLICACION` | `2048` | No | Límite de tokens de salida para explicación en Gemini. |
-| `IA_FALLBACK_RETRIES_PRIMARIO` | `4` | No | Reintentos máximos del proveedor primario ante fallos recuperables. |
-| `IA_FALLBACK_RETRIES_SECUNDARIO` | `1` | No | Reintentos máximos del proveedor secundario antes de fallar. |
-| `IA_FALLBACK_BACKOFF_BASE` | `1.5` | No | Multiplicador base (segundos) para el cálculo de backoff exponencial. |
-| `IA_FALLBACK_JITTER_MAX` | `0.5` | No | Variación aleatoria máxima (segundos) agregada al backoff. |
-| `IA_CHAT_MAX_MENSAJE_LEN` | `1000` | No | Longitud máxima permitida en caracteres para el mensaje del usuario. |
-| `IA_EXPLICACION_MAX_PRODUCTOS` | `8` | No | Cantidad máxima de productos entregados en el prompt de explicación. |
-| `IA_CHAT_RATE_LIMIT_SOLICITUDES` | `10` | No | Máximo de peticiones permitidas por usuario autenticado en la ventana temporal. |
-| `IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS` | `60.0` | No | Duración de la ventana deslizante para el conteo de peticiones (segundos). |
+### Propias del servicio
 
-> [!NOTE]
-> **Limitación de tasa y réplicas (HPA):**  
-> El contador de `IA_CHAT_RATE_LIMIT_SOLICITUDES` se almacena en memoria local por réplica sin dependencia de Redis. Al escalar horizontalmente con Kubernetes HPA, el límite efectivo para un usuario corresponde a la cuota local multiplicada por el número de réplicas activas (`N × réplicas`), protegiendo cada instancia individualmente de saturación.
+| Variable | Defecto | Uso |
+|---|---|---|
+| `CATALOGO_TIMEOUT` | `5.0` | Timeout (s) hacia Catálogo. |
+| `IA_CATALOGO_CACHE_TTL` | `60.0` | Vida (s) de la caché de productos; `0` consulta siempre. |
+| `IA_CATALOGO_PAGE_LIMIT` | `100` | Productos por página pedidos a Catálogo. |
+| `IA_CATALOGO_MAX_PAGINAS` | `10` | Páginas máximas; si hay más, se registra el truncado. |
+| `GROQ_ENDPOINT` | `https://api.groq.com/openai/v1/chat/completions` | Endpoint de Groq. |
+| `GROQ_MODEL_EXTRACCION` | `llama-3.1-8b-instant` | Modelo Groq de la etapa 1. |
+| `GROQ_MODEL_EXPLICACION` | `llama-3.3-70b-versatile` | Modelo Groq de la etapa 3. |
+| `IA_GROQ_TIMEOUT` | `15.0` | Timeout (s) hacia Groq. |
+| `IA_GROQ_MAX_TOKENS_EXTRACCION` | `512` | Tokens de salida, etapa 1. |
+| `IA_GROQ_MAX_TOKENS_EXPLICACION` | `200` | Tokens de salida, etapa 3. |
+| `IA_GROQ_FREQUENCY_PENALTY` | `0.4` | Penalización de repetición. |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Modelo Gemini. |
+| `GEMINI_API_BASE_URL` | `https://generativelanguage.googleapis.com/v1beta` | Base de la API de Gemini. |
+| `GEMINI_ENDPOINT` | derivado de base y modelo | Endpoint completo; si se define, anula `GEMINI_MODEL` (se advierte al arrancar). |
+| `IA_GEMINI_TIMEOUT` | `15.0` | Timeout (s) hacia Gemini. |
+| `IA_GEMINI_THINKING_LEVEL` | `low` | Nivel de razonamiento; `low` es el mínimo de la serie 3. |
+| `IA_GEMINI_MAX_TOKENS_EXTRACCION` | `1200` | Tokens de salida, etapa 1. |
+| `IA_GEMINI_MAX_TOKENS_EXPLICACION` | `2048` | Tokens de salida, etapa 3. |
+| `IA_FALLBACK_RETRIES_PRIMARIO` | `4` | Reintentos del primario. |
+| `IA_FALLBACK_RETRIES_SECUNDARIO` | `1` | Reintentos del secundario. |
+| `IA_FALLBACK_BACKOFF_BASE` | `1.5` | Espera base (s) del backoff exponencial. |
+| `IA_FALLBACK_JITTER_MAX` | `0.5` | Variación aleatoria máxima (s) sumada a cada espera. |
+| `IA_CHAT_MAX_MENSAJE_LEN` | `1000` | Largo máximo del mensaje. |
+| `IA_EXPLICACION_MAX_PRODUCTOS` | `8` | Productos enviados al prompt de explicación. |
+| `IA_CHAT_RATE_LIMIT_SOLICITUDES` | `10` | Mensajes por usuario en la ventana. |
+| `IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS` | `60.0` | Ventana deslizante (s). |
 
+El límite por usuario vive en memoria de cada réplica: con N réplicas, el
+límite efectivo es N veces la cuota.
 
----
-
-## Ejecución Local
-
-### Con `uv` (Recomendado)
-
-Desde el directorio `backend/ia_conversacional`:
-
-```bash
-# Ejecución del servidor de desarrollo con recarga automática
-JWT_SECRET=$(openssl rand -hex 32) \
-CATALOGO_INTERNAL_URL=http://localhost:8083 \
-uv run --with-requirements requirements.txt uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
-```
-
-### Con entorno virtual tradicional (`venv`)
+## Ejecución
 
 ```bash
 cd backend/ia_conversacional
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-
-export JWT_SECRET=$(openssl rand -hex 32)
-export CATALOGO_INTERNAL_URL=http://localhost:8083
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+export JWT_SECRET=$(openssl rand -hex 32) CATALOGO_INTERNAL_URL=http://localhost:8083
 uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
-```
-
-Verificación en terminal:
-
-```bash
 curl -fsS http://localhost:8002/health
 ```
 
----
-
-## Ejecución con Docker y Docker Compose
-
-### Construcción individual de la imagen
-
-Desde la raíz del repositorio:
+Con Docker (imagen `python:3.11-slim`, usuario `65532:65532`, healthcheck sobre
+`/health`):
 
 ```bash
 docker build -t ia-conversacional backend/ia_conversacional
-```
-
-La imagen utiliza `python:3.11-slim`, ejecuta como usuario sin privilegios `65532:65532`, expone el puerto `8002` e incluye un healthcheck nativo que consulta `http://127.0.0.1:8002/health`.
-
-### Despliegue con Docker Compose
-
-El servicio está integrado en el `docker-compose.yml` principal bajo la red `microservices_net`, con sistema de archivos de solo lectura (`read_only: true`), límite de recursos (0.5 CPUs, 300M RAM) y dependencia saludable de `catalogo`:
-
-```bash
-# Levantar el servicio y sus dependencias
 docker compose up -d ia_conversacional
-
-# Consultar logs en tiempo real
-docker compose logs -f ia_conversacional
-
-# Verificar estado de salud
-docker compose ps ia_conversacional
 ```
 
----
+## Pruebas
 
-## Pruebas Automatizadas
-
-La suite de pruebas utiliza `pytest` y dobles de prueba HTTP (`httpx.Client` / `FastAPI TestClient`) sin realizar llamadas reales a APIs externas de pago ni requerir Catálogo activo.
-
-### Ejecución de pruebas con `uv`
-
-Desde `backend/ia_conversacional`:
+Las pruebas usan dobles de HTTP y de proveedores: no llaman a Gemini, Groq ni
+Catálogo. El CI (`.github/workflows/ia-conversacional-checks.yml`) ejecuta
+`pytest tests/` y construye la imagen.
 
 ```bash
-uv run --with-requirements requirements.txt --with-requirements requirements-dev.txt pytest tests/
-```
-
-### Ejecución con `pytest` en entorno virtual
-
-```bash
-# Con el entorno virtual activo y requirements-dev.txt instalado:
-pytest tests/
-
-# Ejecutar por suite o categoría:
-pytest tests/unit/
-pytest tests/integration/
-
-# Ejecutar por módulo de prueba:
-pytest tests/unit/test_productos.py -v
-pytest tests/integration/test_chat_auth.py -v
+pip install -r requirements-dev.txt
+python -m pytest            # tests/unit y tests/integration
+ruff format --check . && ruff check .
 ```

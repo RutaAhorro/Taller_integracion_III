@@ -57,7 +57,7 @@ Todas las URLs de servicio deben ser **orígenes HTTP(S) limpios**: deben inclui
 | `IDENTIDAD_URL` | Identidad | Gateway | Origen HTTP de Identidad para enrutar `/api/v1/auth/*` a través de la red aislada `identidad_edge`. Formato origen sin path. | `http://identidad-upstream:8080` (en Compose) / `http://127.0.0.1:8084` (local). |
 | `SCRAPING_URL` | Control de scraping | Gateway | Origen HTTP de Control de scraping para enrutar `/api/v1/scraper/*`. Formato origen sin path. | `http://control-scraping:8080` (en Compose) / `http://127.0.0.1:8080` (local). |
 | `RUTAS_URL` | Motor de rutas | Gateway | Origen HTTP del motor de rutas para enrutar `/api/v1/listas*`. Si está vacío, Gateway devuelve 404 (servicio opcional bajo perfil `rutas`). Formato origen sin path. | Vacío por defecto (`${RUTAS_URL:-}`). Con perfil `rutas`: `http://motor-rutas:8001`. |
-| `IA_URL` | IA conversacional | Gateway / Frontend (`VITE_IA_URL`) | Origen HTTP del microservicio de IA conversacional para enrutar `/api/v1/chat*` (SUP-278). Si está vacío, Gateway devuelve 404 (`route_not_found`) manteniendo el entorno desacoplado en CI. Formato origen sin path. | Vacío por defecto (`${IA_URL:-}`). En entorno integrado con IA: `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
+| `IA_URL` | IA conversacional | Gateway | Origen HTTP del microservicio de IA conversacional para enrutar `/api/v1/chat*` (SUP-278). Si está vacío, Gateway devuelve 404 (`route_not_found`) manteniendo el entorno desacoplado en CI. Formato origen sin path. | Vacío por defecto (`${IA_URL:-}`). En entorno integrado con IA: `http://ia-conversacional:8002` (en Compose) / `http://localhost:8002` (local). |
 
 #### Excepciones a la regla de URLs sin path
 
@@ -163,7 +163,7 @@ En aplicaciones creadas con Vite (`frontend/web`), cualquier variable con prefij
 
 - **Públicas por diseño:** Cualquier usuario puede abrir las herramientas de desarrollador del navegador e inspeccionar el contenido de cualquier variable `VITE_*`.
 - **Cero secretos en `VITE_*`:** Nunca asignar credenciales privadas, tokens de servicio, contraseñas de base de datos ni claves secretas a variables `VITE_*`.
-- **Uso válido:** Únicamente configuraciones públicas como la URL base de la API (`VITE_API_URL=/api/v1`), la URL pública de IA (`VITE_IA_URL`) o el Client ID público de Google (`VITE_GOOGLE_CLIENT_ID`).
+- **Uso válido:** Únicamente configuraciones públicas como la URL base de la API (`VITE_API_URL=/api/v1`) o el Client ID público de Google (`VITE_GOOGLE_CLIENT_ID`).
 
 ---
 
