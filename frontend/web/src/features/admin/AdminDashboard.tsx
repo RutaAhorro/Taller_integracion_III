@@ -23,7 +23,7 @@ import { ADMIN_HAS_BACKEND } from './admin-api';
 import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-types';
 import { useAdminMetrics, useAdminSources, useAdminUsers, type AdminMetricsState } from './useAdminData';
 
-const statusStyles = {
+const estilosEstado = {
   Activo: 'bg-[#e3f1e4] text-[#376344]',
   Inactivo: 'bg-[#eef0ed] text-[#667061]',
   Operativa: 'bg-[#e3f1e4] text-[#376344]',
@@ -31,25 +31,25 @@ const statusStyles = {
   Inactiva: 'bg-[#eef0ed] text-[#667061]',
 };
 
-function StatusBadge({ status }: { status: keyof typeof statusStyles }) {
-  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${statusStyles[status]}`}>{status}</span>;
+function EtiquetaEstado({ estado }: { estado: keyof typeof estilosEstado }) {
+  return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${estilosEstado[estado]}`}>{estado}</span>;
 }
 
-function StatCard({ icon: Icon, label, value, detail, accent, error }: {
-  icon: typeof Users;
-  label: string;
-  value: string;
-  detail: string;
-  accent: string;
+function TarjetaEstadistica({ icono: Icono, etiqueta, valor, detalle, acento, error }: {
+  icono: typeof Users;
+  etiqueta: string;
+  valor: string;
+  detalle: string;
+  acento: string;
   error?: string | null;
 }) {
   return (
     <article className="rounded-2xl border border-[#dfe5dc] bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between">
-        <span className={`flex size-11 items-center justify-center rounded-xl ${accent}`}><Icon className="size-5" /></span>
+        <span className={`flex size-11 items-center justify-center rounded-xl ${acento}`}><Icono className="size-5" /></span>
         <ArrowUpRight className="size-4 text-muted-foreground" />
       </div>
-      <p className="mt-5 text-sm font-medium text-muted-foreground">{label}</p>
+      <p className="mt-5 text-sm font-medium text-muted-foreground">{etiqueta}</p>
       {error ? (
         <>
           <p className="mt-1 text-2xl font-bold tracking-tight text-muted-foreground">Sin datos</p>
@@ -57,21 +57,21 @@ function StatCard({ icon: Icon, label, value, detail, accent, error }: {
         </>
       ) : (
         <>
-          <p className="mt-1 text-3xl font-bold tracking-tight">{value}</p>
-          <p className="mt-2 text-xs text-muted-foreground">{detail}</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight">{valor}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{detalle}</p>
         </>
       )}
     </article>
   );
 }
 
-function TableSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number }) {
+function EsqueletoTabla({ filas = 4, columnas = 4 }: { filas?: number; columnas?: number }) {
   return (
     <div className="space-y-3 p-5" role="status" aria-label="Cargando datos">
-      {Array.from({ length: rows }).map((_, row) => (
-        <div key={row} className="flex gap-3">
-          {Array.from({ length: cols }).map((_, col) => (
-            <div key={col} className="h-9 flex-1 animate-pulse rounded-lg bg-[#edf0eb]" />
+      {Array.from({ length: filas }).map((_, fila) => (
+        <div key={fila} className="flex gap-3">
+          {Array.from({ length: columnas }).map((_, columna) => (
+            <div key={columna} className="h-9 flex-1 animate-pulse rounded-lg bg-[#edf0eb]" />
           ))}
         </div>
       ))}
@@ -79,16 +79,16 @@ function TableSkeleton({ rows = 4, cols = 4 }: { rows?: number; cols?: number })
   );
 }
 
-function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => void }) {
+function AvisoError({ mensaje, alReintentar }: { mensaje: string; alReintentar: () => void }) {
   return (
     <div className="flex flex-col gap-2 border-b border-[#edf0eb] bg-[#fdf3f1] p-4 text-sm sm:flex-row sm:items-center sm:justify-between" role="alert">
       <p className="flex items-center gap-2 text-destructive">
         <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
-        <span>{message}</span>
+        <span>{mensaje}</span>
       </p>
       <button
         type="button"
-        onClick={onRetry}
+        onClick={alReintentar}
         className="inline-flex shrink-0 items-center gap-2 rounded-full border border-destructive/30 px-3 py-1.5 text-xs font-bold text-destructive hover:bg-destructive/10"
       >
         <RefreshCw className="size-3.5" aria-hidden="true" />
@@ -101,59 +101,69 @@ function ErrorBanner({ message, onRetry }: { message: string; onRetry: () => voi
 // SUP-255: listado de usuarios con activar/desactivar, asignación de rol RBAC
 // y plan comercial en columnas separadas (auditoría H-06: el plan nunca viaja
 // en `rol`). En la vista general se usa sin acciones (solo lectura); en la
-// sección Usuarios se usa con showActions para gestionar (SUP-242).
-function UsersTable({ showActions = false }: { showActions?: boolean }) {
-  const [query, setQuery] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [role, setRole] = useState('Todos');
-  const [page, setPage] = useState(1);
-  const limit = 20;
-  const { user: currentUser } = useAuth();
-  const { users, pagination, isLoading, error, pendingId, refresh, toggleUserStatus, changeUserRole, changeUserPlan } = useAdminUsers({
-    page,
-    limit,
-    q: debouncedQuery,
-    rol: role as 'Todos' | (typeof ADMIN_ROLES)[number],
+// sección Usuarios se usa con mostrarAcciones para gestionar (SUP-242).
+function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean }) {
+  const [consulta, setConsulta] = useState('');
+  const [consultaDiferida, setConsultaDiferida] = useState('');
+  const [rolSeleccionado, setRolSeleccionado] = useState('Todos');
+  const [pagina, setPagina] = useState(1);
+  const limite = 20;
+  const { user: usuarioActual } = useAuth();
+  const {
+    users: usuarios,
+    pagination: paginacion,
+    isLoading: cargando,
+    error,
+    pendingId: idPendiente,
+    refresh: recargar,
+    toggleUserStatus: alternarEstadoUsuario,
+    changeUserRole: cambiarRolUsuario,
+    changeUserPlan: cambiarPlanUsuario,
+  } = useAdminUsers({
+    page: pagina,
+    limit: limite,
+    q: consultaDiferida,
+    rol: rolSeleccionado as 'Todos' | (typeof ADMIN_ROLES)[number],
   });
 
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedQuery(query), 300);
-    return () => window.clearTimeout(timer);
-  }, [query]);
+    const temporizador = window.setTimeout(() => setConsultaDiferida(consulta), 300);
+    return () => window.clearTimeout(temporizador);
+  }, [consulta]);
 
   useEffect(() => {
-    setPage(1);
-  }, [debouncedQuery, role]);
+    setPagina(1);
+  }, [consultaDiferida, rolSeleccionado]);
 
   useEffect(() => {
-    if (isLoading) return;
-    if (pagination.totalPages === 0 && page !== 1) {
-      setPage(1);
-    } else if (pagination.totalPages > 0 && page > pagination.totalPages) {
-      setPage(pagination.totalPages);
+    if (cargando) return;
+    if (paginacion.totalPages === 0 && pagina !== 1) {
+      setPagina(1);
+    } else if (paginacion.totalPages > 0 && pagina > paginacion.totalPages) {
+      setPagina(paginacion.totalPages);
     }
-  }, [isLoading, page, pagination.totalPages]);
+  }, [cargando, pagina, paginacion.totalPages]);
 
-  const inicio = pagination.total === 0 ? 0 : (pagination.page - 1) * pagination.limit + 1;
-  const fin = Math.min(pagination.page * pagination.limit, pagination.total);
+  const inicio = paginacion.total === 0 ? 0 : (paginacion.page - 1) * paginacion.limit + 1;
+  const fin = Math.min(paginacion.page * paginacion.limit, paginacion.total);
   // El hook serializa las mutaciones (una a la vez). Bloquear toda la tabla
   // mientras hay una en vuelo evita que el operador crea que aplicó un cambio
   // que el hook descartaría en silencio (SUP-242).
-  const isAnyMutationPending = pendingId !== null;
+  const hayMutacionPendiente = idPendiente !== null;
 
   return (
     <section className="rounded-2xl border border-[#dfe5dc] bg-white shadow-sm">
       <div className="flex flex-col gap-4 border-b border-[#edf0eb] p-5 md:flex-row md:items-center md:justify-between">
         <div><h2 className="text-lg font-bold">Usuarios recientes</h2><p className="text-sm text-muted-foreground">Administra las cuentas y sus permisos.</p></div>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar usuario..." className="pl-9 shadow-none" /></div>
-          <select value={role} onChange={(event) => setRole(event.target.value)} aria-label="Filtrar por rol" className="h-10 rounded-md border-2 border-border bg-background px-3 text-sm font-medium shadow-none outline-none focus:ring-2 focus:ring-ring">
+          <div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={consulta} onChange={(evento) => setConsulta(evento.target.value)} placeholder="Buscar usuario..." className="pl-9 shadow-none" /></div>
+          <select value={rolSeleccionado} onChange={(evento) => setRolSeleccionado(evento.target.value)} aria-label="Filtrar por rol" className="h-10 rounded-md border-2 border-border bg-background px-3 text-sm font-medium shadow-none outline-none focus:ring-2 focus:ring-ring">
             <option>Todos</option>{ADMIN_ROLES.map((rol) => <option key={rol}>{rol}</option>)}
           </select>
         </div>
       </div>
-      {error && <ErrorBanner message={error} onRetry={refresh} />}
-      {isLoading ? <TableSkeleton rows={4} cols={showActions ? 6 : 5} /> : (
+      {error && <AvisoError mensaje={error} alReintentar={recargar} />}
+      {cargando ? <EsqueletoTabla filas={4} columnas={mostrarAcciones ? 6 : 5} /> : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[840px] text-left text-sm">
@@ -164,69 +174,69 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
                   <th className="px-5 py-3 font-bold">Plan</th>
                   <th className="px-5 py-3 font-bold">Estado</th>
                   <th className="px-5 py-3 font-bold">Último acceso</th>
-                  {showActions && <th className="px-5 py-3 font-bold">Acción</th>}
+                  {mostrarAcciones && <th className="px-5 py-3 font-bold">Acción</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#edf0eb]">
-                {users.map((user) => {
-                  const isActive = user.status === 'Activo';
-                  const busy = pendingId === user.id;
-                  const isSelf = currentUser?.id === user.id;
-                  const roleEditable = (ADMIN_ROLES as readonly string[]).includes(user.role);
+                {usuarios.map((usuario) => {
+                  const estaActivo = usuario.status === 'Activo';
+                  const ocupado = idPendiente === usuario.id;
+                  const esPropio = usuarioActual?.id === usuario.id;
+                  const rolEditable = (ADMIN_ROLES as readonly string[]).includes(usuario.role);
                   return (
-                    <tr key={user.id} className="hover:bg-[#fcfdfb]">
-                      <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-full bg-[#ebe5db] text-xs font-bold text-[#4a5a3f]">{user.initials}</span><div><p className="font-bold">{user.name}</p><p className="text-xs text-muted-foreground">{user.email}</p></div></div></td>
+                    <tr key={usuario.id} className="hover:bg-[#fcfdfb]">
+                      <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-full bg-[#ebe5db] text-xs font-bold text-[#4a5a3f]">{usuario.initials}</span><div><p className="font-bold">{usuario.name}</p><p className="text-xs text-muted-foreground">{usuario.email}</p></div></div></td>
                       <td className="px-5 py-4 text-muted-foreground">
-                        {showActions ? (
+                        {mostrarAcciones ? (
                           <select
-                            value={roleEditable ? user.role : ''}
-                            disabled={isAnyMutationPending || !roleEditable || isSelf}
-                            onChange={(event) => void changeUserRole(user.id, event.target.value as (typeof ADMIN_ROLES)[number])}
-                            aria-label={`Asignar rol a ${user.name}`}
-                            title={isSelf
+                            value={rolEditable ? usuario.role : ''}
+                            disabled={hayMutacionPendiente || !rolEditable || esPropio}
+                            onChange={(evento) => void cambiarRolUsuario(usuario.id, evento.target.value as (typeof ADMIN_ROLES)[number])}
+                            aria-label={`Asignar rol a ${usuario.name}`}
+                            title={esPropio
                               ? 'No puedes cambiar tu propio rol; debe hacerlo otro administrador'
-                              : roleEditable
+                              : rolEditable
                                 ? 'Asignar rol RBAC (SUP-242: PUT rol: admin | colaborador | registrado)'
                                 : 'El backend devolvió un rol no reconocido; no se puede reasignar desde el panel'}
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
-                            {!roleEditable && <option value="">Desconocido</option>}
+                            {!rolEditable && <option value="">Desconocido</option>}
                             {ADMIN_ROLES.map((rol) => <option key={rol}>{rol}</option>)}
                           </select>
-                        ) : user.role}
+                        ) : usuario.role}
                       </td>
                       <td className="px-5 py-4 text-muted-foreground">
-                        {showActions ? (
+                        {mostrarAcciones ? (
                           <select
-                            value={user.plan ?? ''}
-                            disabled={isAnyMutationPending}
-                            onChange={(event) => void changeUserPlan(user.id, event.target.value as (typeof ADMIN_PLANS)[number])}
-                            aria-label={`Asignar plan a ${user.name}`}
+                            value={usuario.plan ?? ''}
+                            disabled={hayMutacionPendiente}
+                            onChange={(evento) => void cambiarPlanUsuario(usuario.id, evento.target.value as (typeof ADMIN_PLANS)[number])}
+                            aria-label={`Asignar plan a ${usuario.name}`}
                             title="Asignar plan comercial (campo aparte, nunca en `rol`)"
                             className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                           >
-                            {!user.plan && <option value="">—</option>}
+                            {!usuario.plan && <option value="">—</option>}
                             {ADMIN_PLANS.map((plan) => <option key={plan}>{plan}</option>)}
                           </select>
                         ) : (
-                          <span>{user.plan ?? '—'}</span>
+                          <span>{usuario.plan ?? '—'}</span>
                         )}
                       </td>
-                      <td className="px-5 py-4"><StatusBadge status={user.status} /></td>
-                      <td className="px-5 py-4 text-muted-foreground">{user.lastAccess}</td>
-                      {showActions && (
+                      <td className="px-5 py-4"><EtiquetaEstado estado={usuario.status} /></td>
+                      <td className="px-5 py-4 text-muted-foreground">{usuario.lastAccess}</td>
+                      {mostrarAcciones && (
                         <td className="px-5 py-4">
                           <button
                             type="button"
-                            onClick={() => void toggleUserStatus(user.id)}
-                            disabled={isAnyMutationPending || isSelf}
-                            aria-label={`${isActive ? 'Desactivar' : 'Activar'} a ${user.name}`}
-                            title={isSelf
+                            onClick={() => void alternarEstadoUsuario(usuario.id)}
+                            disabled={hayMutacionPendiente || esPropio}
+                            aria-label={`${estaActivo ? 'Desactivar' : 'Activar'} a ${usuario.name}`}
+                            title={esPropio
                               ? 'No puedes desactivar tu propia cuenta; debe hacerlo otro administrador'
-                              : isActive ? 'Desactivar usuario (SUP-242: esta_activo=false)' : 'Activar usuario (SUP-242: esta_activo=true)'}
-                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${isActive ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}
+                              : estaActivo ? 'Desactivar usuario (SUP-242: esta_activo=false)' : 'Activar usuario (SUP-242: esta_activo=true)'}
+                            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${estaActivo ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}
                           >
-                            <Power className="size-3.5" aria-hidden="true" />{busy ? 'Guardando…' : isActive ? 'Desactivar' : 'Activar'}
+                            <Power className="size-3.5" aria-hidden="true" />{ocupado ? 'Guardando…' : estaActivo ? 'Desactivar' : 'Activar'}
                           </button>
                         </td>
                       )}
@@ -236,24 +246,24 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
               </tbody>
             </table>
           </div>
-          {!error && users.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos usuarios con esos filtros.</p>}
-          {pagination.total > 0 && (
+          {!error && usuarios.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos usuarios con esos filtros.</p>}
+          {paginacion.total > 0 && (
             <div className="flex flex-col gap-3 border-t border-[#edf0eb] px-5 py-3 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-              <p>Mostrando {inicio}–{fin} de {pagination.total} usuarios</p>
+              <p>Mostrando {inicio}–{fin} de {paginacion.total} usuarios</p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
-                  disabled={page <= 1 || Boolean(pendingId)}
+                  onClick={() => setPagina((actual) => Math.max(1, actual - 1))}
+                  disabled={pagina <= 1 || Boolean(idPendiente)}
                   className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 font-bold disabled:opacity-40"
                 >
                   <ChevronLeft className="size-3.5" aria-hidden="true" /> Anterior
                 </button>
-                <span className="font-bold">Página {pagination.page} de {Math.max(1, pagination.totalPages)}</span>
+                <span className="font-bold">Página {paginacion.page} de {Math.max(1, paginacion.totalPages)}</span>
                 <button
                   type="button"
-                  onClick={() => setPage((current) => current + 1)}
-                  disabled={page >= Math.max(1, pagination.totalPages) || Boolean(pendingId)}
+                  onClick={() => setPagina((actual) => actual + 1)}
+                  disabled={pagina >= Math.max(1, paginacion.totalPages) || Boolean(idPendiente)}
                   className="inline-flex items-center gap-1 rounded-full border px-3 py-1.5 font-bold disabled:opacity-40"
                 >
                   Siguiente <ChevronRight className="size-3.5" aria-hidden="true" />
@@ -268,45 +278,52 @@ function UsersTable({ showActions = false }: { showActions?: boolean }) {
 }
 
 // SUP-255: listado de fuentes con habilitar/deshabilitar (SUP-243).
-function SourcesTable() {
-  const [query, setQuery] = useState('');
-  const { sources, isLoading, error, pendingId, refresh, toggleSource } = useAdminSources();
-  const filteredSources = useMemo(
-    () => sources.filter((source) => source.name.toLowerCase().includes(query.toLowerCase())),
-    [sources, query],
+function TablaFuentes() {
+  const [consulta, setConsulta] = useState('');
+  const {
+    sources: fuentes,
+    isLoading: cargando,
+    error,
+    pendingId: idPendiente,
+    refresh: recargar,
+    toggleSource: alternarFuente,
+  } = useAdminSources();
+  const fuentesFiltradas = useMemo(
+    () => fuentes.filter((fuente) => fuente.name.toLowerCase().includes(consulta.toLowerCase())),
+    [fuentes, consulta],
   );
   // Igual que en usuarios: el hook serializa y descarta mutaciones concurrentes.
-  const isAnyMutationPending = pendingId !== null;
+  const hayMutacionPendiente = idPendiente !== null;
 
   return (
     <section className="rounded-2xl border border-[#dfe5dc] bg-white shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-[#edf0eb] p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-lg font-bold">Fuentes conectadas</h2><p className="text-sm text-muted-foreground">Supervisa el estado de las fuentes de precios.</p></div><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar fuente..." className="pl-9 shadow-none" /></div></div>
-      {error && <ErrorBanner message={error} onRetry={refresh} />}
-      {isLoading ? <TableSkeleton rows={4} cols={5} /> : (
+      <div className="flex flex-col gap-4 border-b border-[#edf0eb] p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-lg font-bold">Fuentes conectadas</h2><p className="text-sm text-muted-foreground">Supervisa el estado de las fuentes de precios.</p></div><div className="relative"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={consulta} onChange={(evento) => setConsulta(evento.target.value)} placeholder="Buscar fuente..." className="pl-9 shadow-none" /></div></div>
+      {error && <AvisoError mensaje={error} alReintentar={recargar} />}
+      {cargando ? <EsqueletoTabla filas={4} columnas={5} /> : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[820px] text-left text-sm">
               <thead className="bg-[#fafbf9] text-xs uppercase tracking-wider text-muted-foreground"><tr><th className="px-5 py-3 font-bold">Fuente</th><th className="px-5 py-3 font-bold">Estado</th><th className="px-5 py-3 font-bold">Última sincronización</th><th className="px-5 py-3 font-bold">Productos</th><th className="px-5 py-3 font-bold">Sucursales</th><th className="px-5 py-3 font-bold">Habilitada</th></tr></thead>
               <tbody className="divide-y divide-[#edf0eb]">
-                {filteredSources.map((source) => {
-                  const busy = pendingId === source.id;
+                {fuentesFiltradas.map((fuente) => {
+                  const ocupado = idPendiente === fuente.id;
                   return (
-                    <tr key={source.id} className="hover:bg-[#fcfdfb]">
-                      <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-lg bg-[#ebe5db] text-sm font-bold text-[#4a5a3f]">{source.name.charAt(0)}</span><div><p className="font-bold">{source.name}</p><p className="text-xs text-muted-foreground">{source.type}</p></div></div></td>
-                      <td className="px-5 py-4"><StatusBadge status={source.status} /></td>
-                      <td className="px-5 py-4 text-muted-foreground">{source.lastSync}</td>
-                      <td className="px-5 py-4 font-mono text-xs">{source.products.toLocaleString('es-CL')}</td>
-                      <td className="px-5 py-4 text-muted-foreground">{source.branches}</td>
+                    <tr key={fuente.id} className="hover:bg-[#fcfdfb]">
+                      <td className="px-5 py-4"><div className="flex items-center gap-3"><span className="flex size-9 items-center justify-center rounded-lg bg-[#ebe5db] text-sm font-bold text-[#4a5a3f]">{fuente.name.charAt(0)}</span><div><p className="font-bold">{fuente.name}</p><p className="text-xs text-muted-foreground">{fuente.type}</p></div></div></td>
+                      <td className="px-5 py-4"><EtiquetaEstado estado={fuente.status} /></td>
+                      <td className="px-5 py-4 text-muted-foreground">{fuente.lastSync}</td>
+                      <td className="px-5 py-4 font-mono text-xs">{fuente.products.toLocaleString('es-CL')}</td>
+                      <td className="px-5 py-4 text-muted-foreground">{fuente.branches}</td>
                       <td className="px-5 py-4">
                         <button
                           type="button"
-                          onClick={() => void toggleSource(source.id)}
-                          disabled={isAnyMutationPending}
-                          aria-label={`${source.habilitada ? 'Deshabilitar' : 'Habilitar'} fuente ${source.name}`}
-                          title={source.habilitada ? 'Deshabilitar fuente (SUP-243)' : 'Habilitar fuente (SUP-243)'}
-                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${source.habilitada ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}
+                          onClick={() => void alternarFuente(fuente.id)}
+                          disabled={hayMutacionPendiente}
+                          aria-label={`${fuente.habilitada ? 'Deshabilitar' : 'Habilitar'} fuente ${fuente.name}`}
+                          title={fuente.habilitada ? 'Deshabilitar fuente (SUP-243)' : 'Habilitar fuente (SUP-243)'}
+                          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-bold transition-colors disabled:opacity-50 ${fuente.habilitada ? 'border-destructive/30 text-destructive hover:bg-destructive/10' : 'border-primary/30 text-primary hover:bg-primary/10'}`}
                         >
-                          <Power className="size-3.5" aria-hidden="true" />{busy ? 'Guardando…' : source.habilitada ? 'Deshabilitar' : 'Habilitar'}
+                          <Power className="size-3.5" aria-hidden="true" />{ocupado ? 'Guardando…' : fuente.habilitada ? 'Deshabilitar' : 'Habilitar'}
                         </button>
                       </td>
                     </tr>
@@ -315,57 +332,57 @@ function SourcesTable() {
               </tbody>
             </table>
           </div>
-          {!error && filteredSources.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos fuentes con esa búsqueda.</p>}
+          {!error && fuentesFiltradas.length === 0 && <p className="p-8 text-center text-sm text-muted-foreground">No encontramos fuentes con esa búsqueda.</p>}
         </>
       )}
     </section>
   );
 }
 
-const fmt = (numero: number) => numero.toLocaleString('es-CL');
+const formatearNumero = (numero: number) => numero.toLocaleString('es-CL');
 
 // SUP-280: tarjetas de conteo combinando los tres servicios en paralelo.
 // Si un servicio falla, su tarjeta muestra "Sin datos" sin romper la vista.
-function MetricsCards({ metrics }: { metrics: AdminMetricsState }) {
-  const { identidad, catalogo, control } = metrics;
+function TarjetasMetricas({ metricas }: { metricas: AdminMetricsState }) {
+  const { identidad, catalogo, control } = metricas;
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <StatCard
-        icon={Users}
-        label="Usuarios registrados"
-        value={identidad.data ? fmt(identidad.data.totalUsuarios) : '—'}
-        detail={identidad.data ? 'Identidad (SUP-279)' : 'Identidad sin datos'}
-        accent="bg-[#e3f1e4] text-[#376344]"
+      <TarjetaEstadistica
+        icono={Users}
+        etiqueta="Usuarios registrados"
+        valor={identidad.data ? formatearNumero(identidad.data.totalUsuarios) : '—'}
+        detalle={identidad.data ? 'Identidad (SUP-279)' : 'Identidad sin datos'}
+        acento="bg-[#e3f1e4] text-[#376344]"
         error={identidad.error}
       />
-      <StatCard
-        icon={Activity}
-        label="Usuarios activos"
-        value={identidad.data ? fmt(identidad.data.usuariosActivos) : '—'}
-        detail={identidad.data ? `${((identidad.data.usuariosActivos / Math.max(identidad.data.totalUsuarios, 1)) * 100).toFixed(1).replace('.', ',')}% del total` : 'Identidad sin datos'}
-        accent="bg-[#e8f0f3] text-[#416978]"
+      <TarjetaEstadistica
+        icono={Activity}
+        etiqueta="Usuarios activos"
+        valor={identidad.data ? formatearNumero(identidad.data.usuariosActivos) : '—'}
+        detalle={identidad.data ? `${((identidad.data.usuariosActivos / Math.max(identidad.data.totalUsuarios, 1)) * 100).toFixed(1).replace('.', ',')}% del total` : 'Identidad sin datos'}
+        acento="bg-[#e8f0f3] text-[#416978]"
         error={identidad.error}
       />
-      <StatCard
-        icon={Database}
-        label="Fuentes activas"
-        value={catalogo.data ? String(catalogo.data.cadenas) : '—'}
-        detail={catalogo.data ? `${catalogo.data.sucursales} sucursales · Catálogo` : 'Catálogo sin datos'}
-        accent="bg-[#fff0d8] text-[#9a641c]"
+      <TarjetaEstadistica
+        icono={Database}
+        etiqueta="Fuentes activas"
+        valor={catalogo.data ? String(catalogo.data.cadenas) : '—'}
+        detalle={catalogo.data ? `${catalogo.data.sucursales} sucursales · Catálogo` : 'Catálogo sin datos'}
+        acento="bg-[#fff0d8] text-[#9a641c]"
         error={catalogo.error}
       />
-      <StatCard
-        icon={Server}
-        label="Productos indexados"
-        value={catalogo.data ? fmt(catalogo.data.productos) : '—'}
-        detail={catalogo.data ? `${fmt(catalogo.data.capturas)} capturas` : 'Catálogo sin datos'}
-        accent="bg-[#ebe3ea] text-[#765b72]"
+      <TarjetaEstadistica
+        icono={Server}
+        etiqueta="Productos indexados"
+        valor={catalogo.data ? formatearNumero(catalogo.data.productos) : '—'}
+        detalle={catalogo.data ? `${formatearNumero(catalogo.data.capturas)} capturas` : 'Catálogo sin datos'}
+        acento="bg-[#ebe3ea] text-[#765b72]"
         error={catalogo.error}
       />
       {(identidad.error || catalogo.error || control.error) && (
         <p className="text-xs text-muted-foreground sm:col-span-2 xl:col-span-4">
           Fallo parcial tolerado: {control.error ? 'Control' : identidad.error ? 'Identidad' : 'Catálogo'} no disponible.
-          <button type="button" onClick={metrics.refresh} className="ml-2 font-bold text-primary hover:underline">Reintentar</button>
+          <button type="button" onClick={metricas.refresh} className="ml-2 font-bold text-primary hover:underline">Reintentar</button>
         </p>
       )}
     </div>
@@ -373,11 +390,11 @@ function MetricsCards({ metrics }: { metrics: AdminMetricsState }) {
 }
 
 // SUP-280: barras y tabla sin librería pesada, con tokens --chart-*.
-function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
-  const { control } = metrics;
-  const entries = Object.entries(control.data?.trabajosPorEstado ?? {});
-  const max = Math.max(1, ...entries.map(([, valor]) => valor));
-  const chartBars = ['bg-[var(--chart-1)]', 'bg-[var(--chart-2)]', 'bg-[var(--chart-3)]', 'bg-[var(--chart-4)]', 'bg-[var(--chart-5)]'];
+function PanelControl({ metricas }: { metricas: AdminMetricsState }) {
+  const { control } = metricas;
+  const entradas = Object.entries(control.data?.trabajosPorEstado ?? {});
+  const maximo = Math.max(1, ...entradas.map(([, valor]) => valor));
+  const barrasGrafico = ['bg-[var(--chart-1)]', 'bg-[var(--chart-2)]', 'bg-[var(--chart-3)]', 'bg-[var(--chart-4)]', 'bg-[var(--chart-5)]'];
 
   return (
     <div className="rounded-2xl border border-[#dfe5dc] bg-[#263524] p-6 text-white shadow-sm">
@@ -400,15 +417,15 @@ function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
         </p>
       )}
       <div className="mt-6 space-y-3">
-        {entries.length === 0 && !control.error && <p className="text-sm text-white/60">Sin trabajos registrados.</p>}
-        {entries.map(([estado, total], indice) => (
+        {entradas.length === 0 && !control.error && <p className="text-sm text-white/60">Sin trabajos registrados.</p>}
+        {entradas.map(([estado, total], indice) => (
           <div key={estado}>
             <div className="mb-1 flex justify-between text-xs">
               <span className="capitalize text-white/70">{estado.replace('_', ' ')}</span>
-              <span className="font-bold">{fmt(total)}</span>
+              <span className="font-bold">{formatearNumero(total)}</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full bg-white/10">
-              <div className={`h-full rounded-full ${chartBars[indice % chartBars.length]}`} style={{ width: `${(total / max) * 100}%` }} />
+              <div className={`h-full rounded-full ${barrasGrafico[indice % barrasGrafico.length]}`} style={{ width: `${(total / maximo) * 100}%` }} />
             </div>
           </div>
         ))}
@@ -423,10 +440,10 @@ function ControlPanel({ metrics }: { metrics: AdminMetricsState }) {
   );
 }
 
-function Overview() {
+function ResumenGeneral() {
   // Auditoría H-04: las métricas solo se piden al montar esta vista,
   // no en la raíz del dashboard (evita 3 llamadas en /admin?section=users).
-  const metrics = useAdminMetrics();
+  const metricas = useAdminMetrics();
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -437,23 +454,23 @@ function Overview() {
         </div>
         <button
           type="button"
-          onClick={metrics.refresh}
-          disabled={metrics.isLoading}
+          onClick={metricas.refresh}
+          disabled={metricas.isLoading}
           className="inline-flex items-center gap-2 rounded-full border border-border bg-white px-4 py-2 text-xs font-bold text-muted-foreground hover:bg-secondary disabled:opacity-50"
         >
-          <RefreshCw className={`size-3.5 ${metrics.isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-          {metrics.isLoading ? 'Actualizando…' : 'Refrescar métricas'}
+          <RefreshCw className={`size-3.5 ${metricas.isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          {metricas.isLoading ? 'Actualizando…' : 'Refrescar métricas'}
         </button>
       </div>
-      {metrics.isLoading ? (
+      {metricas.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, indice) => <div key={indice} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
         </div>
-      ) : <MetricsCards metrics={metrics} />}
+      ) : <TarjetasMetricas metricas={metricas} />}
       <div className="mt-6 grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
         {/* Vista general: solo lectura, sin columna de acción (va en sección Usuarios). */}
-        <UsersTable />
-        <ControlPanel metrics={metrics} />
+        <TablaUsuarios />
+        <PanelControl metricas={metricas} />
       </div>
       <p className="mt-6 text-sm text-muted-foreground">
         ¿Necesitas el detalle por servicio? <Link to={`${ROUTES.ADMIN}?section=metrics`} className="font-bold text-primary hover:underline">Ver métricas</Link>
@@ -462,9 +479,9 @@ function Overview() {
   );
 }
 
-function MetricsSection() {
-  // Auditoría H-04: idem Overview; el hook vive en la sección visible.
-  const metrics = useAdminMetrics();
+function SeccionMetricas() {
+  // Auditoría H-04: idem ResumenGeneral; el hook vive en la sección visible.
+  const metricas = useAdminMetrics();
   return (
     <>
       <div className="mb-7 flex flex-wrap items-end justify-between gap-4">
@@ -477,21 +494,21 @@ function MetricsSection() {
         </div>
         <button
           type="button"
-          onClick={metrics.refresh}
-          disabled={metrics.isLoading}
+          onClick={metricas.refresh}
+          disabled={metricas.isLoading}
           className="inline-flex items-center gap-2 rounded-full bg-primary px-4 py-2 text-xs font-bold text-primary-foreground hover:brightness-110 disabled:opacity-50"
         >
-          <RefreshCw className={`size-3.5 ${metrics.isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
-          {metrics.isLoading ? 'Actualizando…' : 'Refrescar ahora'}
+          <RefreshCw className={`size-3.5 ${metricas.isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+          {metricas.isLoading ? 'Actualizando…' : 'Refrescar ahora'}
         </button>
       </div>
-      {metrics.isLoading ? (
+      {metricas.isLoading ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, indice) => <div key={indice} className="h-36 animate-pulse rounded-2xl border border-[#dfe5dc] bg-white" />)}
         </div>
-      ) : <MetricsCards metrics={metrics} />}
+      ) : <TarjetasMetricas metricas={metricas} />}
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        <ControlPanel metrics={metrics} />
+        <PanelControl metricas={metricas} />
         <div className="rounded-2xl border border-[#dfe5dc] bg-white p-6 shadow-sm">
           <p className="text-sm font-bold text-muted-foreground">Contrato de métricas (SUP-279)</p>
           <h3 className="mt-1 text-xl font-bold">Endpoints por servicio</h3>
@@ -508,28 +525,28 @@ function MetricsSection() {
 }
 
 /** Resuelve los alias de ruta y consulta sin aceptar secciones desconocidas. */
-function resolveSection(pathname: string, search: string): AdminSection {
-  if (pathname.endsWith('/metricas')) return 'metrics';
-  const raw = new URLSearchParams(search).get('section');
-  if (raw === 'metricas' || raw === 'metrics') return 'metrics';
-  if (raw === 'users' || raw === 'sources') return raw;
+function resolverSeccion(rutaActual: string, busquedaUrl: string): AdminSection {
+  if (rutaActual.endsWith('/metricas')) return 'metrics';
+  const seccionCruda = new URLSearchParams(busquedaUrl).get('section');
+  if (seccionCruda === 'metricas' || seccionCruda === 'metrics') return 'metrics';
+  if (seccionCruda === 'users' || seccionCruda === 'sources') return seccionCruda;
   return 'overview';
 }
 
 export default function AdminDashboard() {
-  const [params] = useSearchParams();
-  const { search, pathname } = useLocation();
-  const section = resolveSection(pathname, search || `?${params.toString()}`);
+  const [parametrosBusqueda] = useSearchParams();
+  const { search: busquedaUrl, pathname: rutaActual } = useLocation();
+  const seccion = resolverSeccion(rutaActual, busquedaUrl || `?${parametrosBusqueda.toString()}`);
 
   // SUP-256: el RBAC vive en el router (ProtectedRoute roles=['admin']).
   // Este componente solo monta con rol admin; los errores no se sustituyen por datos de ejemplo.
-  const content = section === 'users'
-    ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Usuarios</h2><p className="mt-2 text-muted-foreground">Gestiona las cuentas y permisos de la plataforma.</p></div><UsersTable showActions /></>
-    : section === 'sources'
-      ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Fuentes</h2><p className="mt-2 text-muted-foreground">Visualiza las conexiones que alimentan el catálogo de precios.</p></div><SourcesTable /></>
-      : section === 'metrics'
-        ? <MetricsSection />
-        : <Overview />;
+  const contenido = seccion === 'users'
+    ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Usuarios</h2><p className="mt-2 text-muted-foreground">Gestiona las cuentas y permisos de la plataforma.</p></div><TablaUsuarios mostrarAcciones /></>
+    : seccion === 'sources'
+      ? <><div className="mb-7"><h2 className="font-serif text-3xl font-bold">Fuentes</h2><p className="mt-2 text-muted-foreground">Visualiza las conexiones que alimentan el catálogo de precios.</p></div><TablaFuentes /></>
+      : seccion === 'metrics'
+        ? <SeccionMetricas />
+        : <ResumenGeneral />;
 
   return (
     <AdminLayout>
@@ -538,7 +555,7 @@ export default function AdminDashboard() {
           Administración no disponible: falta configurar VITE_API_URL. No se muestran datos de ejemplo.
         </p>
       )}
-      {content}
+      {contenido}
     </AdminLayout>
   );
 }

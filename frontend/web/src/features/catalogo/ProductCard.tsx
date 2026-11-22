@@ -5,34 +5,34 @@ import { Link } from 'react-router-dom'
 import { Plus, Package, AlertCircle, TrendingDown, Store } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatPrice, calculateDiscountPct, calculateSavings } from '@/features/catalogo/formatters'
-import type { UiProduct as Product } from '@/features/catalogo/tipos'
+import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { ROUTES } from '@/app/routes'
 import { cn } from '@/lib/utils'
 
-type ProductCardProps = {
-  product: Product
+type PropiedadesTarjetaProducto = {
+  product: Producto
   // Permite usar metadatos visuales entregados por el componente padre.
   marketName?: string
   marketLogo?: string
-  onAdd?: (product: Product) => void
+  onAdd?: (producto: Producto) => void
 }
 
-const STOCK_UI = {
+const INTERFAZ_INVENTARIO = {
   in:  { label: 'En stock',  cls: 'bg-green-100 text-green-700',  icon: Package      },
   low: { label: 'Stock bajo', cls: 'bg-amber-100 text-amber-700', icon: AlertCircle  },
   out: { label: 'Sin stock',  cls: 'bg-red-100 text-red-700', icon: AlertCircle  },
 } as const
 
-export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductCardProps) {
+export function ProductCard({ product, marketName, marketLogo, onAdd }: PropiedadesTarjetaProducto) {
   // Conserva una etiqueta legible cuando falta el nombre de la cadena.
-  const displayMarketName = marketName || product.supermarketName || 'Tienda'
+  const nombreSupermercadoVisible = marketName || product.supermarketName || 'Tienda'
   
-  const stockState = product.inStock === false ? 'out' : 'in'
-  const config = STOCK_UI[stockState]
-  const StockIcon = config.icon
+  const estadoInventario = product.inStock === false ? 'out' : 'in'
+  const configuracion = INTERFAZ_INVENTARIO[estadoInventario]
+  const IconoInventario = configuracion.icon
   
-  const savings = calculateSavings(product.originalPrice, product.price)
-  const pct = calculateDiscountPct(product.originalPrice, product.price)
+  const ahorro = calculateSavings(product.originalPrice, product.price)
+  const porcentajeDescuento = calculateDiscountPct(product.originalPrice, product.price)
 
   return (
     <Link 
@@ -40,9 +40,9 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
       className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:-translate-y-0.5 hover:shadow-md"
     >
       <div className="relative aspect-square bg-white flex items-center justify-center overflow-hidden">
-        {pct > 0 && (
+        {porcentajeDescuento > 0 && (
           <span className="absolute top-2 left-2 z-10 rounded bg-discount px-1.5 py-0.5 text-[10px] font-bold text-discount-foreground shadow-sm">
-            -{pct}%
+            -{porcentajeDescuento}%
           </span>
         )}
 
@@ -50,14 +50,14 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
           {marketLogo ? (
             <img
               src={marketLogo}
-              alt={`Logo de ${displayMarketName}`}
+              alt={`Logo de ${nombreSupermercadoVisible}`}
               className="h-3 w-3 rounded-sm object-cover"
               onError={(evento) => { evento.currentTarget.style.display = 'none'; }}
             />
           ) : (
              <Store className="h-3 w-3 text-muted-foreground shrink-0" />
           )}
-          <span className="truncate max-w-[80px]">{displayMarketName}</span>
+          <span className="truncate max-w-[80px]">{nombreSupermercadoVisible}</span>
         </span>
 
         <img
@@ -83,14 +83,14 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
 
         {/* Meta: stock + ahorro */}
         <div className="mt-3 flex flex-wrap gap-2">
-          <span className={cn('flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium', config.cls)}>
-            <StockIcon className="h-3 w-3" />
-            {config.label}
+          <span className={cn('flex items-center gap-1 rounded-sm px-1.5 py-0.5 text-[10px] font-medium', configuracion.cls)}>
+            <IconoInventario className="h-3 w-3" />
+            {configuracion.label}
           </span>
-          {pct > 0 && (
+          {porcentajeDescuento > 0 && (
             <span className="flex items-center gap-1 rounded-sm bg-discount/10 px-1.5 py-0.5 text-[10px] font-medium text-discount">
               <TrendingDown className="h-3 w-3" />
-              Ahorras {formatPrice(savings)}
+              Ahorras {formatPrice(ahorro)}
             </span>
           )}
         </div>
@@ -101,7 +101,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: ProductC
           <span className="text-lg font-bold leading-none tracking-tight">
             {formatPrice(product.price)}
           </span>
-          {pct > 0 && (
+          {porcentajeDescuento > 0 && (
             <span className="text-xs text-muted-foreground line-through mt-1">
               {formatPrice(product.originalPrice)}
             </span>

@@ -32,7 +32,7 @@ import Planes from '@/pages/Planes';
 import AdminDashboard from '@/features/admin/AdminDashboard';
 
 
-const router = createBrowserRouter([
+const enrutador = createBrowserRouter([
   // ───────────────────────────────────────────────────────────
   // Grupo A: MainLayout (TopNav + SideBar + BottomNav)
   // Para vistas que se benefician del buscador y filtros por supermercado
@@ -118,15 +118,15 @@ const router = createBrowserRouter([
 ]);
 
 export default function AppRouter() {
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'your_google_client_id_here';
+  const idClienteGoogle = import.meta.env.VITE_GOOGLE_CLIENT_ID || 'your_google_client_id_here';
 
   return (
-    <GoogleOAuthProvider clientId={googleClientId}>
+    <GoogleOAuthProvider clientId={idClienteGoogle}>
       {/* Los avisos de sesión permanecen visibles después de redirigir o limpiar la cuenta. */}
       <ToastProvider>
         <AuthProvider>
           <CartProvider>
-            <RouterProvider router={router} />
+            <RouterProvider router={enrutador} />
           </CartProvider>
         </AuthProvider>
       </ToastProvider>

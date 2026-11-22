@@ -1,17 +1,17 @@
 // Evalúa la complejidad de una contraseña y muestra una orientación visual, no una validación del servidor.
 import { cn } from "@/lib/utils"
 
-function scorePassword(password: string) {
-  let score = 0
-  if (!password) return 0
-  if (password.length >= 8) score++
-  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score++
-  if (/\d/.test(password)) score++
-  if (/[^A-Za-z0-9]/.test(password)) score++
-  return score
+function evaluarContrasena(contrasena: string) {
+  let puntaje = 0
+  if (!contrasena) return 0
+  if (contrasena.length >= 8) puntaje++
+  if (/[a-z]/.test(contrasena) && /[A-Z]/.test(contrasena)) puntaje++
+  if (/\d/.test(contrasena)) puntaje++
+  if (/[^A-Za-z0-9]/.test(contrasena)) puntaje++
+  return puntaje
 }
 
-const LEVELS = [
+const NIVELES = [
   { label: "Muy débil", color: "bg-destructive" },
   { label: "Débil", color: "bg-destructive" },
   { label: "Aceptable", color: "bg-amber-500" },
@@ -20,9 +20,9 @@ const LEVELS = [
 ]
 
 export function PasswordStrength({ password }: { password: string }) {
-  const score = scorePassword(password)
-  const level = LEVELS[score]
-  const active = password.length > 0
+  const puntaje = evaluarContrasena(password)
+  const nivel = NIVELES[puntaje]
+  const activa = password.length > 0
 
   return (
     <div className="flex flex-col gap-2" aria-live="polite">
@@ -32,23 +32,23 @@ export function PasswordStrength({ password }: { password: string }) {
             key={indice}
             className={cn(
               "h-1.5 flex-1 rounded-full transition-colors duration-300",
-              active && indice < score ? level.color : "bg-border",
+              activa && indice < puntaje ? nivel.color : "bg-border",
             )}
           />
         ))}
       </div>
-      {active && (
+      {activa && (
         <p className="text-xs font-medium text-muted-foreground">
           Seguridad:{" "}
           <span
             className={cn(
               "font-semibold",
-              score <= 1 && "text-destructive",
-              score === 2 && "text-amber-600",
-              score >= 3 && "text-primary",
+              puntaje <= 1 && "text-destructive",
+              puntaje === 2 && "text-amber-600",
+              puntaje >= 3 && "text-primary",
             )}
           >
-            {level.label}
+            {nivel.label}
           </span>
         </p>
       )}

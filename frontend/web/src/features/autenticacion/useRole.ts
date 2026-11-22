@@ -8,9 +8,15 @@ export function useRole() {
   const { user, isGuest } = useAuth();
   // Invariante de autenticación (SUP-256): un invitado nunca computa rol;
   // evita estados mixtos isGuest + isAdmin con localStorage corrupto.
-  const role = isGuest ? '' : normalizeRole(user?.rol);
-  const isAdmin = role === ROLE_ADMIN;
-  const isColaborador = role === ROLE_COLABORADOR;
-  const canAccessColaborador = isAdmin || isColaborador;
-  return { role, isGuest, isAdmin, isColaborador, canAccessColaborador };
+  const rolNormalizado = isGuest ? '' : normalizeRole(user?.rol);
+  const esAdministrador = rolNormalizado === ROLE_ADMIN;
+  const esColaborador = rolNormalizado === ROLE_COLABORADOR;
+  const puedeAccederColaborador = esAdministrador || esColaborador;
+  return {
+    role: rolNormalizado,
+    isGuest,
+    isAdmin: esAdministrador,
+    isColaborador: esColaborador,
+    canAccessColaborador: puedeAccederColaborador,
+  };
 }

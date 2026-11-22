@@ -2,7 +2,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Leaf, Info, MapPin, ShoppingBasket, Car, PiggyBank } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
-import landingData from '@/features/landing/landing.json';
+import datosPortada from '@/features/landing/landing.json';
 
 export function LandingHero() {
   return (
@@ -45,7 +45,7 @@ export function LandingHero() {
               </span>
             </div>
             <p className="mb-3 text-xs text-muted-foreground">Ejemplo ilustrativo de compra y ahorro.</p>
-            {landingData.heroProducts.map(producto => (
+            {datosPortada.heroProducts.map(producto => (
               <div key={producto.name} className="flex items-center gap-3 p-[0.7rem] rounded-[calc(var(--radius)-4px)] mb-2 bg-muted border-2 border-transparent transition-all duration-150 hover:bg-secondary hover:border-border">
                 <div className="w-[42px] h-[42px] rounded-[calc(var(--radius)-4px)] bg-card border-2 border-border flex items-center justify-center text-[1.25rem] shrink-0">
                   <ShoppingBasket size={20} aria-hidden="true" />

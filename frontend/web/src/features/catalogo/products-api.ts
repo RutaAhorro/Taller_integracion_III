@@ -1,9 +1,9 @@
 // Consulta Catálogo y adapta sus productos sin añadir cadenas, precios o ubicaciones ficticias.
-import type { UiProduct as Product, UiSupermarket } from '@/features/catalogo/tipos';
+import type { UiProduct as Producto, UiSupermarket } from '@/features/catalogo/tipos';
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const URL_API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
 
-type ApiProduct = {
+type ProductoApi = {
   id: string
   nombre: string
   marca: string
@@ -24,20 +24,20 @@ export type ApiPriceHistory = {
   capturado_el: string
 }
 
-export type ApiProductDetail = ApiProduct & {
+export type ApiProductDetail = ProductoApi & {
   historial: ApiPriceHistory[]
 }
 
-type ProductPage = {
-  data: ApiProduct[]
+type PaginaProductos = {
+  data: ProductoApi[]
   total_registros: number
   pagina_actual?: number
   total_paginas?: number
 }
 
 /** Normaliza el nombre de una cadena para usarlo como identificador de interfaz. */
-export function slugifyMarket(name: string | null | undefined) {
-  return (name ?? '')
+export function slugifyMarket(nombre: string | null | undefined) {
+  return (nombre ?? '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -48,54 +48,54 @@ export function slugifyMarket(name: string | null | undefined) {
 export const FALLBACK_MARKET_NAME = 'Sin supermercado';
 
 /** Obtiene solo las cadenas presentes en la muestra recibida; no representa todo el catálogo. */
-export function getMarketsFromProducts(products: Product[]): UiSupermarket[] {
-  const markets = new Map<string, UiSupermarket>();
-  for (const product of products) {
-    const name = product.supermarketName?.trim();
-    if (!name || name === FALLBACK_MARKET_NAME || !product.supermarketId) continue;
-    markets.set(product.supermarketId, { id: product.supermarketId, name });
+export function getMarketsFromProducts(productos: Producto[]): UiSupermarket[] {
+  const supermercados = new Map<string, UiSupermarket>();
+  for (const producto of productos) {
+    const nombre = producto.supermarketName?.trim();
+    if (!nombre || nombre === FALLBACK_MARKET_NAME || !producto.supermarketId) continue;
+    supermercados.set(producto.supermarketId, { id: producto.supermarketId, name: nombre });
   }
-  return Array.from(markets.values());
+  return Array.from(supermercados.values());
 }
 
 /** Conserva los datos recibidos y transforma los nombres del contrato para los componentes. */
-export function toUiProduct(product: ApiProduct): Product {
-  const marketName = product.supermercado || FALLBACK_MARKET_NAME;
+export function toUiProduct(producto: ProductoApi): Producto {
+  const nombreSupermercado = producto.supermercado || FALLBACK_MARKET_NAME;
   return {
-    id: product.id,
-    name: product.nombre,
-    brand: product.marca || 'Sin marca',
-    category: product.categoria || undefined,
-    image: product.url_imagen,
-    unit: product.unidad || 'Unidad',
-    price: product.precio,
-    originalPrice: product.precio_normal || product.precio,
-    supermarketId: slugifyMarket(marketName),
-    supermarketName: marketName,
-    inStock: product.en_stock,
+    id: producto.id,
+    name: producto.nombre,
+    brand: producto.marca || 'Sin marca',
+    category: producto.categoria || undefined,
+    image: producto.url_imagen,
+    unit: producto.unidad || 'Unidad',
+    price: producto.precio,
+    originalPrice: producto.precio_normal || producto.precio,
+    supermarketId: slugifyMarket(nombreSupermercado),
+    supermarketName: nombreSupermercado,
+    inStock: producto.en_stock,
   }
 }
 
 /** Propaga los errores de las lecturas del catálogo. */
-async function request<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`)
-  if (!response.ok) throw new Error(`La API respondió con ${response.status}`)
-  return response.json() as Promise<T>
+async function solicitar<Respuesta>(ruta: string): Promise<Respuesta> {
+  const respuesta = await fetch(`${URL_API}${ruta}`)
+  if (!respuesta.ok) throw new Error(`La API respondió con ${respuesta.status}`)
+  return respuesta.json() as Promise<Respuesta>
 }
 
 /** Recupera una página de productos con los totales informados por el servidor. */
-export async function getProducts(params = '') {
-  const page = await request<ProductPage>(`/productos${params}`)
+export async function getProducts(parametros = '') {
+  const pagina = await solicitar<PaginaProductos>(`/productos${parametros}`)
   return {
-    products: page.data.map(toUiProduct),
-    total: page.total_registros,
-    page: page.pagina_actual ?? 1,
-    totalPages: page.total_paginas ?? 1,
+    products: pagina.data.map(toUiProduct),
+    total: pagina.total_registros,
+    page: pagina.pagina_actual ?? 1,
+    totalPages: pagina.total_paginas ?? 1,
   }
 }
 
 /** Recupera el producto seleccionado y su historial real de precios. */
 export async function getProductDetail(id: string) {
-  const product = await request<ApiProductDetail>(`/productos/${encodeURIComponent(id)}`)
-  return { product: toUiProduct(product), history: product.historial }
+  const producto = await solicitar<ApiProductDetail>(`/productos/${encodeURIComponent(id)}`)
+  return { product: toUiProduct(producto), history: producto.historial }
 }

@@ -1,9 +1,9 @@
 // Presenta la propuesta informativa del producto desde el contenido editorial de la portada.
 import { Filter, Car, Bot, ShieldCheck, House, Gauge } from "lucide-react";
-import landingData from '@/features/landing/landing.json';
+import datosPortada from '@/features/landing/landing.json';
 
 export function LandingFeatures() {
-  const getIcon = (indice: number) => {
+  const obtenerIcono = (indice: number) => {
     switch(indice) {
       case 0: return <Filter size={24} aria-hidden="true" />;   // Comparación real
       case 1: return <Car size={24} aria-hidden="true" />;      // Costo de traslado
@@ -28,19 +28,19 @@ export function LandingFeatures() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-[1.5rem]">
-          {landingData.features.map((caracteristica, index) => {
-            const bgClass = index === 0 ? 'bg-[var(--landing-amber-soft)]' : 
-                            index === 1 ? 'bg-[var(--landing-sky-soft)]' : 
-                            index === 2 ? 'bg-[var(--landing-malva-soft)]' : 
-                            index === 3 ? 'bg-[var(--landing-olive-soft)]' : 
-                            index === 4 ? 'bg-[var(--landing-terracotta-soft)]' : 
+          {datosPortada.features.map((caracteristica, indice) => {
+            const claseFondo = indice === 0 ? 'bg-[var(--landing-amber-soft)]' : 
+                            indice === 1 ? 'bg-[var(--landing-sky-soft)]' : 
+                            indice === 2 ? 'bg-[var(--landing-malva-soft)]' : 
+                            indice === 3 ? 'bg-[var(--landing-olive-soft)]' : 
+                            indice === 4 ? 'bg-[var(--landing-terracotta-soft)]' : 
                             'bg-[var(--landing-amber-soft)]';
             
             return (
               <div key={caracteristica.title} className="relative bg-card border-2 border-border rounded-[var(--radius)] p-[1.75rem] transition-all duration-[0.25s] ease overflow-hidden hover:shadow-[6px_6px_0_var(--color-border)] hover:-translate-x-[2px] hover:-translate-y-[2px] group">
                 <div className="absolute top-0 left-0 w-full h-[4px] bg-gradient-to-r from-brand to-[var(--landing-amber)] scale-x-0 origin-left transition-transform duration-300 ease group-hover:scale-x-100" />
-                <div className={`w-[56px] h-[56px] rounded-[calc(var(--radius)-2px)] flex items-center justify-center text-[1.5rem] mb-[1.125rem] border-2 border-border shadow-[3px_3px_0_var(--color-border)] text-foreground ${bgClass}`}>
-                  {getIcon(index)}
+                <div className={`w-[56px] h-[56px] rounded-[calc(var(--radius)-2px)] flex items-center justify-center text-[1.5rem] mb-[1.125rem] border-2 border-border shadow-[3px_3px_0_var(--color-border)] text-foreground ${claseFondo}`}>
+                  {obtenerIcono(indice)}
                 </div>
                 <h3 className="font-['Fraunces'] text-[1.0625rem] font-bold text-foreground mb-[0.5rem]">{caracteristica.title}</h3>
                 <p className="text-[0.875rem] text-muted-foreground leading-[1.6]">{caracteristica.desc}</p>

@@ -8,7 +8,7 @@ import { PLAN_PREMIUM } from '@/features/autenticacion/tipos';
 
 export default function Profile() {
     const { user, isGuest } = useAuth();
-    const [activeTab, setActiveTab] = useState<'cuenta' | 'preferencias'>('cuenta');
+    const [pestanaActiva, setPestanaActiva] = useState<'cuenta' | 'preferencias'>('cuenta');
 
     if (isGuest || !user) {
         return <Navigate to="/login" replace />;
@@ -32,14 +32,14 @@ export default function Profile() {
                             {[
                                 { id: 'cuenta', label: 'Mi Cuenta', icon: User },
                                 { id: 'preferencias', label: 'Preferencias de Ruta', icon: Settings }
-                            ].map(item => (
+                            ].map(pestana => (
                                 <button 
-                                    key={item.id} 
-                                    onClick={() => setActiveTab(item.id as any)}
-                                    className={cn("flex items-center gap-3 px-5 py-4 rounded-xl font-bold transition-all whitespace-nowrap", activeTab === item.id ? "bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)]" : "hover:bg-accent text-muted-foreground")}
+                                    key={pestana.id} 
+                                    onClick={() => setPestanaActiva(pestana.id as any)}
+                                    className={cn("flex items-center gap-3 px-5 py-4 rounded-xl font-bold transition-all whitespace-nowrap", pestanaActiva === pestana.id ? "bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)]" : "hover:bg-accent text-muted-foreground")}
                                 >
-                                    <item.icon className="h-5 w-5" />
-                                    {item.label}
+                                    <pestana.icon className="h-5 w-5" />
+                                    {pestana.label}
                                 </button>
                             ))}
                         </nav>
@@ -47,7 +47,7 @@ export default function Profile() {
 
                     <div className="flex-1 min-w-0">
                         
-                        {activeTab === 'cuenta' && (
+                        {pestanaActiva === 'cuenta' && (
                             <div className="bg-card border border-border rounded-3xl p-6 sm:p-10 shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <h2 className="text-2xl font-bold">Información de Cuenta</h2>
                                 
@@ -94,7 +94,7 @@ export default function Profile() {
                             </div>
                         )}
 
-                        {activeTab === 'preferencias' && (
+                        {pestanaActiva === 'preferencias' && (
                             <div className="bg-card border border-border rounded-3xl p-6 sm:p-10 shadow-sm space-y-4">
                                 <h2 className="text-2xl font-bold">Preferencias de Ruta</h2>
                                 <p role="status" className="text-muted-foreground text-sm">

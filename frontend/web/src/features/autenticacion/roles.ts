@@ -9,7 +9,7 @@ export function normalizeRole(rol?: string | null): string {
   return (rol ?? '').trim().toLowerCase();
 }
 
-export function hasAllowedRole(rol: string | null | undefined, allowed: string[]): boolean {
-  const current = normalizeRole(rol);
-  return allowed.some((role) => normalizeRole(role) === current);
+export function hasAllowedRole(rol: string | null | undefined, rolesPermitidos: string[]): boolean {
+  const rolActual = normalizeRole(rol);
+  return rolesPermitidos.some((rolPermitido) => normalizeRole(rolPermitido) === rolActual);
 }

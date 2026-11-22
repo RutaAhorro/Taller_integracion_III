@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/features/autenticacion/useAuth';
 
-const API_URL = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
+const URL_API = (import.meta.env.VITE_API_URL || '/api/v1').replace(/\/$/, '');
 
 // Distingue respuestas, errores y espera para no presentar fallos como resultados del asistente.
 export type MessageType = 'welcome' | 'text' | 'processing' | 'error';
@@ -38,27 +38,27 @@ function mensajeErrorHTTP(estado: number): string {
 // Centraliza conversación, sesión y solicitudes para mantener la vista separada del contrato HTTP.
 export function useChatbot() {
   const { isGuest } = useAuth();
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [inputValue, setInputValue] = useState('');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [messages, setMessages] = useState<Message[]>(() => [mensajeBienvenida()]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const [mostrarModalAutenticacion, setMostrarModalAutenticacion] = useState(false);
+  const [valorEntrada, setValorEntrada] = useState('');
+  const [procesando, setProcesando] = useState(false);
+  const [mensajes, setMensajes] = useState<Message[]>(() => [mensajeBienvenida()]);
+  const referenciaDesplazamiento = useRef<HTMLDivElement>(null);
   const solicitudActiva = useRef<AbortController | null>(null);
 
   // Mantiene visible el último mensaje al cambiar la conversación.
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages]);
+    if (referenciaDesplazamiento.current) referenciaDesplazamiento.current.scrollTop = referenciaDesplazamiento.current.scrollHeight;
+  }, [mensajes]);
 
   // Salir del chat cancela la espera, sin aplicar respuestas sobre una vista desmontada.
   useEffect(() => () => solicitudActiva.current?.abort(), []);
 
   // Envía una sola consulta con sesión y conserva el texto si falla para permitir su reintento.
-  const handleSend = async (texto: string) => {
+  const manejarEnvio = async (texto: string) => {
     const mensaje = texto.trim();
     if (!mensaje || solicitudActiva.current) return;
     if (isGuest) {
-      setShowAuthModal(true);
+      setMostrarModalAutenticacion(true);
       return;
     }
 
@@ -69,23 +69,23 @@ export function useChatbot() {
     // Sustituye la espera por el resultado o error, ignorando respuestas de solicitudes canceladas.
     const responder = (contenido: string, tipo: 'text' | 'error') => {
       if (controlador.signal.aborted) return;
-      setMessages((anteriores) => [
+      setMensajes((anteriores) => [
         ...anteriores.filter((anterior) => anterior.id !== identificadorEspera),
         { id: nuevoIdentificador(), role: 'assistant', type: tipo, content: contenido },
       ]);
-      if (tipo === 'error') setInputValue(mensaje);
+      if (tipo === 'error') setValorEntrada(mensaje);
     };
 
-    setMessages((anteriores) => [
+    setMensajes((anteriores) => [
       ...anteriores,
       { id: nuevoIdentificador(), role: 'user', type: 'text', content: mensaje },
       { id: identificadorEspera, role: 'assistant', type: 'processing' },
     ]);
-    setInputValue('');
-    setIsProcessing(true);
+    setValorEntrada('');
+    setProcesando(true);
 
     try {
-      const respuesta = await fetch(`${API_URL}/chat`, {
+      const respuesta = await fetch(`${URL_API}/chat`, {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
@@ -94,7 +94,7 @@ export function useChatbot() {
       });
       if (controlador.signal.aborted) return;
       if (!respuesta.ok) {
-        if (respuesta.status === 401) setShowAuthModal(true);
+        if (respuesta.status === 401) setMostrarModalAutenticacion(true);
         responder(mensajeErrorHTTP(respuesta.status), 'error');
         return;
       }
@@ -114,28 +114,28 @@ export function useChatbot() {
     } finally {
       if (solicitudActiva.current === controlador) {
         solicitudActiva.current = null;
-        setIsProcessing(false);
+        setProcesando(false);
       }
     }
   };
 
   // Cancela la espera antes de reiniciar el chat para que una respuesta tardía no lo repueble.
-  const handleClear = () => {
+  const manejarVaciado = () => {
     solicitudActiva.current?.abort();
     solicitudActiva.current = null;
-    setIsProcessing(false);
-    setMessages([mensajeBienvenida()]);
+    setProcesando(false);
+    setMensajes([mensajeBienvenida()]);
   };
 
   return {
-    messages,
-    inputValue,
-    setInputValue,
-    isProcessing,
-    showAuthModal,
-    setShowAuthModal,
-    scrollRef,
-    handleSend,
-    handleClear,
+    messages: mensajes,
+    inputValue: valorEntrada,
+    setInputValue: setValorEntrada,
+    isProcessing: procesando,
+    showAuthModal: mostrarModalAutenticacion,
+    setShowAuthModal: setMostrarModalAutenticacion,
+    scrollRef: referenciaDesplazamiento,
+    handleSend: manejarEnvio,
+    handleClear: manejarVaciado,
   };
 }

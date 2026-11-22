@@ -19,7 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { PasswordStrength } from "@/features/autenticacion/PasswordStrength"
 import { SocialButtons } from "@/features/autenticacion/SocialButtons"
 
-type FormErrors = {
+type ErroresFormulario = {
   loginEmail?: string
   loginPassword?: string
   signupEmail?: string
@@ -29,11 +29,11 @@ type FormErrors = {
 }
 
 /** Muestra validación junto al campo sin desplazar el formulario móvil. */
-function InlineError({ message }: { message?: string }) {
+function ErrorEnLinea({ message }: { message?: string }) {
   return <div className="hidden sm:block">{message && <FieldError errors={[{ message }]} />}</div>
 }
 
-function AuthErrorBanner({ message }: { message: string }) {
+function AvisoErrorAutenticacion({ message }: { message: string }) {
   return (
     <div className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive font-semibold border-2 border-destructive flex items-center gap-2">
       <Lock className="size-4 shrink-0" /> {message}
@@ -41,9 +41,9 @@ function AuthErrorBanner({ message }: { message: string }) {
   )
 }
 
-type EmailFieldProps = { id: string; value: string; onChange: (value: string) => void; error?: string }
+type PropiedadesCampoCorreo = { id: string; value: string; onChange: (valor: string) => void; error?: string }
 
-function EmailField({ id, value, onChange, error }: EmailFieldProps) {
+function CampoCorreo({ id, value, onChange, error }: PropiedadesCampoCorreo) {
   return (
     <Field data-invalid={!!error}>
       <FieldLabel htmlFor={id}>Correo electrónico</FieldLabel>
@@ -59,22 +59,22 @@ function EmailField({ id, value, onChange, error }: EmailFieldProps) {
           className={`h-11 rounded-xl pl-10 ${error ? 'border-destructive border-2' : ''}`}
         />
       </div>
-      <InlineError message={error} />
+      <ErrorEnLinea message={error} />
     </Field>
   )
 }
 
-type PasswordFieldProps = {
+type PropiedadesCampoContrasena = {
   id: string
   value: string
-  onChange: (value: string) => void
+  onChange: (valor: string) => void
   error?: string
   placeholder: string
   autoComplete: "current-password" | "new-password"
   children?: ReactNode
 }
 
-function PasswordField({ id, value, onChange, error, placeholder, autoComplete, children }: PasswordFieldProps) {
+function CampoContrasena({ id, value, onChange, error, placeholder, autoComplete, children }: PropiedadesCampoContrasena) {
   const [visible, setVisible] = useState(false)
   return (
     <Field data-invalid={!!error}>
@@ -99,15 +99,15 @@ function PasswordField({ id, value, onChange, error, placeholder, autoComplete, 
           {visible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
         </button>
       </div>
-      <InlineError message={error} />
+      <ErrorEnLinea message={error} />
       {children}
     </Field>
   )
 }
 
-type CheckboxFieldProps = { id: string; checked: boolean; onChange: (checked: boolean) => void; error?: string; children: ReactNode }
+type PropiedadesCampoCasilla = { id: string; checked: boolean; onChange: (marcado: boolean) => void; error?: string; children: ReactNode }
 
-function CheckboxField({ id, checked, onChange, error, children }: CheckboxFieldProps) {
+function CampoCasilla({ id, checked, onChange, error, children }: PropiedadesCampoCasilla) {
   return (
     <div className="flex flex-col gap-1.5">
       <div className="flex items-start gap-2">
@@ -129,7 +129,7 @@ function CheckboxField({ id, checked, onChange, error, children }: CheckboxField
   )
 }
 
-function SubmitButton({ isLoading, label, loadingLabel }: { isLoading: boolean; label: string; loadingLabel: string }) {
+function BotonEnviar({ isLoading, label, loadingLabel }: { isLoading: boolean; label: string; loadingLabel: string }) {
   return (
     <Button type="submit" disabled={isLoading} className="h-11 w-full rounded-xl text-sm font-semibold hover:brightness-110 transition-all">
       {isLoading ? loadingLabel : label}
@@ -138,7 +138,7 @@ function SubmitButton({ isLoading, label, loadingLabel }: { isLoading: boolean; 
   )
 }
 
-function FormHeader({ title, subtitle }: { title: string; subtitle: string }) {
+function EncabezadoFormulario({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="mb-6">
       <h2 className="font-display text-2xl font-bold tracking-tight text-foreground text-balance">{title}</h2>
@@ -148,60 +148,60 @@ function FormHeader({ title, subtitle }: { title: string; subtitle: string }) {
 }
 
 export function AuthPanel() {
-  const location = useLocation()
-  const [tab, setTab] = useState(location.state?.tab === "signup" ? "signup" : "login")
+  const ubicacion = useLocation()
+  const [pestana, setPestana] = useState(ubicacion.state?.tab === "signup" ? "signup" : "login")
 
-  const [loginEmail, setLoginEmail] = useState("")
-  const [loginPassword, setLoginPassword] = useState("")
-  const [signupEmail, setSignupEmail] = useState("")
-  const [signupPassword, setSignupPassword] = useState("")
-  const [acceptTerms, setAcceptTerms] = useState(false)
-  const [acceptAge, setAcceptAge] = useState(false)
-  const [errors, setErrors] = useState<FormErrors>({})
+  const [correoAcceso, setCorreoAcceso] = useState("")
+  const [contrasenaAcceso, setContrasenaAcceso] = useState("")
+  const [correoRegistro, setCorreoRegistro] = useState("")
+  const [contrasenaRegistro, setContrasenaRegistro] = useState("")
+  const [aceptaTerminos, setAceptaTerminos] = useState(false)
+  const [aceptaEdad, setAceptaEdad] = useState(false)
+  const [errores, setErrores] = useState<ErroresFormulario>({})
 
-  const { login, register, logout, isLoading, error: authError } = useAuth()
-  const navigate = useNavigate()
+  const { login, register, logout, isLoading, error: errorAutenticacion } = useAuth()
+  const navegar = useNavigate()
   const { toast } = useToast()
 
   // Valida los campos antes de delegar la autenticación en Identidad.
-  const handleLogin = async (evento: React.FormEvent) => {
+  const manejarInicioSesion = async (evento: React.FormEvent) => {
     evento.preventDefault()
 
-    const newErrors: FormErrors = {}
-    if (!loginEmail.includes("@")) newErrors.loginEmail = "Ingresa un correo electrónico válido"
-    if (!loginPassword) newErrors.loginPassword = "Contraseña requerida"
-    setErrors(newErrors)
-    if (Object.keys(newErrors).length > 0) return
+    const nuevosErrores: ErroresFormulario = {}
+    if (!correoAcceso.includes("@")) nuevosErrores.loginEmail = "Ingresa un correo electrónico válido"
+    if (!contrasenaAcceso) nuevosErrores.loginPassword = "Contraseña requerida"
+    setErrores(nuevosErrores)
+    if (Object.keys(nuevosErrores).length > 0) return
 
-    const usuario = await login({ correo: loginEmail, password: loginPassword })
+    const usuario = await login({ correo: correoAcceso, password: contrasenaAcceso })
     if (usuario) {
       toast("Inicio de sesión exitoso", "success")
-      navigate(rutaTrasAutenticacion(usuario.rol), { replace: true })
+      navegar(rutaTrasAutenticacion(usuario.rol), { replace: true })
     }
   }
 
   // Registra la cuenta solo si se cumplen las validaciones locales y los consentimientos.
-  const handleSignup = async (evento: React.FormEvent) => {
+  const manejarRegistro = async (evento: React.FormEvent) => {
     evento.preventDefault()
 
-    const newErrors: FormErrors = {}
-    if (!signupEmail.includes("@")) newErrors.signupEmail = "Ingresa un correo electrónico válido"
-    if (signupPassword.length < 8) newErrors.signupPassword = "Usa al menos 8 caracteres para mayor seguridad"
-    if (!acceptTerms) newErrors.terms = "Debes aceptar los Términos y Condiciones"
-    if (!acceptAge) newErrors.age = "Debes confirmar que eres mayor de edad"
-    setErrors(newErrors)
-    if (Object.keys(newErrors).length > 0) return
+    const nuevosErrores: ErroresFormulario = {}
+    if (!correoRegistro.includes("@")) nuevosErrores.signupEmail = "Ingresa un correo electrónico válido"
+    if (contrasenaRegistro.length < 8) nuevosErrores.signupPassword = "Usa al menos 8 caracteres para mayor seguridad"
+    if (!aceptaTerminos) nuevosErrores.terms = "Debes aceptar los Términos y Condiciones"
+    if (!aceptaEdad) nuevosErrores.age = "Debes confirmar que eres mayor de edad"
+    setErrores(nuevosErrores)
+    if (Object.keys(nuevosErrores).length > 0) return
 
     // Nombre inicial requerido por Identidad; la edición de perfil aún no está integrada.
     const exito = await register({
-      correo: signupEmail,
-      password: signupPassword,
-      nombre_completo: `Usuario ${signupEmail.split('@')[0]}`,
+      correo: correoRegistro,
+      password: contrasenaRegistro,
+      nombre_completo: `Usuario ${correoRegistro.split('@')[0]}`,
     })
 
     if (exito) {
       toast("Cuenta creada con éxito. Revisa tu correo.", "success")
-      navigate(ROUTES.CATALOGO)
+      navegar(ROUTES.CATALOGO)
     }
   }
 
@@ -226,7 +226,7 @@ export function AuthPanel() {
         </div>
 
         <div className="rounded-xl border-4 border-border bg-background p-6 shadow-[8px_8px_0px_var(--color-border)] sm:p-8">
-          <Tabs value={tab} onValueChange={(valor: string) => setTab(valor)}>
+          <Tabs value={pestana} onValueChange={(valor: string) => setPestana(valor)}>
             <TabsList className="mb-7 grid h-11 w-full grid-cols-2 rounded-xl bg-primary/20 p-1 border-2 border-border shadow-[4px_4px_0px_var(--color-border)]">
               <TabsTrigger value="login" className="rounded-lg text-sm hover:bg-primary/40">
                 Iniciar Sesión
@@ -237,24 +237,24 @@ export function AuthPanel() {
             </TabsList>
 
             <TabsContent value="login">
-              <FormHeader title="Bienvenido de nuevo" subtitle="Accede para seguir ahorrando en tus compras." />
+              <EncabezadoFormulario title="Bienvenido de nuevo" subtitle="Accede para seguir ahorrando en tus compras." />
 
-              <form className="flex flex-col gap-5" onSubmit={handleLogin}>
-                {authError && tab === "login" && <AuthErrorBanner message={authError} />}
+              <form className="flex flex-col gap-5" onSubmit={manejarInicioSesion}>
+                {errorAutenticacion && pestana === "login" && <AvisoErrorAutenticacion message={errorAutenticacion} />}
 
                 <FieldGroup>
-                  <EmailField id="login-email" value={loginEmail} onChange={setLoginEmail} error={errors.loginEmail} />
-                  <PasswordField
+                  <CampoCorreo id="login-email" value={correoAcceso} onChange={setCorreoAcceso} error={errores.loginEmail} />
+                  <CampoContrasena
                     id="login-password"
-                    value={loginPassword}
-                    onChange={setLoginPassword}
-                    error={errors.loginPassword}
+                    value={contrasenaAcceso}
+                    onChange={setContrasenaAcceso}
+                    error={errores.loginPassword}
                     placeholder="••••••••"
                     autoComplete="current-password"
                   />
                 </FieldGroup>
 
-                <SubmitButton isLoading={isLoading} label="Entrar" loadingLabel="Ingresando..." />
+                <BotonEnviar isLoading={isLoading} label="Entrar" loadingLabel="Ingresando..." />
               </form>
 
               <FieldSeparator className="my-6">O continuar con</FieldSeparator>
@@ -265,7 +265,7 @@ export function AuthPanel() {
                   variant="ghost"
                   className="text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-transparent"
                   disabled={isLoading}
-                  onClick={async () => { await logout(); navigate('/dashboard'); }}
+                  onClick={async () => { await logout(); navegar('/dashboard'); }}
                 >
                   Continuar como invitado
                 </Button>
@@ -273,40 +273,40 @@ export function AuthPanel() {
             </TabsContent>
 
             <TabsContent value="signup">
-              <FormHeader title="Crea tu cuenta gratis" subtitle="Empieza a comparar precios en menos de un minuto." />
+              <EncabezadoFormulario title="Crea tu cuenta gratis" subtitle="Empieza a comparar precios en menos de un minuto." />
 
-              <form className="flex flex-col gap-5" onSubmit={handleSignup}>
-                {authError && tab === "signup" && <AuthErrorBanner message={authError} />}
+              <form className="flex flex-col gap-5" onSubmit={manejarRegistro}>
+                {errorAutenticacion && pestana === "signup" && <AvisoErrorAutenticacion message={errorAutenticacion} />}
 
                 <FieldGroup>
-                  <EmailField id="signup-email" value={signupEmail} onChange={setSignupEmail} error={errors.signupEmail} />
-                  <PasswordField
+                  <CampoCorreo id="signup-email" value={correoRegistro} onChange={setCorreoRegistro} error={errores.signupEmail} />
+                  <CampoContrasena
                     id="signup-password"
-                    value={signupPassword}
-                    onChange={setSignupPassword}
-                    error={errors.signupPassword}
+                    value={contrasenaRegistro}
+                    onChange={setContrasenaRegistro}
+                    error={errores.signupPassword}
                     placeholder="Crea una contraseña segura"
                     autoComplete="new-password"
                   >
                     <div className="mt-1">
-                      <PasswordStrength password={signupPassword} />
+                      <PasswordStrength password={contrasenaRegistro} />
                     </div>
-                  </PasswordField>
+                  </CampoContrasena>
                 </FieldGroup>
 
                 <div className="flex flex-col gap-3 mt-2 mb-2">
-                  <CheckboxField id="terms" checked={acceptTerms} onChange={setAcceptTerms} error={errors.terms}>
+                  <CampoCasilla id="terms" checked={aceptaTerminos} onChange={setAceptaTerminos} error={errores.terms}>
                     He leído y acepto los{" "}
                     <Link to="/terminos" target="_blank" className="text-primary font-medium underline-offset-4 hover:underline">
                       Términos y Condiciones
                     </Link>
-                  </CheckboxField>
-                  <CheckboxField id="age" checked={acceptAge} onChange={setAcceptAge} error={errors.age}>
+                  </CampoCasilla>
+                  <CampoCasilla id="age" checked={aceptaEdad} onChange={setAceptaEdad} error={errores.age}>
                     Confirmo que soy mayor de 18 años y tengo capacidad legal para aceptar estos términos
-                  </CheckboxField>
+                  </CampoCasilla>
                 </div>
 
-                <SubmitButton isLoading={isLoading} label="Registrarse" loadingLabel="Creando cuenta..." />
+                <BotonEnviar isLoading={isLoading} label="Registrarse" loadingLabel="Creando cuenta..." />
               </form>
 
               <FieldSeparator className="my-6">O continuar con</FieldSeparator>
