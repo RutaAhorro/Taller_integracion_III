@@ -3,8 +3,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
-import { ROUTES } from '@/core/routes';
+import { useAuth } from '@/features/autenticacion/useAuth';
+import { ROUTES } from '@/app/routes';
 import {
   ADMIN_HAS_BACKEND,
   adminPlanToBackend,

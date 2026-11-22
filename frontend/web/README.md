@@ -69,7 +69,8 @@ No mezclar `localhost` y `127.0.0.1` al probar cookies entre orígenes.
 | --- | --- |
 | `VITE_API_URL` | Base de la API **incluyendo `/api/v1`**; `/api/v1` dentro de Compose/Ingress o URL absoluta del Gateway para Vite local |
 | `VITE_GOOGLE_CLIENT_ID` | ID público del cliente OAuth; no es una clave privada |
-| `VITE_IA_URL` | Variable heredada; el chat ya no la utiliza. No configurar acceso directo a IA para este flujo |
+
+`VITE_IA_URL` se retiró (SUP-391): el chat usa `VITE_API_URL` y el Gateway; no configurar acceso directo a IA.
 
 En Vite se leen al arrancar/compilar. La imagen de producción genera placeholders
 y `entrypoint.sh` los sustituye por las variables del contenedor antes de arrancar
@@ -80,7 +81,7 @@ incluir claves Gemini/Groq, contraseñas ni tokens de servicio.
 ## Rutas y estado funcional
 
 La fuente de verdad es `src/app/router.tsx`, con constantes en
-`src/core/routes.ts`.
+`src/app/routes.ts`.
 
 | Ruta | Acceso y estado |
 | --- | --- |
@@ -99,7 +100,7 @@ Las vistas pendientes usan `FeatureUnavailable`. El chat muestra únicamente la
 respuesta del servicio o un error explícito, sin simular etapas del procesamiento
 ni confirmaciones de guardado.
 La portada es informativa: sus textos, productos y cifras ilustrativas provienen
-de `src/data/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
+de `src/features/landing/landing.json`, sin consultas a la API ni estadísticas en tiempo real.
 El catálogo funcional no usa esos ejemplos. Sus cadenas se deducen únicamente de los productos recibidos: hasta SUP-371 no
 representan la cobertura completa ni las facetas de una búsqueda. El filtro
 «Marcas blancas» está deshabilitado hasta disponer de clasificación en el backend.
@@ -122,20 +123,38 @@ al barrido.
 
 ## Organización del código
 
+Carpetas por tema: cada feature agrupa sus pantallas, componentes, hooks, cliente
+HTTP y tipos. Los nombres de archivo existentes se conservan; su renombrado al
+español se trata aparte (SUP-393).
+
 ```text
-src/app/router.tsx       Router, proveedores y protección de rutas
-src/core/routes.ts      Constantes de navegación
-src/contexts/           Sesión, carrito temporal y notificaciones
-src/features/admin/     Panel, clientes API y hooks administrativos
-src/features/listas/    Cliente HTTP de listas
-src/hooks/              Catálogo, autenticación y chat
-src/lib/products-api.ts Cliente de catálogo y adaptación de respuestas
-src/lib/roles.ts        Normalización de roles para la interfaz
-src/pages/              Páginas funcionales y avisos de integraciones pendientes
-src/layouts/            Estructura de navegación
-src/components/         Componentes compartidos y primitivas de UI
-tests/                  Pruebas críticas de sesión, listas, administración y errores del chat
+src/app/                 router.tsx (rutas y proveedores) y routes.ts (constantes de navegación)
+src/features/
+  autenticacion/         AuthContext, useAuth, useRole, roles.ts, tipos.ts (Usuario, plan),
+                         Login, Profile, AuthPanel y ProtectedRoute
+  catalogo/              Dashboard, ProductDetail, useCatalog, products-api.ts, carrito
+                         (CartContext, CartSidebar), tarjetas, formatters y tipos.ts
+  chat/                  Chatbot, useChatbot y TypingIndicator
+  landing/               Home, componentes de portada y landing.json (contenido editorial)
+  listas/                ShoppingLists y listas-api.ts
+  admin/                 Panel, clientes API y hooks administrativos
+src/layouts/             MainLayout, TopNav, Sidebar (filtros) y BottomNav
+src/components/          ErrorBoundary, FeatureUnavailable, Footer, ToastContext y ui/ (primitivas)
+src/lib/                 utils.ts (cn) y logger.ts
+src/pages/               Páginas sin feature propia: avisos de integraciones pendientes y términos
+tests/                   Pruebas críticas de sesión, listas, administración y errores del chat
 ```
+
+### Datos: API, contenido estático y estado local
+
+| Tipo | Dónde vive | Notas |
+| --- | --- | --- |
+| Datos de API | `features/*/*-api.ts`, `features/autenticacion/AuthContext.tsx`, `features/catalogo/useCatalog.ts` | Siempre con `credentials: 'include'`; los errores se muestran, nunca se sustituyen por ejemplos |
+| Contenido estático | `features/landing/landing.json` | Textos y cifras ilustrativas de la portada; no son datos de API (ver contrato de la landing) |
+| Estado local | `CartContext` (carrito temporal), `ToastContext`, `auth_user` en `localStorage` | No se sincroniza con listas ni acredita sesión |
+
+No hay mocks de datos: no existe ninguna carpeta de mocks ni se usan ejemplos
+como respaldo de una respuesta fallida.
 
 El alias `@/` apunta a `src/`. Se usan React Context y hooks; no Redux/Zustand.
 Comprobar imports del router y sus componentes antes de declarar un archivo
@@ -153,8 +172,10 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
   Siempre se limpia `auth_user`; si no se confirma el cierre remoto, se muestra
   una advertencia porque la cookie podría seguir activa. No se revocan JWT copiados.
 - `ProtectedRoute` controla navegación; la autorización efectiva corresponde
-  al backend. Roles: `registrado`, `colaborador`, `admin`; el plan `premium` es
-  un concepto distinto del rol.
+  al backend. Roles: `registrado`, `colaborador`, `admin`; el plan (`basico`/`premium`,
+  `PlanUsuario` en `features/autenticacion/tipos.ts`) es un concepto distinto del
+  rol. No se aceptan alias heredados (`administrador`, `usuario`, `plus`): la base
+  restringe ambos campos con CHECK.
 - Sin base API, administración muestra un error de configuración y no utiliza
   datos de ejemplo. Los fallos parciales de métricas se muestran como «sin datos».
 - No existe una cuenta admin precreada documentada. Solicitar su asignación a

@@ -1,14 +1,14 @@
 // Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
-import { TopNav } from "@/components/TopNav";
-import { SideBar } from "@/components/Sidebar";
-import { CartSidebar } from "@/components/CartSidebar";
-import BottomNav from "@/components/BottomNav";
-import { getProducts, getMarketsFromProducts } from "@/lib/products-api";
-import type { UiSupermarket } from "@/types";
+import { TopNav } from "@/layouts/TopNav";
+import { SideBar } from "@/layouts/Sidebar";
+import { CartSidebar } from "@/features/catalogo/CartSidebar";
+import BottomNav from "@/layouts/BottomNav";
+import { getProducts, getMarketsFromProducts } from "@/features/catalogo/products-api";
+import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
-import { useCart } from "@/contexts/CartContext";
+import { useCart } from "@/features/catalogo/CartContext";
 type LayoutContextType = {
   query: string;
   activeMarket: string | null;

@@ -132,8 +132,8 @@ test('fuentes descarta lecturas antiguas, serializa cambios y revierte un guarda
   const compiled = ts.transpileModule(
     hookSource.replace("'react'", JSON.stringify(reactUrl))
       .replace("'react-router-dom'", JSON.stringify(sessionUrl))
-      .replace("'@/hooks/useAuth'", JSON.stringify(sessionUrl))
-      .replace("'@/core/routes'", JSON.stringify(sessionUrl))
+      .replace("'@/features/autenticacion/useAuth'", JSON.stringify(sessionUrl))
+      .replace("'@/app/routes'", JSON.stringify(sessionUrl))
       .replace("'./admin-api'", JSON.stringify(apiUrl)),
     { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } },
   );
@@ -176,4 +176,15 @@ test('fuentes descarta lecturas antiguas, serializa cambios y revierte un guarda
   assert.deepEqual(view().sources, [api.adminSourceFromBackend(confirmada)]);
   assert.match(view().error, /Error al guardar/);
   assert.equal(view().pendingId, null);
+});
+
+test('rol y plan solo aceptan los valores reales de Identidad, sin alias heredados', () => {
+  assert.equal(api.adminRoleFromBackend('admin'), 'Administrador');
+  assert.equal(api.adminRoleFromBackend('registrado'), 'Usuario');
+  assert.equal(api.adminRoleFromBackend('administrador'), 'Desconocido');
+  assert.equal(api.adminRoleFromBackend('usuario'), 'Desconocido');
+  assert.equal(api.adminPlanFromBackend('basico'), 'Básico');
+  assert.equal(api.adminPlanFromBackend('premium'), 'Premium');
+  assert.equal(api.adminPlanFromBackend('plus'), null);
+  assert.equal(api.adminPlanFromBackend('básico'), null);
 });

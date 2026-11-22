@@ -33,10 +33,10 @@ const authUrl = moduleUrl(`
   export const sesion = { isGuest: false };
   export const useAuth = () => sesion;
 `);
-const codigo = await readFile(new URL('../src/hooks/useChatbot.ts', import.meta.url), 'utf8');
+const codigo = await readFile(new URL('../src/features/chat/useChatbot.ts', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(
   codigo.replace("from 'react'", `from '${reactUrl}'`)
-    .replace("from '@/hooks/useAuth'", `from '${authUrl}'`)
+    .replace("from '@/features/autenticacion/useAuth'", `from '${authUrl}'`)
     .replace('import.meta.env.VITE_API_URL', '"/api/v1/"'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 } },
 );

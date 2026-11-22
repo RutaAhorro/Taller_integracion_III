@@ -46,25 +46,25 @@ async function cargar(ruta, reemplazos = []) {
   return moduleUrl(outputText.replace('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime'))));
 }
 
-const rolesUrl = await cargar('../src/lib/roles.ts');
-const rutasUrl = await cargar('../src/core/routes.ts', [["'@/lib/roles'", JSON.stringify(rolesUrl)]]);
-const contextoUrl = await cargar('../src/contexts/AuthContext.tsx', [
+const rolesUrl = await cargar('../src/features/autenticacion/roles.ts');
+const rutasUrl = await cargar('../src/app/routes.ts', [["'@/features/autenticacion/roles'", JSON.stringify(rolesUrl)]]);
+const contextoUrl = await cargar('../src/features/autenticacion/AuthContext.tsx', [
   ["'react'", JSON.stringify(reactUrl)],
-  ["'@/contexts/ToastContext'", JSON.stringify(entornoUrl)],
+  ["'@/components/ToastContext'", JSON.stringify(entornoUrl)],
   ["const AUTH_USER_KEY = 'auth_user';", `import { almacenamiento } from '${entornoUrl}'; const AUTH_USER_KEY = 'auth_user';`],
   ['localStorage.', 'almacenamiento.'],
   ['import.meta.env.VITE_API_URL', '"/api/v1"'],
 ]);
-const googleUrl = await cargar('../src/hooks/useGoogleAuth.ts', [
+const googleUrl = await cargar('../src/features/autenticacion/useGoogleAuth.ts', [
   ["'react'", JSON.stringify(reactUrl)],
-  ["'./useAuth'", JSON.stringify(entornoUrl)],
+  ["'@/features/autenticacion/useAuth'", JSON.stringify(entornoUrl)],
   ["'react-router-dom'", JSON.stringify(entornoUrl)],
-  ["'@/core/routes'", JSON.stringify(rutasUrl)],
+  ["'@/app/routes'", JSON.stringify(rutasUrl)],
 ]);
 const componentesUrl = moduleUrl('export const AuthVisual = () => null; export const AuthPanel = () => null;');
-const loginUrl = await cargar('../src/pages/Login.tsx', [
-  ['"@/components/auth/AuthVisual"', JSON.stringify(componentesUrl)],
-  ['"@/components/auth/AuthPanel"', JSON.stringify(componentesUrl)],
+const loginUrl = await cargar('../src/features/autenticacion/Login.tsx', [
+  ['"@/features/autenticacion/AuthVisual"', JSON.stringify(componentesUrl)],
+  ['"@/features/autenticacion/AuthPanel"', JSON.stringify(componentesUrl)],
 ]);
 const { default: Login } = await import(loginUrl);
 const { AuthProvider } = await import(contextoUrl);

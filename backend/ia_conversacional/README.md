@@ -64,7 +64,7 @@ Protegido mediante token JWT emitido por el servicio de Identidad (algoritmo HMA
 
 > [!NOTE]
 > **Estado de Desacople y Enrutamiento:**  
-> La Gateway actualmente **no** enruta el tráfico hacia `/api/v1/chat` (la unificación de rutas en Gateway está programada bajo SUP-278). Los antiguos endpoints experimentales de desarrollo (`/chat/gemini` y `/chat/groq`) fueron completamente retirados. El frontend o las pruebas interactúan directamente contra el puerto `8002` (vía `VITE_IA_URL`).
+> Gateway enruta `/api/v1/chat` y sus subrutas hacia IA cuando `IA_URL` está definido (SUP-278). Los antiguos endpoints experimentales de desarrollo (`/chat/gemini` y `/chat/groq`) fueron completamente retirados. El frontend llama a `${VITE_API_URL}/chat` a través de Gateway; no existe `VITE_IA_URL`.
 
 ---
 
