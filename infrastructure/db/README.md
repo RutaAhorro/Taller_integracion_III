@@ -30,7 +30,8 @@ El orden real es este:
 | 11 | `08_grants_catalogo_fuentes.sql` | Permiso de Catálogo sobre `esta_activa` (SUP-243) |
 | 12 | `08_normalizar_rol_admin_y_auditoria.sql` | Rol `admin` y auditoría (SUP-242) |
 | 13 | `09_plan_y_ultimo_acceso.sql` | Plan y último acceso de usuarios (SUP-242) |
-| 14 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
+| 14 | `10_restringir_rol_usuarios.sql` | Restricción de los roles de usuario (SUP-347) |
+| 15 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -38,7 +39,7 @@ alfabético es siempre el mismo y respeta las dependencias. No se renombran
 porque el código de Identidad, Control y Motor, los tests y las bases ya
 desplegadas los identifican por su nombre actual.
 
-**Regla para scripts nuevos:** usar el siguiente número libre (hoy `10_`) y
+**Regla para scripts nuevos:** usar el siguiente número libre (hoy `11_`) y
 nunca repetir uno existente. Si el script depende de otro, debe ordenarse
 después de él.
 
@@ -65,6 +66,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [08_grants_catalogo_fuentes.sql](08_grants_catalogo_fuentes.sql) | `UPDATE` de `app_catalogo` acotado a la columna `esta_activa` de `scraper.cadenas_supermercado` para administrar el flag de fuentes de scraping (SUP-243). El `06` vigente ya lo concede; este script lo reaplica de forma idempotente en bases existentes. |
 | [08_normalizar_rol_admin_y_auditoria.sql](08_normalizar_rol_admin_y_auditoria.sql) | Normaliza el alias histórico `administrador` a `admin` y crea `api.auditoria_admin_usuarios` con permisos para Identidad (SUP-242). Aplicar después de 06; el `06` vigente restaura esos grants si se re-ejecuta sobre una base ya migrada. |
 | [09_plan_y_ultimo_acceso.sql](09_plan_y_ultimo_acceso.sql) | Agrega `api.usuarios.plan` (`basico`/`premium`) y `ultimo_acceso`, usados por el panel administrativo (SUP-242). Aplicar después de 08. Idempotente; no requiere grants nuevos porque el permiso es de tabla. El DDL y el `VALIDATE CONSTRAINT` corren en transacciones separadas para no retener el `AccessExclusiveLock` durante el escaneo. |
+| [10_restringir_rol_usuarios.sql](10_restringir_rol_usuarios.sql) | Normaliza `api.usuarios.rol` y agrega `usuarios_rol_check`, que sólo admite `admin`, `colaborador` y `registrado` (SUP-347). Aborta si encuentra otro valor, para corregirlo a mano. Aplicar después de 09: Identidad no arranca sin esta restricción. Idempotente; valida en una transacción aparte, igual que la 09. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para

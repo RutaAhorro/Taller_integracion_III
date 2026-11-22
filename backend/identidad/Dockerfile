@@ -9,6 +9,7 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
 FROM source AS test
+COPY tests/ ./tests/
 RUN go test -race ./... && go vet ./...
 
 FROM source AS build

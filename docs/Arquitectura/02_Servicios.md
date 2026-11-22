@@ -30,9 +30,11 @@ Gestiona las cuentas y la sesión:
 - Registro y login local.
 - Login con Google, con validación criptográfica del ID token.
 - Perfil de usuario.
-- Recuperación de contraseña mediante una cola asíncrona.
 - `POST /auth/logout`, agregado en #124.
 - Administración de usuarios.
+
+No hay recuperación de contraseña ni envío de correo: se podaron en SUP-347
+porque ningún endpoint los exponía, y se reimplementarán en SUP-233/185.
 
 Emite la cookie `jwt`. Los roles son `registrado`, `colaborador` y `admin`. El plan (`basico` o `premium`) es independiente del rol.
 
