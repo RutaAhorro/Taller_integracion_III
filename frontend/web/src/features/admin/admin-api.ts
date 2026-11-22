@@ -42,12 +42,10 @@ export function adminRoleToBackend(role: AdminRole): string {
 export function adminRoleFromBackend(rol: string): AdminUserRole {
   switch (rol.trim().toLowerCase()) {
     case 'admin':
-    case 'administrador':
       return 'Administrador';
     case 'colaborador':
       return 'Colaborador';
     case 'registrado':
-    case 'usuario':
       return 'Usuario';
     default:
       return 'Desconocido';
@@ -60,10 +58,8 @@ export function adminPlanFromBackend(plan?: string | null): AdminPlan | null {
   if (!plan) return null;
   switch (plan.trim().toLowerCase()) {
     case 'basico':
-    case 'básico':
       return 'Básico';
     case 'premium':
-    case 'plus':
       return 'Premium';
     default:
       return null;

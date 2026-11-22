@@ -2,8 +2,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, ShoppingBasket, X } from 'lucide-react';
-import { ROUTES } from '@/core/routes';
-import { useAuth } from '@/hooks/useAuth';
+import { ROUTES } from '@/app/routes';
+import { useAuth } from '@/features/autenticacion/useAuth';
 import type { AdminSection } from './admin-types';
 
 type AdminLayoutProps = {

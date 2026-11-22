@@ -82,7 +82,7 @@ Nunca se deja una pantalla rota o en blanco.
 
 ### 2.1 Excepción propuesta: contenido informativo de la portada (SUP-354)
 
-La conservación de `frontend/web/src/data/landing.json`, su justificación y sus
+La conservación de `frontend/web/src/features/landing/landing.json`, su justificación y sus
 límites se definen en el
 [contrato de la landing informativa](../Contratos/CONTRATO_LANDING_INFORMATIVA.md).
 Consultar ese contrato antes de proponer eliminar el archivo durante el barrido.

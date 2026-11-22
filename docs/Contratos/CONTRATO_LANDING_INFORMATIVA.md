@@ -6,7 +6,7 @@
 ## Para qué existe
 
 Este contrato documenta por qué se conserva
-`frontend/web/src/data/landing.json` y limita su uso. Es la referencia para el
+`frontend/web/src/features/landing/landing.json` y limita su uso. Es la referencia para el
 equipo y los asistentes de IA al revisar o modificar la portada.
 
 La autora recuperó la landing tras las pruebas manuales para explicar la
@@ -29,7 +29,7 @@ HTTP ni autoriza mocks en las vistas funcionales.
 ## 2. Límites de uso
 
 - Solo lo consumen los componentes informativos de la portada, en
-  `frontend/web/src/components/landing/`.
+  `frontend/web/src/features/landing/`.
 - No alimenta catálogo, carrito, listas, chat, rutas, administración ni
   registros de la base de datos.
 - No reemplaza respuestas de la API ni sirve de respaldo cuando un servicio

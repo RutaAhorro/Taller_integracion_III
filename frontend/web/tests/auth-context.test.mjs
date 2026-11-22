@@ -21,10 +21,10 @@ const toastUrl = moduleUrl(`
   export const notices = [];
   export const useToast = () => ({ toast: (message, type) => notices.push({ message, type }) });
 `);
-const source = await readFile(new URL('../src/contexts/AuthContext.tsx', import.meta.url), 'utf8');
+const source = await readFile(new URL('../src/features/autenticacion/AuthContext.tsx', import.meta.url), 'utf8');
 const { outputText } = ts.transpileModule(
   source.replace("from 'react'", `from '${reactUrl}'`)
-    .replace("from '@/contexts/ToastContext'", `from '${toastUrl}'`)
+    .replace("from '@/components/ToastContext'", `from '${toastUrl}'`)
     .replace('import.meta.env.VITE_API_URL', '"/api/v1/"'),
   { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022, jsx: ts.JsxEmit.ReactJSX } },
 );

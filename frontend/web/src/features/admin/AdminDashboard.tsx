@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { Input } from '@/components/ui/input';
-import { ROUTES } from '@/core/routes';
-import { useAuth } from '@/hooks/useAuth';
+import { ROUTES } from '@/app/routes';
+import { useAuth } from '@/features/autenticacion/useAuth';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
 import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-types';
