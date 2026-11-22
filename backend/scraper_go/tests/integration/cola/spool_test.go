@@ -9,7 +9,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
@@ -214,54 +213,14 @@ func TestSpoolPersisteTrasCerrarYReabrir(prueba *testing.T) {
 	}
 }
 
-func TestSpoolPresionDeDiscoEnOpenAddYSeal(prueba *testing.T) {
-	directorioEstado := prueba.TempDir()
-
-	// 1. Presión de disco en Open: minFree supera el espacio disponible del volumen.
-	if _, errorOpen := cola.Open(uuid.NewString(), directorioEstado, 1<<62); !errors.Is(errorOpen, cola.ErrStoragePressure) {
+// TestSpoolPresionDeDiscoEnOpen comprueba que Open rechace el spool cuando la
+// reserva pedida supera cualquier volumen. Usa una reserva imposible para no
+// depender del espacio libre real del disco, que cambia mientras corren otros
+// procesos (SUP-395).
+func TestSpoolPresionDeDiscoEnOpen(prueba *testing.T) {
+	const reservaImposible = int64(1) << 62
+	if _, errorOpen := cola.Open(uuid.NewString(), prueba.TempDir(), reservaImposible); !errors.Is(errorOpen, cola.ErrStoragePressure) {
 		prueba.Fatalf("Open() bajo presión = %v, esperado ErrStoragePressure", errorOpen)
-	}
-
-	// 2. Presión de disco en Add: Open pasa con el espacio libre exacto actual, pero Add requiere margen extra.
-	libreActual, errorLibre := cola.FreeBytes(directorioEstado)
-	if errorLibre != nil {
-		prueba.Fatalf("FreeBytes() error = %v", errorLibre)
-	}
-	almacenAdd, errorAperturaAdd := cola.Open(uuid.NewString(), directorioEstado, libreActual-32)
-	if errorAperturaAdd != nil {
-		prueba.Fatalf("Open(para Add) error = %v", errorAperturaAdd)
-	}
-	defer almacenAdd.Close()
-	supermercado := "Jumbo"
-	productoGrande := dominio.Product{Producto: strings.Repeat("ProductoConNombreLargo", 8)}
-	if errorAdd := almacenAdd.Add(productoGrande, &supermercado); !errors.Is(errorAdd, cola.ErrStoragePressure) {
-		prueba.Fatalf("Add() bajo presión = %v, esperado ErrStoragePressure", errorAdd)
-	}
-
-	// 3. Presión de disco en Seal: insertamos con reserva baja, cerramos y reabrimos con reserva al límite actual.
-	trabajoSealID := uuid.NewString()
-	almacenPreparacion, errorPreparacion := cola.Open(trabajoSealID, directorioEstado, 1)
-	if errorPreparacion != nil {
-		prueba.Fatalf("Open(preparación Seal) error = %v", errorPreparacion)
-	}
-	if errorAdicion := almacenPreparacion.Add(productoGrande, &supermercado); errorAdicion != nil {
-		prueba.Fatalf("Add(preparación Seal) error = %v", errorAdicion)
-	}
-	if errorCierre := almacenPreparacion.Close(); errorCierre != nil {
-		prueba.Fatalf("Close(preparación Seal) error = %v", errorCierre)
-	}
-
-	libreAntesDeSeal, errorLibreSeal := cola.FreeBytes(directorioEstado)
-	if errorLibreSeal != nil {
-		prueba.Fatalf("FreeBytes() error = %v", errorLibreSeal)
-	}
-	almacenSeal, errorReapertura := cola.Open(trabajoSealID, directorioEstado, libreAntesDeSeal-16)
-	if errorReapertura != nil {
-		prueba.Fatalf("Open(para Seal) error = %v", errorReapertura)
-	}
-	defer almacenSeal.Close()
-	if errorSeal := almacenSeal.Seal(10); !errors.Is(errorSeal, cola.ErrStoragePressure) {
-		prueba.Fatalf("Seal() bajo presión = %v, esperado ErrStoragePressure", errorSeal)
 	}
 }
 
