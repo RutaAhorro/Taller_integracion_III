@@ -1,8 +1,9 @@
-// Package config carga y valida la configuración de ejecución del Bot de Discord.
+// Package config carga y valida, una sola vez al arrancar, la configuración del
+// Bot de Discord. Falla con un mensaje claro cuando falta una variable
+// obligatoria para que un despliegue mal configurado no llegue a ejecutarse.
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -11,8 +12,29 @@ import (
 	"time"
 )
 
+// ===== Nombres de variables de entorno =====
+
+// Los nombres compartidos con otros servicios (SCRAPING_SERVICE_TOKEN y
+// SCRAPER_API_BASE_URL) se fijan en docs/Guias/GUIA_CONFIGURACION.md y no se
+// renombran desde este servicio.
+const (
+	variableTokenDiscord        = "DISCORD_BOT_TOKEN"
+	variableCanalDiscord        = "DISCORD_CHANNEL_ID"
+	variableCanalPush           = "DISCORD_PUSH_CHANNEL_ID"
+	variableTokenServicio       = "SCRAPING_SERVICE_TOKEN"
+	variableURLScraper          = "SCRAPER_API_BASE_URL"
+	variablePuerto              = "PORT"
+	variableTimeoutHTTP         = "SCRAPER_HTTP_TIMEOUT"
+	variableTimeoutCabecera     = "BOT_HTTP_READ_HEADER_TIMEOUT"
+	variableIntervaloConsulta   = "SCRAPER_POLL_INTERVAL"
+	variableMaximoFallosMonitor = "SCRAPER_MONITOR_MAX_FAILURES"
+	variableRetrasoDebounce     = "DISCORD_REVIEW_DEBOUNCE"
+)
+
 // ===== Límites y valores predeterminados =====
 
+// Los valores por defecto y los máximos acotan lo configurable para que un
+// error tipográfico (por ejemplo "15m" en lugar de "15s") falle al arrancar.
 const (
 	timeoutHTTPDefecto       = 15 * time.Second
 	timeoutCabeceraDefecto   = 5 * time.Second
@@ -26,7 +48,13 @@ const (
 	intervaloMaximoScraper   = time.Minute
 	fallosMonitorMaximos     = 100
 	retrasoDebounceMaximo    = 30 * time.Second
+	fallosMonitorMinimos     = 1
+	puertoMinimo             = 1
+	puertoMaximo             = 65535
+	caracteresEspacio        = " \t\r\n"
 	rutaTrabajosScraper      = "/api/v1/scraper/trabajos"
+	esquemaHTTP              = "http"
+	esquemaHTTPS             = "https"
 )
 
 // Configuracion contiene los valores validados que necesita el proceso del bot.
@@ -46,27 +74,28 @@ type Configuracion struct {
 
 // ===== Carga y validación de configuración =====
 
-// Cargar lee y valida una sola vez las variables del proceso.
+// Cargar lee y valida una sola vez las variables del proceso; el resto del bot
+// recibe la estructura resultante en lugar de consultar el entorno.
 func Cargar() (Configuracion, error) {
 	configuracion := Configuracion{
-		TokenDiscord:          strings.TrimSpace(os.Getenv("DISCORD_BOT_TOKEN")),
-		CanalDiscordID:        strings.TrimSpace(os.Getenv("DISCORD_CHANNEL_ID")),
-		CanalPushDiscordID:    strings.TrimSpace(os.Getenv("DISCORD_PUSH_CHANNEL_ID")),
-		TokenServicioScraping: os.Getenv("SCRAPING_SERVICE_TOKEN"),
-		URLBaseScraper:        strings.TrimSpace(os.Getenv("SCRAPER_API_BASE_URL")),
-		PuertoWebhook:         valorODefecto(os.Getenv("PORT"), puertoWebhookDefecto),
+		TokenDiscord:          strings.TrimSpace(os.Getenv(variableTokenDiscord)),
+		CanalDiscordID:        strings.TrimSpace(os.Getenv(variableCanalDiscord)),
+		CanalPushDiscordID:    strings.TrimSpace(os.Getenv(variableCanalPush)),
+		TokenServicioScraping: os.Getenv(variableTokenServicio),
+		URLBaseScraper:        strings.TrimSpace(os.Getenv(variableURLScraper)),
+		PuertoWebhook:         valorODefecto(os.Getenv(variablePuerto), puertoWebhookDefecto),
 	}
 	if configuracion.TokenDiscord == "" {
-		return Configuracion{}, errors.New("DISCORD_BOT_TOKEN es obligatorio")
+		return Configuracion{}, fmt.Errorf("%s es obligatorio", variableTokenDiscord)
 	}
 	if configuracion.CanalDiscordID == "" {
-		return Configuracion{}, errors.New("DISCORD_CHANNEL_ID es obligatorio")
+		return Configuracion{}, fmt.Errorf("%s es obligatorio", variableCanalDiscord)
 	}
 	if configuracion.CanalPushDiscordID == "" {
 		configuracion.CanalPushDiscordID = configuracion.CanalDiscordID
 	}
-	if len(configuracion.TokenServicioScraping) < longitudMinimaToken || strings.ContainsAny(configuracion.TokenServicioScraping, " \t\r\n") {
-		return Configuracion{}, errors.New("SCRAPING_SERVICE_TOKEN debe tener al menos 32 caracteres y no contener espacios")
+	if len(configuracion.TokenServicioScraping) < longitudMinimaToken || strings.ContainsAny(configuracion.TokenServicioScraping, caracteresEspacio) {
+		return Configuracion{}, fmt.Errorf("%s debe tener al menos %d caracteres y no contener espacios", variableTokenServicio, longitudMinimaToken)
 	}
 	if errorObtenido := validarURLScraper(configuracion.URLBaseScraper); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
@@ -76,19 +105,19 @@ func Cargar() (Configuracion, error) {
 		return Configuracion{}, errorObtenido
 	}
 	var errorObtenido error
-	if configuracion.TimeoutHTTP, errorObtenido = cargarDuracionPositiva("SCRAPER_HTTP_TIMEOUT", timeoutHTTPDefecto, timeoutMaximoScraper); errorObtenido != nil {
+	if configuracion.TimeoutHTTP, errorObtenido = cargarDuracionPositiva(variableTimeoutHTTP, timeoutHTTPDefecto, timeoutMaximoScraper); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
 	}
-	if configuracion.TimeoutCabeceraHTTP, errorObtenido = cargarDuracionPositiva("BOT_HTTP_READ_HEADER_TIMEOUT", timeoutCabeceraDefecto, timeoutCabeceraMaximo); errorObtenido != nil {
+	if configuracion.TimeoutCabeceraHTTP, errorObtenido = cargarDuracionPositiva(variableTimeoutCabecera, timeoutCabeceraDefecto, timeoutCabeceraMaximo); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
 	}
-	if configuracion.IntervaloConsulta, errorObtenido = cargarDuracionPositiva("SCRAPER_POLL_INTERVAL", intervaloConsultaDefecto, intervaloMaximoScraper); errorObtenido != nil {
+	if configuracion.IntervaloConsulta, errorObtenido = cargarDuracionPositiva(variableIntervaloConsulta, intervaloConsultaDefecto, intervaloMaximoScraper); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
 	}
-	if configuracion.MaximoFallosMonitor, errorObtenido = cargarEnteroAcotado("SCRAPER_MONITOR_MAX_FAILURES", fallosMonitorDefecto, 1, fallosMonitorMaximos); errorObtenido != nil {
+	if configuracion.MaximoFallosMonitor, errorObtenido = cargarEnteroAcotado(variableMaximoFallosMonitor, fallosMonitorDefecto, fallosMonitorMinimos, fallosMonitorMaximos); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
 	}
-	if configuracion.RetrasoDebounceReviews, errorObtenido = cargarDuracionPositiva("DISCORD_REVIEW_DEBOUNCE", retrasoDebounceDefecto, retrasoDebounceMaximo); errorObtenido != nil {
+	if configuracion.RetrasoDebounceReviews, errorObtenido = cargarDuracionPositiva(variableRetrasoDebounce, retrasoDebounceDefecto, retrasoDebounceMaximo); errorObtenido != nil {
 		return Configuracion{}, errorObtenido
 	}
 	return configuracion, nil
@@ -96,13 +125,15 @@ func Cargar() (Configuracion, error) {
 
 // ===== Validadores y valores auxiliares =====
 
-// validarURLScraper exige una URL pública del contrato HTTP configurado.
+// validarURLScraper exige que la URL apunte a la ruta de trabajos de Control y
+// no incluya credenciales, query ni fragmento, para que el token viaje solo en
+// la cabecera Authorization y nunca en la URL.
 func validarURLScraper(valor string) error {
 	direccion, errorObtenido := url.Parse(valor)
-	if errorObtenido != nil || direccion == nil || (direccion.Scheme != "http" && direccion.Scheme != "https") ||
+	if errorObtenido != nil || direccion == nil || (direccion.Scheme != esquemaHTTP && direccion.Scheme != esquemaHTTPS) ||
 		direccion.Hostname() == "" || direccion.User != nil || direccion.RawQuery != "" ||
 		direccion.ForceQuery || direccion.Fragment != "" || strings.TrimSuffix(direccion.Path, "/") != rutaTrabajosScraper {
-		return errors.New("SCRAPER_API_BASE_URL debe ser una URL HTTP(S) válida terminada en /api/v1/scraper/trabajos")
+		return fmt.Errorf("%s debe ser una URL HTTP(S) válida terminada en %s", variableURLScraper, rutaTrabajosScraper)
 	}
 	return nil
 }
@@ -110,8 +141,8 @@ func validarURLScraper(valor string) error {
 // validarPuerto evita abrir el servidor de webhooks en un puerto inválido.
 func validarPuerto(valor string) error {
 	puerto, errorObtenido := strconv.Atoi(valor)
-	if errorObtenido != nil || puerto < 1 || puerto > 65535 {
-		return errors.New("PORT debe estar entre 1 y 65535")
+	if errorObtenido != nil || puerto < puertoMinimo || puerto > puertoMaximo {
+		return fmt.Errorf("%s debe estar entre %d y %d", variablePuerto, puertoMinimo, puertoMaximo)
 	}
 	return nil
 }
