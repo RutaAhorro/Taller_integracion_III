@@ -1,5 +1,5 @@
-// Package repositories implementa las consultas SQL del catálogo. Este archivo
-// lee en lote la disponibilidad y la captura más reciente de cada producto.
+// Disponibilidad: lectura en lote del producto y su captura más reciente.
+
 package repositories
 
 import (
@@ -10,15 +10,16 @@ import (
 	"gorm.io/gorm"
 )
 
-// gormDisponibilidadRepository implementa la consulta de disponibilidad sobre
-// las tablas de Catálogo usando GORM.
-type gormDisponibilidadRepository struct {
-	db *gorm.DB
+// ===== Repositorio =====
+
+// RepositorioDisponibilidad implementa domain.RepositorioDisponibilidad.
+type RepositorioDisponibilidad struct {
+	baseDatos *gorm.DB
 }
 
-// NewDisponibilidadRepository crea el repositorio de lectura de disponibilidad.
-func NewDisponibilidadRepository(db *gorm.DB) domain.DisponibilidadRepository {
-	return &gormDisponibilidadRepository{db: db}
+// NuevoRepositorioDisponibilidad crea el repositorio sobre la conexión compartida.
+func NuevoRepositorioDisponibilidad(baseDatos *gorm.DB) *RepositorioDisponibilidad {
+	return &RepositorioDisponibilidad{baseDatos: baseDatos}
 }
 
 // ===== Consulta por lote =====
@@ -26,13 +27,10 @@ func NewDisponibilidadRepository(db *gorm.DB) domain.DisponibilidadRepository {
 // ConsultarPorIDs obtiene en una sola consulta los productos solicitados y su
 // captura de precio más reciente. La lectura usa la PK de productos_crudos y el
 // índice (producto_crudo_id, capturado_el DESC) de capturas_precios.
-func (repositorio *gormDisponibilidadRepository) ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]domain.ProductoDisponibilidadRegistro, error) {
+func (repositorio *RepositorioDisponibilidad) ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]domain.ProductoDisponibilidadRegistro, error) {
 	registros := []domain.ProductoDisponibilidadRegistro{}
-	if len(productoIDs) == 0 {
-		return registros, nil
-	}
 
-	consulta := repositorio.db.WithContext(contexto).
+	consulta := repositorio.baseDatos.WithContext(contexto).
 		Table("scraper.productos_crudos pc").
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").

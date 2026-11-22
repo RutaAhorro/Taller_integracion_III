@@ -1,3 +1,6 @@
+// Package repositories implementa las consultas SQL del catálogo sobre las
+// tablas scraper.* que pertenecen a Catálogo, y la verificación de permisos al
+// arrancar. Nunca lee tablas de Identidad ni de Control.
 package repositories
 
 import (
@@ -11,13 +14,16 @@ import (
 	"gorm.io/gorm"
 )
 
-type gormProductoRepository struct {
-	db *gorm.DB
+// ===== Repositorio =====
+
+// RepositorioProductos lee productos crudos con su captura más reciente.
+type RepositorioProductos struct {
+	baseDatos *gorm.DB
 }
 
-// NewProductoRepository inicializa el repositorio de productos con GORM
-func NewProductoRepository(db *gorm.DB) domain.ProductoRepository {
-	return &gormProductoRepository{db: db}
+// NuevoRepositorioProductos crea el repositorio sobre la conexión compartida.
+func NuevoRepositorioProductos(baseDatos *gorm.DB) *RepositorioProductos {
+	return &RepositorioProductos{baseDatos: baseDatos}
 }
 
 // ===== Marcas propias =====
@@ -68,9 +74,11 @@ var marcasPropiasPorTitulo = []string{
 	"%cugat%",
 }
 
+// ===== Consultas =====
+
 // consultaBase centraliza los JOINs y los filtros comunes de Listar y ListarParaAdmin.
-func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, filtro domain.FiltroProductosDTO) *gorm.DB {
-	consulta := repositorio.db.WithContext(ctx).
+func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, filtro domain.FiltroProductosDTO) *gorm.DB {
+	consulta := repositorio.baseDatos.WithContext(contexto).
 		Table("scraper.productos_crudos pc").
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
@@ -116,75 +124,81 @@ func (repositorio *gormProductoRepository) consultaBase(ctx context.Context, fil
 	return consulta
 }
 
+// Reglas de la categoría pública: separadores, conectores ignorados y largo
+// mínimo para quitar el plural sin dejar raíces demasiado cortas.
+const (
+	separadoresCategoria = " ,/;"
+	largoMinimoPluralEs  = 4
+	largoMinimoPluralS   = 3
+)
+
+var conectoresCategoria = map[string]bool{"y": true, "e": true}
+
 // filtroCategoriaPublico busca cada término de la categoría (singularizado) en el título.
 func filtroCategoriaPublico(consulta *gorm.DB, categoria string) *gorm.DB {
-	terms := strings.FieldsFunc(categoria, func(caracter rune) bool {
-		return caracter == ' ' || caracter == ',' || caracter == '/' || caracter == ';'
+	terminos := strings.FieldsFunc(categoria, func(caracter rune) bool {
+		return strings.ContainsRune(separadoresCategoria, caracter)
 	})
-	conditions := make([]string, 0, len(terms))
-	args := make([]interface{}, 0, len(terms))
-	for _, term := range terms {
-		if strings.EqualFold(term, "y") || strings.EqualFold(term, "e") {
+	condiciones := make([]string, 0, len(terminos))
+	argumentos := make([]any, 0, len(terminos))
+	for _, termino := range terminos {
+		termino = strings.ToLower(termino)
+		if conectoresCategoria[termino] {
 			continue
 		}
-		term = strings.ToLower(term)
 		switch {
-		case strings.HasSuffix(term, "es") && len(term) > 4:
-			term = strings.TrimSuffix(term, "es")
-		case strings.HasSuffix(term, "s") && len(term) > 3:
-			term = strings.TrimSuffix(term, "s")
+		case strings.HasSuffix(termino, "es") && len(termino) > largoMinimoPluralEs:
+			termino = strings.TrimSuffix(termino, "es")
+		case strings.HasSuffix(termino, "s") && len(termino) > largoMinimoPluralS:
+			termino = strings.TrimSuffix(termino, "s")
 		}
-		conditions = append(conditions, "pc.titulo_crudo ILIKE ?")
-		args = append(args, "%"+term+"%")
+		condiciones = append(condiciones, "pc.titulo_crudo ILIKE ?")
+		argumentos = append(argumentos, "%"+termino+"%")
 	}
-	if len(conditions) == 0 {
+	if len(condiciones) == 0 {
 		return consulta
 	}
-	return consulta.Where("("+strings.Join(conditions, " OR ")+")", args...)
+	return consulta.Where("("+strings.Join(condiciones, " OR ")+")", argumentos...)
 }
 
 // ordenSeguro construye la cláusula ORDER BY sólo con columnas permitidas.
 func ordenSeguro(filtro domain.FiltroProductosDTO) string {
-	dir := "ASC"
+	direccion := "ASC"
 	if strings.EqualFold(filtro.Order, "desc") {
-		dir = "DESC"
+		direccion = "DESC"
 	}
 	switch strings.ToLower(filtro.SortBy) {
 	case "nombre":
-		return fmt.Sprintf("pc.titulo_crudo %s, pc.id ASC", dir)
+		return fmt.Sprintf("pc.titulo_crudo %s, pc.id ASC", direccion)
 	case "marca":
-		return fmt.Sprintf("pc.marca_cruda %s, pc.id ASC", dir)
+		return fmt.Sprintf("pc.marca_cruda %s, pc.id ASC", direccion)
 	case "sku":
-		return fmt.Sprintf("pc.sku %s, pc.id ASC", dir)
+		return fmt.Sprintf("pc.sku %s, pc.id ASC", direccion)
 	case "fecha", "ultima_extraccion":
-		return fmt.Sprintf("pc.ultima_extraccion_el %s, pc.id ASC", dir)
+		return fmt.Sprintf("pc.ultima_extraccion_el %s, pc.id ASC", direccion)
 	default: // "precio" por defecto: precios faltantes (NULL) al final
-		return fmt.Sprintf("COALESCE(cp.precio_oferta, cp.precio_normal) %s NULLS LAST, pc.id ASC", dir)
+		return fmt.Sprintf("COALESCE(cp.precio_oferta, cp.precio_normal) %s NULLS LAST, pc.id ASC", direccion)
 	}
 }
 
-// paginar aplica Limit/Offset a partir de Page y Limit del filtro.
+// paginar aplica Limit/Offset; el servicio garantiza Page >= 1.
 func paginar(consulta *gorm.DB, filtro domain.FiltroProductosDTO) *gorm.DB {
-	offset := (filtro.Page - 1) * filtro.Limit
-	if offset < 0 {
-		offset = 0
-	}
-	return consulta.Limit(filtro.Limit).Offset(offset)
+	return consulta.Limit(filtro.Limit).Offset((filtro.Page - 1) * filtro.Limit)
 }
 
 // Listar ejecuta la consulta pública del catálogo. Los productos con stock se muestran primero.
-func (repositorio *gormProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
-	consulta := repositorio.consultaBase(ctx, filtro)
+func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
+	consulta := repositorio.consultaBase(contexto, filtro)
 	if filtro.Categoria != "" {
 		consulta = filtroCategoriaPublico(consulta, filtro.Categoria)
 	}
 
 	var total int64
-	if err := consulta.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if errorConteo := consulta.Session(&gorm.Session{}).Count(&total).Error; errorConteo != nil {
+		return nil, 0, errorConteo
 	}
 
-	selectCols := `
+	columnas := `
 		pc.id::text AS id,
 		pc.titulo_crudo AS nombre,
 		COALESCE(pc.marca_cruda, '') AS marca,
@@ -200,27 +214,27 @@ func (repositorio *gormProductoRepository) Listar(ctx context.Context, filtro do
 	`
 
 	items := []domain.ProductoDTO{}
-	err := paginar(consulta.Select(selectCols).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
+	errorConsulta := paginar(consulta.Select(columnas).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
-	if err != nil {
-		return nil, 0, err
+	if errorConsulta != nil {
+		return nil, 0, errorConsulta
 	}
 	return items, total, nil
 }
 
 // ListarParaAdmin ejecuta la consulta del dashboard administrativo y proyecta ProductoAdminDTO.
-func (repositorio *gormProductoRepository) ListarParaAdmin(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
-	consulta := repositorio.consultaBase(ctx, filtro)
+func (repositorio *RepositorioProductos) ListarParaAdmin(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
+	consulta := repositorio.consultaBase(contexto, filtro)
 	if filtro.Categoria != "" {
 		consulta = consulta.Where("pc.categoria_cruda ILIKE ?", "%"+filtro.Categoria+"%")
 	}
 
 	var total int64
-	if err := consulta.Session(&gorm.Session{}).Count(&total).Error; err != nil {
-		return nil, 0, err
+	if errorConteo := consulta.Session(&gorm.Session{}).Count(&total).Error; errorConteo != nil {
+		return nil, 0, errorConteo
 	}
 
-	selectCols := `
+	columnas := `
 		pc.id::text AS id,
 		COALESCE(pc.sku, '') AS sku,
 		pc.titulo_crudo AS nombre,
@@ -238,23 +252,23 @@ func (repositorio *gormProductoRepository) ListarParaAdmin(ctx context.Context, 
 	`
 
 	items := []domain.ProductoAdminDTO{}
-	err := paginar(consulta.Select(selectCols).Order(ordenSeguro(filtro)), filtro).
+	errorConsulta := paginar(consulta.Select(columnas).Order(ordenSeguro(filtro)), filtro).
 		Scan(&items).Error
-	if err != nil {
-		return nil, 0, err
+	if errorConsulta != nil {
+		return nil, 0, errorConsulta
 	}
 	return items, total, nil
 }
 
 // ObtenerPorID busca el producto por su UUID en scraper.productos_crudos e incluye su historial de precios
-func (repositorio *gormProductoRepository) ObtenerPorID(ctx context.Context, id string) (*domain.ProductoDetalleDTO, error) {
-	parsedUUID, err := uuid.Parse(id)
-	if err != nil {
-		return nil, nil
+func (repositorio *RepositorioProductos) ObtenerPorID(contexto context.Context, productoID string) (*domain.ProductoDetalleDTO, error) {
+	identificador, errorParseo := uuid.Parse(productoID)
+	if errorParseo != nil {
+		return nil, nil // un ID que no es UUID no puede existir: 404
 	}
-	canonicalID := parsedUUID.String()
+	idCanonico := identificador.String()
 
-	selectCols := `
+	columnas := `
 		pc.id::text AS id,
 		pc.titulo_crudo AS nombre,
 		COALESCE(pc.marca_cruda, '') AS marca,
@@ -269,32 +283,32 @@ func (repositorio *gormProductoRepository) ObtenerPorID(ctx context.Context, id 
 		pc.en_stock
 	`
 
-	var baseProd domain.ProductoDTO
-	res := repositorio.consultaBase(ctx, domain.FiltroProductosDTO{}).
-		Where("pc.id = ?::uuid", canonicalID).
-		Select(selectCols).
+	var producto domain.ProductoDTO
+	resultado := repositorio.consultaBase(contexto, domain.FiltroProductosDTO{}).
+		Where("pc.id = ?::uuid", idCanonico).
+		Select(columnas).
 		Limit(1).
-		Scan(&baseProd)
-	if res.Error != nil {
-		return nil, res.Error
+		Scan(&producto)
+	if resultado.Error != nil {
+		return nil, resultado.Error
 	}
-	if res.RowsAffected == 0 || baseProd.ID == "" {
+	if resultado.RowsAffected == 0 || producto.ID == "" {
 		return nil, nil
 	}
 
 	historial := []domain.HistorialPrecioDTO{}
-	err = repositorio.db.WithContext(ctx).
+	errorHistorial := repositorio.baseDatos.WithContext(contexto).
 		Table("scraper.capturas_precios").
-		Where("producto_crudo_id = ?::uuid", canonicalID).
+		Where("producto_crudo_id = ?::uuid", idCanonico).
 		Order("capturado_el DESC").
 		Select("precio_normal, precio_oferta, capturado_el").
 		Scan(&historial).Error
-	if err != nil {
-		return nil, err
+	if errorHistorial != nil {
+		return nil, errorHistorial
 	}
 
 	return &domain.ProductoDetalleDTO{
-		ProductoDTO: baseProd,
+		ProductoDTO: producto,
 		Historial:   historial,
 	}, nil
 }
