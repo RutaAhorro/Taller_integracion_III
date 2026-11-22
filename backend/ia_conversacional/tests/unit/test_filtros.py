@@ -8,13 +8,11 @@ Verifica:
 """
 
 from unittest.mock import MagicMock
+
 import httpx
 
-from app.filtros import (
-    filtrar_productos,
-    rescatar_filtros_de_error_groq,
-    sanitizar_filtros_crudos,
-)
+from app.domain.filtros import filtrar_productos, sanitizar_filtros_crudos
+from app.repositories.groq import rescatar_filtros_de_error_groq
 
 
 def test_sanitizar_filtros_crudos_valores_validos_y_strings_numericos():
@@ -72,11 +70,7 @@ def test_rescatar_filtros_de_error_groq_json_en_texto():
 
 def test_rescatar_filtros_de_error_groq_json_en_diccionario():
     """Verifica la recuperación cuando failed_generation ya es un diccionario estructurado."""
-    cuerpo_error = {
-        "error": {
-            "failed_generation": {"categoria": "panaderia", "distancia_max": 2.0}
-        }
-    }
+    cuerpo_error = {"error": {"failed_generation": {"categoria": "panaderia", "distancia_max": 2.0}}}
     mock_respuesta = MagicMock(spec=httpx.Response)
     mock_respuesta.json.return_value = cuerpo_error
 
@@ -136,7 +130,13 @@ def test_filtrar_productos_proteccion_falsos_positivos_cortos():
     """
     catalogo = [
         {"id": 10, "nombre": "Ajo Chilote", "categoria": "verduras", "precio": 600.0, "distancia_km": 1.0},
-        {"id": 20, "nombre": "Ampolleta bajo consumo", "categoria": "iluminacion", "precio": 1500.0, "distancia_km": 1.0},
+        {
+            "id": 20,
+            "nombre": "Ampolleta bajo consumo",
+            "categoria": "iluminacion",
+            "precio": 1500.0,
+            "distancia_km": 1.0,
+        },
     ]
     filtros = {"categoria": "bajo consumo"}
     filtrados = filtrar_productos(catalogo, filtros)

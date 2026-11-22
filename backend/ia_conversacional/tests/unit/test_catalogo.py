@@ -16,9 +16,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from app.filtros import filtrar_productos
-from app.productos import ProductoRepositorio
-
+from app.domain.filtros import filtrar_productos
+from app.repositories.catalogo import ProductoRepositorio
 
 MOCK_CATALOGO_PAGINA_1 = {
     "data": [
@@ -133,8 +132,8 @@ def test_carga_exitosa_desde_catalogo_http():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -170,8 +169,8 @@ def test_paginacion_multiples_paginas():
     mock_cliente.get.side_effect = side_effect
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -187,8 +186,8 @@ def test_degradacion_timeout_aplica_fallback():
     mock_cliente.get.side_effect = httpx.TimeoutException("Petición agotó el tiempo de espera")
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -202,8 +201,8 @@ def test_degradacion_error_conexion_aplica_fallback():
     mock_cliente.get.side_effect = httpx.ConnectError("Connection refused")
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -224,8 +223,8 @@ def test_degradacion_error_http_500_aplica_fallback():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -245,8 +244,8 @@ def test_preserva_cache_en_memoria_tras_falla_posterior():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     # Primera carga exitosa
@@ -255,7 +254,7 @@ def test_preserva_cache_en_memoria_tras_falla_posterior():
 
     # Segunda carga falla (ej: Catálogo temporalmente no disponible)
     mock_cliente.get.side_effect = httpx.TimeoutException("Catálogo caído temporalmente")
-    productos_despues_de_fallo = repo.obtener_todos(forzar=True)
+    productos_despues_de_fallo = repo.cargar_productos()
 
     # Debe conservar los 2 productos previos de Catálogo
     assert len(productos_despues_de_fallo) == 2
@@ -275,8 +274,8 @@ def test_compatibilidad_con_filtros_deterministas():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     productos = repo.obtener_todos()
@@ -298,9 +297,10 @@ def test_len_es_o1_y_no_llama_a_red():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
+    repo.cargar_productos()
 
     mock_cliente.get.reset_mock()
     total = len(repo)
@@ -320,19 +320,20 @@ def test_modo_degradado_resetea_ttl_evitando_llamadas_en_rafaga():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
-        cache_ttl=60.0,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
     )
+    repo.cargar_productos()
 
     # Forzar recarga que falla
     mock_cliente.get.side_effect = httpx.TimeoutException("Catálogo caído")
-    productos = repo.obtener_todos(forzar=True)
+    productos = repo.cargar_productos()
     assert len(productos) == 2
 
-    # Inmediatamente después, una llamada regular (forzar=False) no debe intentar HTTP
+    # Inmediatamente después, una llamada regular  no debe intentar HTTP
     mock_cliente.get.reset_mock()
-    productos_en_cache = repo.obtener_todos(forzar=False)
+    productos_en_cache = repo.obtener_todos()
     assert len(productos_en_cache) == 2
     assert mock_cliente.get.call_count == 0
 
@@ -345,11 +346,8 @@ def test_httpx_client_propio_cierra_socket_ante_error():
     mock_cliente_instancia = MagicMock()
     mock_cliente_instancia.get.side_effect = httpx.TimeoutException("Fallo en primer request")
 
-    with patch("app.productos.httpx.Client", return_value=mock_cliente_instancia):
-        ProductoRepositorio(
-            base_url="http://catalogo:8080",
-            client=None,
-        )
+    with patch("app.repositories.catalogo.httpx.Client", return_value=mock_cliente_instancia):
+        ProductoRepositorio(url_base="http://catalogo:8080", cliente=None).cargar_productos()
 
     mock_cliente_instancia.close.assert_called()
 
@@ -378,12 +376,11 @@ def test_telemetria_truncamiento_mas_de_10_paginas(caplog: pytest.LogCaptureFixt
     mock_cliente.get.return_value = mock_respuesta
 
     with caplog.at_level("WARNING"):
-        ProductoRepositorio(
-            base_url="http://catalogo:8080",
-            client=mock_cliente,
-        )
+        ProductoRepositorio(url_base="http://catalogo:8080", cliente=mock_cliente).cargar_productos()
 
-    assert any("Catálogo truncado a 10 páginas (15 totales disponibles)" in registro.message for registro in caplog.records)
+    assert any(
+        "Catálogo truncado a 10 páginas (15 totales disponibles)" in registro.message for registro in caplog.records
+    )
 
 
 def test_concurrencia_double_checked_locking_evita_llamadas_duplicadas():
@@ -407,16 +404,16 @@ def test_concurrencia_double_checked_locking_evita_llamadas_duplicadas():
     mock_cliente.get.side_effect = mock_get
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
-        cache_ttl=0.1,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=0.1,
     )
 
     time.sleep(0.12)
     mock_cliente.get.reset_mock()
 
     def tarea_hilo():
-        return repo.obtener_todos(forzar=False)
+        return repo.obtener_todos()
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
         resultados = list(executor.map(lambda numero_hilo: tarea_hilo(), range(5)))
@@ -438,10 +435,11 @@ def test_catalogo_caido_modo_sin_datos_respeta_ttl():
     mock_cliente.get.side_effect = httpx.ConnectError("Catálogo no disponible")
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
-        cache_ttl=60.0,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
     )
+    repo.cargar_productos()
 
     assert repo.fuente == "sin_datos"
     assert len(repo) == 0
@@ -449,7 +447,7 @@ def test_catalogo_caido_modo_sin_datos_respeta_ttl():
 
     mock_cliente.get.reset_mock()
 
-    productos = repo.obtener_todos(forzar=False)
+    productos = repo.obtener_todos()
     assert productos == []
     assert repo.fuente == "sin_datos"
     assert mock_cliente.get.call_count == 0

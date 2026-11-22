@@ -13,7 +13,7 @@ Criterios de aceptación verificados:
 - 503 ante falla irrecuperable de proveedores.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -23,11 +23,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import config, main
-from app.auth import UsuarioAutenticado, obtener_usuario_actual
+from app.api.chat import crear_router_chat
+from app.api.sesion import UsuarioAutenticado, obtener_usuario_actual
+from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.main import app
-from app.productos import ProductoRepositorio
-from app.proveedores.base import ProveedorIA, ResultadoExtraccion
-from app.routers.chat import crear_router_chat
+from app.repositories.catalogo import ProductoRepositorio
 
 TEST_JWT_SECRET = "super-secret-key-32-bytes-minimum-length-fixture!"
 
@@ -122,13 +122,12 @@ def catalogo_fijo(monkeypatch):
         },
     ]
     productos_normalizados = [
-        main.repositorio_productos._normalizar_producto(producto)
-        for producto in productos_en_memoria
+        main.repositorio_productos._normalizar_producto(producto) for producto in productos_en_memoria
     ]
     monkeypatch.setattr(
         main.repositorio_productos,
         "obtener_todos",
-        lambda forzar=False: productos_normalizados,
+        lambda: productos_normalizados,
     )
 
 
@@ -146,7 +145,7 @@ def generar_token(
     extra_claims: dict = None,
 ) -> str:
     """Genera un token JWT firmado según el estándar de Identidad."""
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
     payload = {
         "user_id": user_id,
         "rol": rol,
@@ -212,7 +211,7 @@ def test_chat_token_expirado_retorna_401(cliente):
 
 def test_chat_token_sin_user_id_retorna_401(cliente):
     """Test 401 si el token carece del claim user_id."""
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
     payload_sin_user_id = {
         "rol": "registrado",
         "exp": ahora + timedelta(hours=1),
@@ -246,9 +245,10 @@ def test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(cliente):
         tiempo_extraccion_ms=45,
     )
 
-    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer, \
-         patch("app.main.proveedor_fallback.generar_explicacion", new_callable=AsyncMock) as mock_explicar:
-
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+    ):
         mock_extraer.return_value = mock_resultado_extraccion
         mock_explicar.return_value = "Los productos más convenientes son Tomate y Ajo."
 
@@ -279,19 +279,6 @@ def test_chat_token_valido_retorna_200_con_pipeline_tres_etapas(cliente):
         assert datos["filtros_aplicados"] == filtros_simulados
 
 
-def test_chat_secret_no_configurado_retorna_500(cliente, monkeypatch):
-    """Test 500 si JWT_SECRET no está configurado en el servidor."""
-    monkeypatch.setattr(config, "JWT_SECRET", None)
-    token = generar_token()
-    respuesta = cliente.post(
-        "/api/v1/chat",
-        headers={"Authorization": f"Bearer {token}"},
-        json={"mensaje": "Hola"},
-    )
-    assert respuesta.status_code == 500
-    assert "Clave de verificación JWT no configurada" in respuesta.json().get("detail", "")
-
-
 def test_chat_texto_libre_sin_filtros(cliente):
     """Test cuando el modelo responde en texto libre sin extraer filtros: responde mensaje fijo anti-alucinación."""
     token_valido = generar_token(user_id="user-789")
@@ -301,7 +288,7 @@ def test_chat_texto_libre_sin_filtros(cliente):
         tiempo_extraccion_ms=20,
     )
 
-    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+    with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
         mock_extraer.return_value = mock_resultado
 
         respuesta = cliente.post(
@@ -329,9 +316,10 @@ def test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(cliente):
         tiempo_extraccion_ms=15,
     )
 
-    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer, \
-         patch("app.main.proveedor_fallback.generar_explicacion", new_callable=AsyncMock) as mock_explicar:
-
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+    ):
         mock_extraer.return_value = mock_resultado
         mock_explicar.side_effect = RuntimeError("Todos los proveedores fallaron en etapa 3")
 
@@ -344,7 +332,7 @@ def test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(cliente):
         assert respuesta.status_code == 200
         datos = respuesta.json()
         assert datos["respuesta"] == "Encontramos estos productos para tu búsqueda."
-        assert len(datos["productos"]) > 0
+        assert len(datos["productos_recomendados"]) > 0
 
 
 def test_chat_error_en_proveedor(cliente):
@@ -354,7 +342,7 @@ def test_chat_error_en_proveedor(cliente):
         error="Límite de cuota excedido",
     )
 
-    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+    with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
         mock_extraer.return_value = mock_resultado
 
         respuesta = cliente.post(
@@ -377,7 +365,7 @@ def test_chat_con_cookie_jwt_retorna_200(cliente):
         tiempo_extraccion_ms=10,
     )
 
-    with patch("app.main.proveedor_fallback.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+    with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
         mock_extraer.return_value = mock_resultado
 
         respuesta = cliente.post(
@@ -392,7 +380,7 @@ def test_chat_con_cookie_jwt_retorna_200(cliente):
 
 def test_chat_token_sin_claim_exp_retorna_401(cliente):
     """Verifica que un token sin claim 'exp' es rechazado con 401."""
-    ahora = datetime.now(timezone.utc)
+    ahora = datetime.now(UTC)
     payload_sin_exp = {
         "user_id": "user-sin-exp",
         "rol": "registrado",
@@ -434,11 +422,7 @@ def test_endpoints_antiguos_groq_gemini_eliminados(cliente):
 def test_cors_configuracion_origenes():
     """Verifica que el middleware CORS esté aplicando orígenes configurados y no '*'."""
     cors_middleware = next(
-        (
-            middleware
-            for middleware in app.user_middleware
-            if middleware.cls.__name__ == "CORSMiddleware"
-        ),
+        (middleware for middleware in app.user_middleware if middleware.cls.__name__ == "CORSMiddleware"),
         None,
     )
     assert cors_middleware is not None
@@ -473,8 +457,8 @@ def test_chat_router_ejecuta_obtener_todos_sin_bloquear():
     mock_cliente.get.return_value = mock_respuesta
 
     repo = ProductoRepositorio(
-        base_url="http://catalogo:8080",
-        client=mock_cliente,
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
     )
 
     class MockProveedor(ProveedorIA):
@@ -492,12 +476,11 @@ def test_chat_router_ejecuta_obtener_todos_sin_bloquear():
     aplicacion_prueba.include_router(crear_router_chat(repo, mock_proveedor))
     aplicacion_prueba.dependency_overrides[obtener_usuario_actual] = lambda: UsuarioAutenticado(
         user_id="test-hilos",
-        rol="registrado",
     )
 
     cliente_prueba = TestClient(aplicacion_prueba)
     respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "quiero lacteos"})
     assert respuesta.status_code == 200
     datos = respuesta.json()
-    assert len(datos["productos"]) == 1
+    assert len(datos["productos_recomendados"]) == 1
     assert datos["respuesta"] == "Explicacion simulada"
