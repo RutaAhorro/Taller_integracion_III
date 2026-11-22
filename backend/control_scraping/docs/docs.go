@@ -17,7 +17,7 @@ const docTemplate = `{
     "paths": {
         "/": {
             "get": {
-                "description": "Endpoint raíz para comprobar el estado de la API",
+                "description": "Endpoint raíz para comprobar que el servicio responde",
                 "produces": [
                     "application/json"
                 ],
@@ -66,7 +66,12 @@ const docTemplate = `{
         },
         "/api/v1/scraper/productos": {
             "post": {
-                "description": "Guarda productos crudos y capturas de precio sin requerir una sesión de trabajo previa",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Igual que la ingesta con trabajo; la cadena se resuelve por supermercado o por la sucursal indicada.",
                 "consumes": [
                     "application/json"
                 ],
@@ -76,8 +81,14 @@ const docTemplate = `{
                 "tags": [
                     "scraper"
                 ],
-                "summary": "Almacena un lote de productos de forma directa",
+                "summary": "Registra y entrega un lote sin trabajo a Catálogo",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "UUID estable del lote",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
                     {
                         "description": "Lote de productos extraídos",
                         "name": "input",
@@ -95,6 +106,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/domain.IngestaResultadoDTO"
                         }
                     },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
@@ -102,8 +120,21 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -115,13 +146,32 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
         },
         "/api/v1/scraper/trabajos": {
             "post": {
-                "description": "Registra el inicio de una araña de scraping para auditar su ciclo de vida y métricas",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Registra el inicio de un trabajo para auditar su ciclo de vida y métricas",
                 "consumes": [
                     "application/json"
                 ],
@@ -157,8 +207,21 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -170,13 +233,32 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
         },
         "/api/v1/scraper/trabajos/{id}": {
             "get": {
-                "description": "Retorna los detalles, duración, conteo y errores de un trabajo (ideal para bots de Discord)",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Devuelve detalles, duración, conteo y errores de un trabajo (lo usa el bot de Discord)",
                 "produces": [
                     "application/json"
                 ],
@@ -207,6 +289,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -226,7 +314,12 @@ const docTemplate = `{
         },
         "/api/v1/scraper/trabajos/{id}/ejecutar": {
             "post": {
-                "description": "Envía el trabajo a Redis para que el worker Scrapy ejecute el spider solicitado",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Guarda la ejecución en el outbox SQL; Control la publica en Redis Streams para que Scraper Go ejecute el spider solicitado.",
                 "consumes": [
                     "application/json"
                 ],
@@ -251,7 +344,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/handlers.ejecutarScraperRequest"
+                            "$ref": "#/definitions/api.solicitudEjecucion"
                         }
                     }
                 ],
@@ -268,6 +361,12 @@ const docTemplate = `{
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
                         }
                     },
                     "404": {
@@ -290,13 +389,25 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": true
                         }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
                     }
                 }
             }
         },
         "/api/v1/scraper/trabajos/{id}/finalizar": {
             "put": {
-                "description": "Marca el término del trabajo como completado o fallido, registrando métricas y errores",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Marca el trabajo como completado o fallido. Repetir el mismo cierre devuelve el trabajo sin cambios.",
                 "consumes": [
                     "application/json"
                 ],
@@ -339,6 +450,12 @@ const docTemplate = `{
                             "additionalProperties": true
                         }
                     },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
+                        }
+                    },
                     "404": {
                         "description": "Not Found",
                         "schema": {
@@ -365,7 +482,12 @@ const docTemplate = `{
         },
         "/api/v1/scraper/trabajos/{id}/productos": {
             "post": {
-                "description": "Conserva la entrega durable en Control, usa una clave estable en Catálogo y confirma el contador una sola vez.",
+                "security": [
+                    {
+                        "TokenServicio": []
+                    }
+                ],
+                "description": "Conserva la entrega durable en Control, usa una clave estable en Catálogo y confirma el contador una sola vez. Responde 202 con Retry-After si el lote sigue en curso.",
                 "consumes": [
                     "application/json"
                 ],
@@ -385,6 +507,12 @@ const docTemplate = `{
                         "required": true
                     },
                     {
+                        "type": "string",
+                        "description": "UUID estable del lote",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
                         "description": "Lote de productos extraídos",
                         "name": "input",
                         "in": "body",
@@ -401,11 +529,24 @@ const docTemplate = `{
                             "$ref": "#/definitions/domain.IngestaResultadoDTO"
                         }
                     },
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
                     "400": {
                         "description": "Bad Request",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/api.RespuestaError"
                         }
                     },
                     "404": {
@@ -424,6 +565,20 @@ const docTemplate = `{
                     },
                     "500": {
                         "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "504": {
+                        "description": "Gateway Timeout",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -462,6 +617,40 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "api.RespuestaError": {
+            "type": "object",
+            "properties": {
+                "detalle": {
+                    "type": "string"
+                },
+                "estado": {
+                    "type": "integer"
+                },
+                "mensaje": {
+                    "type": "string"
+                }
+            }
+        },
+        "api.solicitudEjecucion": {
+            "type": "object",
+            "properties": {
+                "add_url": {
+                    "type": "string"
+                },
+                "enrich_ean": {
+                    "type": "boolean"
+                },
+                "producto_id": {
+                    "type": "string"
+                },
+                "producto_url": {
+                    "type": "string"
+                },
+                "spider": {
+                    "type": "string"
+                }
+            }
+        },
         "domain.FinalizarTrabajoDTO": {
             "type": "object",
             "required": [
@@ -472,7 +661,6 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "estado": {
-                    "description": "'completado' o 'fallido'",
                     "type": "string"
                 },
                 "registro_errores": {
@@ -651,26 +839,14 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
-        },
-        "handlers.ejecutarScraperRequest": {
-            "type": "object",
-            "properties": {
-                "add_url": {
-                    "type": "string"
-                },
-                "enrich_ean": {
-                    "type": "boolean"
-                },
-                "producto_id": {
-                    "type": "string"
-                },
-                "producto_url": {
-                    "type": "string"
-                },
-                "spider": {
-                    "type": "string"
-                }
-            }
+        }
+    },
+    "securityDefinitions": {
+        "TokenServicio": {
+            "description": "Bearer SCRAPING_SERVICE_TOKEN (Scraper Go y bot de Discord).",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
         }
     }
 }`
@@ -678,7 +854,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "Control de Scraping",

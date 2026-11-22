@@ -23,7 +23,7 @@ secretos al repositorio.
 | `CATALOGO_INTERNAL_TOKEN` | Obligatoria | Token M2M distinto de `SCRAPING_SERVICE_TOKEN`. |
 | `SCRAPING_SERVICE_TOKEN` | Obligatoria, mínimo 32 caracteres y sin espacios | Autenticación de Bot y Scraper Go en `/api/v1/scraper/*`. |
 | `CATALOGO_INGEST_TIMEOUT` | Opcional, por defecto `10s`, máximo `20s` | Presupuesto de llamadas internas a Catálogo. |
-| `SCRAPING_CORS_ALLOWED_ORIGINS` | Opcional | Orígenes HTTP(S) exactos separados por coma. |
+| `SCRAPING_CORS_ALLOWED_ORIGINS` | Opcional; si no está definida se usa `CORS_ALLOWED_ORIGINS` | Orígenes HTTP(S) exactos separados por coma. |
 | `SCRAPING_SWAGGER_ENABLED` | Opcional, por defecto `false` | Publica Swagger sólo con `true`; rechaza otros valores. |
 | `PORT` | Opcional, por defecto `8080` | Puerto HTTP del servicio. |
 
@@ -39,18 +39,47 @@ para los contratos y límites operativos.
 SQL; Redis es diagnóstico. `/_scraping/live` no consulta dependencias y
 `/_scraping/ready` comprueba readiness.
 
+## Estructura
+
+| Paquete | Rol |
+| --- | --- |
+| `cmd/control_scraping` | Arranque, verificación de almacenamiento, ciclos de recuperación y apagado. |
+| `internal/config` | Única lectura y validación del entorno. |
+| `internal/api` | Router, middlewares (CORS, token de servicio, límites, errores), sondas y handlers (`trabajos.go`, `ingestas.go`). |
+| `internal/services` | Reglas: `trabajos.go`, `entregas.go` (ledger durable) y `ejecuciones.go` (outbox y ciclos de recuperación). |
+| `internal/repositories` | PostgreSQL (`conexion.go`, `trabajos.go`, `entregas.go`), outbox + Redis Streams (`ejecuciones.go`) y cliente HTTP de Catálogo (`catalogo.go`). |
+| `internal/domain` | Modelos, contratos de persistencia y errores de negocio. |
+
+Swagger se regenera desde esta carpeta con
+`go run github.com/swaggo/swag/cmd/swag@v1.16.6 init -g internal/api/rutas.go -o docs --parseInternal`.
+
+## Contratos: antes / ahora
+
+La compactación (SUP-392) no cambia rutas, campos JSON, códigos de estado, el
+formato de Redis Streams ni las llamadas a Catálogo.
+
+| Antes | Ahora |
+| --- | --- |
+| `GET /` respondía "Bienvenido a la API Gateway de Supermercados." | Responde "Bienvenido a Control de scraping." (sólo el texto). |
+| Swagger sin esquema de seguridad ni algunos códigos (`202`, `401`, `503`, `504`). | Declara `TokenServicio` (Bearer) y esos códigos. |
+| Sin `SCRAPING_CORS_ALLOWED_ORIGINS` no había orígenes permitidos. | Se usa `CORS_ALLOWED_ORIGINS` como fallback, según GUIA_CONFIGURACION. |
+
 ## Pruebas y compilación
 
-Desde esta carpeta:
+Desde esta carpeta (el CI usa las mismas órdenes):
 
 ```bash
-go test ./...
+go test -race ./...
 go vet ./...
 go build ./cmd/control_scraping
 ```
 
-Las pruebas unitarias están en `tests/unit/` y las pruebas de integración o
-arquitectura en `tests/integration/`. El caso del publisher con PostgreSQL real
-se omite salvo que se configure `SUP270_PUBLISHER_TEST_DB_URL` hacia una base
-aislada. Los smoke tests Python se ejecutan mediante los scripts de integración
-del repositorio y deben usar recursos desechables, nunca una base compartida.
+- `tests/unit/`: config, cliente de Catálogo, services y api con los dobles en
+  memoria de `tests/dobles/`.
+- `tests/integration/`: arquitectura, composición real, sondas y Swagger. Las
+  pruebas con almacenamiento real se omiten salvo que se definan
+  `SCRAPING_TEST_DB_URL` (rol `app_scraping` sobre una base desechable
+  inicializada con `infrastructure/db`) y `SCRAPING_TEST_REDIS_URL` (Redis
+  desechable). Nunca apuntarlas a recursos compartidos.
+- Los smoke tests Python (`tests/smoke_*.py`) los ejecutan los scripts de
+  integración del repositorio.
