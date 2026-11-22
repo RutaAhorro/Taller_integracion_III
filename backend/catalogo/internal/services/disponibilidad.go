@@ -1,5 +1,6 @@
-// Package services contiene la lógica de negocio del catálogo. Este archivo
-// valida los lotes de disponibilidad y aplica la regla de vigencia de capturas.
+// Consulta interna de disponibilidad: valida lotes de IDs y aplica la regla de
+// vigencia de las capturas.
+
 package services
 
 import (
@@ -11,6 +12,8 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
 )
+
+// ===== Errores y límites =====
 
 // Errores del servicio de disponibilidad. El adaptador HTTP los traduce a
 // respuestas 400 sin exponer detalles internos.
@@ -24,47 +27,31 @@ var (
 // cantidad máxima de IDs y antigüedad máxima de una captura para considerarla
 // vigente. Se leen una sola vez en internal/config.
 type LimitesDisponibilidad struct {
-	MaxProductos     int
+	MaximoProductos  int
 	AntiguedadMaxima time.Duration
 }
 
-// DisponibilidadService define la lógica de negocio de la consulta interna.
-type DisponibilidadService interface {
-	Consultar(contexto context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error)
-}
+// ===== Servicio =====
 
-// disponibilidadService implementa la validación del lote y la regla de
-// vigencia de las capturas.
-type disponibilidadService struct {
-	repositorio domain.DisponibilidadRepository
+// ServicioDisponibilidad valida el lote y arma el estado de cada producto.
+type ServicioDisponibilidad struct {
+	repositorio domain.RepositorioDisponibilidad
 	limites     LimitesDisponibilidad
 	ahora       func() time.Time
 }
 
-// NewDisponibilidadService inyecta el repositorio, los límites configurados y
-// el reloj. El reloj se recibe como función para que las pruebas puedan fijar
-// la antigüedad de las capturas sin depender de la hora real.
-func NewDisponibilidadService(repositorio domain.DisponibilidadRepository, limites LimitesDisponibilidad, ahora func() time.Time) DisponibilidadService {
-	if repositorio == nil {
-		panic("DisponibilidadService requiere un repositorio")
-	}
-	if limites.MaxProductos < 1 {
-		panic("LimitesDisponibilidad.MaxProductos debe ser positivo")
-	}
-	if limites.AntiguedadMaxima <= 0 {
-		panic("LimitesDisponibilidad.AntiguedadMaxima debe ser positiva")
-	}
-	if ahora == nil {
-		ahora = time.Now
-	}
-	return &disponibilidadService{repositorio: repositorio, limites: limites, ahora: ahora}
+// NuevoServicioDisponibilidad inyecta el repositorio, los límites validados en
+// config y el reloj. El reloj es una función para que las pruebas fijen la
+// antigüedad de las capturas sin depender de la hora real.
+func NuevoServicioDisponibilidad(repositorio domain.RepositorioDisponibilidad, limites LimitesDisponibilidad, ahora func() time.Time) *ServicioDisponibilidad {
+	return &ServicioDisponibilidad{repositorio: repositorio, limites: limites, ahora: ahora}
 }
 
 // Consultar valida el lote, consulta la persistencia y construye un resultado
 // por cada ID solicitado. Los IDs válidos que no existen se informan como
 // "no_encontrado"; una captura vencida se informa como "desconocido" y sin
 // precios para no presentar datos antiguos como vigentes.
-func (servicio *disponibilidadService) Consultar(contexto context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error) {
+func (servicio *ServicioDisponibilidad) Consultar(contexto context.Context, productoIDs []string) (*domain.RespuestaDisponibilidadDTO, error) {
 	idsNormalizados, errorValidacion := servicio.normalizarYValidar(productoIDs)
 	if errorValidacion != nil {
 		return nil, errorValidacion
@@ -90,11 +77,11 @@ func (servicio *disponibilidadService) Consultar(contexto context.Context, produ
 
 // normalizarYValidar comprueba el tope del lote, descarta espacios, valida los
 // UUID y elimina repetidos conservando el orden de la primera aparición.
-func (servicio *disponibilidadService) normalizarYValidar(productoIDs []string) ([]string, error) {
+func (servicio *ServicioDisponibilidad) normalizarYValidar(productoIDs []string) ([]string, error) {
 	if len(productoIDs) == 0 {
 		return nil, ErrLoteDisponibilidadVacio
 	}
-	if len(productoIDs) > servicio.limites.MaxProductos {
+	if len(productoIDs) > servicio.limites.MaximoProductos {
 		return nil, ErrLoteDisponibilidadExcesivo
 	}
 
@@ -120,7 +107,7 @@ func (servicio *disponibilidadService) normalizarYValidar(productoIDs []string) 
 // Una captura ausente, futura o más antigua que el umbral no se publica como
 // vigente. Si el scraper no confirmó el stock, el estado es desconocido aunque
 // el precio siga vigente.
-func (servicio *disponibilidadService) construirItem(productoID string, registro domain.ProductoDisponibilidadRegistro, encontrado bool) domain.DisponibilidadItemDTO {
+func (servicio *ServicioDisponibilidad) construirItem(productoID string, registro domain.ProductoDisponibilidadRegistro, encontrado bool) domain.DisponibilidadItemDTO {
 	if !encontrado {
 		return domain.DisponibilidadItemDTO{
 			ProductoID:     productoID,
@@ -176,6 +163,8 @@ func (servicio *disponibilidadService) construirItem(productoID string, registro
 	}
 	return item
 }
+
+// ===== Reglas =====
 
 // precioEfectivo replica la regla del catálogo público: se muestra la oferta
 // cuando existe y, si no, el precio normal.

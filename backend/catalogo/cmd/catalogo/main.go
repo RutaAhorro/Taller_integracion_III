@@ -1,3 +1,6 @@
+// Command catalogo arranca el servicio de Catálogo: lee la configuración,
+// verifica tablas y permisos una sola vez, compone repositorios, servicios y
+// router, y atiende HTTP hasta recibir SIGINT o SIGTERM.
 package main
 
 import (
@@ -10,95 +13,101 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/consulta"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/repositories"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
 )
 
+// ===== Arranque =====
+
+// main registra en JSON y termina con código 1 si el arranque falla.
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "catalogo")
-	if err := run(log); err != nil {
-		log.Error("catalogo_stopped", "error", err)
+	registrador := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With("service", "catalogo")
+	if errorEjecucion := ejecutar(registrador); errorEjecucion != nil {
+		registrador.Error("catalogo_stopped", "error", errorEjecucion)
 		os.Exit(1)
 	}
 }
 
-func run(log *slog.Logger) error {
-	cfg, err := config.Load()
-	if err != nil {
-		return err
+// ejecutar compone el servicio y bloquea hasta el apagado ordenado.
+func ejecutar(registrador *slog.Logger) error {
+	configuracion, errorConfiguracion := config.Cargar()
+	if errorConfiguracion != nil {
+		return errorConfiguracion
 	}
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{DisableAutomaticPing: true, Logger: logger.Default.LogMode(logger.Silent)})
-	if err != nil {
-		return errors.New("no se pudo configurar la conexión PostgreSQL")
+	baseDatos, errorBase := repositories.AbrirBaseDatos(configuracion.URLBaseDatos)
+	if errorBase != nil {
+		return errorBase
 	}
-	sqlDB, err := db.DB()
-	if err != nil {
+	conexiones, errorConexiones := baseDatos.DB()
+	if errorConexiones != nil {
 		return errors.New("no se pudo obtener la conexión PostgreSQL")
 	}
-	defer sqlDB.Close()
-	sqlDB.SetMaxOpenConns(cfg.MaxOpenConns)
-	sqlDB.SetMaxIdleConns(cfg.MaxIdleConns)
-	sqlDB.SetConnMaxLifetime(cfg.ConnMaxLifetime)
-	// Validar una sola vez antes de exponer HTTP; no migrar ni servir con grants
-	// incompletos. Durante la ejecución readiness sólo comprueba conectividad.
-	storageCtx, storageCancel := context.WithTimeout(context.Background(), cfg.StartupTimeout)
-	storageErr := ingesta.VerifyStorage(storageCtx, db, cfg.InternalToken != "")
-	storageCancel()
-	if storageErr != nil {
-		log.Error("catalogo_storage_invalid", "error", storageErr)
+	defer conexiones.Close()
+	conexiones.SetMaxOpenConns(configuracion.MaximoConexionesAbiertas)
+	conexiones.SetMaxIdleConns(configuracion.MaximoConexionesInactivas)
+	conexiones.SetConnMaxLifetime(configuracion.VidaMaximaConexion)
+
+	contextoInicio, cancelarInicio := context.WithTimeout(context.Background(), configuracion.PlazoInicio)
+	errorAlmacenamiento := repositories.VerificarAlmacenamiento(contextoInicio, baseDatos, configuracion.TokenIngesta != "")
+	cancelarInicio()
+	if errorAlmacenamiento != nil {
+		registrador.Error("catalogo_storage_invalid", "error", errorAlmacenamiento)
 		return errors.New("Catálogo requiere tablas y permisos runtime antes de iniciar")
 	}
-	service := services.NewProductoService(repositories.NewProductoRepository(db), services.LimitesConsulta{
-		TamanoPaginaPredeterminado: cfg.DefaultPageSize,
-		TamanoPaginaMaximo:         cfg.MaxPageSize,
-		LargoMaximoBusqueda:        cfg.MaxSearchLength,
+
+	enrutador := api.NuevoEnrutador(api.Dependencias{
+		Productos: services.NuevoServicioProductos(repositories.NuevoRepositorioProductos(baseDatos), services.LimitesProductos{
+			TamanoPagina:        configuracion.TamanoPagina,
+			TamanoPaginaMaximo:  configuracion.TamanoPaginaMaximo,
+			LargoMaximoBusqueda: configuracion.LargoMaximoBusqueda,
+		}),
+		Fuentes: services.NuevoServicioFuentes(repositories.NuevoRepositorioFuentes(baseDatos)),
+		Disponibilidad: services.NuevoServicioDisponibilidad(repositories.NuevoRepositorioDisponibilidad(baseDatos), services.LimitesDisponibilidad{
+			MaximoProductos:  configuracion.MaximoProductosConsulta,
+			AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
+		}, time.Now),
+		Ingesta:                repositories.NuevoRepositorioIngesta(baseDatos),
+		ClaveJWT:               configuracion.ClaveJWT,
+		TokenIngesta:           configuracion.TokenIngesta,
+		TokenConsulta:          configuracion.TokenConsulta,
+		OrigenesPermitidos:     configuracion.OrigenesPermitidos,
+		SondaBase:              conexiones.PingContext,
+		Registrador:            registrador,
+		PlazoReadiness:         configuracion.PlazoReadiness,
+		MaximoProductosPorLote: configuracion.MaximoProductosPorLote,
+		MaximoBytesCuerpo:      configuracion.MaximoBytesCuerpo,
 	})
-	fuenteService := services.NewFuenteService(repositories.NewFuenteRepository(db))
-	disponibilidadService := services.NewDisponibilidadService(
-		repositories.NewDisponibilidadRepository(db),
-		services.LimitesDisponibilidad{
-			MaxProductos:     cfg.MaxProductosConsulta,
-			AntiguedadMaxima: cfg.AntiguedadMaximaDisponibilidad,
-		},
-		time.Now,
-	)
-	ready := sqlDB.PingContext
-	enrutador := server.NewRouter(service, fuenteService, cfg.JWTSecret, ready, cfg.ReadinessTimeout, log, cfg.CORSAllowedOrigins,
-		ingesta.Config{Repository: ingesta.NewRepository(db), Token: cfg.InternalToken, MaxProductos: cfg.MaxBatchProductos, MaxBodyBytes: cfg.MaxBodyBytes})
-	consulta.Register(enrutador, consulta.Config{
-		Service:      disponibilidadService,
-		Token:        cfg.ConsultaToken,
-		MaxBodyBytes: cfg.MaxBodyBytes,
-	}, log)
-	httpServer := &http.Server{
-		Addr: cfg.ListenAddr, Handler: enrutador,
-		ReadHeaderTimeout: cfg.ReadHeaderTimeout, ReadTimeout: cfg.ReadTimeout,
-		WriteTimeout: cfg.WriteTimeout, IdleTimeout: cfg.IdleTimeout,
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
-	done := make(chan error, 1)
-	go func() { done <- httpServer.ListenAndServe() }()
-	log.Info("catalogo_started", "listen_addr", cfg.ListenAddr)
+	return servir(registrador, &http.Server{
+		Addr: configuracion.DireccionEscucha, Handler: enrutador,
+		ReadHeaderTimeout: configuracion.PlazoCabeceras, ReadTimeout: configuracion.PlazoLectura,
+		WriteTimeout: configuracion.PlazoEscritura, IdleTimeout: configuracion.PlazoInactividad,
+	}, configuracion.PlazoApagado)
+}
+
+// ===== Ciclo de vida HTTP =====
+
+// servir atiende hasta una señal y luego espera las peticiones activas durante
+// plazoApagado (CATALOGO_SHUTDOWN_TIMEOUT) antes de cerrar a la fuerza.
+func servir(registrador *slog.Logger, servidor *http.Server, plazoApagado time.Duration) error {
+	contextoSenal, detener := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer detener()
+	terminado := make(chan error, 1)
+	go func() { terminado <- servidor.ListenAndServe() }()
+	registrador.Info("catalogo_started", "listen_addr", servidor.Addr)
 	select {
-	case err := <-done:
-		if errors.Is(err, http.ErrServerClosed) {
+	case errorServidor := <-terminado:
+		if errors.Is(errorServidor, http.ErrServerClosed) {
 			return nil
 		}
-		return err
-	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
-		defer cancel()
-		if err := httpServer.Shutdown(shutdown); err != nil {
-			_ = httpServer.Close()
-			return err
+		return errorServidor
+	case <-contextoSenal.Done():
+		contextoApagado, cancelar := context.WithTimeout(context.Background(), plazoApagado)
+		defer cancelar()
+		if errorApagado := servidor.Shutdown(contextoApagado); errorApagado != nil {
+			_ = servidor.Close()
+			return errorApagado
 		}
 		return nil
 	}

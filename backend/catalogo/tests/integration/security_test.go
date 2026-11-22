@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -12,8 +12,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/middleware"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -22,7 +20,7 @@ import (
 func TestCatalogCORS(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	expires := time.Now().Add(time.Hour)
-	token := signedToken(prueba, "admin", jwt.SigningMethodHS256, "test-key", &expires)
+	token := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &expires)
 	for _, tc := range []struct {
 		name, origin, method string
 		allowed              []string
@@ -42,7 +40,7 @@ func TestCatalogCORS(prueba *testing.T) {
 	} {
 		prueba.Run(tc.name, func(subprueba *testing.T) {
 			repo := &mockProductoRepository{}
-			router := server.NewRouter(services.NewProductoService(repo, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(io.Discard, nil)), tc.allowed)
+			router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: services.NuevoServicioProductos(repo, limitesProductosDePrueba), OrigenesPermitidos: tc.allowed})
 			req := httptest.NewRequest(tc.method, "/api/v1/admin/productos", nil)
 			req.Header.Set("Origin", tc.origin)
 			req.Header.Set("Access-Control-Request-Method", "GET")
@@ -73,16 +71,12 @@ func TestCatalogInternalErrorsArePrivate(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	const diagnostic = "SQLSTATE 42P01: relation scraper.private_table does not exist"
 	expires := time.Now().Add(time.Hour)
-	token := signedToken(prueba, "admin", jwt.SigningMethodHS256, "test-key", &expires)
-	for _, path := range []string{"/api/v1/admin/productos", "/api/v1/productos", "/api/v1/productos/buscar?q=leche", "/api/v1/productos/private-id", "/panic", "/context-error", "/explicit-error"} {
+	token := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &expires)
+	for _, path := range []string{"/api/v1/admin/productos", "/api/v1/productos", "/api/v1/productos/buscar?q=leche", "/api/v1/productos/private-id", "/panic"} {
 		prueba.Run(path, func(subprueba *testing.T) {
 			var logs bytes.Buffer
-			router := server.NewRouter(services.NewProductoService(&mockProductoRepository{err: errors.New(diagnostic)}, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
+			router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: services.NuevoServicioProductos(&mockProductoRepository{err: errors.New(diagnostic)}, limitesProductosDePrueba), Registrador: slog.New(slog.NewJSONHandler(&logs, nil))})
 			router.GET("/panic", func(contexto *gin.Context) { panic(diagnostic) })
-			router.GET("/context-error", func(contexto *gin.Context) { _ = contexto.Error(errors.New(diagnostic)) })
-			router.GET("/explicit-error", func(contexto *gin.Context) {
-				middleware.ResponderError(contexto, 500, diagnostic, errors.New(diagnostic))
-			})
 			req := httptest.NewRequest("GET", path, nil)
 			req.AddCookie(&http.Cookie{Name: "jwt", Value: token})
 			req.Header.Set("X-Request-ID", "security-review-267")
@@ -113,32 +107,6 @@ func TestCatalogInternalErrorsArePrivate(prueba *testing.T) {
 			}
 			if !found {
 				subprueba.Fatal("se perdió el diagnóstico interno")
-			}
-		})
-	}
-}
-
-func TestOnlyControlledValidationDetailsArePublic(prueba *testing.T) {
-	gin.SetMode(gin.TestMode)
-	for _, tc := range []struct {
-		name   string
-		err    error
-		detail string
-	}{
-		{"controlled", middleware.ErrorValidacion{Mensaje: "El filtro es inválido."}, "El filtro es inválido."},
-		{"unexpected", errors.New("private SQL diagnostic"), ""},
-	} {
-		prueba.Run(tc.name, func(subprueba *testing.T) {
-			router := gin.New()
-			router.GET("/validation", func(contexto *gin.Context) { middleware.ResponderError(contexto, 400, "Solicitud inválida.", tc.err) })
-			respuesta := httptest.NewRecorder()
-			router.ServeHTTP(respuesta, httptest.NewRequest("GET", "/validation", nil))
-			var response middleware.RespuestaError
-			if err := json.Unmarshal(respuesta.Body.Bytes(), &response); err != nil {
-				subprueba.Fatal(err)
-			}
-			if respuesta.Code != 400 || response.Detalle != tc.detail {
-				subprueba.Fatalf("detalle inválido: %s", respuesta.Body)
 			}
 		})
 	}

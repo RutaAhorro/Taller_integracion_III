@@ -60,7 +60,7 @@ func (filasSQLSinBase) Next([]driver.Value) error { return io.EOF }
 
 // crearRepositorioSeco arma el repositorio público sobre el controlador sin base y
 // devuelve el registro de las consultas SQL generadas.
-func crearRepositorioSeco(prueba *testing.T) (domain.ProductoRepository, *strings.Builder) {
+func crearRepositorioSeco(prueba *testing.T) (domain.RepositorioProductos, *strings.Builder) {
 	prueba.Helper()
 	var consultas strings.Builder
 	baseSQL := sql.OpenDB(conectorSQLSinBase{})
@@ -72,7 +72,7 @@ func crearRepositorioSeco(prueba *testing.T) (domain.ProductoRepository, *string
 	if errorObtenido != nil {
 		prueba.Fatalf("error inicializando dummy dialector: %v", errorObtenido)
 	}
-	return repositories.NewProductoRepository(db), &consultas
+	return repositories.NuevoRepositorioProductos(db), &consultas
 }
 
 func TestOrdenSeguro_PreciosFaltantesNullsLast(prueba *testing.T) {

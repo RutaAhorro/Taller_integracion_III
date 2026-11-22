@@ -2,7 +2,16 @@ package integration_test
 
 import (
 	"context"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
+	"io"
+	"log/slog"
+	"net/http"
+	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
@@ -55,18 +64,6 @@ func (repositorio *mockFuenteRepository) ListarFuentes(contexto context.Context)
 	return repositorio.fuentes, nil
 }
 
-func (repositorio *mockFuenteRepository) ObtenerFuente(contexto context.Context, identificador int) (*domain.FuenteDTO, error) {
-	if repositorio.err != nil {
-		return nil, repositorio.err
-	}
-	for indice := range repositorio.fuentes {
-		if repositorio.fuentes[indice].ID == identificador {
-			return &repositorio.fuentes[indice], nil
-		}
-	}
-	return nil, nil
-}
-
 func (repositorio *mockFuenteRepository) ActualizarEstadoFuente(contexto context.Context, identificador int, habilitada bool) (*domain.FuenteDTO, error) {
 	if repositorio.err != nil {
 		return nil, repositorio.err
@@ -80,14 +77,56 @@ func (repositorio *mockFuenteRepository) ActualizarEstadoFuente(contexto context
 	return nil, nil
 }
 
-// limitesDePrueba replica los valores por defecto de internal/config para las pruebas.
-var limitesDePrueba = services.LimitesConsulta{TamanoPaginaPredeterminado: 20, TamanoPaginaMaximo: 100, LargoMaximoBusqueda: 100}
+// ===== Router de prueba =====
 
-// plazoReadinessDePrueba replica CATALOGO_READINESS_TIMEOUT por defecto.
-const plazoReadinessDePrueba = 2 * time.Second
+// claveJWTDePrueba firma las cookies de las pruebas HTTP.
+const claveJWTDePrueba = "catalog-test-only-key"
 
-// productosPorLoteDePrueba replica CATALOGO_MAX_BATCH_PRODUCTOS por defecto.
-const productosPorLoteDePrueba = 1000
+// bytesPorCuerpoDePrueba es el tope de cuerpo interno del servicio.
+const bytesPorCuerpoDePrueba = config.BytesCuerpoPredeterminados
 
-// bytesPorCuerpoDePrueba replica CATALOGO_MAX_BODY_BYTES por defecto (8 MiB).
-const bytesPorCuerpoDePrueba = 8 << 20
+// limitesProductosDePrueba son los límites por defecto de internal/config.
+var limitesProductosDePrueba = services.LimitesProductos{
+	TamanoPagina:        config.TamanoPaginaPredeterminado,
+	TamanoPaginaMaximo:  config.TamanoPaginaMaximoPredeterminado,
+	LargoMaximoBusqueda: config.LargoBusquedaPredeterminado,
+}
+
+// nuevoEnrutadorDePrueba arma el router real con dobles para lo que la prueba
+// no define: repositorios vacíos, base disponible, límites por defecto y logs
+// descartados.
+func nuevoEnrutadorDePrueba(dependencias api.Dependencias) *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	if dependencias.Productos == nil {
+		dependencias.Productos = services.NuevoServicioProductos(&mockProductoRepository{}, limitesProductosDePrueba)
+	}
+	if dependencias.Fuentes == nil {
+		dependencias.Fuentes = services.NuevoServicioFuentes(&mockFuenteRepository{})
+	}
+	if dependencias.SondaBase == nil {
+		dependencias.SondaBase = func(context.Context) error { return nil }
+	}
+	if dependencias.Registrador == nil {
+		dependencias.Registrador = slog.New(slog.NewJSONHandler(io.Discard, nil))
+	}
+	if dependencias.PlazoReadiness == 0 {
+		dependencias.PlazoReadiness = config.PlazoReadinessPredeterminado
+	}
+	if dependencias.MaximoProductosPorLote == 0 {
+		dependencias.MaximoProductosPorLote = config.ProductosPorLotePredeterminados
+	}
+	if dependencias.MaximoBytesCuerpo == 0 {
+		dependencias.MaximoBytesCuerpo = config.BytesCuerpoPredeterminados
+	}
+	if dependencias.ClaveJWT == "" {
+		dependencias.ClaveJWT = claveJWTDePrueba
+	}
+	return api.NuevoEnrutador(dependencias)
+}
+
+// cookieAdministrador es una sesión admin vigente firmada con la clave de prueba.
+func cookieAdministrador(prueba *testing.T) *http.Cookie {
+	prueba.Helper()
+	vence := time.Now().Add(time.Hour)
+	return &http.Cookie{Name: "jwt", Value: signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &vence)}
+}

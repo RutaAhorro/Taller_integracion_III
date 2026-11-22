@@ -1,26 +1,37 @@
+// Package domain define los datos y contratos del catálogo: DTO públicos y
+// administrativos, fuentes, disponibilidad e ingesta, y las interfaces de
+// persistencia que implementa repositories. No depende de infraestructura.
 package domain
 
-import "time"
+import (
+	"context"
+	"time"
+)
 
-// FiltroProductosDTO define los criterios de filtrado, paginación y ordenamiento para el catálogo de productos.
+// ===== Filtro de productos =====
+
+// FiltroProductosDTO reúne los criterios de búsqueda, paginación y orden que el
+// handler lee de la query string y el servicio normaliza.
 type FiltroProductosDTO struct {
-	Query             string   `json:"q" form:"q"`
-	Page              int      `json:"page" form:"page"`
-	Limit             int      `json:"limit" form:"limit"`
-	Categoria         string   `json:"categoria" form:"categoria"`
-	Supermercado      string   `json:"supermercado" form:"supermercado"`
-	Marca             string   `json:"marca" form:"marca"`
-	PrecioMin         *float64 `json:"precio_min" form:"precio_min"`
-	PrecioMax         *float64 `json:"precio_max" form:"precio_max"`
-	EnOferta          *bool    `json:"en_oferta" form:"en_oferta"`
-	SKU               string   `json:"sku" form:"sku"`
-	EnStock           *bool    `json:"en_stock" form:"en_stock"`
-	SoloMarcasBlancas *bool    `json:"solo_marcas_blancas" form:"solo_marcas_blancas"`
-	SortBy            string   `json:"sort_by" form:"sort_by"`
-	Order             string   `json:"order" form:"order"`
+	Query             string
+	Page              int
+	Limit             int
+	Categoria         string
+	Supermercado      string
+	Marca             string
+	PrecioMin         *float64
+	PrecioMax         *float64
+	EnOferta          *bool
+	SKU               string
+	EnStock           *bool
+	SoloMarcasBlancas *bool
+	SortBy            string
+	Order             string
 }
 
-// ProductoDTO representa el objeto de producto enriquecido para el catálogo de cara a la UI y clientes de la API.
+// ===== Respuestas públicas =====
+
+// ProductoDTO es el producto del catálogo público que consumen Frontend e IA.
 type ProductoDTO struct {
 	ID           string   `json:"id"`
 	Nombre       string   `json:"nombre"`
@@ -36,7 +47,22 @@ type ProductoDTO struct {
 	EnStock      bool     `json:"en_stock"`
 }
 
-// ProductoAdminDTO incluye la información técnica y sensible del scraper para el dashboard de administración.
+// HistorialPrecioDTO es una captura histórica de precio del detalle.
+type HistorialPrecioDTO struct {
+	PrecioNormal float64   `json:"precio_normal"`
+	PrecioOferta *float64  `json:"precio_oferta,omitempty"`
+	CapturadoEl  time.Time `json:"capturado_el"`
+}
+
+// ProductoDetalleDTO es el producto con su historial de capturas.
+type ProductoDetalleDTO struct {
+	ProductoDTO
+	Historial []HistorialPrecioDTO `json:"historial"`
+}
+
+// ===== Respuestas de administración =====
+
+// ProductoAdminDTO añade los datos técnicos del scraper para el panel admin.
 type ProductoAdminDTO struct {
 	ID                 string    `json:"id"`
 	SKU                string    `json:"sku"`
@@ -54,7 +80,9 @@ type ProductoAdminDTO struct {
 	SucursalID         int       `json:"sucursal_id"`
 }
 
-// MetadatosPaginacionDTO describe los metadatos de paginación devueltos en la respuesta.
+// ===== Paginación =====
+
+// MetadatosPaginacionDTO es el bloque `paginacion` que lee IA.
 type MetadatosPaginacionDTO struct {
 	TotalRegistros int64 `json:"total_registros"`
 	PaginaActual   int   `json:"pagina_actual"`
@@ -62,7 +90,8 @@ type MetadatosPaginacionDTO struct {
 	Limite         int   `json:"limite"`
 }
 
-// PaginaProductosDTO estructura la respuesta completa del catálogo con la lista de productos y metadatos de paginación.
+// PaginaProductosDTO repite los metadatos en la raíz porque Frontend los lee
+// ahí e IA los lee en `paginacion`; ambos contratos siguen vigentes.
 type PaginaProductosDTO struct {
 	Data           []ProductoDTO          `json:"data"`
 	Paginacion     MetadatosPaginacionDTO `json:"paginacion"`
@@ -72,7 +101,7 @@ type PaginaProductosDTO struct {
 	Limite         int                    `json:"limite"`
 }
 
-// PaginaProductosAdminDTO estructura la respuesta del catálogo administrativo con metadatos de paginación.
+// PaginaProductosAdminDTO es la página del listado administrativo.
 type PaginaProductosAdminDTO struct {
 	Data           []ProductoAdminDTO     `json:"data"`
 	Paginacion     MetadatosPaginacionDTO `json:"paginacion"`
@@ -82,15 +111,11 @@ type PaginaProductosAdminDTO struct {
 	Limite         int                    `json:"limite"`
 }
 
-// HistorialPrecioDTO representa una captura histórica de precio para visualización y gráficas.
-type HistorialPrecioDTO struct {
-	PrecioNormal float64   `json:"precio_normal"`
-	PrecioOferta *float64  `json:"precio_oferta,omitempty"`
-	CapturadoEl  time.Time `json:"capturado_el"`
-}
+// ===== Persistencia =====
 
-// ProductoDetalleDTO contiene la información base del producto junto con su historial de capturas de precio.
-type ProductoDetalleDTO struct {
-	ProductoDTO
-	Historial []HistorialPrecioDTO `json:"historial"`
+// RepositorioProductos lee productos y capturas de scraper.*.
+type RepositorioProductos interface {
+	Listar(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoDTO, int64, error)
+	ListarParaAdmin(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoAdminDTO, int64, error)
+	ObtenerPorID(contexto context.Context, productoID string) (*ProductoDetalleDTO, error)
 }
