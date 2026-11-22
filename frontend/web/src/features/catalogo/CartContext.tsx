@@ -1,101 +1,101 @@
 // Mantiene productos y cantidades del carrito en memoria; no persiste listas en el servidor.
 import { createContext, useContext, useState, useMemo, type ReactNode } from 'react'
-import type { UiProduct as Product } from '@/features/catalogo/tipos'
+import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { useToast } from '@/components/ToastContext'
 
 export type CartItem = {
-  product: Product
+  product: Producto
   quantity: number
 }
 
-type CartContextType = {
+type TipoContextoCarrito = {
   items: CartItem[]
   totalItems: number
   totalPrice: number
   isCartOpen: boolean
-  setIsCartOpen: (open: boolean) => void
-  addToCart: (product: Product) => void
-  removeFromCart: (productId: string) => void
-  updateQuantity: (productId: string, quantity: number) => void
+  setIsCartOpen: (abierto: boolean) => void
+  addToCart: (producto: Producto) => void
+  removeFromCart: (idProducto: string) => void
+  updateQuantity: (idProducto: string, cantidad: number) => void
   clearCart: () => void
 }
 
-const CartContext = createContext<CartContextType | undefined>(undefined)
+const ContextoCarrito = createContext<TipoContextoCarrito | undefined>(undefined)
 
 export function CartProvider({ children }: { children: ReactNode }) {
-  const [items, setItems] = useState<CartItem[]>([])
-  const [isCartOpen, setIsCartOpen] = useState(false)
+  const [elementos, setElementos] = useState<CartItem[]>([])
+  const [carritoAbierto, setCarritoAbierto] = useState(false)
 
   const { toast } = useToast()
 
-  const addToCart = (product: Product) => {
-    setItems((current) => {
-      const existing = current.find((item) => item.product.id === product.id)
-      if (existing) {
-        return current.map((item) =>
-          item.product.id === product.id
-            ? { ...item, quantity: item.quantity + 1 }
-            : item
+  const agregarAlCarrito = (producto: Producto) => {
+    setElementos((actuales) => {
+      const existente = actuales.find((elemento) => elemento.product.id === producto.id)
+      if (existente) {
+        return actuales.map((elemento) =>
+          elemento.product.id === producto.id
+            ? { ...elemento, quantity: elemento.quantity + 1 }
+            : elemento
         )
       }
-      return [...current, { product, quantity: 1 }]
+      return [...actuales, { product: producto, quantity: 1 }]
     })
-    toast(`${product.name} agregado a tu lista`, "success")
+    toast(`${producto.name} agregado a tu lista`, "success")
   }
 
-  const removeFromCart = (productId: string) => {
-    setItems((current) => current.filter((item) => item.product.id !== productId))
+  const eliminarDelCarrito = (idProducto: string) => {
+    setElementos((actuales) => actuales.filter((elemento) => elemento.product.id !== idProducto))
   }
 
-  const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity < 1) {
-      removeFromCart(productId)
+  const actualizarCantidad = (idProducto: string, cantidad: number) => {
+    if (cantidad < 1) {
+      eliminarDelCarrito(idProducto)
       return
     }
-    setItems((current) =>
-      current.map((item) =>
-        item.product.id === productId ? { ...item, quantity } : item
+    setElementos((actuales) =>
+      actuales.map((elemento) =>
+        elemento.product.id === idProducto ? { ...elemento, quantity: cantidad } : elemento
       )
     )
   }
 
-  const clearCart = () => {
-    setItems([])
+  const vaciarCarrito = () => {
+    setElementos([])
   }
 
-  const totalItems = useMemo(
-    () => items.reduce((sum, item) => sum + item.quantity, 0),
-    [items]
+  const totalElementos = useMemo(
+    () => elementos.reduce((suma, elemento) => suma + elemento.quantity, 0),
+    [elementos]
   )
 
-  const totalPrice = useMemo(
-    () => items.reduce((sum, item) => sum + item.product.price * item.quantity, 0),
-    [items]
+  const precioTotal = useMemo(
+    () => elementos.reduce((suma, elemento) => suma + elemento.product.price * elemento.quantity, 0),
+    [elementos]
   )
 
   return (
-    <CartContext.Provider
+    <ContextoCarrito.Provider
       value={{
-        items,
-        totalItems,
-        totalPrice,
-        isCartOpen,
-        setIsCartOpen,
-        addToCart,
-        removeFromCart,
-        updateQuantity,
-        clearCart,
+        items: elementos,
+        totalItems: totalElementos,
+        totalPrice: precioTotal,
+        isCartOpen: carritoAbierto,
+        setIsCartOpen: setCarritoAbierto,
+        addToCart: agregarAlCarrito,
+        removeFromCart: eliminarDelCarrito,
+        updateQuantity: actualizarCantidad,
+        clearCart: vaciarCarrito,
       }}
     >
       {children}
-    </CartContext.Provider>
+    </ContextoCarrito.Provider>
   )
 }
 
 export function useCart() {
-  const context = useContext(CartContext)
-  if (context === undefined) {
+  const contexto = useContext(ContextoCarrito)
+  if (contexto === undefined) {
     throw new Error('useCart debe usarse dentro de CartProvider')
   }
-  return context
+  return contexto
 }

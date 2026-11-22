@@ -1,6 +1,6 @@
 // Muestra las cadenas del contenido informativo de la portada, no la cobertura actual de la API.
 import { Plus, Store } from 'lucide-react';
-import landingData from '@/features/landing/landing.json';
+import datosPortada from '@/features/landing/landing.json';
 
 export function LandingStores() {
   return (
@@ -15,12 +15,12 @@ export function LandingStores() {
           </p>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-[0.75rem] md:gap-[1rem]">
-          {landingData.stores.map((supermercado, index) => {
-            const isLast = index === landingData.stores.length - 1;
+          {datosPortada.stores.map((supermercado, indice) => {
+            const esUltimo = indice === datosPortada.stores.length - 1;
             return (
-              <div key={supermercado.name} className={`relative p-[1rem] md:p-[1.5rem] text-center border-2 rounded-[var(--radius)] shadow-[3px_3px_0_var(--color-border)] hover:-translate-x-[2px] hover:-translate-y-[2px] hover:shadow-[6px_6px_0_var(--color-border)] transition-all duration-[0.2s] ease bg-muted ${isLast ? 'border-dashed border-border opacity-70' : 'border-border'}`}>
+              <div key={supermercado.name} className={`relative p-[1rem] md:p-[1.5rem] text-center border-2 rounded-[var(--radius)] shadow-[3px_3px_0_var(--color-border)] hover:-translate-x-[2px] hover:-translate-y-[2px] hover:shadow-[6px_6px_0_var(--color-border)] transition-all duration-[0.2s] ease bg-muted ${esUltimo ? 'border-dashed border-border opacity-70' : 'border-border'}`}>
                 <div className="flex justify-center mb-[0.5rem] text-[1.5rem] md:text-[2rem] text-foreground">
-                  {isLast ? <Plus size={32} aria-hidden="true" /> : <Store size={32} aria-hidden="true" />}
+                  {esUltimo ? <Plus size={32} aria-hidden="true" /> : <Store size={32} aria-hidden="true" />}
                 </div>
                 <div className="font-['Fraunces'] font-bold text-[1rem] text-foreground mb-[0.25rem]">{supermercado.name}</div>
                 <div className="text-[0.75rem] text-muted-foreground">{supermercado.desc}</div>

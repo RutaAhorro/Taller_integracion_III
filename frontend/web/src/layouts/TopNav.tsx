@@ -6,31 +6,31 @@ import { Link, useNavigate } from 'react-router-dom'
 import { ROUTES } from '@/app/routes'
 import { useAuth } from '@/features/autenticacion/useAuth'
 
-type TopNavProps = {
+type PropiedadesNavegacionSuperior = {
     query: string
-    onQueryChange: (value: string) => void
+    onQueryChange: (valor: string) => void
     onMenuClick: () => void
     sidebarOpen: boolean
     onResetFilters: () => void
 }
 
-export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters }: TopNavProps) {
-    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-    const [localQuery, setLocalQuery] = useState(query || '');
-    const navigate = useNavigate();
+export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters }: PropiedadesNavegacionSuperior) {
+    const [menuDesplegableAbierto, setMenuDesplegableAbierto] = useState(false);
+    const [consultaLocal, setConsultaLocal] = useState(query || '');
+    const navegar = useNavigate();
     const { logout, isLoggingOut } = useAuth();
     
     // Ciudad de referencia de la interfaz; aún no representa una ubicación obtenida del perfil.
-    const activeCity = "Temuco";
+    const ciudadActiva = "Temuco";
 
     useEffect(() => {
-        setLocalQuery(query || '');
+        setConsultaLocal(query || '');
     }, [query]);
 
-    const handleSearch = (evento: FormEvent) => {
+    const manejarBusqueda = (evento: FormEvent) => {
         evento.preventDefault();
-        onQueryChange(localQuery);
-        navigate(ROUTES.CATALOGO);
+        onQueryChange(consultaLocal);
+        navegar(ROUTES.CATALOGO);
     };
 
     return (
@@ -67,7 +67,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                 <form
                     role="search"
                     className="relative min-w-0 flex-1"
-                    onSubmit={handleSearch}
+                    onSubmit={manejarBusqueda}
                 >
                     <label htmlFor="product-search" className="sr-only">
                         Buscar productos
@@ -79,8 +79,8 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                     <input
                         id="product-search"
                         type="search"
-                        value={localQuery}
-                        onChange={(evento) => setLocalQuery(evento.target.value)}
+                        value={consultaLocal}
+                        onChange={(evento) => setConsultaLocal(evento.target.value)}
                         placeholder="Buscar productos"
                         autoComplete="off"
                         className="h-11 w-full rounded-full border border-input bg-background pl-10 md:pl-12 pr-12 md:pr-28 text-sm md:text-base outline-none transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
@@ -115,7 +115,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                                 Comparando en
                             </span>
                             <span className="text-xs font-semibold leading-tight text-foreground">
-                                {activeCity}
+                                {ciudadActiva}
                             </span>
                         </div>
                     </Button>
@@ -125,34 +125,34 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                             size="icon"
                             className="h-10 w-10 rounded-full border border-border shadow-sm bg-background hover:bg-accent transition-colors"
                             aria-label="Menú de usuario"
-                            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                            onClick={() => setMenuDesplegableAbierto(!menuDesplegableAbierto)}
                         >
                             <CircleUserRound className="h-6 w-6 text-foreground/80" aria-hidden="true" />
                         </Button>
 
-                        {isDropdownOpen && (
+                        {menuDesplegableAbierto && (
                             <>
-                                <div className="fixed inset-0 z-40" onClick={() => setIsDropdownOpen(false)} />
+                                <div className="fixed inset-0 z-40" onClick={() => setMenuDesplegableAbierto(false)} />
                                 <div className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                                     <Link
                                         to="/profile"
-                                        onClick={() => setIsDropdownOpen(false)}
+                                        onClick={() => setMenuDesplegableAbierto(false)}
                                         className="flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-accent transition-colors"
                                     >
                                         <User className="h-4 w-4" />
                                         Mi Perfil
                                     </Link>
                                     <div className="h-px bg-border w-full" />
-                                    <Link to={ROUTES.LISTAS} onClick={() => setIsDropdownOpen(false)} className="flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-accent transition-colors">
+                                    <Link to={ROUTES.LISTAS} onClick={() => setMenuDesplegableAbierto(false)} className="flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-accent transition-colors">
                                         <ShoppingBasket className="h-4 w-4" />
                                         Mis listas
                                     </Link>
                                     <button
                                         disabled={isLoggingOut}
                                         onClick={async () => {
-                                            setIsDropdownOpen(false);
+                                            setMenuDesplegableAbierto(false);
                                             await logout();
-                                            navigate('/login');
+                                            navegar('/login');
                                         }}
                                         className="flex w-full items-center gap-3 px-4 py-3 text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors"
                                     >

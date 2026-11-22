@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 function Tabs({
   className,
   orientation = "horizontal",
-  ...props
+  ...propiedades
 }: TabsPrimitive.Root.Props) {
   return (
     <TabsPrimitive.Root
@@ -19,7 +19,7 @@ function Tabs({
         "group/tabs flex gap-2 data-horizontal:flex-col",
         className
       )}
-      {...props}
+      {...propiedades}
     />
   )
 }
@@ -42,19 +42,19 @@ const tabsListVariants = cva(
 function TabsList({
   className,
   variant = "default",
-  ...props
+  ...propiedades
 }: TabsPrimitive.List.Props & VariantProps<typeof tabsListVariants>) {
   return (
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
       className={cn(tabsListVariants({ variant }), className)}
-      {...props}
+      {...propiedades}
     />
   )
 }
 
-function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
+function TabsTrigger({ className, ...propiedades }: TabsPrimitive.Tab.Props) {
   return (
     <TabsPrimitive.Tab
       data-slot="tabs-trigger"
@@ -64,17 +64,17 @@ function TabsTrigger({ className, ...props }: TabsPrimitive.Tab.Props) {
         "data-active:border-border data-active:bg-primary data-active:shadow-[4px_4px_0px_var(--color-border)] data-active:-translate-y-1 data-active:text-primary-foreground",
         className
       )}
-      {...props}
+      {...propiedades}
     />
   )
 }
 
-function TabsContent({ className, ...props }: TabsPrimitive.Panel.Props) {
+function TabsContent({ className, ...propiedades }: TabsPrimitive.Panel.Props) {
   return (
     <TabsPrimitive.Panel
       data-slot="tabs-content"
       className={cn("flex-1 text-sm outline-none border-2 border-border p-6 bg-background shadow-[8px_8px_0px_var(--color-border)] rounded-xl mt-2", className)}
-      {...props}
+      {...propiedades}
     />
   )
 }

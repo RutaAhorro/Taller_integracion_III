@@ -15,21 +15,21 @@ import { ShieldAlert, ArrowLeft } from 'lucide-react';
 // - Sin `roles`: solo exige sesión (conducta anterior).
 export function ProtectedRoute({ roles }: { roles?: string[] }) {
   const { isGuest, user } = useAuth();
-  const navigate = useNavigate();
+  const navegar = useNavigate();
   const { toast } = useToast();
 
-  const requiredRoles = roles ?? [];
-  const hasRoleGuard = requiredRoles.length > 0;
+  const rolesRequeridos = roles ?? [];
+  const tieneRestriccionRol = rolesRequeridos.length > 0;
   // Rutas que exigen admin o colaborador: sin registro público en el modal.
-  const privilegedOnly = requiredRoles.some((role) => {
-    const normalized = normalizeRole(role);
-    return normalized === ROLE_ADMIN || normalized === ROLE_COLABORADOR;
+  const soloPrivilegiados = rolesRequeridos.some((rolRequerido) => {
+    const rolNormalizado = normalizeRole(rolRequerido);
+    return rolNormalizado === ROLE_ADMIN || rolNormalizado === ROLE_COLABORADOR;
   });
-  const denied = !isGuest && hasRoleGuard && !hasAllowedRole(user?.rol, requiredRoles);
+  const accesoDenegado = !isGuest && tieneRestriccionRol && !hasAllowedRole(user?.rol, rolesRequeridos);
 
   useEffect(() => {
-    if (denied) toast('No tienes permisos para acceder a esa sección.', 'warning');
-  }, [denied, toast]);
+    if (accesoDenegado) toast('No tienes permisos para acceder a esa sección.', 'warning');
+  }, [accesoDenegado, toast]);
 
   // Sin sesión, solicita autenticación antes de mostrar la ruta protegida.
   if (isGuest) {
@@ -41,24 +41,24 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
               <ShieldAlert className="h-6 w-6 text-primary-foreground" />
             </div>
             <h2 className="text-xl font-bold text-foreground">
-              {privilegedOnly ? 'Acceso restringido' : 'Inicia sesión para acceder'}
+              {soloPrivilegiados ? 'Acceso restringido' : 'Inicia sesión para acceder'}
             </h2>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {privilegedOnly
+              {soloPrivilegiados
                 ? 'Esta sección requiere una cuenta con rol de administrador o colaborador. Inicia sesión con una cuenta autorizada.'
                 : 'Esta sección requiere una cuenta activa. Inicia sesión o crea una cuenta gratuita para continuar.'}
             </p>
 
             <div className="pt-4 space-y-3">
               <button
-                onClick={() => navigate(ROUTES.LOGIN)}
+                onClick={() => navegar(ROUTES.LOGIN)}
                 className="w-full bg-primary hover:brightness-110 text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] font-medium py-2.5 rounded-xl transition-all cursor-pointer hover:-translate-y-0.5 active:translate-y-0 active:shadow-none"
               >
                 Iniciar Sesión
               </button>
-              {!privilegedOnly && (
+              {!soloPrivilegiados && (
                 <button
-                  onClick={() => navigate(ROUTES.LOGIN, { state: { tab: 'signup' } })}
+                  onClick={() => navegar(ROUTES.LOGIN, { state: { tab: 'signup' } })}
                   className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Crear Cuenta Gratuita
@@ -67,7 +67,7 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
             </div>
             <div className="pt-2">
               <button
-                onClick={() => navigate(-1)}
+                onClick={() => navegar(-1)}
                 className="flex items-center justify-center gap-2 w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -80,7 +80,7 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
     );
   }
 
-  if (denied) {
+  if (accesoDenegado) {
     return <Navigate to={ROUTES.CATALOGO} replace />;
   }
 

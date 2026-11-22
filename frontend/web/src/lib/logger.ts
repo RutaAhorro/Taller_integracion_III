@@ -1,28 +1,28 @@
 // Centraliza registros: en producción conserva errores y silencia los mensajes de desarrollo.
-const isDev = import.meta.env.DEV;
+const esDesarrollo = import.meta.env.DEV;
 
 export const logger = {
-  info: (msg: string, data?: any) => {
-    if (isDev) {
-      if (data) console.info(`📘 [INFO]: ${msg}`, data);
-      else console.info(`📘 [INFO]: ${msg}`);
+  info: (mensaje: string, datos?: any) => {
+    if (esDesarrollo) {
+      if (datos) console.info(`📘 [INFO]: ${mensaje}`, datos);
+      else console.info(`📘 [INFO]: ${mensaje}`);
     }
   },
-  warn: (msg: string, data?: any) => {
-    if (isDev) {
-      if (data) console.warn(`📙 [WARN]: ${msg}`, data);
-      else console.warn(`📙 [WARN]: ${msg}`);
+  warn: (mensaje: string, datos?: any) => {
+    if (esDesarrollo) {
+      if (datos) console.warn(`📙 [WARN]: ${mensaje}`, datos);
+      else console.warn(`📙 [WARN]: ${mensaje}`);
     }
   },
-  error: (msg: string, error?: any) => {
+  error: (mensaje: string, errorObtenido?: any) => {
     // Conserva el error en producción para permitir el diagnóstico.
-    if (error) console.error(`📕 [ERROR]: ${msg}`, error);
-    else console.error(`📕 [ERROR]: ${msg}`);
+    if (errorObtenido) console.error(`📕 [ERROR]: ${mensaje}`, errorObtenido);
+    else console.error(`📕 [ERROR]: ${mensaje}`);
   },
-  debug: (msg: string, data?: any) => {
-    if (isDev) {
-      if (data) console.debug(`🐛 [DEBUG]: ${msg}`, data);
-      else console.debug(`🐛 [DEBUG]: ${msg}`);
+  debug: (mensaje: string, datos?: any) => {
+    if (esDesarrollo) {
+      if (datos) console.debug(`🐛 [DEBUG]: ${mensaje}`, datos);
+      else console.debug(`🐛 [DEBUG]: ${mensaje}`);
     }
   }
 };

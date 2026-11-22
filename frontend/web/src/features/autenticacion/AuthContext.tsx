@@ -4,137 +4,137 @@ import type { Usuario, LoginPayload, RegisterPayload } from '@/features/autentic
 import { useToast } from '@/components/ToastContext';
 
 // Clave del usuario de interfaz almacenado entre recargas.
-const AUTH_USER_KEY = 'auth_user';
+const CLAVE_USUARIO_AUTENTICADO = 'auth_user';
 
-interface AuthContextType {
+interface TipoContextoAutenticacion {
   user: Usuario | null;
   isGuest: boolean;
   isLoading: boolean;
   isLoggingOut: boolean;
   error: string | null;
-  login: (payload: LoginPayload) => Promise<Usuario | null>;
-  register: (payload: RegisterPayload) => Promise<boolean>;
-  googleLogin: (idToken: string) => Promise<Usuario | null>;
+  login: (datosAcceso: LoginPayload) => Promise<Usuario | null>;
+  register: (datosRegistro: RegisterPayload) => Promise<boolean>;
+  googleLogin: (tokenId: string) => Promise<Usuario | null>;
   logout: () => Promise<void>;
 }
 
-export const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<TipoContextoAutenticacion | undefined>(undefined);
 
-const API_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
+const URL_API = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 // Un valor corrupto en localStorage no debe impedir que cargue la app.
-function readStoredUser(): Usuario | null {
+function leerUsuarioAlmacenado(): Usuario | null {
   try {
-    const stored = localStorage.getItem(AUTH_USER_KEY);
-    return stored ? JSON.parse(stored) : null;
+    const almacenado = localStorage.getItem(CLAVE_USUARIO_AUTENTICADO);
+    return almacenado ? JSON.parse(almacenado) : null;
   } catch {
     return null;
   }
 }
 
 // POST a Identidad. El JWT viaja en una cookie HttpOnly (credentials: include).
-// Lanza un Error con el mensaje del backend, o con `fallback` si no lo hay.
-async function postAuth(path: string, body: unknown, fallback: string) {
-  const response = await fetch(`${API_URL}${path}`, {
+// Lanza un Error con el mensaje del backend, o con `mensajeRespaldo` si no lo hay.
+async function enviarAutenticacion(ruta: string, cuerpo: unknown, mensajeRespaldo: string) {
+  const respuesta = await fetch(`${URL_API}${ruta}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(cuerpo),
     credentials: 'include',
   });
   // Un 502/504 del Gateway puede no traer JSON.
-  const result = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(result.error || result.mensaje || fallback);
-  return result;
+  const resultado = await respuesta.json().catch(() => ({}));
+  if (!respuesta.ok) throw new Error(resultado.error || resultado.mensaje || mensajeRespaldo);
+  return resultado;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Usuario | null>(readStoredUser);
+  const [usuarioActual, setUsuarioActual] = useState<Usuario | null>(leerUsuarioAlmacenado);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const logoutRequest = useRef<Promise<void> | null>(null);
+  const [cargando, setCargando] = useState(false);
+  const [cerrandoSesion, setCerrandoSesion] = useState(false);
+  const peticionCierreSesion = useRef<Promise<void> | null>(null);
   const { toast } = useToast();
 
   // Sincroniza el usuario de interfaz con el almacenamiento local.
   useEffect(() => {
-    if (user) {
-      localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    if (usuarioActual) {
+      localStorage.setItem(CLAVE_USUARIO_AUTENTICADO, JSON.stringify(usuarioActual));
     } else {
-      localStorage.removeItem(AUTH_USER_KEY);
+      localStorage.removeItem(CLAVE_USUARIO_AUTENTICADO);
     }
-  }, [user]);
+  }, [usuarioActual]);
 
   // Envuelve una llamada de autenticación con el manejo común de carga y error.
-  const run = async <Resultado,>(action: () => Promise<Resultado>, networkError = 'Error de red.'): Promise<Resultado | null> => {
-    setIsLoading(true);
+  const ejecutar = async <Resultado,>(accion: () => Promise<Resultado>, mensajeErrorRed = 'Error de red.'): Promise<Resultado | null> => {
+    setCargando(true);
     setError(null);
     try {
-      return await action();
-    } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : networkError);
+      return await accion();
+    } catch (errorObtenido) {
+      setError(errorObtenido instanceof Error && errorObtenido.message ? errorObtenido.message : mensajeErrorRed);
       return null;
     } finally {
-      setIsLoading(false);
+      setCargando(false);
     }
   };
 
   // Devuelve la identidad recién validada, nunca la recuperada de localStorage.
   const autenticar = (ruta: string, cuerpo: unknown, mensajeError: string) =>
-    run(async () => {
-      const result = await postAuth(ruta, cuerpo, mensajeError);
-      const usuario: Usuario = result.usuario ?? result;
+    ejecutar(async () => {
+      const resultado = await enviarAutenticacion(ruta, cuerpo, mensajeError);
+      const usuario: Usuario = resultado.usuario ?? resultado;
       if (!usuario?.id) throw new Error('Respuesta de autenticación inválida.');
-      setUser(usuario);
+      setUsuarioActual(usuario);
       return usuario;
     });
 
-  const login = (payload: LoginPayload) =>
-    autenticar('/auth/login', payload, 'Error al iniciar sesión');
+  const login = (datosAcceso: LoginPayload) =>
+    autenticar('/auth/login', datosAcceso, 'Error al iniciar sesión');
 
-  const register = async (payload: RegisterPayload) =>
-    Boolean(await run(async () => {
-      await postAuth('/auth/register', payload, 'Error al crear la cuenta');
+  const register = async (datosRegistro: RegisterPayload) =>
+    Boolean(await ejecutar(async () => {
+      await enviarAutenticacion('/auth/register', datosRegistro, 'Error al crear la cuenta');
       return true;
     }));
 
-  const googleLogin = (idToken: string) =>
-    autenticar('/auth/google', { id_token: idToken }, 'Error en Google Login');
+  const googleLogin = (tokenId: string) =>
+    autenticar('/auth/google', { id_token: tokenId }, 'Error en Google Login');
 
   // Expira la cookie HttpOnly en Identidad antes de salir. Los cierres simultáneos comparten petición.
   const logout = useCallback((): Promise<void> => {
-    if (logoutRequest.current) return logoutRequest.current;
-    setIsLoggingOut(true);
+    if (peticionCierreSesion.current) return peticionCierreSesion.current;
+    setCerrandoSesion(true);
     setError(null);
-    logoutRequest.current = (async () => {
+    peticionCierreSesion.current = (async () => {
       try {
-        const response = await fetch(`${API_URL}/auth/logout`, {
+        const respuesta = await fetch(`${URL_API}/auth/logout`, {
           method: 'POST',
           credentials: 'include',
         });
         // El contrato responde 204 sin JSON; una página HTML con 200 no confirma el cierre.
-        if (response.status !== 204) throw new Error('No se confirmó el cierre de sesión.');
+        if (respuesta.status !== 204) throw new Error('No se confirmó el cierre de sesión.');
       } catch {
-        const message = 'Se cerró la sesión local, pero no se pudo confirmar el cierre en el servidor. La cookie podría seguir activa; vuelve a intentar cerrar sesión cuando haya conexión.';
-        setError(message);
-        toast(message, 'warning');
+        const mensaje = 'Se cerró la sesión local, pero no se pudo confirmar el cierre en el servidor. La cookie podría seguir activa; vuelve a intentar cerrar sesión cuando haya conexión.';
+        setError(mensaje);
+        toast(mensaje, 'warning');
       } finally {
-        setUser(null);
-        localStorage.removeItem(AUTH_USER_KEY);
-        setIsLoggingOut(false);
+        setUsuarioActual(null);
+        localStorage.removeItem(CLAVE_USUARIO_AUTENTICADO);
+        setCerrandoSesion(false);
       }
     })().finally(() => {
-      logoutRequest.current = null;
+      peticionCierreSesion.current = null;
     });
-    return logoutRequest.current;
+    return peticionCierreSesion.current;
   }, [toast]);
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isGuest: !user?.id,
-        isLoading: isLoading || isLoggingOut,
-        isLoggingOut,
+        user: usuarioActual,
+        isGuest: !usuarioActual?.id,
+        isLoading: cargando || cerrandoSesion,
+        isLoggingOut: cerrandoSesion,
         error,
         login,
         register,

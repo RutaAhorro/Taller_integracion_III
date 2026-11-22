@@ -23,26 +23,26 @@ import { useRole } from '@/features/autenticacion/useRole'
 import type { UiSupermarket } from '@/features/catalogo/tipos'
 import { PLAN_PREMIUM, type PlanUsuario } from '@/features/autenticacion/tipos'
 
-type SideBarProps = {
+type PropiedadesBarraLateral = {
   open: boolean
   onClose: () => void
   onResetFilters: () => void
   activeMarket: string | null
   availableMarkets: UiSupermarket[]
-  onSelectCategory: (category: string) => void
+  onSelectCategory: (categoria: string) => void
   onSelectMarket: (id: string | null) => void
   activeCategory: string
   userPlan?: PlanUsuario
   activeCity?: string
 }
 
-const featured = [
+const destacados = [
   { id: 'ofertas', label: 'Mejores ofertas', icon: Flame },
   { id: 'descuentos', label: 'Mayor descuento', icon: Percent },
   { id: 'marcas', label: 'Marcas blancas', icon: Tag },
 ]
 
-const departments: { id: string; label: string; items: string[] }[] = [
+const departamentos: { id: string; label: string; items: string[] }[] = [
   {
     id: 'frutas-verduras',
     label: 'Frutas y Verduras',
@@ -100,27 +100,27 @@ const departments: { id: string; label: string; items: string[] }[] = [
   },
 ]
 
-const toolLinks = [
+const enlacesHerramientas = [
   { to: '/chat', label: 'Chat Inteligente', icon: Bot },
   { to: '/history', label: 'Listas y Rutas', icon: Map },
   { to: '/recetas', label: 'Recetas IA', icon: ChefHat },
   { to: '/colaborador', label: 'Misiones', icon: Users },
 ]
 
-const navLinkClass = (active: boolean, weight: string) =>
-  `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${weight} transition-colors ${
-    active
+const claseEnlaceNavegacion = (activo: boolean, pesoFuente: string) =>
+  `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${pesoFuente} transition-colors ${
+    activo
       ? 'text-primary-foreground bg-primary shadow-[4px_4px_0px_var(--color-border)] border-2 border-border font-bold hover:bg-primary/90'
       : 'text-foreground hover:bg-accent hover:text-accent-foreground'
   }`
 
-function SectionTitle({ children }: { children: string }) {
+function TituloSeccion({ children }: { children: string }) {
   return <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
 }
 
-type FilterButtonProps = { icon: LucideIcon; label: string; active: boolean; onClick: () => void; disabled?: boolean }
+type PropiedadesBotonFiltro = { icon: LucideIcon; label: string; active: boolean; onClick: () => void; disabled?: boolean }
 
-function FilterButton({ icon: Icon, label, active, onClick, disabled = false }: FilterButtonProps) {
+function BotonFiltro({ icon: Icono, label, active, onClick, disabled = false }: PropiedadesBotonFiltro) {
   return (
     <button
       type="button"
@@ -130,7 +130,7 @@ function FilterButton({ icon: Icon, label, active, onClick, disabled = false }: 
         active ? 'bg-accent text-accent-foreground font-bold' : 'text-foreground hover:bg-accent hover:text-accent-foreground'
       }`}
     >
-      <Icon className={`h-4.5 w-4.5 ${active ? 'text-foreground' : 'text-muted-foreground'}`} aria-hidden="true" />
+      <Icono className={`h-4.5 w-4.5 ${active ? 'text-foreground' : 'text-muted-foreground'}`} aria-hidden="true" />
       {label}
     </button>
   )
@@ -147,49 +147,49 @@ export function SideBar({
   activeCategory,
   userPlan,
   activeCity
-}: SideBarProps) {
-  const [openDept, setOpenDept] = useState<string | null>(null)
-  const panelRef = useRef<HTMLElement>(null)
-  const closeButtonRef = useRef<HTMLButtonElement>(null)
-  const navigate = useNavigate()
+}: PropiedadesBarraLateral) {
+  const [departamentoAbierto, setDepartamentoAbierto] = useState<string | null>(null)
+  const referenciaPanel = useRef<HTMLElement>(null)
+  const referenciaBotonCerrar = useRef<HTMLButtonElement>(null)
+  const navegar = useNavigate()
   const { pathname } = useLocation()
   // SUP-256: Misiones solo colaborador o admin.
   const { canAccessColaborador } = useRole()
 
-  const handleCategoryClick = (category: string, closeSidebar = true) => {
-    onSelectCategory(category)
-    navigate('/dashboard')
-    if (closeSidebar) onClose()
+  const manejarSeleccionCategoria = (categoria: string, cerrarBarra = true) => {
+    onSelectCategory(categoria)
+    navegar('/dashboard')
+    if (cerrarBarra) onClose()
   }
 
   // Mantiene el foco en el panel y lo devuelve al control de apertura.
   useEffect(() => {
     if (!open) return
-    const previousFocus = document.activeElement
-    closeButtonRef.current?.focus()
-    const onKey = (evento: KeyboardEvent) => {
+    const focoAnterior = document.activeElement
+    referenciaBotonCerrar.current?.focus()
+    const manejarTecla = (evento: KeyboardEvent) => {
       if (evento.key === 'Escape') {
         evento.preventDefault()
         onClose()
       }
       if (evento.key !== 'Tab') return
-      const controls = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(
+      const controles = Array.from(referenciaPanel.current?.querySelectorAll<HTMLElement>(
         'button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]'
-      ) ?? []).filter(element => !element.closest('[inert]'))
-      const first = controls[0]
-      const last = controls[controls.length - 1]
-      if (evento.shiftKey && document.activeElement === first) {
+      ) ?? []).filter(elemento => !elemento.closest('[inert]'))
+      const primero = controles[0]
+      const ultimo = controles[controles.length - 1]
+      if (evento.shiftKey && document.activeElement === primero) {
         evento.preventDefault()
-        last?.focus()
-      } else if (!evento.shiftKey && document.activeElement === last) {
+        ultimo?.focus()
+      } else if (!evento.shiftKey && document.activeElement === ultimo) {
         evento.preventDefault()
-        first?.focus()
+        primero?.focus()
       }
     }
-    window.addEventListener('keydown', onKey)
+    window.addEventListener('keydown', manejarTecla)
     return () => {
-      window.removeEventListener('keydown', onKey)
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus()
+      window.removeEventListener('keydown', manejarTecla)
+      if (focoAnterior instanceof HTMLElement && focoAnterior.isConnected) focoAnterior.focus()
     }
   }, [open, onClose])
 
@@ -205,7 +205,7 @@ export function SideBar({
 
       <aside
         id="catalog-filters"
-        ref={panelRef}
+        ref={referenciaPanel}
         role="dialog"
         aria-modal={open ? true : undefined}
         aria-label="Menú de filtros"
@@ -225,7 +225,7 @@ export function SideBar({
             </span>
           </div>
           <Button
-            ref={closeButtonRef}
+            ref={referenciaBotonCerrar}
             variant="ghost"
             size="icon"
             className="h-9 w-9 rounded-full"
@@ -241,7 +241,7 @@ export function SideBar({
             variant="outline"
             onClick={() => {
               onResetFilters()
-              navigate('/dashboard')
+              navegar('/dashboard')
               onClose()
             }}
           >
@@ -256,7 +256,7 @@ export function SideBar({
                     onSelectCategory("")
                     onClose()
                   }}
-                  className={navLinkClass(pathname === '/dashboard' && !activeCategory, 'font-bold')}
+                  className={claseEnlaceNavegacion(pathname === '/dashboard' && !activeCategory, 'font-bold')}
                 >
                   <Home className="h-4.5 w-4.5" aria-hidden="true" />
                   Inicio (Ver todo)
@@ -266,15 +266,15 @@ export function SideBar({
           </nav>
 
           <nav aria-label="Destacados">
-            <SectionTitle>Destacados</SectionTitle>
+            <TituloSeccion>Destacados</TituloSeccion>
             <ul className="flex flex-col gap-1">
-              {featured.map((destacado) => (
+              {destacados.map((destacado) => (
                 <li key={destacado.id}>
-                  <FilterButton
+                  <BotonFiltro
                     icon={destacado.icon}
                     label={destacado.label}
                     active={activeCategory === destacado.id}
-                    onClick={() => handleCategoryClick(activeCategory === destacado.id ? '' : destacado.id)}
+                    onClick={() => manejarSeleccionCategoria(activeCategory === destacado.id ? '' : destacado.id)}
                   />
                 </li>
               ))}
@@ -282,33 +282,33 @@ export function SideBar({
           </nav>
 
           <nav aria-label="Departamentos y categorías">
-            <SectionTitle>Departamentos y categorías</SectionTitle>
+            <TituloSeccion>Departamentos y categorías</TituloSeccion>
             <ul className="flex flex-col gap-0.5">
-              {departments.map((dept) => {
-                const expanded = openDept === dept.id
+              {departamentos.map((departamento) => {
+                const expandido = departamentoAbierto === departamento.id
                 return (
-                  <li key={dept.id}>
+                  <li key={departamento.id}>
                     <button
                       type="button"
                       // Expandir no filtra: solo muestra las subcategorías.
-                      onClick={() => setOpenDept((prev) => (prev === dept.id ? null : dept.id))}
-                      aria-expanded={expanded}
+                      onClick={() => setDepartamentoAbierto((anterior) => (anterior === departamento.id ? null : departamento.id))}
+                      aria-expanded={expandido}
                       className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
                     >
                       <ChevronDown
                         className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${
-                          expanded ? 'rotate-0' : '-rotate-90'
+                          expandido ? 'rotate-0' : '-rotate-90'
                         }`}
                         aria-hidden="true"
                       />
                       <span className="text-pretty leading-snug">
-                        {dept.label}
+                        {departamento.label}
                       </span>
                     </button>
                     <div
-                      inert={!expanded}
+                      inert={!expandido}
                       className={`grid transition-all duration-200 ease-out ${
-                        expanded
+                        expandido
                           ? 'grid-rows-[1fr] opacity-100'
                           : 'grid-rows-[0fr] opacity-0'
                       }`}
@@ -317,28 +317,28 @@ export function SideBar({
                         <li>
                           <button
                             type="button"
-                            onClick={() => handleCategoryClick(dept.label)}
+                            onClick={() => manejarSeleccionCategoria(departamento.label)}
                             className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
-                              activeCategory === dept.label
+                              activeCategory === departamento.label
                                 ? 'bg-accent text-primary font-bold'
                                 : 'text-foreground font-semibold hover:bg-accent hover:text-primary'
                             }`}
                           >
-                            Ver todo en {dept.label.split(',')[0]}
+                            Ver todo en {departamento.label.split(',')[0]}
                           </button>
                         </li>
-                        {dept.items.map((item) => (
-                          <li key={item}>
+                        {departamento.items.map((subcategoria) => (
+                          <li key={subcategoria}>
                             <button
                               type="button"
-                              onClick={() => handleCategoryClick(activeCategory === item ? "" : item)}
+                              onClick={() => manejarSeleccionCategoria(activeCategory === subcategoria ? "" : subcategoria)}
                               className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
-                                activeCategory === item
+                                activeCategory === subcategoria
                                   ? 'bg-accent text-primary font-bold'
                                   : 'text-muted-foreground hover:bg-accent hover:text-primary'
                               }`}
                             >
-                              {item}
+                              {subcategoria}
                             </button>
                           </li>
                         ))}
@@ -351,29 +351,29 @@ export function SideBar({
           </nav>
 
           <nav aria-label="Supermercados">
-            <SectionTitle>Supermercados</SectionTitle>
+            <TituloSeccion>Supermercados</TituloSeccion>
             <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas de los productos cargados. El listado completo está pendiente de integración.</p>
             <ul className="flex flex-col gap-1">
               <li>
-                <FilterButton
+                <BotonFiltro
                   icon={Store}
                   label="Todos"
                   active={activeMarket === null}
                   onClick={() => {
                     onSelectMarket(null)
-                    navigate('/dashboard')
+                    navegar('/dashboard')
                   }}
                 />
               </li>
-              {availableMarkets.map((market) => (
-                <li key={market.id}>
-                  <FilterButton
+              {availableMarkets.map((supermercado) => (
+                <li key={supermercado.id}>
+                  <BotonFiltro
                     icon={Store}
-                    label={market.name}
-                    active={activeMarket === market.id}
+                    label={supermercado.name}
+                    active={activeMarket === supermercado.id}
                     onClick={() => {
-                      onSelectMarket(activeMarket === market.id ? null : market.id)
-                      navigate('/dashboard')
+                      onSelectMarket(activeMarket === supermercado.id ? null : supermercado.id)
+                      navegar('/dashboard')
                     }}
                   />
                 </li>
@@ -382,16 +382,16 @@ export function SideBar({
           </nav>
 
           <nav aria-label="Asistente IA">
-            <SectionTitle>Herramientas IA</SectionTitle>
+            <TituloSeccion>Herramientas IA</TituloSeccion>
             <ul className="flex flex-col gap-1">
-              {toolLinks
+              {enlacesHerramientas
                 // SUP-256: Misiones solo colaborador o admin.
-                .filter((link) => link.to !== '/colaborador' || canAccessColaborador)
-                .map((link) => (
-                  <li key={link.to}>
-                    <Link to={link.to} onClick={onClose} className={navLinkClass(pathname.startsWith(link.to), 'font-medium')}>
-                      <link.icon className="h-4.5 w-4.5" aria-hidden="true" />
-                      {link.label}
+                .filter((enlace) => enlace.to !== '/colaborador' || canAccessColaborador)
+                .map((enlace) => (
+                  <li key={enlace.to}>
+                    <Link to={enlace.to} onClick={onClose} className={claseEnlaceNavegacion(pathname.startsWith(enlace.to), 'font-medium')}>
+                      <enlace.icon className="h-4.5 w-4.5" aria-hidden="true" />
+                      {enlace.label}
                     </Link>
                   </li>
                 ))}

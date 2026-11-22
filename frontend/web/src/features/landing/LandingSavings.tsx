@@ -2,7 +2,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { buttonVariants } from '@/components/ui/button';
-import landingData from '@/features/landing/landing.json';
+import datosPortada from '@/features/landing/landing.json';
 
 export function LandingSavings() {
   return (
@@ -17,10 +17,10 @@ export function LandingSavings() {
               Estas cifras ilustran cómo podría influir el traslado; no provienen de una compra real.
             </p>
             <ul className="list-none p-0 m-[0_0_1.5rem]">
-              {landingData.savings.items.map(item => (
-                <li key={item} className="flex gap-[0.75rem] items-start mb-[0.875rem] text-[0.9375rem] text-foreground">
+              {datosPortada.savings.items.map(punto => (
+                <li key={punto} className="flex gap-[0.75rem] items-start mb-[0.875rem] text-[0.9375rem] text-foreground">
                   <span className="shrink-0 w-[24px] h-[24px] rounded-[6px] bg-[var(--landing-olive-soft)] border-2 border-[var(--landing-olive)] flex items-center justify-center text-[0.75rem] font-bold text-brand-dark mt-[1px]">✓</span>
-                  <span>{item}</span>
+                  <span>{punto}</span>
                 </li>
               ))}
             </ul>
@@ -29,8 +29,8 @@ export function LandingSavings() {
             </Link>
           </div>
           <div className="bg-gradient-to-br from-[var(--landing-amber-soft)] to-[var(--landing-terracotta-soft)] border-2 border-border rounded-[var(--radius)] p-[1.75rem] shadow-[4px_4px_0_var(--color-border)] mt-6 md:mt-0">
-            {landingData.savings.bars.map(barra => {
-              const bgGradient = barra.variant === 'worst' ? 'bg-gradient-to-r from-[var(--landing-terracotta)] to-[oklch(0.7_0.1_40)]' :
+            {datosPortada.savings.bars.map(barra => {
+              const degradadoFondo = barra.variant === 'worst' ? 'bg-gradient-to-r from-[var(--landing-terracotta)] to-[oklch(0.7_0.1_40)]' :
                 barra.variant === 'mid' ? 'bg-gradient-to-r from-[var(--landing-amber)] to-[oklch(0.78_0.09_75)]' :
                   'bg-gradient-to-r from-[var(--landing-olive)] to-[oklch(0.6_0.08_130)]';
               return (
@@ -40,14 +40,14 @@ export function LandingSavings() {
                     <span className="font-mono text-brand-dark">{barra.value}</span>
                   </div>
                   <div className="h-[14px] rounded-full bg-card border-2 border-border overflow-hidden">
-                    <div className={`h-full rounded-full transition-[width] duration-[0.6s] ease ${bgGradient}`} style={{ width: barra.width }} />
+                    <div className={`h-full rounded-full transition-[width] duration-[0.6s] ease ${degradadoFondo}`} style={{ width: barra.width }} />
                   </div>
                 </div>
               );
             })}
             <div className="mt-[1.25rem] pt-[1rem] border-t-2 border-dashed border-border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2">
               <span className="text-[0.8125rem] text-muted-foreground font-semibold">Ahorro ilustrativo del ejemplo</span>
-              <span className="font-mono text-[1.5rem] font-bold text-[var(--landing-olive)]">{landingData.savings.weeklySaving}</span>
+              <span className="font-mono text-[1.5rem] font-bold text-[var(--landing-olive)]">{datosPortada.savings.weeklySaving}</span>
             </div>
           </div>
         </div>

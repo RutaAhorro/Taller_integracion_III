@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
 function Separator({
   className,
   orientation = "horizontal",
-  ...props
+  ...propiedades
 }: SeparatorPrimitive.Props) {
   return (
     <SeparatorPrimitive
@@ -18,7 +18,7 @@ function Separator({
         "shrink-0 bg-border data-horizontal:h-[2px] data-horizontal:w-full data-vertical:w-[2px] data-vertical:self-stretch",
         className
       )}
-      {...props}
+      {...propiedades}
     />
   )
 }

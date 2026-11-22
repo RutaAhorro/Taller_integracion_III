@@ -9,14 +9,14 @@ import { TypingIndicator } from '@/features/chat/TypingIndicator';
 import ReactMarkdown from 'react-markdown';
 import { useChatbot } from '@/features/chat/useChatbot';
 
-const SUGGESTIONS = [
+const SUGERENCIAS = [
   'Busco leche por menos de $2.000',
   '¿Qué arroz está disponible?',
   'Busco harina de almendras',
 ];
 
 export default function Chatbot() {
-  const navigate = useNavigate();
+  const navegar = useNavigate();
   
   const {
     messages,
@@ -64,10 +64,10 @@ export default function Chatbot() {
 
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
         <div className="max-w-3xl mx-auto space-y-6">
-          {messages.map((msg) => (
-            <div key={msg.id} className={cn("flex gap-3 sm:gap-4", msg.role === 'user' ? "justify-end" : "justify-start")}>
+          {messages.map((mensaje) => (
+            <div key={mensaje.id} className={cn("flex gap-3 sm:gap-4", mensaje.role === 'user' ? "justify-end" : "justify-start")}>
               
-              {msg.role === 'assistant' && (
+              {mensaje.role === 'assistant' && (
                 <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] mt-1">
                   <Bot className="h-5 w-5"/>
                 </div>
@@ -75,38 +75,38 @@ export default function Chatbot() {
 
               <div className={cn(
                 "relative max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm",
-                msg.role === 'user' 
+                mensaje.role === 'user' 
                   ? "bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] rounded-br-none"
                   : "bg-card border border-border text-foreground rounded-bl-none shadow-sm"
               )}>
-                {(msg.type === 'text' || msg.type === 'error') && (
-                  <div role={msg.type === 'error' ? 'alert' : undefined} className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
-                    <ReactMarkdown>{msg.content || ''}</ReactMarkdown>
+                {(mensaje.type === 'text' || mensaje.type === 'error') && (
+                  <div role={mensaje.type === 'error' ? 'alert' : undefined} className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
+                    <ReactMarkdown>{mensaje.content || ''}</ReactMarkdown>
                   </div>
                 )}
                 
-                {msg.type === 'welcome' && (
+                {mensaje.type === 'welcome' && (
                   <div className="space-y-4">
                     <p className="leading-relaxed">
                       ¡Hola! Puedes consultar productos del catálogo y pedir recomendaciones de compra.
                       El chat todavía no guarda ingredientes ni calcula rutas.
                     </p>
                     <div className="flex flex-col gap-2 mt-4">
-                      {SUGGESTIONS.map((chip) => (
+                      {SUGERENCIAS.map((sugerencia) => (
                         <button
-                          key={chip}
+                          key={sugerencia}
                           disabled={isProcessing}
-                          onClick={() => handleSend(chip)}
+                          onClick={() => handleSend(sugerencia)}
                           className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          "{chip}"
+                          "{sugerencia}"
                         </button>
                       ))}
                     </div>
                   </div>
                 )}
 
-                {msg.type === 'processing' && (
+                {mensaje.type === 'processing' && (
                   <div role="status" className="space-y-3 py-1">
                     <p>Consultando al asistente…</p>
                     <TypingIndicator className="mt-2" />
@@ -115,7 +115,7 @@ export default function Chatbot() {
 
               </div>
 
-              {msg.role === 'user' && (
+              {mensaje.role === 'user' && (
                 <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-zinc-200 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 mt-1">
                   <User className="h-5 w-5"/>
                 </div>
@@ -178,13 +178,13 @@ export default function Chatbot() {
               
               <div className="pt-4 space-y-3">
                 <button 
-                  onClick={() => navigate('/login')}
+                  onClick={() => navegar('/login')}
                   className="w-full bg-primary hover:bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Iniciar Sesión
                 </button>
                 <button 
-                  onClick={() => navigate('/login', { state: { tab: 'signup' } })}
+                  onClick={() => navegar('/login', { state: { tab: 'signup' } })}
                   className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
                 >
                   Crear Cuenta Gratuita
