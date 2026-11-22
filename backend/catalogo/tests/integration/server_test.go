@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -14,15 +14,13 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func catalogRouter(repo *mockProductoRepository, ping func(context.Context) error) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	return server.NewRouter(services.NewProductoService(repo, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "catalog-test-only-key", ping, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(io.Discard, nil)), nil)
+	return nuevoEnrutadorDePrueba(api.Dependencias{Productos: services.NuevoServicioProductos(repo, limitesProductosDePrueba), SondaBase: ping})
 }
 
 func signedToken(prueba *testing.T, role string, method jwt.SigningMethod, key string, expires *time.Time) string {
@@ -41,12 +39,14 @@ func signedToken(prueba *testing.T, role string, method jwt.SigningMethod, key s
 func TestCatalogAdministrationAuthorization(prueba *testing.T) {
 	future := time.Now().Add(time.Hour)
 	past := time.Now().Add(-time.Hour)
-	admin := signedToken(prueba, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
-	registered := signedToken(prueba, "registrado", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
+	admin := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
+	registered := signedToken(prueba, "registrado", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
 	wrongKey := signedToken(prueba, "admin", jwt.SigningMethodHS256, "different-test-only-key", &future)
-	expired := signedToken(prueba, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &past)
-	wrongAlgorithm := signedToken(prueba, "admin", jwt.SigningMethodHS384, "catalog-test-only-key", &future)
-	missingExpiry := signedToken(prueba, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", nil)
+	expired := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &past)
+	wrongAlgorithm := signedToken(prueba, "admin", jwt.SigningMethodHS384, claveJWTDePrueba, &future)
+	missingExpiry := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, nil)
+	aliasHistorico := signedToken(prueba, "administrador", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
+	mayusculas := signedToken(prueba, "ADMIN", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
 	for _, tc := range []struct {
 		name, cookie string
 		status       int
@@ -58,6 +58,8 @@ func TestCatalogAdministrationAuthorization(prueba *testing.T) {
 		{"algoritmo distinto del emisor", wrongAlgorithm, 401},
 		{"sin expiración", missingExpiry, 401},
 		{"registrado", registered, 403},
+		{"alias histórico retirado", aliasHistorico, 403},
+		{"rol sin normalizar", mayusculas, 403},
 		{"admin", admin, 200},
 	} {
 		prueba.Run(tc.name, func(subprueba *testing.T) {
@@ -130,7 +132,7 @@ func TestCatalogHealthAndDomainIsolation(prueba *testing.T) {
 
 func TestCatalogRequestCorrelation(prueba *testing.T) {
 	var logs bytes.Buffer
-	router := server.NewRouter(services.NewProductoService(&mockProductoRepository{}, limitesDePrueba), services.NewFuenteService(&mockFuenteRepository{}), "test-key", nil, plazoReadinessDePrueba, slog.New(slog.NewJSONHandler(&logs, nil)), nil)
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Registrador: slog.New(slog.NewJSONHandler(&logs, nil))})
 	for _, received := range []string{"gateway-request-267", strings.Repeat("x", 129)} {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/productos/buscar?q=le", nil)
 		req.Header.Set("X-Request-ID", received)

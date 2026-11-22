@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 )
@@ -18,6 +19,13 @@ type mockProductoRepository struct {
 	err        error
 	lastFilter domain.FiltroProductosDTO
 	detalle    *domain.ProductoDetalleDTO
+}
+
+// limitesProductosDePrueba son los límites por defecto de internal/config.
+var limitesProductosDePrueba = services.LimitesProductos{
+	TamanoPagina:        config.TamanoPaginaPredeterminado,
+	TamanoPaginaMaximo:  config.TamanoPaginaMaximoPredeterminado,
+	LargoMaximoBusqueda: config.LargoBusquedaPredeterminado,
 }
 
 func (repositorio *mockProductoRepository) Listar(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
@@ -54,7 +62,7 @@ func TestProductoService_ValoresPorDefecto(prueba *testing.T) {
 		total: 45,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
 
 	res, err := service.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{})
 	if err != nil {
@@ -91,7 +99,7 @@ func TestProductoService_SanitizacionYLimites(prueba *testing.T) {
 		total: 0,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
 
 	filtro := domain.FiltroProductosDTO{
 		Page:         -5,
@@ -130,7 +138,7 @@ func TestProductoService_Busqueda_Minimo3Caracteres(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
 
 	casosError := []struct {
 		nombre string
@@ -188,7 +196,7 @@ func TestProductoService_ObtenerPorID(prueba *testing.T) {
 		},
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
 
 	prueba.Run("Exitoso", func(subprueba *testing.T) {
 		res, err := service.ObtenerPorID(context.Background(), "test-id-123")
@@ -244,7 +252,7 @@ func TestProductoService_ObtenerCatalogoAdmin(prueba *testing.T) {
 		total: 50,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
 
 	prueba.Run("Valores por defecto y cálculo de paginación", func(subprueba *testing.T) {
 		res, err := service.ObtenerCatalogoAdmin(context.Background(), domain.FiltroProductosDTO{})
@@ -293,6 +301,3 @@ func TestProductoService_ObtenerCatalogoAdmin(prueba *testing.T) {
 		}
 	})
 }
-
-// limitesDePrueba replica los valores por defecto de internal/config para las pruebas.
-var limitesDePrueba = services.LimitesConsulta{TamanoPaginaPredeterminado: 20, TamanoPaginaMaximo: 100, LargoMaximoBusqueda: 100}

@@ -4,13 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"log/slog"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/ingesta"
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgconn"
 )
@@ -32,8 +31,7 @@ func TestInternalSQLDataErrorsArePermanentAndPrivate(prueba *testing.T) {
 		prueba.Run(tc.code, func(subprueba *testing.T) {
 			token := strings.Repeat("t", 32)
 			err := fmt.Errorf("wrapped: %w", &pgconn.PgError{Code: tc.code, Message: "secret SQL", TableName: "productos_crudos"})
-			router := gin.New()
-			ingesta.Register(router, ingesta.Config{Repository: &testStore{err: err}, Token: token, MaxProductos: productosPorLoteDePrueba, MaxBodyBytes: bytesPorCuerpoDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			router := nuevoEnrutadorDePrueba(api.Dependencias{Ingesta: &testStore{err: err}, TokenIngesta: token})
 			req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
 			req.Header.Set("Authorization", "Bearer "+token)
 			respuesta := httptest.NewRecorder()
@@ -45,17 +43,17 @@ func TestInternalSQLDataErrorsArePermanentAndPrivate(prueba *testing.T) {
 	}
 }
 
-func (almacen *testStore) ObtenerCadena(context.Context, int, string) (*ingesta.CadenaSupermercado, error) {
+func (almacen *testStore) ObtenerCadena(context.Context, int, string) (*domain.CadenaSupermercado, error) {
 	almacen.calls++
-	return &ingesta.CadenaSupermercado{ID: 1}, almacen.err
+	return &domain.CadenaSupermercado{ID: 1}, almacen.err
 }
-func (almacen *testStore) ObtenerSucursal(context.Context, int, *int, *string) (*ingesta.SucursalSupermercado, error) {
+func (almacen *testStore) ObtenerSucursal(context.Context, int, *int, *string) (*domain.SucursalSupermercado, error) {
 	almacen.calls++
-	return &ingesta.SucursalSupermercado{ID: 1}, almacen.err
+	return &domain.SucursalSupermercado{ID: 1}, almacen.err
 }
-func (almacen *testStore) IngestarLote(_ context.Context, input ingesta.Request) (*ingesta.IngestaResultadoDTO, error) {
+func (almacen *testStore) IngestarLote(_ context.Context, input domain.LoteIngestaDTO) (*domain.ResultadoIngestaDTO, error) {
 	almacen.calls++
-	return &ingesta.IngestaResultadoDTO{SucursalID: input.SucursalID, TotalRecibidos: len(input.Productos), Insertados: 1, PreciosRegistrados: 1}, almacen.err
+	return &domain.ResultadoIngestaDTO{SucursalID: input.SucursalID, TotalRecibidos: len(input.Productos), Insertados: 1, PreciosRegistrados: 1}, almacen.err
 }
 
 func TestInternalIngestSecurityAndValidation(prueba *testing.T) {
@@ -80,8 +78,7 @@ func TestInternalIngestSecurityAndValidation(prueba *testing.T) {
 	} {
 		prueba.Run(tc.name, func(subprueba *testing.T) {
 			store := &testStore{}
-			router := gin.New()
-			ingesta.Register(router, ingesta.Config{Repository: store, Token: token, MaxProductos: productosPorLoteDePrueba, MaxBodyBytes: bytesPorCuerpoDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			router := nuevoEnrutadorDePrueba(api.Dependencias{Ingesta: store, TokenIngesta: token})
 			req := httptest.NewRequest("POST", "/internal/v1/"+tc.path, strings.NewReader(tc.body))
 			req.Header.Set("Authorization", tc.auth)
 			req.Header.Set("Origin", tc.origin)
@@ -98,8 +95,7 @@ func TestInternalIngestSecurityAndValidation(prueba *testing.T) {
 func TestInternalBatchConflictIsControlled(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	token := strings.Repeat("t", 32)
-	router := gin.New()
-	ingesta.Register(router, ingesta.Config{Repository: &testStore{err: ingesta.ErrIdempotencia}, Token: token, MaxProductos: productosPorLoteDePrueba, MaxBodyBytes: bytesPorCuerpoDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Ingesta: &testStore{err: domain.ErrIdempotencia}, TokenIngesta: token})
 	req := httptest.NewRequest("POST", "/internal/v1/ingestas", strings.NewReader(`{"lote_id":"00000000-0000-4000-8000-000000000270","sucursal_id":1,"productos":[{"sku":"SKU"}]}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	respuesta := httptest.NewRecorder()
@@ -113,8 +109,7 @@ func TestInternalIngestClosedAndGenericError(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	for _, token := range []string{"", strings.Repeat("t", 32)} {
 		store := &testStore{err: errors.New("SQL secret scraper.productos_crudos")}
-		router := gin.New()
-		ingesta.Register(router, ingesta.Config{Repository: store, Token: token, MaxProductos: productosPorLoteDePrueba, MaxBodyBytes: bytesPorCuerpoDePrueba}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		router := nuevoEnrutadorDePrueba(api.Dependencias{Ingesta: store, TokenIngesta: token})
 		req := httptest.NewRequest("POST", "/internal/v1/cadenas/resolver", strings.NewReader(`{"cadena_id":1}`))
 		req.Header.Set("Authorization", "Bearer "+token)
 		respuesta := httptest.NewRecorder()

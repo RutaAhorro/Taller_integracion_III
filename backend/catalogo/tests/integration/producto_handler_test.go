@@ -2,13 +2,13 @@ package integration_test
 
 import (
 	"encoding/json"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/handlers"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
 )
@@ -32,11 +32,8 @@ func TestProductoHandler_ObtenerProductos(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
-	handler := handlers.NewProductoHandler(service)
-
-	router := gin.New()
-	router.GET("/api/v1/productos", handler.ObtenerProductos)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: service})
 
 	req, _ := http.NewRequest(http.MethodGet, "/api/v1/productos?page=2&limit=10&categoria=Despensa&supermercado=Lider&precio_min=1000&precio_max=2000&en_oferta=true&sort_by=nombre&order=desc", nil)
 	respuesta := httptest.NewRecorder()
@@ -79,11 +76,8 @@ func TestProductoHandler_BuscarProductos(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
-	handler := handlers.NewProductoHandler(service)
-
-	router := gin.New()
-	router.GET("/api/v1/productos/buscar", handler.BuscarProductos)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: service})
 
 	prueba.Run("400 Bad Request cuando falta parámetro q", func(subprueba *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/productos/buscar", nil)
@@ -159,11 +153,8 @@ func TestProductoHandler_ObtenerDetalleProducto(prueba *testing.T) {
 		},
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
-	handler := handlers.NewProductoHandler(service)
-
-	router := gin.New()
-	router.GET("/api/v1/productos/:id", handler.ObtenerDetalleProducto)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: service})
 
 	prueba.Run("200 OK cuando existe", func(subprueba *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/productos/prod-uuid-xyz", nil)
@@ -235,14 +226,12 @@ func TestProductoHandler_ObtenerProductosAdmin(prueba *testing.T) {
 		total: 1,
 	}
 
-	service := services.NewProductoService(mockRepo, limitesDePrueba)
-	handler := handlers.NewProductoHandler(service)
-
-	router := gin.New()
-	router.GET("/api/v1/admin/productos", handler.ObtenerProductosAdmin)
+	service := services.NuevoServicioProductos(mockRepo, limitesProductosDePrueba)
+	router := nuevoEnrutadorDePrueba(api.Dependencias{Productos: service})
 
 	prueba.Run("200 OK con filtros completos de administración", func(subprueba *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/admin/productos?page=1&limit=10&sku=SKU-JUMBO-99&en_stock=true&sort_by=sku&order=asc", nil)
+		req.AddCookie(cookieAdministrador(subprueba))
 		respuesta := httptest.NewRecorder()
 		router.ServeHTTP(respuesta, req)
 
@@ -274,6 +263,7 @@ func TestProductoHandler_ObtenerProductosAdmin(prueba *testing.T) {
 
 	prueba.Run("400 Bad Request cuando búsqueda por texto libre q es corta", func(subprueba *testing.T) {
 		req, _ := http.NewRequest(http.MethodGet, "/api/v1/admin/productos?q=ab", nil)
+		req.AddCookie(cookieAdministrador(subprueba))
 		respuesta := httptest.NewRecorder()
 		router.ServeHTTP(respuesta, req)
 

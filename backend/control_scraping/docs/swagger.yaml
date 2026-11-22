@@ -1,11 +1,32 @@
 basePath: /
 definitions:
+  api.RespuestaError:
+    properties:
+      detalle:
+        type: string
+      estado:
+        type: integer
+      mensaje:
+        type: string
+    type: object
+  api.solicitudEjecucion:
+    properties:
+      add_url:
+        type: string
+      enrich_ean:
+        type: boolean
+      producto_id:
+        type: string
+      producto_url:
+        type: string
+      spider:
+        type: string
+    type: object
   domain.FinalizarTrabajoDTO:
     properties:
       elementos_extraidos:
         type: integer
       estado:
-        description: '''completado'' o ''fallido'''
         type: string
       registro_errores:
         type: string
@@ -126,20 +147,6 @@ definitions:
       respuestas_bloqueadas:
         type: integer
     type: object
-  handlers.ejecutarScraperRequest:
-    properties:
-      add_url:
-        type: string
-      enrich_ean:
-        type: boolean
-      producto_id:
-        type: string
-      producto_url:
-        type: string
-      spider:
-        type: string
-    type: object
-host: localhost:8080
 info:
   contact: {}
   description: Contrato del servicio de coordinación. Identidad y Catálogo se atienden
@@ -149,7 +156,7 @@ info:
 paths:
   /:
     get:
-      description: Endpoint raíz para comprobar el estado de la API
+      description: Endpoint raíz para comprobar que el servicio responde
       produces:
       - application/json
       responses:
@@ -185,9 +192,13 @@ paths:
     post:
       consumes:
       - application/json
-      description: Guarda productos crudos y capturas de precio sin requerir una sesión
-        de trabajo previa
+      description: Igual que la ingesta con trabajo; la cadena se resuelve por supermercado
+        o por la sucursal indicada.
       parameters:
+      - description: UUID estable del lote
+        in: header
+        name: Idempotency-Key
+        type: string
       - description: Lote de productos extraídos
         in: body
         name: input
@@ -201,13 +212,27 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/domain.IngestaResultadoDTO'
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
           schema:
             additionalProperties: true
             type: object
@@ -216,15 +241,27 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Almacena un lote de productos de forma directa
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - TokenServicio: []
+      summary: Registra y entrega un lote sin trabajo a Catálogo
       tags:
       - scraper
   /api/v1/scraper/trabajos:
     post:
       consumes:
       - application/json
-      description: Registra el inicio de una araña de scraping para auditar su ciclo
-        de vida y métricas
+      description: Registra el inicio de un trabajo para auditar su ciclo de vida
+        y métricas
       parameters:
       - description: Datos de inicio de la sesión
         in: body
@@ -244,8 +281,17 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
+          schema:
+            additionalProperties: true
+            type: object
+        "409":
+          description: Conflict
           schema:
             additionalProperties: true
             type: object
@@ -254,13 +300,25 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - TokenServicio: []
       summary: Inicia una sesión de scraping
       tags:
       - scraper
   /api/v1/scraper/trabajos/{id}:
     get:
-      description: Retorna los detalles, duración, conteo y errores de un trabajo
-        (ideal para bots de Discord)
+      description: Devuelve detalles, duración, conteo y errores de un trabajo (lo
+        usa el bot de Discord)
       parameters:
       - description: UUID del trabajo
         in: path
@@ -279,6 +337,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
           schema:
@@ -289,6 +351,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - TokenServicio: []
       summary: Consulta el estado de una sesión de scraping
       tags:
       - scraper
@@ -296,8 +360,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Envía el trabajo a Redis para que el worker Scrapy ejecute el spider
-        solicitado
+      description: Guarda la ejecución en el outbox SQL; Control la publica en Redis
+        Streams para que Scraper Go ejecute el spider solicitado.
       parameters:
       - description: UUID del trabajo
         in: path
@@ -309,7 +373,7 @@ paths:
         name: input
         required: true
         schema:
-          $ref: '#/definitions/handlers.ejecutarScraperRequest'
+          $ref: '#/definitions/api.solicitudEjecucion'
       produces:
       - application/json
       responses:
@@ -323,6 +387,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
           schema:
@@ -338,6 +406,13 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - TokenServicio: []
       summary: Encola un trabajo para ejecución
       tags:
       - scraper
@@ -345,8 +420,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Marca el término del trabajo como completado o fallido, registrando
-        métricas y errores
+      description: Marca el trabajo como completado o fallido. Repetir el mismo cierre
+        devuelve el trabajo sin cambios.
       parameters:
       - description: UUID del trabajo de scraping
         in: path
@@ -371,6 +446,10 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
           schema:
@@ -386,6 +465,8 @@ paths:
           schema:
             additionalProperties: true
             type: object
+      security:
+      - TokenServicio: []
       summary: Finaliza una sesión de scraping
       tags:
       - scraper
@@ -394,12 +475,17 @@ paths:
       consumes:
       - application/json
       description: Conserva la entrega durable en Control, usa una clave estable en
-        Catálogo y confirma el contador una sola vez.
+        Catálogo y confirma el contador una sola vez. Responde 202 con Retry-After
+        si el lote sigue en curso.
       parameters:
       - description: UUID del trabajo de scraping
         in: path
         name: id
         required: true
+        type: string
+      - description: UUID estable del lote
+        in: header
+        name: Idempotency-Key
         type: string
       - description: Lote de productos extraídos
         in: body
@@ -414,11 +500,20 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/domain.IngestaResultadoDTO'
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
         "400":
           description: Bad Request
           schema:
             additionalProperties: true
             type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/api.RespuestaError'
         "404":
           description: Not Found
           schema:
@@ -434,6 +529,18 @@ paths:
           schema:
             additionalProperties: true
             type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties: true
+            type: object
+        "504":
+          description: Gateway Timeout
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - TokenServicio: []
       summary: Registra y entrega un lote con trabajo a Catálogo
       tags:
       - scraper
@@ -457,4 +564,10 @@ paths:
       summary: Comprobación de salud del servicio (Healthcheck)
       tags:
       - health
+securityDefinitions:
+  TokenServicio:
+    description: Bearer SCRAPING_SERVICE_TOKEN (Scraper Go y bot de Discord).
+    in: header
+    name: Authorization
+    type: apiKey
 swagger: "2.0"

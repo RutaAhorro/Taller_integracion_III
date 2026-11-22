@@ -1,5 +1,6 @@
-// Package domain define los datos y contratos del catálogo. Este archivo agrupa
-// los DTO, estados y la interfaz de la consulta interna de disponibilidad.
+// Consulta interna de disponibilidad: DTO, estados e interfaz de lectura que
+// usan Listas e IA.
+
 package domain
 
 import (
@@ -85,9 +86,9 @@ type ProductoDisponibilidadRegistro struct {
 	CapturadoEl  *time.Time
 }
 
-// DisponibilidadRepository define la consulta de lectura que usa el servicio
+// RepositorioDisponibilidad define la consulta de lectura que usa el servicio
 // de disponibilidad. La implementación vive en repositories y sólo lee tablas
 // del dominio Catálogo.
-type DisponibilidadRepository interface {
+type RepositorioDisponibilidad interface {
 	ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]ProductoDisponibilidadRegistro, error)
 }

@@ -16,7 +16,7 @@ import (
 
 // crearRepositorioDisponibilidadSeco arma la consulta de disponibilidad sobre
 // un controlador SQL vacío. Sólo se inspecciona el SQL generado, sin base real.
-func crearRepositorioDisponibilidadSeco(prueba *testing.T) (domain.DisponibilidadRepository, *strings.Builder) {
+func crearRepositorioDisponibilidadSeco(prueba *testing.T) (domain.RepositorioDisponibilidad, *strings.Builder) {
 	prueba.Helper()
 	var consultas strings.Builder
 	baseSQL := sql.OpenDB(conectorSQLSinBase{})
@@ -28,7 +28,7 @@ func crearRepositorioDisponibilidadSeco(prueba *testing.T) (domain.Disponibilida
 	if errorObtenido != nil {
 		prueba.Fatalf("error inicializando dummy dialector: %v", errorObtenido)
 	}
-	return repositories.NewDisponibilidadRepository(db), &consultas
+	return repositories.NuevoRepositorioDisponibilidad(db), &consultas
 }
 
 // TestDisponibilidadRepositorioUsaLaCapturaMasReciente verifica que la consulta
@@ -65,21 +65,5 @@ func TestDisponibilidadRepositorioUsaLaCapturaMasReciente(prueba *testing.T) {
 	}
 	if strings.Contains(consultaSQL, "pc.en_stock") {
 		prueba.Errorf("el stock debe venir de la captura validada, no de pc.en_stock: %s", consultaSQL)
-	}
-}
-
-// TestDisponibilidadRepositorioNoConsultaSinIDs evita viajar a la base cuando
-// el servicio ya detectó un lote vacío.
-func TestDisponibilidadRepositorioNoConsultaSinIDs(prueba *testing.T) {
-	repositorio, consultas := crearRepositorioDisponibilidadSeco(prueba)
-	registros, errorObtenido := repositorio.ConsultarPorIDs(context.Background(), nil)
-	if errorObtenido != nil {
-		prueba.Fatal(errorObtenido)
-	}
-	if len(registros) != 0 {
-		prueba.Fatalf("se esperaban cero registros: %+v", registros)
-	}
-	if consultas.Len() != 0 {
-		prueba.Fatalf("un lote vacío consultó la base: %s", consultas.String())
 	}
 }

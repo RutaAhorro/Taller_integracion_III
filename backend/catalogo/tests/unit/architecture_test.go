@@ -36,10 +36,10 @@ func TestCatalogDependencies(prueba *testing.T) {
 			if strings.Contains(dep, "redis") {
 				prueba.Errorf("%s depende de la cola del coordinador", path)
 			}
-			if layer == "services" && strings.HasPrefix(dep, own) && dep != own+"domain" && dep != own+"utils" {
+			if layer == "services" && strings.HasPrefix(dep, own) && dep != own+"domain" {
 				prueba.Errorf("%s importa un adaptador desde negocio: %s", path, dep)
 			}
-			if layer == "domain" && dep != "context" && dep != "time" {
+			if layer == "domain" && dep != "context" && dep != "time" && dep != "errors" {
 				prueba.Errorf("%s importa infraestructura desde el contrato: %s", path, dep)
 			}
 		}

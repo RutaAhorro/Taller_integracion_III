@@ -55,8 +55,8 @@ func TestDisponibilidadServiceValidaLote(prueba *testing.T) {
 	} {
 		prueba.Run(caso.nombre, func(subprueba *testing.T) {
 			repositorio := &repositorioDisponibilidadDoble{}
-			limites := services.LimitesDisponibilidad{MaxProductos: 2, AntiguedadMaxima: 48 * time.Hour}
-			servicio := services.NewDisponibilidadService(repositorio, limites, relojFijo(momento))
+			limites := services.LimitesDisponibilidad{MaximoProductos: 2, AntiguedadMaxima: 48 * time.Hour}
+			servicio := services.NuevoServicioDisponibilidad(repositorio, limites, relojFijo(momento))
 
 			_, errorObtenido := servicio.Consultar(context.Background(), caso.ids)
 			if !errors.Is(errorObtenido, caso.errorEsperado) {
@@ -69,8 +69,8 @@ func TestDisponibilidadServiceValidaLote(prueba *testing.T) {
 	}
 
 	repositorio := &repositorioDisponibilidadDoble{}
-	servicio := services.NewDisponibilidadService(repositorio,
-		services.LimitesDisponibilidad{MaxProductos: 10, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
+	servicio := services.NuevoServicioDisponibilidad(repositorio,
+		services.LimitesDisponibilidad{MaximoProductos: 10, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
 	respuesta, errorObtenido := servicio.Consultar(context.Background(), []string{identificador, otroIdentificador, identificador})
 	if errorObtenido != nil {
 		prueba.Fatal(errorObtenido)
@@ -138,8 +138,8 @@ func TestDisponibilidadServiceAplicaVigencia(prueba *testing.T) {
 			CapturadoEl: punteroFecha(futuro),
 		},
 	}}
-	servicio := services.NewDisponibilidadService(repositorio,
-		services.LimitesDisponibilidad{MaxProductos: 1000, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
+	servicio := services.NuevoServicioDisponibilidad(repositorio,
+		services.LimitesDisponibilidad{MaximoProductos: 1000, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
 
 	respuesta, errorObtenido := servicio.Consultar(context.Background(), []string{
 		disponibleID, sinStockID, stockDesconocidoID, vencidoID, sinCapturaID, inexistenteID, futuroID, disponibleID,
@@ -220,8 +220,8 @@ func TestDisponibilidadServiceAplicaVigencia(prueba *testing.T) {
 func TestDisponibilidadServicePropagaError(prueba *testing.T) {
 	errorPersistencia := errors.New("fallo de persistencia")
 	repositorio := &repositorioDisponibilidadDoble{errorConsulta: errorPersistencia}
-	servicio := services.NewDisponibilidadService(repositorio,
-		services.LimitesDisponibilidad{MaxProductos: 10, AntiguedadMaxima: 48 * time.Hour}, time.Now)
+	servicio := services.NuevoServicioDisponibilidad(repositorio,
+		services.LimitesDisponibilidad{MaximoProductos: 10, AntiguedadMaxima: 48 * time.Hour}, time.Now)
 
 	_, errorObtenido := servicio.Consultar(context.Background(),
 		[]string{"00000000-0000-4000-8000-000000000001"})
@@ -231,4 +231,4 @@ func TestDisponibilidadServicePropagaError(prueba *testing.T) {
 }
 
 // Garantiza que el doble de pruebas cumpla la interfaz del dominio.
-var _ domain.DisponibilidadRepository = (*repositorioDisponibilidadDoble)(nil)
+var _ domain.RepositorioDisponibilidad = (*repositorioDisponibilidadDoble)(nil)

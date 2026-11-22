@@ -5,15 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
-	"log/slog"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/consulta"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
@@ -40,18 +38,11 @@ func (repositorio *repositorioDisponibilidadHTTP) ConsultarPorIDs(_ context.Cont
 
 // nuevoRouterDisponibilidadHTTP arma sólo la ruta interna para aislar la prueba
 // de las rutas públicas y del Gateway.
-func nuevoRouterDisponibilidadHTTP(repositorio *repositorioDisponibilidadHTTP, token string, maxProductos, maxBodyBytes int, ahora time.Time) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	servicio := services.NewDisponibilidadService(repositorio,
-		services.LimitesDisponibilidad{MaxProductos: maxProductos, AntiguedadMaxima: 48 * time.Hour},
+func nuevoRouterDisponibilidadHTTP(repositorio *repositorioDisponibilidadHTTP, token string, maxProductos int, ahora time.Time) *gin.Engine {
+	servicio := services.NuevoServicioDisponibilidad(repositorio,
+		services.LimitesDisponibilidad{MaximoProductos: maxProductos, AntiguedadMaxima: 48 * time.Hour},
 		func() time.Time { return ahora })
-	enrutador := gin.New()
-	consulta.Register(enrutador, consulta.Config{
-		Service:      servicio,
-		Token:        token,
-		MaxBodyBytes: maxBodyBytes,
-	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	return enrutador
+	return nuevoEnrutadorDePrueba(api.Dependencias{Disponibilidad: servicio, TokenConsulta: token})
 }
 
 // TestDisponibilidadHTTPExigeTokenDeServicio cubre los rechazos de seguridad
@@ -70,7 +61,7 @@ func TestDisponibilidadHTTPExigeTokenDeServicio(prueba *testing.T) {
 	} {
 		prueba.Run(caso.nombre, func(subprueba *testing.T) {
 			repositorio := &repositorioDisponibilidadHTTP{}
-			enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, bytesPorCuerpoDePrueba, momento)
+			enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, momento)
 			peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(cuerpo))
 			peticion.Header.Set("Authorization", caso.autorizacion)
 			peticion.Header.Set("Origin", caso.origen)
@@ -106,7 +97,7 @@ func TestDisponibilidadHTTPValidaCuerpo(prueba *testing.T) {
 	} {
 		prueba.Run(caso.nombre, func(subprueba *testing.T) {
 			repositorio := &repositorioDisponibilidadHTTP{}
-			enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 2, bytesPorCuerpoDePrueba, momento)
+			enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 2, momento)
 			peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(caso.cuerpo))
 			peticion.Header.Set("Authorization", "Bearer "+token)
 			respuesta := httptest.NewRecorder()
@@ -126,8 +117,8 @@ func TestDisponibilidadHTTPValidaCuerpo(prueba *testing.T) {
 func TestDisponibilidadHTTPRechazaCuerpoExcesivo(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
 	repositorio := &repositorioDisponibilidadHTTP{}
-	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, 16, time.Now())
-	cuerpo := `{"producto_ids":["00000000-0000-4000-8000-000000000001"]}`
+	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, time.Now())
+	cuerpo := `{"producto_ids":["` + strings.Repeat("x", bytesPorCuerpoDePrueba) + `"]}`
 	peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(cuerpo))
 	peticion.Header.Set("Authorization", "Bearer "+token)
 	respuesta := httptest.NewRecorder()
@@ -171,7 +162,7 @@ func TestDisponibilidadHTTPDevuelveEstados(prueba *testing.T) {
 			EnStock: &enStockVerdadero, PrecioNormal: &precioNormal, CapturadoEl: &viejo,
 		},
 	}}
-	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, bytesPorCuerpoDePrueba, momento)
+	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, momento)
 	cuerpo, _ := json.Marshal(map[string][]string{"producto_ids": []string{disponibleID, sinStockID, vencidoID, inexistenteID, disponibleID}})
 	peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", bytes.NewReader(cuerpo))
 	peticion.Header.Set("Authorization", "Bearer "+token)
@@ -214,7 +205,7 @@ func TestDisponibilidadHTTPDevuelveEstados(prueba *testing.T) {
 func TestDisponibilidadHTTPOcultaErrorDePersistencia(prueba *testing.T) {
 	token := strings.Repeat("t", 32)
 	repositorio := &repositorioDisponibilidadHTTP{errorConsulta: errors.New("secret SQL productos_crudos")}
-	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, bytesPorCuerpoDePrueba, time.Now())
+	enrutador := nuevoRouterDisponibilidadHTTP(repositorio, token, 1000, time.Now())
 	cuerpo := `{"producto_ids":["00000000-0000-4000-8000-000000000001"]}`
 	peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(cuerpo))
 	peticion.Header.Set("Authorization", "Bearer "+token)
@@ -230,13 +221,7 @@ func TestDisponibilidadHTTPOcultaErrorDePersistencia(prueba *testing.T) {
 // TestDisponibilidadHTTPNoSeRegistraSinToken confirma el modo lector: sin
 // CATALOGO_CONSULTA_TOKEN la ruta de consulta no existe.
 func TestDisponibilidadHTTPNoSeRegistraSinToken(prueba *testing.T) {
-	gin.SetMode(gin.TestMode)
-	enrutador := gin.New()
-	consulta.Register(enrutador, consulta.Config{
-		Service:      services.NewDisponibilidadService(&repositorioDisponibilidadHTTP{}, services.LimitesDisponibilidad{MaxProductos: 10, AntiguedadMaxima: time.Hour}, time.Now),
-		Token:        "",
-		MaxBodyBytes: bytesPorCuerpoDePrueba,
-	}, nil)
+	enrutador := nuevoEnrutadorDePrueba(api.Dependencias{Disponibilidad: services.NuevoServicioDisponibilidad(&repositorioDisponibilidadHTTP{}, services.LimitesDisponibilidad{MaximoProductos: 10, AntiguedadMaxima: time.Hour}, time.Now)})
 	peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/productos/disponibilidad", strings.NewReader(`{"producto_ids":[]}`))
 	respuesta := httptest.NewRecorder()
 	enrutador.ServeHTTP(respuesta, peticion)
