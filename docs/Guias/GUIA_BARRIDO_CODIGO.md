@@ -1,6 +1,6 @@
 # Guía del barrido de código (Sprint 3)
 
-> **Estado:** borrador para revisión del equipo · SUP-344
+> **Estado:** vigente: es el criterio para revisar los PR de barrido (SUP-344) y de compactación (SUP-384). Quedan abiertos los pendientes del final.
 > **Aplica a:** los barridos SUP-347 y SUP-349 a SUP-354, a la migración de Motor de rutas a Go (SUP-348) y a todo el código nuevo del Sprint 3.
 > La segunda fase (compactación) suma los criterios de la [sección 8](#8-anexo-criterios-de-compactación-segunda-fase).
 
@@ -139,8 +139,8 @@ si acaso".
   cada servicio y el `README.md` raíz. Guías, decisiones e investigaciones van
   en `docs/` y se enlazan desde `docs/README.md`.
 - Los archivos de contexto para asistentes de IA no se tocaron en la primera
-  fase. En la compactación cada servicio pasa a un único `AGENTS.md` y un
-  `CLAUDE.md` que sólo lo importa (SUP-360; ver sección 8.7).
+  fase. Mientras SUP-360 no se fusione, se siguen editando como indica el
+  `CLAUDE.md` raíz (ver sección 8.7).
 
 ## 6. Qué NO se toca durante el barrido
 
@@ -184,7 +184,9 @@ compartidas.
 
 Los barridos de la primera fase se cerraron con las secciones 1 a 7 de esta
 guía y las cumplieron. El barrido de Identidad (SUP-347) mostró que se puede ir
-más lejos sin perder funcionalidad: de 15 paquetes a 6 y de 51 archivos Go a 27.
+más lejos sin perder funcionalidad: de 15 paquetes de producción a 6 y de 31
+archivos Go de producción a 15 (de 51 a 28 contando las pruebas, que pasan a
+`tests/unit` y `tests/integration`).
 Esta sección recoge esos criterios para aplicarlos al resto de los servicios.
 No reemplaza las secciones anteriores: se suma a ellas.
 
@@ -260,8 +262,12 @@ No reemplaza las secciones anteriores: se suma a ellas.
   el número.
 - Nombres descriptivos en español, sin excepciones por convención del lenguaje
   (`peticion`/`respuesta`, `contexto`, `errorObtenido`, `prueba`, `indice`).
-- Sin guardas "por si acaso" contra estados que el propio arranque impide (por
-  ejemplo, un repositorio `nil` que `main` nunca pasa).
+- Sin comprobaciones redundantes en cada petición contra estados que el propio
+  arranque impide (por ejemplo, un repositorio `nil` que `main` nunca pasa).
+  En cambio, un componente **sí debe fallar al construirse** si le falta una
+  dependencia de seguridad obligatoria (por ejemplo, la revalidación de sesión):
+  eso no es una guarda "por si acaso", es un error de configuración que no debe
+  llegar a producción.
 - En el frontend, si el renombrado al español es grande, va en un PR aparte del
   de compactación para que ambos se puedan revisar.
 
@@ -269,9 +275,12 @@ No reemplaza las secciones anteriores: se suma a ellas.
 
 - El `README.md` del servicio es la fuente única: configuración, contratos,
   operación y pruebas. Las guías duplicadas se fusionan en él (sección 5).
-- El contexto para asistentes de IA pasa a un único `AGENTS.md` por servicio y
-  un `CLAUDE.md` que solo contiene `@AGENTS.md` (SUP-360), como indica la
-  sección 5.
+- Contexto para asistentes de IA: **hoy** se edita el `CLAUDE.md` del servicio
+  y se corre `python3 scripts/gen_service_map.py`, que sincroniza `GEMINI.md` y
+  `.github/copilot-instructions.md`, como indica el `CLAUDE.md` raíz.
+- **Cuando SUP-360 se fusione**, cada servicio pasará a un único `AGENTS.md` y
+  un `CLAUDE.md` que solo contiene `@AGENTS.md`. Hasta entonces, no se crean
+  esos archivos en los PR de compactación.
 
 ### 8.8 Validación
 
@@ -293,7 +302,7 @@ Igual que la sección 7, más estas casillas:
 - [ ] Normalizaciones de datos movidas a la base, con migración y comprobación al arrancar.
 - [ ] Tabla "Antes / Ahora" de contratos en el README, si hubo cambios.
 - [ ] Constantes con nombre, nombres en español y comentarios por sección.
-- [ ] `AGENTS.md` y `CLAUDE.md` con `@AGENTS.md`.
+- [ ] Contexto de IA actualizado según 8.7 (`CLAUDE.md` + `gen_service_map.py` hasta que se fusione SUP-360).
 - [ ] Validación de 8.8 en verde, con los resultados en el PR.
 - [ ] Pasos de despliegue (migraciones, variables) en la descripción del PR.
 
