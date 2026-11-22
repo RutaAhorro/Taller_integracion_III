@@ -1,3 +1,5 @@
+// helpers_test.go provee el arnés de integración del worker con Redis real,
+// servidor HTTP de Control falso y spiders simulados.
 package worker_test
 
 import (
@@ -15,325 +17,337 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 
+	cola "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/cola"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
+	dominio "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/dominio"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/worker"
 )
 
-func floatPtr(value float64) *float64 {
-	return &value
+// ===== Auxiliares de Prueba =====
+
+func punteroFlotante(valor float64) *float64 {
+	return &valor
 }
 
-func quietLogger() *slog.Logger {
+func registradorSilencioso() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func skipIfRedisUnavailable(prueba *testing.T, err error) {
+func omitirSiRedisNoDisponible(prueba *testing.T, errorConexion error) {
 	prueba.Helper()
 	if os.Getenv("REDIS_TEST_URL") != "" {
-		prueba.Fatalf("Redis configurado en REDIS_TEST_URL no está disponible: %v", err)
+		prueba.Fatalf("Redis configurado en REDIS_TEST_URL no está disponible: %v", errorConexion)
 	}
-	prueba.Skipf("Redis no disponible: %v", err)
+	prueba.Skipf("Redis no disponible: %v", errorConexion)
 }
 
-type apiState struct {
+// ===== Servidor Falso de Control =====
+
+type estadoAPI struct {
 	sync.Mutex
-	status       string
-	finalized    string
-	finalMessage string
-	blocked      int
-	batches      int
-	products     []domain.Product
-	supermarket  string
-	idempotency  string
+	estado       string
+	finalizado   string
+	mensajeFinal string
+	bloqueadas   int
+	lotes        int
+	productos    []dominio.Product
+	supermercado string
+	idempotencia string
 }
 
-func (estado *apiState) currentStatus() string {
+func (estado *estadoAPI) estadoActual() string {
 	estado.Lock()
 	defer estado.Unlock()
-	if estado.finalized != "" {
-		return estado.finalized
+	if estado.finalizado != "" {
+		return estado.finalizado
 	}
-	return estado.status
+	return estado.estado
 }
 
-func newAPI(prueba *testing.T, workID string) (*httptest.Server, *apiState) {
+func nuevaAPIFalsa(prueba *testing.T, trabajoID string) (*httptest.Server, *estadoAPI) {
 	prueba.Helper()
-	state := &apiState{status: "en_progreso"}
-	server := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
-		base := "/api/v1/scraper/trabajos/" + workID
+	estado := &estadoAPI{estado: "en_progreso"}
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		rutaBase := "/api/v1/scraper/trabajos/" + trabajoID
 		switch {
-		case peticion.Method == http.MethodGet && peticion.URL.Path == base:
-			writeJSON(respuesta, map[string]any{"id": workID, "estado": state.currentStatus()})
-		case peticion.Method == http.MethodPost && peticion.URL.Path == base+"/productos":
-			var payload struct {
-				Productos    []domain.Product `json:"productos"`
-				Supermercado string           `json:"supermercado"`
+		case peticion.Method == http.MethodGet && peticion.URL.Path == rutaBase:
+			escribirJSON(respuesta, map[string]any{"id": trabajoID, "estado": estado.estadoActual()})
+		case peticion.Method == http.MethodPost && peticion.URL.Path == rutaBase+"/productos":
+			var carga struct {
+				Productos    []dominio.Product `json:"productos"`
+				Supermercado string            `json:"supermercado"`
 			}
-			if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
-				prueba.Errorf("decode productos: %v", err)
+			if errorDecodificacion := json.NewDecoder(peticion.Body).Decode(&carga); errorDecodificacion != nil {
+				prueba.Errorf("decode productos: %v", errorDecodificacion)
 				return
 			}
-			state.Lock()
-			state.batches++
-			state.products = append(state.products, payload.Productos...)
-			state.supermarket = payload.Supermercado
-			state.idempotency = peticion.Header.Get("Idempotency-Key")
-			state.Unlock()
-			writeJSON(respuesta, map[string]any{
-				"total_recibidos":     len(payload.Productos),
-				"precios_registrados": len(payload.Productos),
-				"insertados":          len(payload.Productos),
+			estado.Lock()
+			estado.lotes++
+			estado.productos = append(estado.productos, carga.Productos...)
+			estado.supermercado = carga.Supermercado
+			estado.idempotencia = peticion.Header.Get("Idempotency-Key")
+			estado.Unlock()
+			escribirJSON(respuesta, map[string]any{
+				"total_recibidos":     len(carga.Productos),
+				"precios_registrados": len(carga.Productos),
+				"insertados":          len(carga.Productos),
 				"actualizados":        0,
 			})
-		case peticion.Method == http.MethodPut && peticion.URL.Path == base+"/finalizar":
-			var payload struct {
+		case peticion.Method == http.MethodPut && peticion.URL.Path == rutaBase+"/finalizar":
+			var carga struct {
 				Estado               string  `json:"estado"`
 				RespuestasBloqueadas *int    `json:"respuestas_bloqueadas"`
 				RegistroErrores      *string `json:"registro_errores"`
 			}
-			if err := json.NewDecoder(peticion.Body).Decode(&payload); err != nil {
-				prueba.Errorf("decode finalizar: %v", err)
+			if errorDecodificacion := json.NewDecoder(peticion.Body).Decode(&carga); errorDecodificacion != nil {
+				prueba.Errorf("decode finalizar: %v", errorDecodificacion)
 				return
 			}
-			state.Lock()
-			state.finalized = payload.Estado
-			if payload.RespuestasBloqueadas != nil {
-				state.blocked = *payload.RespuestasBloqueadas
+			estado.Lock()
+			estado.finalizado = carga.Estado
+			if carga.RespuestasBloqueadas != nil {
+				estado.bloqueadas = *carga.RespuestasBloqueadas
 			}
-			if payload.RegistroErrores != nil {
-				state.finalMessage = *payload.RegistroErrores
+			if carga.RegistroErrores != nil {
+				estado.mensajeFinal = *carga.RegistroErrores
 			}
-			state.Unlock()
-			writeJSON(respuesta, map[string]any{"id": workID, "estado": payload.Estado})
+			estado.Unlock()
+			escribirJSON(respuesta, map[string]any{"id": trabajoID, "estado": carga.Estado})
 		default:
 			http.NotFound(respuesta, peticion)
 		}
 	}))
-	return server, state
+	return servidor, estado
 }
 
-func writeJSON(respuesta http.ResponseWriter, payload any) {
+func escribirJSON(respuesta http.ResponseWriter, carga any) {
 	respuesta.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(respuesta).Encode(payload)
+	_ = json.NewEncoder(respuesta).Encode(carga)
 }
 
-type fakeSpider struct {
-	name  string
-	items []domain.Item
-	err   error
+// ===== Spider Falso =====
 
-	mu    sync.Mutex
-	calls int
-	job   domain.Job
+type spiderFalso struct {
+	nombre       string
+	elementos    []dominio.Item
+	errorForzado error
+
+	candado       sync.Mutex
+	llamadas      int
+	ultimoTrabajo dominio.Job
 }
 
-func (falso *fakeSpider) Name() string { return falso.name }
+func (falso *spiderFalso) Name() string {
+	return falso.nombre
+}
 
-func (falso *fakeSpider) Run(_ context.Context, job domain.Job, emit spiders.Emitter) error {
-	falso.mu.Lock()
-	falso.calls++
-	falso.job = job
-	falso.mu.Unlock()
-	for _, item := range falso.items {
-		if err := emit(item); err != nil {
-			return err
+func (falso *spiderFalso) Run(_ context.Context, trabajo dominio.Job, emitir extraccion.Emitter) error {
+	falso.candado.Lock()
+	falso.llamadas++
+	falso.ultimoTrabajo = trabajo
+	falso.candado.Unlock()
+
+	for _, elemento := range falso.elementos {
+		if errorEmision := emitir(elemento); errorEmision != nil {
+			return errorEmision
 		}
 	}
-	return falso.err
+	return falso.errorForzado
 }
 
-func (falso *fakeSpider) runCount() int {
-	falso.mu.Lock()
-	defer falso.mu.Unlock()
-	return falso.calls
+func (falso *spiderFalso) cantidadEjecuciones() int {
+	falso.candado.Lock()
+	defer falso.candado.Unlock()
+	return falso.llamadas
 }
 
-func (falso *fakeSpider) lastJob() domain.Job {
-	falso.mu.Lock()
-	defer falso.mu.Unlock()
-	return falso.job
+func (falso *spiderFalso) trabajoRecibido() dominio.Job {
+	falso.candado.Lock()
+	defer falso.candado.Unlock()
+	return falso.ultimoTrabajo
 }
 
-type harness struct {
-	workID       string
-	stream       string
-	group        string
-	index        string
-	dead         string
-	closedPrefix string
+// ===== Arnés de Integración del Worker =====
 
-	redis    *redis.Client
-	queue    *queue.Queue
-	worker   *worker.Worker
-	cfg      config.Config
-	server   *httptest.Server
-	apiState *apiState
-	spider   spiders.Spider
+type arnesWorker struct {
+	trabajoID     string
+	flujo         string
+	grupo         string
+	indice        string
+	colaMuerta    string
+	prefijoCierre string
+	clienteRedis  *redis.Client
+	colaTrabajos  *cola.Queue
+	servidor      *httptest.Server
+	estadoControl *estadoAPI
+	spider        *spiderFalso
+	configuracion config.Config
+	trabajador    *worker.Worker
 }
 
-func newHarness(prueba *testing.T, spider spiders.Spider, mutate func(*config.Config)) *harness {
+func nuevoArnesWorker(prueba *testing.T, spider *spiderFalso, mutar func(*config.Config)) *arnesWorker {
 	prueba.Helper()
-	workID := uuid.NewString()
-	server, state := newAPI(prueba, workID)
+	trabajoID := uuid.NewString()
+	servidor, estado := nuevaAPIFalsa(prueba, trabajoID)
 
-	redisURL := os.Getenv("REDIS_TEST_URL")
-	if redisURL == "" {
-		redisURL = "redis://localhost:6379/15"
+	urlRedis := os.Getenv("REDIS_TEST_URL")
+	if urlRedis == "" {
+		urlRedis = "redis://localhost:6379/15"
 	}
-	redisOptions, err := redis.ParseURL(redisURL)
-	if err != nil {
-		prueba.Fatalf("REDIS_TEST_URL inválida: %v", err)
+	opcionesRedis, errorParseo := redis.ParseURL(urlRedis)
+	if errorParseo != nil {
+		servidor.Close()
+		prueba.Fatalf("REDIS_TEST_URL inválida: %v", errorParseo)
 	}
-	redisOptions.DialTimeout = 500 * time.Millisecond
-	redisOptions.ReadTimeout = 2 * time.Second
-	redisOptions.WriteTimeout = 2 * time.Second
-	redisClient := redis.NewClient(redisOptions)
+	opcionesRedis.DialTimeout = 500 * time.Millisecond
+	opcionesRedis.ReadTimeout = 2 * time.Second
+	opcionesRedis.WriteTimeout = 2 * time.Second
+	clienteRedis := redis.NewClient(opcionesRedis)
 
-	pingCtx, pingCancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer pingCancel()
-	if err := redisClient.Ping(pingCtx).Err(); err != nil {
-		_ = redisClient.Close()
-		server.Close()
-		skipIfRedisUnavailable(prueba, err)
+	contextoPing, cancelarPing := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelarPing()
+	if errorPing := clienteRedis.Ping(contextoPing).Err(); errorPing != nil {
+		_ = clienteRedis.Close()
+		servidor.Close()
+		omitirSiRedisNoDisponible(prueba, errorPing)
 	}
 
-	prefix := "scraper:test:worker:" + uuid.NewString()
-	arnes := &harness{
-		workID:       workID,
-		stream:       prefix + ":stream",
-		group:        prefix + ":group",
-		index:        prefix + ":index",
-		dead:         prefix + ":dead",
-		closedPrefix: prefix + ":closed:",
-		redis:        redisClient,
-		server:       server,
-		apiState:     state,
-		spider:       spider,
+	prefijo := "scraper:test:worker:" + uuid.NewString()
+	arnes := &arnesWorker{
+		trabajoID:     trabajoID,
+		flujo:         prefijo + ":stream",
+		grupo:         prefijo + ":group",
+		indice:        prefijo + ":index",
+		colaMuerta:    prefijo + ":dead",
+		prefijoCierre: prefijo + ":closed:",
+		clienteRedis:  clienteRedis,
+		servidor:      servidor,
+		estadoControl: estado,
+		spider:        spider,
 	}
 	prueba.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = redisClient.Del(cleanupCtx, arnes.stream, arnes.index, arnes.dead, arnes.closedPrefix+arnes.workID).Err()
-		_ = redisClient.Close()
-		server.Close()
+		contextoLimpieza, cancelarLimpieza := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancelarLimpieza()
+		_ = clienteRedis.Del(contextoLimpieza, arnes.flujo, arnes.indice, arnes.colaMuerta, arnes.prefijoCierre+arnes.trabajoID).Err()
+		_ = clienteRedis.Close()
+		servidor.Close()
 	})
 
-	arnes.queue, err = queue.New(redisClient, queue.Options{
-		Stream:       arnes.stream,
-		Group:        arnes.group,
+	var errorCola error
+	arnes.colaTrabajos, errorCola = cola.NewQueue(clienteRedis, cola.Options{
+		Stream:       arnes.flujo,
+		Group:        arnes.grupo,
 		Lease:        10 * time.Second,
 		Consumer:     "worker-test",
-		IndexKey:     arnes.index,
-		DeadLetter:   arnes.dead,
-		ClosedPrefix: arnes.closedPrefix,
+		IndexKey:     arnes.indice,
+		DeadLetter:   arnes.colaMuerta,
+		ClosedPrefix: arnes.prefijoCierre,
 	})
-	if err != nil {
-		prueba.Fatalf("queue.New() error = %v", err)
+	if errorCola != nil {
+		prueba.Fatalf("cola.NewQueue() error = %v", errorCola)
 	}
-	if err := arnes.queue.EnsureGroup(context.Background()); err != nil {
-		prueba.Fatalf("EnsureGroup() error = %v", err)
+	if errorGrupo := arnes.colaTrabajos.EnsureGroup(context.Background()); errorGrupo != nil {
+		prueba.Fatalf("EnsureGroup() error = %v", errorGrupo)
 	}
 
-	cfg := config.Default()
-	cfg.APIURL = server.URL + "/api/v1/scraper/productos"
-	cfg.Token = "token"
-	cfg.StateDir = prueba.TempDir()
-	cfg.MinFreeBytes = 1 << 20
-	cfg.BatchSize = 2
-	cfg.APITimeout = 2 * time.Second
-	cfg.CrawlAttempts = 3
-	if mutate != nil {
-		mutate(&cfg)
+	configuracion := config.Default()
+	configuracion.APIURL = servidor.URL + "/api/v1/scraper/productos"
+	configuracion.Token = "token"
+	configuracion.StateDir = prueba.TempDir()
+	configuracion.MinFreeBytes = 1 << 20
+	configuracion.BatchSize = 2
+	configuracion.APITimeout = 2 * time.Second
+	configuracion.CrawlAttempts = 3
+	if mutar != nil {
+		mutar(&configuracion)
 	}
-	arnes.cfg = cfg
+	arnes.configuracion = configuracion
 
-	registry := spiders.NewRegistry(nil, prueba.TempDir(), 100, quietLogger())
-	registry.Register(spider)
-	arnes.worker, err = worker.New(
-		cfg,
-		controlscraping.New(cfg.APIURL, cfg.Token, cfg.APITimeout),
-		arnes.queue,
-		registry,
-		quietLogger(),
+	registro := &extraccion.Registry{}
+	registro.Register(spider)
+	var errorWorker error
+	arnes.trabajador, errorWorker = worker.New(
+		configuracion,
+		cola.NewControlClient(configuracion.APIURL, configuracion.Token, configuracion.APITimeout),
+		arnes.colaTrabajos,
+		registro,
+		registradorSilencioso(),
 	)
-	if err != nil {
-		prueba.Fatalf("worker.New() error = %v", err)
+	if errorWorker != nil {
+		prueba.Fatalf("worker.New() error = %v", errorWorker)
 	}
 	return arnes
 }
 
-func (arnes *harness) addJob(prueba *testing.T, raw string) string {
+func (arnes *arnesWorker) agregarTrabajo(prueba *testing.T, cargaCruda string) string {
 	prueba.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	messageID, err := arnes.redis.XAdd(ctx, &redis.XAddArgs{
-		Stream: arnes.stream,
-		Values: map[string]any{"payload": raw},
+	contexto, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelar()
+	mensajeID, errorAdicion := arnes.clienteRedis.XAdd(contexto, &redis.XAddArgs{
+		Stream: arnes.flujo,
+		Values: map[string]any{"payload": cargaCruda},
 	}).Result()
-	if err != nil {
-		prueba.Fatalf("XAdd() error = %v", err)
+	if errorAdicion != nil {
+		prueba.Fatalf("XAdd() error = %v", errorAdicion)
 	}
-	if err := arnes.redis.HSet(ctx, arnes.index, arnes.workID, messageID).Err(); err != nil {
-		prueba.Fatalf("HSet() error = %v", err)
+	if errorIndice := arnes.clienteRedis.HSet(contexto, arnes.indice, arnes.trabajoID, mensajeID).Err(); errorIndice != nil {
+		prueba.Fatalf("HSet() error = %v", errorIndice)
 	}
-	return messageID
+	return mensajeID
 }
 
-func (arnes *harness) jobPayload(extra string) string {
-	raw := `{"trabajo_id":"` + arnes.workID + `","spider":"` + arnes.spider.Name() + `"`
+func (arnes *arnesWorker) cargaTrabajo(extra string) string {
+	cargaCruda := `{"trabajo_id":"` + arnes.trabajoID + `","spider":"` + arnes.spider.Name() + `"`
 	if extra != "" {
-		raw += "," + extra
+		cargaCruda += "," + extra
 	}
-	return raw + "}"
+	return cargaCruda + "}"
 }
 
-// runJob encola el mensaje, lo reclama como el consumidor y lo entrega al
-// worker, igual que el ciclo real.
-func (arnes *harness) runJob(prueba *testing.T, raw string) {
+// ejecutarTrabajo encola el mensaje, lo reclama como el consumidor y lo entrega
+// al worker, igual que el ciclo real.
+func (arnes *arnesWorker) ejecutarTrabajo(prueba *testing.T, cargaCruda string) {
 	prueba.Helper()
-	arnes.addJob(prueba, raw)
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	message, err := arnes.queue.Receive(ctx)
-	if err != nil || message == nil {
-		prueba.Fatalf("Receive() = %+v, %v", message, err)
+	arnes.agregarTrabajo(prueba, cargaCruda)
+	contexto, cancelar := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancelar()
+	mensaje, errorRecepcion := arnes.colaTrabajos.Receive(contexto)
+	if errorRecepcion != nil || mensaje == nil {
+		prueba.Fatalf("Receive() = %+v, %v", mensaje, errorRecepcion)
 	}
-	arnes.worker.HandleMessage(ctx, message)
+	arnes.trabajador.HandleMessage(contexto, mensaje)
 }
 
-func (arnes *harness) deadLetters(prueba *testing.T) []redis.XMessage {
+func (arnes *arnesWorker) mensajesMuertos(prueba *testing.T) []redis.XMessage {
 	prueba.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	messages, err := arnes.redis.XRange(ctx, arnes.dead, "-", "+").Result()
-	if err != nil {
-		prueba.Fatalf("XRange(dead) error = %v", err)
+	contexto, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelar()
+	mensajes, errorRango := arnes.clienteRedis.XRange(contexto, arnes.colaMuerta, "-", "+").Result()
+	if errorRango != nil {
+		prueba.Fatalf("XRange(dead) error = %v", errorRango)
 	}
-	return messages
+	return mensajes
 }
 
-func (arnes *harness) streamLength(prueba *testing.T) int64 {
+func (arnes *arnesWorker) longitudFlujo(prueba *testing.T) int64 {
 	prueba.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	length, err := arnes.redis.XLen(ctx, arnes.stream).Result()
-	if err != nil {
-		prueba.Fatalf("XLen() error = %v", err)
+	contexto, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelar()
+	longitud, errorLongitud := arnes.clienteRedis.XLen(contexto, arnes.flujo).Result()
+	if errorLongitud != nil {
+		prueba.Fatalf("XLen() error = %v", errorLongitud)
 	}
-	return length
+	return longitud
 }
 
-func (arnes *harness) pendingMessages(prueba *testing.T) int64 {
+func (arnes *arnesWorker) mensajesPendientes(prueba *testing.T) int64 {
 	prueba.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	pending, err := arnes.redis.XPending(ctx, arnes.stream, arnes.group).Result()
-	if err != nil {
-		prueba.Fatalf("XPending() error = %v", err)
+	contexto, cancelar := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelar()
+	pendientes, errorPendientes := arnes.clienteRedis.XPending(contexto, arnes.flujo, arnes.grupo).Result()
+	if errorPendientes != nil {
+		prueba.Fatalf("XPending() error = %v", errorPendientes)
 	}
-	return pending.Count
+	return pendientes.Count
 }

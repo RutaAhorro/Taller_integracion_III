@@ -12,7 +12,7 @@ se cumple hoy.
 | RNF-01 | Extracción concurrente | La extracción no bloquea las demás operaciones | Scraper Go como worker separado, con trabajos por Redis Streams |
 | RNF-02 | Integridad de la información | Si la tienda se cae a mitad de la extracción, no se pierden los precios anteriores | Ingesta transaccional e idempotente en Catálogo ([D07](../Decisiones/07_Ingesta_idempotente.md)) |
 | RNF-03 | Frecuencia de actualización | Las actualizaciones masivas corren en horarios de baja demanda, sin detener la plataforma | **Parcial:** los trabajos corren en segundo plano, pero no hay programación horaria (no existe un CronJob); hoy se lanzan a mano con el bot |
-| RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un spider por cadena en `scraper_go/internal/spiders/` |
+| RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un archivo por cadena (spider y parser) en `scraper_go/internal/extraccion/` |
 
 ## IA y servicios externos
 
