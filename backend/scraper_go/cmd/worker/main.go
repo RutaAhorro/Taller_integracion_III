@@ -12,11 +12,9 @@ import (
 
 	"github.com/redis/go-redis/v9"
 
+	cola "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/cola"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/config"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/controlscraping"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/crawler"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/queue"
-	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/spiders"
+	extraccion "github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/extraccion"
 	"github.com/danirc2024/Taller_integracion_III/backend/scraper_go/internal/worker"
 )
 
@@ -24,27 +22,20 @@ import (
 
 // main es el punto de entrada del demonio trabajador del scraper.
 func main() {
-	if errorObtenido := run(); errorObtenido != nil {
+	if errorObtenido := ejecutar(); errorObtenido != nil {
 		slog.Error("worker_exit", "error", errorObtenido)
 		os.Exit(1)
 	}
 }
 
-// run ejecuta el bucle de procesamiento continuo o la tarea solicitada.
-func run() error {
+// ejecutar inicializa las dependencias de red, catálogo y cola, y arranca el worker.
+func ejecutar() error {
 	configuracion, errorObtenido := config.FromEnv()
 	if errorObtenido != nil {
 		return errorObtenido
 	}
 	registrador := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: configuracion.LogLevel}))
 	slog.SetDefault(registrador)
-
-	if configuracion.Token == "" {
-		return fmt.Errorf("SCRAPING_SERVICE_TOKEN no configurado: Control de scraping rechazaría al worker")
-	}
-	if errorObtenido := os.MkdirAll(configuracion.StateDir, 0o700); errorObtenido != nil {
-		return errorObtenido
-	}
 
 	contexto, parada := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer parada()
@@ -65,7 +56,7 @@ func run() error {
 		return fmt.Errorf("no se pudo conectar a Redis: %w", errorObtenido)
 	}
 
-	clienteHTTP := crawler.New(crawler.Options{
+	clienteHTTP := extraccion.New(extraccion.Options{
 		UserAgent:        configuracion.UserAgent,
 		Delay:            configuracion.DownloadDelay,
 		Timeout:          configuracion.DownloadTimeout,
@@ -78,12 +69,12 @@ func run() error {
 		BackoffMax:       configuracion.BackoffMax,
 		Logger:           registrador,
 	})
-	registro, errorObtenido := spiders.NewRegistryFromEnv(clienteHTTP, configuracion.CategoryDir, configuracion.MaxPages, registrador)
+	registro, errorObtenido := extraccion.NewRegistryFromConfig(configuracion, clienteHTTP, configuracion.CategoryDir, configuracion.MaxPages, registrador)
 	if errorObtenido != nil {
 		return errorObtenido
 	}
 
-	clienteCola, errorObtenido := queue.New(clienteRedis, queue.Options{
+	clienteCola, errorObtenido := cola.NewQueue(clienteRedis, cola.Options{
 		Stream:    configuracion.QueueName,
 		Group:     configuracion.Group,
 		Lease:     configuracion.Lease,
@@ -93,7 +84,7 @@ func run() error {
 	if errorObtenido != nil {
 		return errorObtenido
 	}
-	clienteAPI := controlscraping.New(configuracion.APIURL, configuracion.Token, configuracion.APITimeout)
+	clienteAPI := cola.NewControlClient(configuracion.APIURL, configuracion.Token, configuracion.APITimeout)
 
 	trabajadorScraper, errorObtenido := worker.New(configuracion, clienteAPI, clienteCola, registro, registrador)
 	if errorObtenido != nil {

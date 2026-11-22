@@ -15,5 +15,5 @@
 **Alternativa descartada:** quedarse con Scrapy. Tiene un ecosistema maduro, pero consume más memoria, obliga a mantener dependencias de Python y la versión original escribía directamente en la base de datos.
 
 **Consecuencias:**
-- Los spiders de Scrapy se reescribieron en `internal/spiders/*.go`.
+- Los spiders de Scrapy se reescribieron en Go; hoy viven en `internal/extraccion/<cadena>.go` (compactación SUP-388).
 - Pendiente: Compose apunta a `SCRAPER_CATEGORY_DIR=/app/categories`, pero el Dockerfile copia las categorías a `/app/research`.
