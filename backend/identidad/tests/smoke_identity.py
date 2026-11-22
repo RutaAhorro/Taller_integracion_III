@@ -282,7 +282,7 @@ try:
     request('/api/v1/admin/productos',opener=new_client)
     request('/api/v1/scraper/trabajos',201,method='POST',data={'cadena_id':1})
     request('/_gateway/ready')
-    body,_=request('/_gateway/dependencies',503); assert body['checks']['backend']=='ok' and body['checks']['catalogo']=='ok' and body['checks']['identidad']=='error'
+    body,_=request('/_gateway/dependencies',503); assert body['checks']['scraping']=='ok' and body['checks']['catalogo']=='ok' and body['checks']['identidad']=='error'
 finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','identidad')
 request('/api/v1/auth/me',opener=new_client)
 compose('stop','control_scraping')
@@ -290,7 +290,7 @@ try:
     request('/api/v1/auth/me',opener=new_client)
     request('/api/v1/admin/productos',opener=new_client)
     request('/_gateway/ready')
-    body,_=request('/_gateway/dependencies',503); assert body['checks']['identidad']=='ok' and body['checks']['backend']=='error'
+    body,_=request('/_gateway/dependencies',503); assert body['checks']['identidad']=='ok' and body['checks']['scraping']=='error'
 finally: compose('up','-d','--no-deps','--wait','--wait-timeout','90','control_scraping')
 
 # Independent replicas: only Identity is recreated/scaled; sessions survive.

@@ -1,3 +1,8 @@
+// Package config lee y valida la configuración del Gateway desde el entorno.
+//
+// El Gateway sólo enruta: aquí no hay credenciales, base de datos ni Redis.
+// Toda la validación ocurre al arrancar para que un valor mal escrito impida
+// iniciar en vez de dejar rutas inalcanzables con el Gateway marcado como sano.
 package config
 
 import (
@@ -11,222 +16,291 @@ import (
 	"unicode"
 )
 
-type Config struct {
-	ListenAddr            string
-	Backend               *url.URL
-	Catalogo              *url.URL
-	Identidad             *url.URL
-	Scraping              *url.URL
-	Rutas                 *url.URL
-	IA                    *url.URL
-	RequestTimeout        time.Duration
-	DialTimeout           time.Duration
-	ResponseHeaderTimeout time.Duration
-	ReadHeaderTimeout     time.Duration
-	IdleTimeout           time.Duration
-	ShutdownTimeout       time.Duration
-	ReadinessTimeout      time.Duration
-	KeepAliveTimeout      time.Duration
-	TrustedProxies        []netip.Prefix
-	CatalogPrefixes       []string
-	IdentityPrefixes      []string
-	RoutesPrefixes        []string
-	ScrapingPrefixes      []string
-	IAPrefixes            []string
+// ===== Valores por defecto =====
+
+const (
+	// direccionEscuchaPorDefecto es el puerto del binario fuera de Compose/K8s,
+	// que fijan GATEWAY_LISTEN_ADDR=:8080.
+	direccionEscuchaPorDefecto = ":8082"
+	puertoMinimo               = 1
+	puertoMaximo               = 65535
+
+	limitePeticionPorDefecto           = 30 * time.Second
+	limiteConexionPorDefecto           = 5 * time.Second
+	limiteCabecerasRespuestaPorDefecto = 10 * time.Second
+	limiteLecturaCabecerasPorDefecto   = 5 * time.Second
+	limiteInactividadPorDefecto        = 60 * time.Second
+	limiteApagadoPorDefecto            = 10 * time.Second
+	limiteDiagnosticoPorDefecto        = 2 * time.Second
+	limiteKeepAlivePorDefecto          = 30 * time.Second
+)
+
+// ===== Variables de entorno =====
+
+const (
+	variableDireccionEscucha = "GATEWAY_LISTEN_ADDR"
+	variableScraping         = "SCRAPING_URL"
+	variableCatalogo         = "CATALOGO_URL"
+	variableIdentidad        = "IDENTIDAD_URL"
+	variableRutas            = "RUTAS_URL"
+	variableIA               = "IA_URL"
+	variableProxiesFiables   = "GATEWAY_TRUSTED_PROXIES"
+)
+
+// ===== Tipos =====
+
+// Configuracion reúne los orígenes de cada dominio, los límites de tiempo y
+// los prefijos de ruta. Un origen nil deja sus prefijos sin enrutar (404).
+type Configuracion struct {
+	DireccionEscucha string
+
+	// Scraping es obligatorio: además de sus prefijos, Control es dueño de
+	// /, /health y /api/v1/health.
+	Scraping  *url.URL
+	Catalogo  *url.URL
+	Identidad *url.URL
+	Rutas     *url.URL
+	IA        *url.URL
+
+	LimitePeticion           time.Duration
+	LimiteConexion           time.Duration
+	LimiteCabecerasRespuesta time.Duration
+	LimiteLecturaCabeceras   time.Duration
+	LimiteInactividad        time.Duration
+	LimiteApagado            time.Duration
+	LimiteDiagnostico        time.Duration
+	LimiteKeepAlive          time.Duration
+
+	ProxiesFiables []netip.Prefix
+
+	PrefijosIdentidad []string
+	PrefijosCatalogo  []string
+	PrefijosRutas     []string
+	PrefijosScraping  []string
+	PrefijosIA        []string
 }
 
-// Load reads configuration without credentials or database access.
-func Load(getenv func(string) string) (Config, error) {
-	c := Config{ListenAddr: ":8082"}
-	if value := getenv("GATEWAY_LISTEN_ADDR"); value != "" {
-		c.ListenAddr = value
+// ===== Carga =====
+
+// Cargar lee la configuración con la función de entorno recibida (os.Getenv
+// en producción, un mapa en las pruebas) y devuelve el primer error hallado.
+func Cargar(leerEntorno func(string) string) (Configuracion, error) {
+	configuracion := Configuracion{DireccionEscucha: direccionEscuchaPorDefecto}
+	if valor := leerEntorno(variableDireccionEscucha); valor != "" {
+		configuracion.DireccionEscucha = valor
 	}
-	_, port, err := net.SplitHostPort(c.ListenAddr)
-	if err != nil {
-		return c, fmt.Errorf("GATEWAY_LISTEN_ADDR must be a host:port address")
+	_, puerto, errorDireccion := net.SplitHostPort(configuracion.DireccionEscucha)
+	if errorDireccion != nil {
+		return configuracion, fmt.Errorf("%s debe ser una dirección host:puerto", variableDireccionEscucha)
 	}
-	n, err := strconv.Atoi(port)
-	if err != nil || n < 1 || n > 65535 {
-		return c, fmt.Errorf("GATEWAY_LISTEN_ADDR must have a port between 1 and 65535")
+	if !puertoValido(puerto) {
+		return configuracion, fmt.Errorf("%s debe tener un puerto entre %d y %d", variableDireccionEscucha, puertoMinimo, puertoMaximo)
 	}
 
-	if value := getenv("SCRAPING_URL"); value != "" {
-		c.Scraping, err = parseOrigin("SCRAPING_URL", value)
-		if err != nil {
-			return c, err
-		}
+	if errorOrigenes := cargarOrigenes(leerEntorno, &configuracion); errorOrigenes != nil {
+		return configuracion, errorOrigenes
 	}
-	if value := getenv("BACKEND_URL"); value != "" || c.Scraping == nil {
-		c.Backend, err = parseOrigin("BACKEND_URL", value)
-		if err != nil {
-			return c, err
-		}
+	if errorLimites := cargarLimites(leerEntorno, &configuracion); errorLimites != nil {
+		return configuracion, errorLimites
 	}
-	// Empty is an explicit legacy mode for rollback with a pre-cutover API image.
-	if value := getenv("CATALOGO_URL"); value != "" {
-		c.Catalogo, err = parseOrigin("CATALOGO_URL", value)
-		if err != nil {
-			return c, err
-		}
+	if errorPrefijos := cargarPrefijos(leerEntorno, &configuracion); errorPrefijos != nil {
+		return configuracion, errorPrefijos
 	}
+	proxies, errorProxies := interpretarProxiesFiables(leerEntorno(variableProxiesFiables))
+	if errorProxies != nil {
+		return configuracion, errorProxies
+	}
+	configuracion.ProxiesFiables = proxies
+	return configuracion, nil
+}
 
-	// Vacío sólo permite rollback a una API histórica que todavía aloje auth.
-	if value := getenv("IDENTIDAD_URL"); value != "" {
-		c.Identidad, err = parseOrigin("IDENTIDAD_URL", value)
-		if err != nil {
-			return c, err
-		}
+// cargarOrigenes lee el origen de cada dominio. SCRAPING_URL es obligatorio;
+// los demás son opcionales y, vacíos, dejan sus prefijos respondiendo 404.
+func cargarOrigenes(leerEntorno func(string) string, configuracion *Configuracion) error {
+	valorScraping := leerEntorno(variableScraping)
+	if valorScraping == "" {
+		return fmt.Errorf("%s es obligatoria: Control de scraping es dueño de /health y /api/v1/scraper", variableScraping)
 	}
-
-	// SUP-240: motor de rutas, dueño de listas. Vacío deja /api/v1/listas sin enrutar.
-	if value := getenv("RUTAS_URL"); value != "" {
-		c.Rutas, err = parseOrigin("RUTAS_URL", value)
-		if err != nil {
-			return c, err
-		}
+	scraping, errorScraping := interpretarOrigen(variableScraping, valorScraping)
+	if errorScraping != nil {
+		return errorScraping
 	}
+	configuracion.Scraping = scraping
 
-	// SUP-278: IA conversacional, dueña de chat. Vacío deja /api/v1/chat sin enrutar.
-	if value := getenv("IA_URL"); value != "" {
-		c.IA, err = parseOrigin("IA_URL", value)
-		if err != nil {
-			return c, err
-		}
-	}
-
-	for _, item := range []struct {
-		name     string
-		value    *time.Duration
-		fallback time.Duration
+	for _, opcional := range []struct {
+		variable string
+		destino  **url.URL
 	}{
-		{"GATEWAY_REQUEST_TIMEOUT", &c.RequestTimeout, 30 * time.Second},
-		{"GATEWAY_DIAL_TIMEOUT", &c.DialTimeout, 5 * time.Second},
-		{"GATEWAY_RESPONSE_HEADER_TIMEOUT", &c.ResponseHeaderTimeout, 10 * time.Second},
-		{"GATEWAY_READ_HEADER_TIMEOUT", &c.ReadHeaderTimeout, 5 * time.Second},
-		{"GATEWAY_IDLE_TIMEOUT", &c.IdleTimeout, 60 * time.Second},
-		{"GATEWAY_SHUTDOWN_TIMEOUT", &c.ShutdownTimeout, 10 * time.Second},
-		{"GATEWAY_READINESS_TIMEOUT", &c.ReadinessTimeout, 2 * time.Second},
-		{"GATEWAY_KEEPALIVE_TIMEOUT", &c.KeepAliveTimeout, 30 * time.Second},
+		{variableCatalogo, &configuracion.Catalogo},
+		{variableIdentidad, &configuracion.Identidad},
+		{variableRutas, &configuracion.Rutas},
+		{variableIA, &configuracion.IA},
 	} {
-		*item.value = item.fallback
-		if value := getenv(item.name); value != "" {
-			duration, err := time.ParseDuration(value)
-			if err != nil || duration <= 0 {
-				return c, fmt.Errorf("%s must be a positive duration, for example 5s", item.name)
-			}
-			*item.value = duration
+		valor := leerEntorno(opcional.variable)
+		if valor == "" {
+			continue
 		}
+		origen, errorOrigen := interpretarOrigen(opcional.variable, valor)
+		if errorOrigen != nil {
+			return errorOrigen
+		}
+		*opcional.destino = origen
 	}
+	return nil
+}
 
-	// Route prefixes are validated at startup: a malformed value would leave
-	// routes unreachable while the Gateway still reports itself healthy.
-	seenPrefixes := map[string]string{}
-	for _, item := range []struct {
-		name     string
-		value    *[]string
-		fallback []string
+// cargarLimites lee las duraciones; vacías usan el valor por defecto.
+func cargarLimites(leerEntorno func(string) string, configuracion *Configuracion) error {
+	for _, limite := range []struct {
+		variable   string
+		destino    *time.Duration
+		porDefecto time.Duration
 	}{
-		{"GATEWAY_IDENTIDAD_PREFIXES", &c.IdentityPrefixes, []string{"/api/v1/auth", "/api/v1/admin/usuarios"}},
-		{"GATEWAY_CATALOGO_PREFIXES", &c.CatalogPrefixes, []string{"/api/v1/productos", "/api/v1/admin/productos"}},
-		{"GATEWAY_RUTAS_PREFIXES", &c.RoutesPrefixes, []string{"/api/v1/listas"}},
-		{"GATEWAY_SCRAPING_PREFIXES", &c.ScrapingPrefixes, []string{"/api/v1/scraper", "/swagger"}},
-		{"GATEWAY_IA_PREFIXES", &c.IAPrefixes, []string{"/api/v1/chat"}},
+		{"GATEWAY_REQUEST_TIMEOUT", &configuracion.LimitePeticion, limitePeticionPorDefecto},
+		{"GATEWAY_DIAL_TIMEOUT", &configuracion.LimiteConexion, limiteConexionPorDefecto},
+		{"GATEWAY_RESPONSE_HEADER_TIMEOUT", &configuracion.LimiteCabecerasRespuesta, limiteCabecerasRespuestaPorDefecto},
+		{"GATEWAY_READ_HEADER_TIMEOUT", &configuracion.LimiteLecturaCabeceras, limiteLecturaCabecerasPorDefecto},
+		{"GATEWAY_IDLE_TIMEOUT", &configuracion.LimiteInactividad, limiteInactividadPorDefecto},
+		{"GATEWAY_SHUTDOWN_TIMEOUT", &configuracion.LimiteApagado, limiteApagadoPorDefecto},
+		{"GATEWAY_READINESS_TIMEOUT", &configuracion.LimiteDiagnostico, limiteDiagnosticoPorDefecto},
+		{"GATEWAY_KEEPALIVE_TIMEOUT", &configuracion.LimiteKeepAlive, limiteKeepAlivePorDefecto},
 	} {
-		prefixes, err := parsePrefixList(item.name, getenv(item.name), item.fallback)
-		if err != nil {
-			return c, err
+		*limite.destino = limite.porDefecto
+		valor := leerEntorno(limite.variable)
+		if valor == "" {
+			continue
 		}
-		for _, prefix := range prefixes {
-			if owner, duplicated := seenPrefixes[prefix]; duplicated {
-				return c, fmt.Errorf("%s: prefix %q is already assigned by %s", item.name, prefix, owner)
-			}
-			seenPrefixes[prefix] = item.name
+		duracion, errorDuracion := time.ParseDuration(valor)
+		if errorDuracion != nil || duracion <= 0 {
+			return fmt.Errorf("%s debe ser una duración positiva, por ejemplo 5s", limite.variable)
 		}
-		*item.value = prefixes
+		*limite.destino = duracion
 	}
-
-	if value := getenv("GATEWAY_TRUSTED_PROXIES"); value != "" {
-		for _, entry := range strings.Split(value, ",") {
-			entry = strings.TrimSpace(entry)
-			prefix, err := netip.ParsePrefix(entry)
-			if err != nil {
-				addr, addrErr := netip.ParseAddr(entry)
-				if addrErr != nil {
-					return c, fmt.Errorf("GATEWAY_TRUSTED_PROXIES must contain IP addresses or CIDRs")
-				}
-				prefix = netip.PrefixFrom(addr, addr.BitLen())
-			}
-			c.TrustedProxies = append(c.TrustedProxies, prefix.Masked())
-		}
-	}
-	return c, nil
+	return nil
 }
 
-func parseOrigin(name, value string) (*url.URL, error) {
-	target, err := url.Parse(value)
-	if err != nil || target == nil || target.Hostname() == "" ||
-		(target.Scheme != "http" && target.Scheme != "https") ||
-		target.User != nil || target.Opaque != "" ||
-		(target.Path != "" && target.Path != "/") ||
-		target.RawQuery != "" || target.ForceQuery || target.Fragment != "" ||
-		strings.ContainsAny(target.Host, " \t\r\n") {
-		return nil, fmt.Errorf("%s must be an http(s) origin without credentials, path, query or fragment", name)
-	}
-	if port := target.Port(); port != "" {
-		n, err := strconv.Atoi(port)
-		if err != nil || n < 1 || n > 65535 {
-			return nil, fmt.Errorf("%s port must be between 1 and 65535", name)
+// cargarPrefijos lee los prefijos de cada dominio y rechaza que dos dominios
+// reclamen el mismo, porque sólo uno de ellos recibiría el tráfico.
+func cargarPrefijos(leerEntorno func(string) string, configuracion *Configuracion) error {
+	duenoPorPrefijo := map[string]string{}
+	for _, dominio := range []struct {
+		variable   string
+		destino    *[]string
+		porDefecto []string
+	}{
+		{"GATEWAY_IDENTIDAD_PREFIXES", &configuracion.PrefijosIdentidad, []string{"/api/v1/auth", "/api/v1/admin/usuarios"}},
+		{"GATEWAY_CATALOGO_PREFIXES", &configuracion.PrefijosCatalogo, []string{"/api/v1/productos", "/api/v1/admin/productos"}},
+		{"GATEWAY_RUTAS_PREFIXES", &configuracion.PrefijosRutas, []string{"/api/v1/listas"}},
+		{"GATEWAY_SCRAPING_PREFIXES", &configuracion.PrefijosScraping, []string{"/api/v1/scraper", "/swagger"}},
+		{"GATEWAY_IA_PREFIXES", &configuracion.PrefijosIA, []string{"/api/v1/chat"}},
+	} {
+		prefijos, errorPrefijos := interpretarListaPrefijos(dominio.variable, leerEntorno(dominio.variable), dominio.porDefecto)
+		if errorPrefijos != nil {
+			return errorPrefijos
 		}
+		for _, prefijo := range prefijos {
+			if dueno, repetido := duenoPorPrefijo[prefijo]; repetido {
+				return fmt.Errorf("%s: el prefijo %q ya lo asigna %s", dominio.variable, prefijo, dueno)
+			}
+			duenoPorPrefijo[prefijo] = dominio.variable
+		}
+		*dominio.destino = prefijos
 	}
-	return target, nil
+	return nil
 }
 
-// parsePrefixList reads a comma-separated list of path prefixes. An empty
-// value keeps the defaults. Each entry must be an absolute path such as
-// /api/v1/productos: no scheme, host, query, fragment, percent-encoding, dot
-// segments or inner whitespace. A trailing slash is trimmed, so "/api/v1/x/"
-// behaves as "/api/v1/x" and still matches its child routes. Empty entries,
-// the bare root "/" and duplicates are rejected so startup fails fast.
-func parsePrefixList(name, value string, fallback []string) ([]string, error) {
-	if strings.TrimSpace(value) == "" {
-		return append([]string(nil), fallback...), nil
+// ===== Validación de valores =====
+
+// puertoValido indica si el texto es un puerto TCP utilizable.
+func puertoValido(texto string) bool {
+	numero, errorNumero := strconv.Atoi(texto)
+	return errorNumero == nil && numero >= puertoMinimo && numero <= puertoMaximo
+}
+
+// interpretarOrigen acepta sólo un origen http(s) sin credenciales, ruta,
+// query ni fragmento. El error nunca repite el valor, que podría traer secretos.
+func interpretarOrigen(variable, valor string) (*url.URL, error) {
+	origen, errorURL := url.Parse(valor)
+	if errorURL != nil || origen == nil || origen.Hostname() == "" ||
+		(origen.Scheme != "http" && origen.Scheme != "https") ||
+		origen.User != nil || origen.Opaque != "" ||
+		(origen.Path != "" && origen.Path != "/") ||
+		origen.RawQuery != "" || origen.ForceQuery || origen.Fragment != "" ||
+		strings.ContainsAny(origen.Host, " \t\r\n") {
+		return nil, fmt.Errorf("%s debe ser un origen http(s) sin credenciales, ruta, query ni fragmento", variable)
 	}
-	entries := strings.Split(value, ",")
-	prefixes := make([]string, 0, len(entries))
-	seen := make(map[string]bool, len(entries))
-	for _, entry := range entries {
-		prefix := strings.TrimSpace(entry)
-		invalid := func(reason string) error {
-			return fmt.Errorf("%s: invalid prefix %q: %s", name, prefix, reason)
+	if puerto := origen.Port(); puerto != "" && !puertoValido(puerto) {
+		return nil, fmt.Errorf("el puerto de %s debe estar entre %d y %d", variable, puertoMinimo, puertoMaximo)
+	}
+	return origen, nil
+}
+
+// interpretarListaPrefijos lee prefijos separados por comas; vacío usa los
+// valores por defecto. Cada entrada debe ser una ruta absoluta sin esquema,
+// host, query, fragmento, codificación %, segmentos punto ni espacios. La
+// barra final se recorta para que "/api/v1/x/" siga cubriendo sus rutas hijas.
+func interpretarListaPrefijos(variable, valor string, porDefecto []string) ([]string, error) {
+	if strings.TrimSpace(valor) == "" {
+		return append([]string(nil), porDefecto...), nil
+	}
+	entradas := strings.Split(valor, ",")
+	prefijos := make([]string, 0, len(entradas))
+	vistos := make(map[string]bool, len(entradas))
+	for _, entrada := range entradas {
+		prefijo := strings.TrimSpace(entrada)
+		invalido := func(motivo string) error {
+			return fmt.Errorf("%s: prefijo inválido %q: %s", variable, prefijo, motivo)
 		}
 		switch {
-		case prefix == "":
-			return nil, fmt.Errorf("%s: empty entry in %q", name, value)
-		case strings.Contains(prefix, "://"):
-			return nil, invalid("must be a path, not a URL")
-		case !strings.HasPrefix(prefix, "/") || strings.HasPrefix(prefix, "//"):
-			return nil, invalid("must start with a single /")
-		case strings.ContainsAny(prefix, "?#"):
-			return nil, invalid("must not contain query or fragment")
-		case strings.Contains(prefix, "%"):
-			return nil, invalid("must not be percent-encoded")
-		case strings.IndexFunc(prefix, unicode.IsSpace) >= 0:
-			return nil, invalid("must not contain whitespace")
+		case prefijo == "":
+			return nil, fmt.Errorf("%s: entrada vacía en %q", variable, valor)
+		case strings.Contains(prefijo, "://"):
+			return nil, invalido("debe ser una ruta, no una URL")
+		case !strings.HasPrefix(prefijo, "/") || strings.HasPrefix(prefijo, "//"):
+			return nil, invalido("debe empezar con una sola /")
+		case strings.ContainsAny(prefijo, "?#"):
+			return nil, invalido("no debe tener query ni fragmento")
+		case strings.Contains(prefijo, "%"):
+			return nil, invalido("no debe estar codificado con %")
+		case strings.IndexFunc(prefijo, unicode.IsSpace) >= 0:
+			return nil, invalido("no debe tener espacios")
 		}
-		prefix = strings.TrimRight(prefix, "/")
-		if prefix == "" {
-			return nil, invalid("the root / would capture every route")
+		prefijo = strings.TrimRight(prefijo, "/")
+		if prefijo == "" {
+			return nil, invalido("la raíz / capturaría todas las rutas")
 		}
-		for _, segment := range strings.Split(prefix[1:], "/") {
-			if segment == "" || segment == "." || segment == ".." {
-				return nil, invalid("must not contain empty or dot segments")
+		for _, segmento := range strings.Split(prefijo[1:], "/") {
+			if segmento == "" || segmento == "." || segmento == ".." {
+				return nil, invalido("no debe tener segmentos vacíos ni punto")
 			}
 		}
-		if seen[prefix] {
-			return nil, invalid("duplicated")
+		if vistos[prefijo] {
+			return nil, invalido("repetido")
 		}
-		seen[prefix] = true
-		prefixes = append(prefixes, prefix)
+		vistos[prefijo] = true
+		prefijos = append(prefijos, prefijo)
 	}
-	return prefixes, nil
+	return prefijos, nil
+}
+
+// interpretarProxiesFiables lee IPs o CIDRs separados por comas. Sólo los
+// pares dentro de estas redes pueden fijar X-Forwarded-For/Proto.
+func interpretarProxiesFiables(valor string) ([]netip.Prefix, error) {
+	if valor == "" {
+		return nil, nil
+	}
+	var redes []netip.Prefix
+	for _, entrada := range strings.Split(valor, ",") {
+		entrada = strings.TrimSpace(entrada)
+		red, errorRed := netip.ParsePrefix(entrada)
+		if errorRed != nil {
+			direccion, errorDireccion := netip.ParseAddr(entrada)
+			if errorDireccion != nil {
+				return nil, fmt.Errorf("%s debe contener direcciones IP o CIDR", variableProxiesFiables)
+			}
+			red = netip.PrefixFrom(direccion, direccion.BitLen())
+		}
+		redes = append(redes, red.Masked())
+	}
+	return redes, nil
 }

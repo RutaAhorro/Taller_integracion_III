@@ -1,4 +1,4 @@
-# Gateway — SUP-264 a SUP-273 / Barrido SUP-350
+# Gateway — SUP-264 a SUP-273 / Barridos SUP-350 y SUP-386
 
 Servicio Go independiente que enruta productos y administración de productos a
 Catálogo, autenticación a Identidad, listas a Motor de rutas y scraping a Control
@@ -25,7 +25,8 @@ flowchart LR
 | `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
 | `/api/v1/chat` y subrutas | IA conversacional (`IA_URL`) | Interacción con asistente de IA conversacional (SUP-278) |
 | `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
-| `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Healthchecks heredados agregados |
+| `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Salud pública de Control |
+| Cualquier otra ruta | Gateway (local) | 404 JSON `{"estado":404,"mensaje":...}`; no hay respaldo hacia otro servicio |
 | `/_gateway/live`, `/_gateway/ready` | Gateway (local) | Liveness y readiness del proceso router |
 | `/_gateway/dependencies` | Gateway (agregado) | Diagnóstico conjunto de upstreams en paralelo |
 
@@ -64,16 +65,15 @@ Ver `.env.example` para una plantilla lista para usar.
 
 | Variable | Valor por defecto | Uso |
 |---|---|---|
-| `SCRAPING_URL` | Vacío en modo legado; requerida en despliegue final | Origen HTTP/HTTPS de Control de scraping |
-| `BACKEND_URL` | Obligatoria sólo sin `SCRAPING_URL` | Origen de respaldo para rollback hacia API monolítica |
-| `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo |
-| `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad |
-| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él devuelve 404 en `/api/v1/listas` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
-| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; sin ella devuelve 404 en `/api/v1/chat` (salvo que `BACKEND_URL` esté definido como fallback heredado) |
+| `SCRAPING_URL` | **Obligatoria** | Origen HTTP/HTTPS de Control de scraping; sin ella el Gateway no arranca |
+| `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; sin él `/api/v1/productos` responde 404 |
+| `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad; sin él `/api/v1/auth` responde 404 |
+| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él `/api/v1/listas` responde 404 |
+| `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; sin ella `/api/v1/chat` responde 404 |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
 | `GATEWAY_DIAL_TIMEOUT` | `5s` | Límite para conexión y handshake TLS con el upstream |
-| `GATEWAY_RESPONSE_HEADER_TIMEOUT` | `10s` | Espera de cabeceras de respuesta del upstream |
+| `GATEWAY_RESPONSE_HEADER_TIMEOUT` | `10s` (Compose: `20s`) | Espera de cabeceras de respuesta del upstream; Compose la amplía por la latencia de IA |
 | `GATEWAY_READ_HEADER_TIMEOUT` | `5s` | Lectura de cabeceras enviadas por el cliente |
 | `GATEWAY_IDLE_TIMEOUT` | `60s` | Tiempo máximo de conexión inactiva |
 | `GATEWAY_SHUTDOWN_TIMEOUT` | `10s` | Espera de peticiones activas ante SIGINT/SIGTERM |
@@ -118,31 +118,21 @@ pero no con rutas vecinas (`/api/v1/productos-falso`). Reglas al arrancar:
 - Si un upstream no responde, devuelve HTTP 502 (`<servicio>_unavailable`) o
   HTTP 504 (`<servicio>_timeout`), con JSON estructurado que incluye el `request_id`.
 
-## Procedimiento de Rollback y Despliegue (SUP-268 / SUP-272)
+## Contratos cambiados en SUP-386
 
-Si Catálogo o Identidad presentan fallas críticas durante un despliegue, Gateway
-puede volver al modo legado (`BACKEND_URL` con `CATALOGO_URL` o `IDENTIDAD_URL`
-vacíos). **Cambiar solo esas variables no basta:** el Control de scraping actual
-no implementa catálogo ni autenticación, así que esas rutas responderían 404. El
-orden es obligatorio: primero la imagen histórica de la API, después Gateway.
+| Antes | Ahora |
+|---|---|
+| `BACKEND_URL` recibía toda ruta sin dueño (respaldo hacia el monolito retirado) | `BACKEND_URL` no se lee; una ruta sin dueño responde 404 |
+| `SCRAPING_URL` era opcional si había `BACKEND_URL` | `SCRAPING_URL` es obligatoria y el arranque falla sin ella; ya la definen `docker-compose.yml:181` e `infrastructure/k8s/gateway/deployment.yaml:33` |
+| Ruta sin dueño: con `BACKEND_URL`, la respuesta del monolito; sin ella, `{"estado":404,"mensaje":"La ruta o recurso solicitado no existe."}` | Siempre `{"estado":404,"mensaje":"La ruta o recurso solicitado no existe."}`. El formato no cambia; el frontend sólo lee `mensaje` de forma genérica y ningún smoke lee el cuerpo |
+| `/_gateway/dependencies` publicaba los alias `backend`, `database` y `redis` copiados de Control | Sólo `scraping`, `scraping_database` y `scraping_redis` (más las claves de cada dominio configurado) |
+| `HEAD` a una ruta sin dueño intentaba escribir cuerpo | `HEAD` responde 404 sin cuerpo |
 
-### Rollbacks hacia el monolito histórico (Sprint 2)
+### Rollback
 
-Los procedimientos de rollback con overrides de Compose (`docker-compose.catalogo-rollback.yml` e
-`docker-compose.identidad-rollback.yml`) formaron parte de la verificación de migración
-durante el Sprint 2 y fueron retirados en SUP-355 tras consolidarse la arquitectura
-desacoplada en microservicios independientes.
-
-
-### Rollback en Kubernetes
-
-1. Restaurar la imagen anterior de la API, esperar su rollout y verificar sus
-   lecturas (productos o autenticación, según el caso).
-2. Después, quitar `CATALOGO_URL` (o `IDENTIDAD_URL`) del Deployment de Gateway y
-   esperar su rollout.
-3. Comprobar productos y administración por el Service público antes de reducir
-   Catálogo. Si tiene HPA, retirarlo antes de escalar el Deployment a cero. Nunca
-   apuntar el selector público a una API sin el lector.
+Los rollbacks hacia el monolito del Sprint 2 se retiraron en SUP-355 y el
+respaldo `BACKEND_URL` en SUP-386. Para volver atrás se despliega la imagen
+anterior del Gateway junto con su configuración; no hay modo legado en esta.
 
 ## Pruebas y estructura de tests
 
@@ -153,7 +143,7 @@ backend/gateway/
   cmd/gateway/         ← binario principal
   internal/
     config/            ← carga y validación de variables de entorno
-    proxy/             ← reverse proxy, handlers y dependencias
+    api/               ← enrutador (pasarela.go), proxy (proxy.go), X-Forwarded-* (reenvio.go) y sondas (salud.go)
   tests/
     unit/              ← pruebas unitarias de configuración (tests/unit/config_test.go)
     integration/       ← pruebas de proxy HTTP end-to-end con servidores locales
@@ -166,6 +156,13 @@ cd backend/gateway
 go test -race ./...
 go vet ./...
 go build ./cmd/gateway
+```
+
+En Windows sin cgo, `-race` no está disponible; la etapa `test` del Dockerfile
+copia `tests/` y ejecuta lo mismo que el CI:
+
+```bash
+docker build --target test backend/gateway
 ```
 
 Para ejecutar las pruebas de integración en Compose desde la raíz:

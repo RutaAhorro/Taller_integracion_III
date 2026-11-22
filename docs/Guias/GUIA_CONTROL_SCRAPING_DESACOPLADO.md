@@ -45,20 +45,15 @@ cookies ni formatos de lote. La clave de lote y los namespaces Redis existentes
 se conservan. No hay migración de datos, cambio de cola ni vaciado de spools.
 
 Gateway usa `SCRAPING_URL=http://control-scraping:8080`. En el despliegue normal
-no necesita `BACKEND_URL` ni un servidor API residual. Sólo enruta prefijos
+no tiene respaldo hacia un servidor API residual (`BACKEND_URL` se retiró en SUP-386). Sólo enruta prefijos
 delimitados: `scrapertools` no pertenece a scraping. Los probes privados
 `/_scraping/live` y `/_scraping/ready` devuelven 404 desde Gateway.
 
 Un fallo de Control devuelve `scraping_unavailable` (502) o `scraping_timeout`
 (504), sin fallback ni reintento automático de una escritura. Identidad,
 Catálogo y readiness local de Gateway siguen atendiendo. `/_gateway/dependencies`
-añade `scraping`, `scraping_database`, `scraping_redis`; mantiene los alias de
-diagnóstico `backend`, `database`, `redis` por compatibilidad.
-
-`BACKEND_URL` queda como modo legado explícito para imágenes aprobadas anteriores.
-Los overrides históricos desactivan `SCRAPING_URL` y restauran los probes y
-credenciales que necesita cada imagen. No mezclar la imagen nueva con probes
-antiguos durante un rollback sin comprobar el destino.
+añade `scraping`, `scraping_database`, `scraping_redis`. Los alias `backend`,
+`database` y `redis` se retiraron en SUP-386.
 
 ## Datos, seguridad y ciclo de vida
 
