@@ -1,6 +1,6 @@
 // Informa que la ruta no existe y ofrece volver al inicio.
 import { Link } from 'react-router-dom';
-import { ROUTES } from '@/core/routes';
+import { ROUTES } from '@/app/routes';
 import { Button } from '@/components/ui/button';
 
 export default function NotFound() {

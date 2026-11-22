@@ -27,34 +27,38 @@ go run ./cmd/catalogo
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
 | `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer de escritura para la ingesta interna. Vacía deshabilita `/internal/v1/ingestas` y las rutas de resolución |
 | `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad`. Vacía deshabilita la consulta |
-| `PORT` | `8080` (ejemplo `8083`) | Puerto de escucha HTTP |
-| `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas. Si está vacía se usa `CORS_ALLOWED_ORIGINS`. Vacías ambas, se rechazan las peticiones con `Origin` |
+| `PORT` | `8080` | Puerto de escucha HTTP |
+| `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas; tiene prioridad sobre `CORS_ALLOWED_ORIGINS`. Ambas vacías, se rechazan las peticiones con `Origin` |
+| `CORS_ALLOWED_ORIGINS` | Vacía | Respaldo genérico. Compose la define a partir de `CATALOGO_CORS_ALLOWED_ORIGINS` del `.env` raíz |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
 | `DB_MAX_IDLE_CONNS` | `5` | Conexiones inactivas máximas (no puede superar `DB_MAX_OPEN_CONNS`) |
 | `DB_CONN_MAX_LIFETIME` | `30m` | Tiempo máximo de vida por conexión |
-| `CATALOGO_READ_HEADER_TIMEOUT` | `5s` | Lectura de cabeceras de la petición |
-| `CATALOGO_READ_TIMEOUT` | `30s` | Lectura completa de la petición |
-| `CATALOGO_WRITE_TIMEOUT` | `30s` | Escritura de la respuesta |
-| `CATALOGO_IDLE_TIMEOUT` | `60s` | Conexión keep-alive inactiva |
-| `CATALOGO_SHUTDOWN_TIMEOUT` | `15s` | Espera de peticiones activas al recibir SIGINT/SIGTERM |
-| `CATALOGO_STARTUP_TIMEOUT` | `5s` | Verificación de tablas y permisos al arrancar |
-| `CATALOGO_READINESS_TIMEOUT` | `2s` | Ping a PostgreSQL de `/_catalogo/ready` |
-| `CATALOGO_DEFAULT_PAGE_SIZE` | `20` | Tamaño de página cuando no se envía `limit` |
-| `CATALOGO_MAX_PAGE_SIZE` | `100` | Tope de `limit` en listados públicos y de administración |
-| `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados del texto de búsqueda (una letra con tilde ocupa 2) |
-| `CATALOGO_MAX_BATCH_PRODUCTOS` | `1000` | Productos aceptados por lote de ingesta |
-| `CATALOGO_MAX_BODY_BYTES` | `8388608` (8 MiB) | Bytes aceptados en los cuerpos JSON internos; más allá responde 413 |
 | `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en `/internal/v1/productos/disponibilidad` |
 | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
+| `CATALOGO_TEST_DB_URL` | Sólo pruebas | Base PostgreSQL aislada con rol `app_catalogo` para `tests/integration/postgres_test.go`; vacía omite la prueba |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
 los límites, enteros positivos. Un valor inválido impide arrancar con un mensaje
-que nombra la variable. `CATALOGO_DEFAULT_PAGE_SIZE` no puede superar
-`CATALOGO_MAX_PAGE_SIZE`.
+que nombra la variable. `JWT_SECRET` requiere al menos 32 bytes.
+
+### Plazos y límites
+
+Opcionales, con valor por defecto en `internal/config` (sección 3 de la guía de
+barrido). Ningún manifiesto de Compose, K8s, `.github` ni `scripts/` las define
+hoy, así que rige el valor por defecto.
+
+| Variable | Por defecto | Uso |
+| --- | --- | --- |
+| `CATALOGO_READ_HEADER_TIMEOUT` / `CATALOGO_READ_TIMEOUT` | `5s` / `30s` | Lectura de cabeceras / petición completa |
+| `CATALOGO_WRITE_TIMEOUT` / `CATALOGO_IDLE_TIMEOUT` | `30s` / `60s` | Escritura de respuesta / keep-alive inactivo |
+| `CATALOGO_SHUTDOWN_TIMEOUT` / `CATALOGO_STARTUP_TIMEOUT` / `CATALOGO_READINESS_TIMEOUT` | `15s` / `5s` / `2s` | Apagado ordenado / verificación al arrancar / ping de `ready` |
+| `CATALOGO_DEFAULT_PAGE_SIZE` / `CATALOGO_MAX_PAGE_SIZE` | `20` / `100` | Página sin `limit` / tope de `limit` (la primera no puede superar la segunda) |
+| `CATALOGO_MAX_SEARCH_LENGTH` | `100` | Bytes conservados de cada texto de búsqueda |
+| `CATALOGO_MAX_BATCH_PRODUCTOS` / `CATALOGO_MAX_BODY_BYTES` | `1000` / `8388608` (8 MiB) | Productos por lote / bytes de cuerpo interno (413 si se supera) |
 
 ### CORS y seguridad de errores
 
-`CATALOGO_CORS_ALLOWED_ORIGINS` (o `CORS_ALLOWED_ORIGINS`) contiene orígenes HTTP(S) exactos sin rutas ni comodines.
+`CATALOGO_CORS_ALLOWED_ORIGINS` (o, si está vacía, `CORS_ALLOWED_ORIGINS`) contiene orígenes HTTP(S) exactos sin rutas ni comodines.
 Si está vacío o el origen no coincide, las peticiones con cabecera `Origin`
 reciben 403; las peticiones sin `Origin` continúan funcionando. Las cabeceras
 permitidas se limitan a `Content-Type`, `Authorization` y `X-Request-ID`, y los
@@ -67,7 +71,9 @@ sin volcar trazas ni detalles SQL. El diagnóstico se registra internamente con
 ### Autenticación administrativa
 
 `JWT_SECRET` valida de forma local la firma HS256, expiración y claim de rol
-`admin` sin consultar a Identidad. Esto mantiene la disponibilidad del catálogo
+`admin` exacto sin consultar a Identidad. El alias histórico `administrador` y
+las variantes con mayúsculas ya no se aceptan: Identidad sólo emite roles de
+`usuarios_rol_check` (migración 10). Esto mantiene la disponibilidad del catálogo
 ante caídas de Identidad. Una cuenta desactivada o degradada conserva acceso
 hasta que expire el token (24 h); una revocación inmediata requerirá lista de
 revocación desacoplada o tokens de corta duración sin reintroducir llamadas
@@ -121,10 +127,9 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
-3. **Límites del cuerpo HTTP:** tamaño máximo `CATALOGO_MAX_BODY_BYTES` (8 MiB
-   por defecto, HTTP 413 si se supera), rechazo de campos JSON desconocidos
+3. **Límites del cuerpo HTTP:** tamaño máximo de 8 MiB (HTTP 413 si se supera), rechazo de campos JSON desconocidos
    (`DisallowUnknownFields`), rechazo de contenido extra tras el cierre del JSON
-   y lote acotado de 1 a `CATALOGO_MAX_BATCH_PRODUCTOS` productos (1000 por defecto).
+   y lote acotado de 1 a 1000 productos.
 4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío no se registra
    la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registra la
    consulta. Cada ruta depende sólo de su propio token.
@@ -170,7 +175,7 @@ Content-Type: application/json
   `estado_producto: "desconocido"` y `en_stock: null`, sin asumir disponibilidad.
 
 **Límite conocido:** la ingesta actual convierte un `en_stock` ausente del lote en
-`true` (`internal/ingesta/lote.go`) y `scraper.capturas_precios.esta_disponible`
+`true` (`internal/repositories/ingesta.go`) y `scraper.capturas_precios.esta_disponible`
 tiene `DEFAULT true`. Por eso, hoy `desconocido` por stock sólo aparece si la
 base contiene un `NULL` explícito. Cambiar ese valor por defecto exige modificar
 la ingesta y queda fuera del alcance de SUP-312.
@@ -219,7 +224,7 @@ conserva y `en_stock` queda `null`. Para `no_encontrado`, `producto` es `null`.
 
 Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,
-`413` para cuerpos mayores a `CATALOGO_MAX_BODY_BYTES` y
+`413` para cuerpos mayores a 8 MiB y
 `500 catalogo_internal_error` sin detalle SQL.
 
 ## Base de datos y permisos (rol `app_catalogo`)
@@ -243,7 +248,7 @@ documentado en [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERM
   acceso a tablas de coordinación (`scraper.trabajos_scraper`, `scraper.entregas_ingesta`,
   `scraper.entregas_trabajos`), y sin privilegios de `DELETE` ni `TRUNCATE`.
 
-En el arranque, `ingesta.VerifyStorage` valida estas tablas y permisos en un plazo
+En el arranque, `repositories.VerificarAlmacenamiento` valida estas tablas y permisos en un plazo
 de 5 s antes de abrir el puerto HTTP. Si los privilegios son insuficientes, el
 proceso aborta. Durante la ejecución normal, la sonda de preparación únicamente
 comprueba conectividad mediante `PingContext`.
@@ -301,14 +306,6 @@ En Kubernetes ([deployment.yaml](../../infrastructure/k8s/catalogo/deployment.ya
 
 ## Procedimientos de rollback
 
-### Rollback de ingesta y consultas (Histórico)
-
-Los overrides de rollback en Compose (`docker-compose.catalogo-ingesta-rollback.yml` y
-`docker-compose.catalogo-rollback.yml`) formaron parte de la verificación de migración
-del monolito (Sprint 2) y fueron retirados en SUP-355 al consolidarse los servicios
-desacoplados.
-
-
 ### Rollback en Kubernetes
 
 Revertir la versión del despliegue con:
@@ -320,6 +317,51 @@ kubectl rollout undo deployment/catalogo
 No se requieren migraciones SQL de reversión; el esquema y los permisos del rol
 `app_catalogo` son compatibles de forma retroactiva.
 
+## Estructura
+
+- `cmd/catalogo`: arranque, verificación de permisos y apagado ordenado.
+- `internal/config`: lectura única del entorno y plazos/límites fijos.
+- `internal/api`: router, sondas, CORS, correlación, sesión JWT, rutas internas,
+  handlers de productos y fuentes y formato de errores.
+- `internal/services`: normalización de filtros, fuentes y regla de vigencia.
+- `internal/repositories`: SQL de productos, fuentes, disponibilidad e ingesta,
+  conexión y verificación de permisos.
+- `internal/domain`: DTO e interfaces de persistencia.
+
+## Cambios de contrato (SUP-385)
+
+Rutas, campos JSON, tablas, columnas y variables de entorno no cambian. Sí cambia:
+
+| Antes | Ahora |
+| --- | --- |
+| JWT con `rol` `administrador`, `ADMIN` o con espacios se normalizaba a `admin` | Sólo `rol: "admin"` exacto; lo demás responde 403 |
+| `JWT_SECRET` aceptaba cualquier largo | Mínimo 32 bytes, como en Identidad |
+
+## Pendientes coordinados (SUP-394)
+
+- Parámetros inválidos (`page=abc`, `en_stock=quizas`, `sort_by` desconocido) y
+  `solo_marcas_blancas=false` se ignoran en silencio; responder 400 cambia el
+  contrato con Frontend e IA.
+- La búsqueda se sanea por bytes (una tilde ocupa 2) y descarta caracteres sin
+  avisar; el mínimo de 3 se mide en bytes.
+- Alias heredados de ingesta `precio` e `imagen`; Control debería enviar sólo
+  `precio_oferta` y `url_imagen`.
+- La sucursal central autocreada usa datos fijos de Temuco
+  (`internal/repositories/ingesta.go`).
+- `cadenas_supermercado.nombre` no tiene unicidad sin distinguir mayúsculas: la
+  resolución usa `ILIKE` bajo lock. Candidato a índice único `LOWER(BTRIM(nombre))`
+  (sección 8.4, coordinar con `infrastructure/db`).
+- `capturado_el` y `ultima_extraccion_el` son `timestamp without time zone` y se
+  escriben con la hora local del proceso; fuera de un contenedor UTC la
+  disponibilidad recién ingestada sale `vencida`.
+- La búsqueda pública filtra categoría por `titulo_crudo` y la de administración
+  por `categoria_cruda`.
+- Compose traduce `CATALOGO_CORS_ALLOWED_ORIGINS` del `.env` raíz a
+  `CORS_ALLOWED_ORIGINS` del contenedor, y Catálogo lee ambas: conviene unificar
+  en una sola variable (`docker-compose.yml`, K8s y `GUIA_CONFIGURACION.md`).
+- `GET /api/v1/productos/buscar` no tiene consumidores en Frontend ni IA, pero lo
+  usan los humos de Gateway y Control.
+
 ## Pruebas y validación
 
 Desde este directorio:
@@ -328,6 +370,15 @@ Desde este directorio:
 go test -race ./...
 go vet ./...
 go build -o /tmp/catalogo ./cmd/catalogo
+```
+
+Con un PostgreSQL desechable inicializado con `infrastructure/db` (nunca una base
+compartida), la prueba de ingesta, precios, disponibilidad y fuentes corre con el
+rol de runtime:
+
+```bash
+CATALOGO_TEST_DB_URL='postgres://app_catalogo:<clave>@127.0.0.1:55432/<base>?sslmode=disable' \
+  go test -count=1 -run Postgres ./tests/integration/
 ```
 
 Pruebas de integración desde la raíz del repositorio:

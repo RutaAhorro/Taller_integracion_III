@@ -2,25 +2,29 @@
 
 - Leer `README.md` de este directorio. React 19, TS, Vite, Tailwind 4, Oxlint.
   Desarrollo Vite y producción Nginx en puerto 3000; alias `@/` → `src/`.
-- Router real: `src/app/router.tsx`; constantes: `src/core/routes.ts`.
+- Router real: `src/app/router.tsx`; constantes: `src/app/routes.ts`.
   No asumir que `App.tsx` contiene las rutas ni clasificar archivos por su nombre.
-- Sesión en `src/contexts/AuthContext.tsx`: cookie HttpOnly `jwt` enviada con
-  `credentials: 'include'`; usuario de UI en localStorage no acredita sesión.
-- `ProtectedRoute` y `src/lib/roles.ts` controlan navegación; el backend autoriza.
-  Roles `admin`/`colaborador`/`registrado`; premium es un plan, no un rol.
-- Catálogo: `src/hooks/useCatalog.ts` y `src/lib/products-api.ts`.
-  Admin: `src/features/admin`; listas: `src/features/listas` y `ShoppingLists.tsx`.
+- Estructura por tema en `src/features/` (`autenticacion`, `catalogo`, `chat`,
+  `landing`, `listas`, `admin`); layouts en `src/layouts`; primitivas en
+  `src/components/ui`; sin mocks ni carpetas `hooks/`, `contexts/` o `types/`.
+- Sesión en `src/features/autenticacion/AuthContext.tsx`: cookie HttpOnly `jwt`
+  enviada con `credentials: 'include'`; usuario de UI en localStorage no acredita sesión.
+- `ProtectedRoute` y `src/features/autenticacion/roles.ts` controlan navegación; el
+  backend autoriza. Roles `admin`/`colaborador`/`registrado`; premium es un plan
+  (`basico`/`premium`, `tipos.ts`), no un rol. Sin alias heredados de rol ni plan.
+- Catálogo: `src/features/catalogo/useCatalog.ts` y `products-api.ts`.
+  Admin: `src/features/admin`; listas: `src/features/listas` (`ShoppingLists.tsx`).
 - `VITE_API_URL` incluye `/api/v1`; no duplicar prefijo. Variables VITE públicas:
   jamás incluir contraseñas, claves IA ni tokens internos de scraping.
 - Carrito en Context es temporal, no está sincronizado con listas persistidas.
 - Las vistas pendientes usan FeatureUnavailable, sin costos, puntos ni resultados
   simulados. Administración no sustituye errores por datos ficticios.
-- La portada es informativa y usa landing.json; sus ejemplos no son resultados de
+- La portada es informativa y usa `src/features/landing/landing.json`; sus ejemplos no son resultados de
   la API. En el catálogo, las cadenas corresponden a los productos recibidos;
   cobertura completa pendiente de SUP-371. No reutilizar ejemplos de la portada como datos reales.
 - Marcas blancas está deshabilitado hasta disponer de clasificación en el backend.
-- Chat usa URL directa `/chat/gemini`; backend IA expone `/api/v1/chat`, sin ruta
-  Gateway. No afirmar flujo receta → lista → ruta terminado.
+- Chat llama a `${VITE_API_URL}/chat`, que Gateway enruta a IA (SUP-278); no
+  hay `VITE_IA_URL`. No afirmar flujo receta → lista → ruta terminado.
 - Reutilizar estilos/componentes del proyecto; comprobar imports antes de borrar.
 - Validar `npm run lint`, `npx tsc -b --noEmit` y
   `npm test`. Build tolera errores de tsc: su éxito
@@ -30,17 +34,13 @@
 
 ## Índice breve generado
 
-72 archivos fuente, incluidos los de pruebas. Distribución:
+71 archivos fuente, incluidos los de pruebas. Distribución:
 - `(raíz)`: 1 archivos.
-- `app`: 1 archivos.
-- `components`: 34 archivos.
-- `contexts`: 3 archivos.
-- `core`: 1 archivos.
-- `features`: 6 archivos.
-- `hooks`: 5 archivos.
-- `layouts`: 1 archivos.
-- `lib`: 5 archivos.
-- `pages`: 14 archivos.
-- `types`: 1 archivos.
+- `app`: 2 archivos.
+- `components`: 11 archivos.
+- `features`: 44 archivos.
+- `layouts`: 4 archivos.
+- `lib`: 2 archivos.
+- `pages`: 7 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

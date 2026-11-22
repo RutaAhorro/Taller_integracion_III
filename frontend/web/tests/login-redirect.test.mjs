@@ -4,8 +4,8 @@ import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 import ts from 'typescript';
 
-const moduleUrl = source => `data:text/javascript;base64,${Buffer.from(source).toString('base64')}`;
-const reactUrl = moduleUrl(`
+const crearUrlModulo = codigoFuente => `data:text/javascript;base64,${Buffer.from(codigoFuente).toString('base64')}`;
+const urlReact = crearUrlModulo(`
   export const estados = [];
   export function useState(inicial) {
     const indice = estados.length;
@@ -16,10 +16,10 @@ const reactUrl = moduleUrl(`
   }
   export const useEffect = () => {};
   export const useRef = inicial => ({ current: inicial });
-  export const useCallback = callback => callback;
+  export const useCallback = funcion => funcion;
   export const createContext = () => ({ Provider: 'proveedor' });
 `);
-const entornoUrl = moduleUrl(`
+const entornoUrl = crearUrlModulo(`
   export const sesion = { contexto: null };
   export const navegaciones = [];
   export const almacenamiento = {
@@ -36,41 +36,41 @@ const entornoUrl = moduleUrl(`
 async function cargar(ruta, reemplazos = []) {
   let codigo = await readFile(new URL(ruta, import.meta.url), 'utf8');
   for (const [desde, hasta] of reemplazos) codigo = codigo.replaceAll(desde, hasta);
-  const { outputText } = ts.transpileModule(codigo, {
+  const { outputText: codigoTranspilado } = ts.transpileModule(codigo, {
     compilerOptions: {
       target: ts.ScriptTarget.ES2022,
       module: ts.ModuleKind.ES2022,
       jsx: ts.JsxEmit.ReactJSX,
     },
   });
-  return moduleUrl(outputText.replace('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime'))));
+  return crearUrlModulo(codigoTranspilado.replace('"react/jsx-runtime"', JSON.stringify(import.meta.resolve('react/jsx-runtime'))));
 }
 
-const rolesUrl = await cargar('../src/lib/roles.ts');
-const rutasUrl = await cargar('../src/core/routes.ts', [["'@/lib/roles'", JSON.stringify(rolesUrl)]]);
-const contextoUrl = await cargar('../src/contexts/AuthContext.tsx', [
-  ["'react'", JSON.stringify(reactUrl)],
-  ["'@/contexts/ToastContext'", JSON.stringify(entornoUrl)],
-  ["const AUTH_USER_KEY = 'auth_user';", `import { almacenamiento } from '${entornoUrl}'; const AUTH_USER_KEY = 'auth_user';`],
+const rolesUrl = await cargar('../src/features/autenticacion/roles.ts');
+const rutasUrl = await cargar('../src/app/routes.ts', [["'@/features/autenticacion/roles'", JSON.stringify(rolesUrl)]]);
+const contextoUrl = await cargar('../src/features/autenticacion/AuthContext.tsx', [
+  ["'react'", JSON.stringify(urlReact)],
+  ["'@/components/ToastContext'", JSON.stringify(entornoUrl)],
+  ["const CLAVE_USUARIO_AUTENTICADO = 'auth_user';", `import { almacenamiento } from '${entornoUrl}'; const CLAVE_USUARIO_AUTENTICADO = 'auth_user';`],
   ['localStorage.', 'almacenamiento.'],
   ['import.meta.env.VITE_API_URL', '"/api/v1"'],
 ]);
-const googleUrl = await cargar('../src/hooks/useGoogleAuth.ts', [
-  ["'react'", JSON.stringify(reactUrl)],
-  ["'./useAuth'", JSON.stringify(entornoUrl)],
+const googleUrl = await cargar('../src/features/autenticacion/useGoogleAuth.ts', [
+  ["'react'", JSON.stringify(urlReact)],
+  ["'@/features/autenticacion/useAuth'", JSON.stringify(entornoUrl)],
   ["'react-router-dom'", JSON.stringify(entornoUrl)],
-  ["'@/core/routes'", JSON.stringify(rutasUrl)],
+  ["'@/app/routes'", JSON.stringify(rutasUrl)],
 ]);
-const componentesUrl = moduleUrl('export const AuthVisual = () => null; export const AuthPanel = () => null;');
-const loginUrl = await cargar('../src/pages/Login.tsx', [
-  ['"@/components/auth/AuthVisual"', JSON.stringify(componentesUrl)],
-  ['"@/components/auth/AuthPanel"', JSON.stringify(componentesUrl)],
+const componentesUrl = crearUrlModulo('export const AuthVisual = () => null; export const AuthPanel = () => null;');
+const urlAcceso = await cargar('../src/features/autenticacion/Login.tsx', [
+  ['"@/features/autenticacion/AuthVisual"', JSON.stringify(componentesUrl)],
+  ['"@/features/autenticacion/AuthPanel"', JSON.stringify(componentesUrl)],
 ]);
-const { default: Login } = await import(loginUrl);
+const { default: Login } = await import(urlAcceso);
 const { AuthProvider } = await import(contextoUrl);
 const { useGoogleAuth } = await import(googleUrl);
 const { rutaTrasAutenticacion } = await import(rutasUrl);
-const { estados } = await import(reactUrl);
+const { estados } = await import(urlReact);
 const { sesion, navegaciones, almacenamiento } = await import(entornoUrl);
 
 function iniciarContexto(usuarioGuardado) {

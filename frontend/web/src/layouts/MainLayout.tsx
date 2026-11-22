@@ -1,15 +1,15 @@
 // Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
-import { TopNav } from "@/components/TopNav";
-import { SideBar } from "@/components/Sidebar";
-import { CartSidebar } from "@/components/CartSidebar";
-import BottomNav from "@/components/BottomNav";
-import { getProducts, getMarketsFromProducts } from "@/lib/products-api";
-import type { UiSupermarket } from "@/types";
+import { TopNav } from "@/layouts/TopNav";
+import { SideBar } from "@/layouts/Sidebar";
+import { CartSidebar } from "@/features/catalogo/CartSidebar";
+import BottomNav from "@/layouts/BottomNav";
+import { getProducts, getMarketsFromProducts } from "@/features/catalogo/products-api";
+import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
-import { useCart } from "@/contexts/CartContext";
-type LayoutContextType = {
+import { useCart } from "@/features/catalogo/CartContext";
+type TipoContextoDiseno = {
   query: string;
   activeMarket: string | null;
   category: string;
@@ -17,25 +17,25 @@ type LayoutContextType = {
 };
 
 export function useLayoutContext() {
-  return useOutletContext<LayoutContextType>();
+  return useOutletContext<TipoContextoDiseno>();
 }
 
 export function MainLayout() {
-  const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
+  const [consulta, setConsulta] = useState("");
+  const [categoria, setCategoria] = useState("");
   // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [activeMarket, setActiveMarket] = useState<string | null>(null);
-  const [availableMarkets, setAvailableMarkets] = useState<UiSupermarket[]>([]);
-  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
-  const resetFilters = () => {
-    setQuery("");
-    setCategory("");
-    setActiveMarket(null);
+  const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
+  const [supermercadoActivo, setSupermercadoActivo] = useState<string | null>(null);
+  const [supermercadosDisponibles, setSupermercadosDisponibles] = useState<UiSupermarket[]>([]);
+  const cerrarBarraLateral = useCallback(() => setBarraLateralAbierta(false), []);
+  const restablecerFiltros = () => {
+    setConsulta("");
+    setCategoria("");
+    setSupermercadoActivo(null);
   };
   const { totalItems, totalPrice, setIsCartOpen } = useCart();
   const { pathname } = useLocation();
-  const activeTab = 
+  const pestanaActiva = 
     pathname.startsWith('/chat') ? 'chat' :
     pathname.startsWith('/history') ? 'history' :
     pathname.startsWith('/route') ? 'route' :
@@ -44,21 +44,21 @@ export function MainLayout() {
     'dashboard';
 
   useEffect(() => {
-    let isMounted = true;
+    let estaMontado = true;
 
     getProducts('?limit=100&en_stock=true')
       .then(({ products }) => {
-        if (!isMounted) return;
+        if (!estaMontado) return;
 
         // Hasta SUP-371 solo se conocen las cadenas de esta página; no se descarga todo el catálogo.
-        setAvailableMarkets(getMarketsFromProducts(products));
+        setSupermercadosDisponibles(getMarketsFromProducts(products));
       })
       .catch(() => {
-        if (isMounted) setAvailableMarkets([]);
+        if (estaMontado) setSupermercadosDisponibles([]);
       });
 
     return () => {
-      isMounted = false;
+      estaMontado = false;
     };
   }, []);
 
@@ -66,35 +66,35 @@ export function MainLayout() {
     <div className="flex h-dvh flex-col bg-background">
       <CartSidebar />
       <SideBar
-        open={sidebarOpen}
-        onClose={closeSidebar}
-        onResetFilters={resetFilters}
-        activeMarket={activeMarket}
-        availableMarkets={availableMarkets}
-        onSelectCategory={(value) => {
-          setQuery("");
-          setCategory(value);
+        open={barraLateralAbierta}
+        onClose={cerrarBarraLateral}
+        onResetFilters={restablecerFiltros}
+        activeMarket={supermercadoActivo}
+        availableMarkets={supermercadosDisponibles}
+        onSelectCategory={(valor) => {
+          setConsulta("");
+          setCategoria(valor);
         }}
         onSelectMarket={(id) => {
-          setActiveMarket(id);
-          setSidebarOpen(false);
+          setSupermercadoActivo(id);
+          setBarraLateralAbierta(false);
         }}
-        activeCategory={category}
+        activeCategory={categoria}
       />
       
       <TopNav
-        sidebarOpen={sidebarOpen}
-        query={query}
-        onQueryChange={(value) => {
-          setQuery(value);
-          if (value.trim()) setCategory("");
+        sidebarOpen={barraLateralAbierta}
+        query={consulta}
+        onQueryChange={(valor) => {
+          setConsulta(valor);
+          if (valor.trim()) setCategoria("");
         }}
-        onMenuClick={() => setSidebarOpen(true)}
-        onResetFilters={resetFilters}
+        onMenuClick={() => setBarraLateralAbierta(true)}
+        onResetFilters={restablecerFiltros}
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        <Outlet context={{ query, activeMarket, category, markets: availableMarkets } satisfies LayoutContextType} />
+        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo, category: categoria, markets: supermercadosDisponibles } satisfies TipoContextoDiseno} />
       </div>
 
       {totalItems > 0 && (
@@ -117,7 +117,7 @@ export function MainLayout() {
       )}
       
       <div className="md:hidden">
-        <BottomNav active={activeTab} />
+        <BottomNav active={pestanaActiva} />
       </div>
     </div>
   );

@@ -1,0 +1,8 @@
+# Configuración de ruff del servicio: formato (`ruff format`) y lint (`ruff check`).
+line-length = 120
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]
+# B008: Depends() en parámetros es el patrón de FastAPI. E501: textos largos que el formateador no parte.
+ignore = ["B008", "E501"]

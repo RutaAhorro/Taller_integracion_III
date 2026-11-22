@@ -3,8 +3,8 @@ package integration_test
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,23 +12,13 @@ import (
 	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
-	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/server"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func fuenteHTTPRouter(repo *mockFuenteRepository) *gin.Engine {
-	gin.SetMode(gin.TestMode)
-	return server.NewRouter(
-		services.NewProductoService(&mockProductoRepository{}, limitesDePrueba),
-		services.NewFuenteService(repo),
-		"catalog-test-only-key",
-		nil,
-		plazoReadinessDePrueba,
-		slog.New(slog.NewJSONHandler(io.Discard, nil)),
-		nil,
-	)
+	return nuevoEnrutadorDePrueba(api.Dependencias{Fuentes: services.NuevoServicioFuentes(repo)})
 }
 
 func solicitarFuente(prueba *testing.T, router http.Handler, method, path, cookie, body string) *httptest.ResponseRecorder {
@@ -52,8 +42,8 @@ func solicitarFuente(prueba *testing.T, router http.Handler, method, path, cooki
 func TestFuenteHandler_HTTP(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
 	future := time.Now().Add(time.Hour)
-	admin := signedToken(prueba, "admin", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
-	registered := signedToken(prueba, "registrado", jwt.SigningMethodHS256, "catalog-test-only-key", &future)
+	admin := signedToken(prueba, "admin", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
+	registered := signedToken(prueba, "registrado", jwt.SigningMethodHS256, claveJWTDePrueba, &future)
 	fecha := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 
 	nuevaRepo := func() *mockFuenteRepository {

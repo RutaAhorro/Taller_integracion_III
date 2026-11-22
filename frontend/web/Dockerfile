@@ -21,8 +21,7 @@ CMD ["npm", "run", "dev", "--", "--host"]
 FROM development AS build
 # Genera marcadores de configuración pública que se sustituyen al iniciar el contenedor.
 RUN echo "VITE_API_URL=__VITE_API_URL__" > .env.production && \
-    echo "VITE_GOOGLE_CLIENT_ID=__VITE_GOOGLE_CLIENT_ID__" >> .env.production && \
-    echo "VITE_IA_URL=__VITE_IA_URL__" >> .env.production
+    echo "VITE_GOOGLE_CLIENT_ID=__VITE_GOOGLE_CLIENT_ID__" >> .env.production
 # Transpilar el código de React/Vite a estáticos minificados
 RUN npm run build
 
