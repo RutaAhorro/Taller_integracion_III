@@ -37,6 +37,6 @@ jobs:
         run: |
           go test -race ./...
           go vet ./...
-          go build -o /tmp/bot_discord .
+          go build -o /tmp/bot_discord ./cmd/bot_discord
       - name: Build container image
         run: docker build -t bot-discord:local backend/bot_discord
