@@ -290,3 +290,20 @@ def test_sanitizar_filtros_crudos_ingredientes_float_entero_conviene_a_int():
     }
     limpio = sanitizar_filtros_crudos(crudo)
     assert limpio["ingredientes"] == [{"nombre": "tomate", "cantidad_envases": 2}]
+
+
+def test_filtrar_productos_categoria_compuesta_frutas_y_verduras():
+    """Verifica que la categoria compuesta 'frutas y verduras' matchea productos de frutas o verduras."""
+    catalogo = [
+        {"id": 1, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 0.5},
+        {"id": 2, "nombre": "Tomate", "categoria": "verduras", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Leche Entera", "categoria": "lacteos", "precio": 1100.0, "distancia_km": 1.0},
+    ]
+    filtros = {"categoria": "frutas y verduras"}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert len(filtrados) == 2
+    assert "Manzana" in nombres
+    assert "Tomate" in nombres
+    assert "Leche Entera" not in nombres

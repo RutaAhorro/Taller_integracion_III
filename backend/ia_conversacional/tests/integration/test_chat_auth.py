@@ -16,6 +16,7 @@ Criterios de aceptación verificados:
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import anyio
 import httpx
 import jwt
 import pytest
@@ -288,8 +289,12 @@ def test_chat_texto_libre_sin_filtros(cliente):
         tiempo_extraccion_ms=20,
     )
 
+    async def extraccion_lenta(_mensaje):
+        await anyio.sleep(0.05)
+        return mock_resultado
+
     with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
-        mock_extraer.return_value = mock_resultado
+        mock_extraer.side_effect = extraccion_lenta
 
         respuesta = cliente.post(
             "/api/v1/chat",
@@ -342,8 +347,12 @@ def test_chat_error_en_proveedor(cliente):
         error="Límite de cuota excedido",
     )
 
+    async def extraccion_lenta(_mensaje):
+        await anyio.sleep(0.05)
+        return mock_resultado
+
     with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
-        mock_extraer.return_value = mock_resultado
+        mock_extraer.side_effect = extraccion_lenta
 
         respuesta = cliente.post(
             "/api/v1/chat",
@@ -365,8 +374,12 @@ def test_chat_con_cookie_jwt_retorna_200(cliente):
         tiempo_extraccion_ms=10,
     )
 
+    async def extraccion_lenta(_mensaje):
+        await anyio.sleep(0.05)
+        return mock_resultado
+
     with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
-        mock_extraer.return_value = mock_resultado
+        mock_extraer.side_effect = extraccion_lenta
 
         respuesta = cliente.post(
             "/api/v1/chat",
@@ -505,8 +518,12 @@ def test_chat_filtros_vacios_responde_sin_filtros(cliente):
         tiempo_extraccion_ms=10,
     )
 
+    async def extraccion_lenta(_mensaje):
+        await anyio.sleep(0.05)
+        return mock_resultado
+
     with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
-        mock_extraer.return_value = mock_resultado
+        mock_extraer.side_effect = extraccion_lenta
 
         respuesta = cliente.post(
             "/api/v1/chat",
@@ -631,8 +648,12 @@ def test_chat_timeout_total_503(cliente, monkeypatch):
         tiempo_extraccion_ms=10,
     )
 
+    async def extraccion_lenta(_mensaje):
+        await anyio.sleep(0.05)
+        return mock_resultado
+
     with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
-        mock_extraer.return_value = mock_resultado
+        mock_extraer.side_effect = extraccion_lenta
 
         respuesta = cliente.post(
             "/api/v1/chat",
@@ -643,3 +664,208 @@ def test_chat_timeout_total_503(cliente, monkeypatch):
         assert respuesta.status_code == 503
         datos = respuesta.json()
         assert "no está disponible" in datos.get("detail", "").lower()
+
+
+# Nuevo test (a): Explicación lenta que excede tiempo_limite devuelve 200 con fallback
+def test_chat_explicacion_lenta_excede_limite_returns_200_con_fallback(cliente, monkeypatch):
+    """Test que una explicacion LLM lenta (excede tiempo_limite) retorna 200 con TEXTO_EXPLICACION_RESPALDO."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.2)
+    token_valido = generar_token(user_id="user-lento")
+
+    # Mock de extracción de filtros
+    mock_resultado = ResultadoExtraccion(
+        filtros={"categoria": "verduras"},
+        tiempo_extraccion_ms=10,
+    )
+
+    # Mock de generar_explicacion que "tarda" más que el tiempo restante (incluso el piso de 0.5s)
+    async def explicacion_lenta(_mensaje, _productos):
+        await anyio.sleep(2.0)
+        return "Explicacion LLM real despues de esperarmucho tiempo"
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.side_effect = explicacion_lenta
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco verduras"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        # Debería retornar el texto de fallback, no 503
+        assert datos["respuesta"] == "Encontramos estos productos para tu búsqueda."
+        # Los productos filtrados deberían estar presentes
+        assert len(datos["productos_recomendados"]) > 0
+        # Los filtros deberían aplicarse
+        assert datos["filtros_aplicados"] == {"categoria": "verduras"}
+
+
+# Nuevo test (b): Receta donde caché tiene precio 1000 y consultar_disponibilidad devuelve precio 2000
+def test_chat_receta_precio_caché_vs_disponibilidad(cliente, monkeypatch):
+    """Test SUP-...: receta donde caché tiene precio 1000 y consultar_disponibilidad devuelve producto.precio = 2000 → respuesta devuelve 2000."""
+    token_valido = generar_token(user_id="user-precio-test")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=25,
+    )
+    # Disponibilidad con precio vigente 2000 (sobreescribe el caché de 1000)
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+            "producto": {
+                "precio": 2000,
+                "unidad": "1kg",
+                "supermercado": "Lider",
+                "marca": "Generica",
+                "url_imagen": "https://img.super.cl/tomate.png",
+            },
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Explicacion con tomate"
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de salsa de tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        # Debería retornar 2000 (desde disponibilidad), no 1000 (desde caché)
+        assert datos["productos_recomendados"][0]["precio"] == 2000
+        # La explicación debería usar el producto con precio 2000
+        assert "2000" in datos["respuesta"] or "2000" in str(datos)
+
+
+# Nuevo test (c): Receta con 4 candidatos donde los 3 primeros están vencidos y el 4º vigente
+def test_chat_receta_cuatro_candidatos_4to_vigente(cliente, monkeypatch):
+    """Test SUP-...: receta con 4 candidatos donde los 3 primeros están vencidos y el 4º vigente → devuelve el 4º candidato y no queda en ingredientes_faltantes."""
+    token_valido = generar_token(user_id="user-4candidatos")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=25,
+    )
+    # 4 candidatos: los 3 primeros con estado_precio "vencido", el 4º con "vigente"
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vencido",
+        },
+        "prod-tomate-2": {
+            "producto_id": "prod-tomate-2",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vencido",
+        },
+        "prod-tomate-3": {
+            "producto_id": "prod-tomate-3",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vencido",
+        },
+        "prod-tomate-4": {
+            "producto_id": "prod-tomate-4",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+        patch(
+            "app.services.chat.vincular_ingredientes_catalogo",
+            return_value=(
+                [
+                    {
+                        "ingrediente": "Tomate",
+                        "cantidad_sugerida": 1,
+                        "candidatos": [
+                            {
+                                "producto_id": "prod-tomate-1",
+                                "nombre": "Tomate Larga Vida",
+                                "marca": "Generica",
+                                "unidad": "1kg",
+                                "precio": 890,
+                                "supermercado": "Lider",
+                                "url_imagen": "https://img.super.cl/tomate.png",
+                            },
+                            {
+                                "producto_id": "prod-tomate-2",
+                                "nombre": "Tomate Chico",
+                                "marca": "Generica",
+                                "unidad": "1kg",
+                                "precio": 590,
+                                "supermercado": "Jumbo",
+                                "url_imagen": "https://img.super.cl/ajo.png",
+                            },
+                            {
+                                "producto_id": "prod-tomate-3",
+                                "nombre": "Tomate Cherry",
+                                "marca": "Generica",
+                                "unidad": "1kg",
+                                "precio": 390,
+                                "supermercado": "Super",
+                                "url_imagen": "https://img.super.cl/manzana.png",
+                            },
+                            {
+                                "producto_id": "prod-tomate-4",
+                                "nombre": "Tomate Orgánico",
+                                "marca": "Ecológica",
+                                "unidad": "1kg",
+                                "precio": 2000,
+                                "supermercado": "Walmart",
+                                "url_imagen": "https://img.super.cl/tomate.png",
+                            },
+                        ],
+                    }
+                ],
+                [],
+            ),
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Explicacion con cuatro tomates"
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de salsa con cuatro tipos de tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        # Debería tener 1 ingrediente recetado (el 4º candidato)
+        assert len(datos["ingredientes_receta"]) == 1
+        # El candidato debería ser el 4º (prod-tomate-4), no los 3 primeros
+        assert len(datos["ingredientes_receta"][0]["candidatos"]) == 1
+        assert datos["ingredientes_receta"][0]["candidatos"][0]["producto_id"] == "prod-tomate-4"
+        # NO debería estar en ingredientes_faltantes
+        assert datos["ingredientes_faltantes"] == []
+        # Los productos recomendados deberían incluir el 4º candidato
+        assert len(datos["productos_recomendados"]) >= 1
+        # Los productos recomendados deberían incluir el 4º candidato

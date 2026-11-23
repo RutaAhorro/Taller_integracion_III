@@ -147,8 +147,9 @@ class ProductoRepositorio:
         return resultado
 
     def _descargar_catalogo(self) -> list[dict[str, Any]]:
-        """Recorre las páginas hasta el máximo configurado; cierra el cliente propio aunque falle."""
+        """Recorre las páginas hasta el máximo configurado o el agotamiento del tiempo; cierra el cliente propio aunque falle."""
         cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        inicio = time.monotonic()
         try:
             items, total_paginas = self._pedir_pagina(cliente_http, PRIMERA_PAGINA)
             productos = self._productos_en_stock(items)
@@ -160,6 +161,14 @@ class ProductoRepositorio:
                     total_paginas,
                 )
             for pagina in range(PRIMERA_PAGINA + 1, min(total_paginas, self._max_paginas) + 1):
+                tiempo_transcurrido = time.monotonic() - inicio
+                if tiempo_transcurrido >= self._tiempo_espera:
+                    logger.warning(
+                        "Tiempo de espera de Catálogo agotado (%.1fs): se corta la paginacion en la pagina %d",
+                        tiempo_transcurrido,
+                        pagina,
+                    )
+                    break
                 items, _ = self._pedir_pagina(cliente_http, pagina)
                 productos.extend(self._productos_en_stock(items))
             return productos

@@ -133,8 +133,13 @@ def _normalizar_texto(texto: str) -> str:
     return "".join(letras_sin_marcas).strip().lower()
 
 
-def _coincide_por_texto(frase: str, producto: dict) -> bool:
-    """Indica si la frase completa o todos sus términos calzan con la categoría o el nombre del producto."""
+def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -> bool:
+    """Indica si la frase completa o todos sus términos calzan con la categoría o el nombre del producto.
+
+    Con `exigir_todos` se exige que todos calzen; sin el flag, las frases compuestas
+    separadas por conjuncion ("frutas y verduras") se evaluan como alternativas: basta con
+    que un grupo calze.
+    """
     frase_normalizada = _normalizar_texto(frase)
     if not frase_normalizada:
         return False
@@ -144,8 +149,17 @@ def _coincide_por_texto(frase: str, producto: dict) -> bool:
     nombres_tokens = _separar_terminos(nombre_producto)
     terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
     objetivos = [categoria_producto, nombre_producto, *nombres_tokens]
-    # Todos los términos de la frase deben calzar: "aji verde" exige "aji" y "verde".
-    return all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in terminos)
+    if exigir_todos:
+        # Todos los términos de la frase deben calzar: "aji verde" exige "aji" y "verde".
+        return all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in terminos)
+    # Sin exigir todos, la frase puede ser una categoria compuesta ("frutas y verduras"): al
+    # separar por conjuncion queda una alternancia de subcategorias, asi que basta un grupo.
+    grupos = re.split(r"\b(?:y|o|u)\b", frase_normalizada)
+    return any(
+        all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in _separar_terminos(grupo))
+        for grupo in grupos
+        if _separar_terminos(grupo)
+    )
 
 
 # ===== Filtrado del catálogo =====
@@ -163,7 +177,8 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
 
     categoria = filtros.get("categoria")
     if isinstance(categoria, str) and categoria.strip():
-        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto)]
+        # Sin exigir_todos: las categorías compuestas ("frutas y verduras") matchean productos de cualquiera de sus partes.
+        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto, exigir_todos=False)]
 
     palabras_clave = _a_lista_de_terminos(filtros.get("palabras_clave"))
     if palabras_clave:
@@ -184,13 +199,14 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
 
 
 def vincular_ingredientes_catalogo(
-    catalogo: list, ingredientes: list[dict], limite_candidatos: int = 3
+    catalogo: list, ingredientes: list[dict], limite_candidatos: int | None = 3
 ) -> tuple[list[dict], list[str]]:
     """
     Vincula los ingredientes de una receta con los productos reales del catálogo.
 
     Devuelve los ingredientes resueltos con sus candidatos sugeridos (ordenados
-    por precio ascendente, hasta el limite) y los nombres sin candidato.
+    por precio ascendente, hasta el limite; todos los candidatos si el limite es None) y
+    los nombres sin candidato.
     """
     ingredientes_receta = []
     ingredientes_faltantes = []
@@ -201,7 +217,9 @@ def vincular_ingredientes_catalogo(
             for producto in catalogo
             if producto.get("id") is not None and _coincide_por_texto(item["nombre"], producto)
         ]
-        candidatos = sorted(candidatos, key=lambda producto: producto["precio"])[:limite_candidatos]
+        candidatos = sorted(candidatos, key=lambda producto: producto["precio"])
+        if limite_candidatos is not None:
+            candidatos = candidatos[:limite_candidatos]
 
         if not candidatos:
             ingredientes_faltantes.append(item["nombre"])
