@@ -166,6 +166,16 @@ func (repositorio *Postgres) Eliminar(contexto context.Context, usuarioID, lista
 // Artículos (SUP-241)
 // =============================================================================
 
+// ListaEsDelUsuario comprueba que la lista exista y sea del usuario, sin
+// bloquearla: AgregarArticulo lo vuelve a comprobar dentro de su transacción.
+func (repositorio *Postgres) ListaEsDelUsuario(contexto context.Context, usuarioID, listaID string) (bool, error) {
+	var existe bool
+	errorObtenido := repositorio.pool.QueryRow(contexto, `
+        SELECT EXISTS (SELECT 1 FROM rutas.listas_compras WHERE id = $1 AND usuario_id = $2)`,
+		listaID, usuarioID).Scan(&existe)
+	return existe, errorObtenido
+}
+
 // AgregarArticulo guarda el producto en la lista o suma la cantidad si ya
 // estaba. Bloquea la fila de la lista durante la transacción: así dos altas
 // simultáneas no superan juntas el máximo de artículos ni duplican el producto.

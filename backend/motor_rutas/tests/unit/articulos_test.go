@@ -199,6 +199,16 @@ func TestArticulosDeListaAjenaResponden404(prueba *testing.T) {
 	if codigo, cuerpo := agregar(prueba, clienteHTTP, idLista, productoLeche, 1); codigo != http.StatusNotFound || cuerpo["mensaje"] != "La lista no existe." {
 		prueba.Fatalf("B agrega a la lista de A: %d %v", codigo, cuerpo)
 	}
+	// La propiedad se comprueba antes que Catálogo: producto inexistente o
+	// Catálogo caído tampoco revelan que la lista existe.
+	if codigo, _ := agregar(prueba, clienteHTTP, idLista, productoArroz, 1); codigo != http.StatusNotFound {
+		prueba.Fatalf("B agrega un producto inexistente a la lista de A: %d", codigo)
+	}
+	clienteHTTP.catalogo.caido = true
+	if codigo, _ := agregar(prueba, clienteHTTP, idLista, productoLeche, 1); codigo != http.StatusNotFound {
+		prueba.Fatalf("B agrega con Catálogo caído a la lista de A: %d", codigo)
+	}
+	clienteHTTP.catalogo.caido = false
 	if respuesta := clienteHTTP.pedir(http.MethodPut, rutaArticulo(idLista, articulo["id"]), `{"cantidad": 9}`, nil); respuesta.Code != http.StatusNotFound {
 		prueba.Fatalf("B cambia un artículo de A: %d", respuesta.Code)
 	}

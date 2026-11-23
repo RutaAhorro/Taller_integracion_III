@@ -135,6 +135,10 @@ type Repositorio interface {
 	// AgregarArticulo guarda el producto o, si ya estaba en la lista, suma la
 	// cantidad. creado es true si el artículo es nuevo. Devuelve ErrMaxArticulos
 	// o ErrMaxCantidad si se supera un tope.
+	// ListaEsDelUsuario indica si la lista existe y pertenece al usuario. Se usa
+	// antes de consultar a Catálogo: una lista ajena responde 404 aunque
+	// Catálogo esté caído o el producto no exista.
+	ListaEsDelUsuario(contexto context.Context, usuarioID, listaID string) (bool, error)
 	AgregarArticulo(contexto context.Context, usuarioID, listaID, productoID string, cantidad int, limites Limites) (articulo *Articulo, creado bool, errorObtenido error)
 	// ActualizarArticulo cambia cantidad y/o estado comprado; nil deja el valor.
 	ActualizarArticulo(contexto context.Context, usuarioID, listaID string, articuloID int64, cantidad *int, estaComprado *bool) (*Articulo, error)

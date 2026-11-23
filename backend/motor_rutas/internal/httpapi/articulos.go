@@ -101,6 +101,19 @@ func (manejador *handlerListas) agregarArticulo(respuesta http.ResponseWriter, p
 		return
 	}
 
+	// --- La lista debe ser del usuario antes de consultar a Catálogo ---------
+	// Así una lista ajena responde 404 aunque Catálogo falle o el producto no exista.
+	esDelUsuario, errorObtenido := manejador.opciones.Repo.ListaEsDelUsuario(peticion.Context(),
+		sesion(peticion).UsuarioID, listaID(peticion))
+	if errorObtenido != nil {
+		manejador.fallo(respuesta, peticion, errorObtenido)
+		return
+	}
+	if !esDelUsuario {
+		escribirError(respuesta, http.StatusNotFound, mensajeListaNoExiste, "")
+		return
+	}
+
 	// --- Verificar en Catálogo: si no responde, no se guarda nada ------------
 	idProducto := productoID.String()
 	estados, errorObtenido := manejador.opciones.Catalogo.Consultar(peticion.Context(), []string{idProducto})

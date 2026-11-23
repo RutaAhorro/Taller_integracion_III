@@ -140,6 +140,12 @@ func (repositorio *repositorioMemoria) filaDelUsuario(usuarioID, listaID string)
 	return filaLista
 }
 
+func (repositorio *repositorioMemoria) ListaEsDelUsuario(_ context.Context, usuarioID, listaID string) (bool, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	return repositorio.filaDelUsuario(usuarioID, listaID) != nil, nil
+}
+
 func (repositorio *repositorioMemoria) AgregarArticulo(_ context.Context, usuarioID, listaID, productoID string, cantidad int, limites listas.Limites) (*listas.Articulo, bool, error) {
 	repositorio.mu.Lock()
 	defer repositorio.mu.Unlock()
