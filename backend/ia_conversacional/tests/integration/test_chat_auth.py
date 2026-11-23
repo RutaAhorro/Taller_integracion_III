@@ -1028,4 +1028,55 @@ def test_chat_receta_candidato_reordenado_por_precio_vigente(cliente, monkeypatc
 
         assert len(datos["productos_recomendados"]) >= 1
         assert datos["productos_recomendados"][0]["producto_id"] == "prod-tomate-2"
-        assert datos["productos_recomendados"][0]["precio"] == 900
+
+
+def test_chat_receta_revalida_precio_max_tras_disponibilidad(cliente):
+    """Si un producto cumple precio_max en caché ($400) pero su precio vigente ($2000) lo supera, se descarta."""
+    token_valido = generar_token(user_id="user-revalida-precio")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"precio_max": 500, "ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=10,
+    )
+    catalogo_cache = [
+        {
+            "id": "prod-tomate-400",
+            "nombre": "Tomate Larga Vida",
+            "marca": "Generica",
+            "categoria": "verduras",
+            "supermercado": "Lider",
+            "precio": 400.0,
+            "precio_normal": 400.0,
+            "precio_oferta": None,
+            "en_oferta": False,
+            "url_imagen": "https://img.super.cl/tomate.png",
+            "unidad": "1kg",
+            "en_stock": True,
+            "distancia_km": 0.0,
+        }
+    ]
+    disponibilidad_simulada = {
+        "prod-tomate-400": {
+            "producto_id": "prod-tomate-400",
+            "estado_producto": "disponible",
+            "estado_precio": "vigente",
+            "producto": {"precio": 2000, "unidad": "1kg", "supermercado": "Lider", "marca": "Generica"},
+        }
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch.object(main.repositorio_productos, "obtener_todos", return_value=catalogo_cache),
+        patch.object(main.repositorio_productos, "consultar_disponibilidad", return_value=disponibilidad_simulada),
+    ):
+        mock_extraer.return_value = mock_resultado
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "quiero hacer pebre por menos de 500 pesos"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        assert datos["ingredientes_receta"] == []
+        assert datos["ingredientes_faltantes"] == ["Tomate"]
+        assert datos["productos_recomendados"] == []

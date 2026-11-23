@@ -191,6 +191,11 @@ async def _ejecutar_etapas_1_y_2(
                         candidatos_actualizados.append(candidato_actualizado)
                     candidatos = candidatos_actualizados
 
+                # Revalidar precio_max contra los precios vigentes tras consultar_disponibilidad
+                precio_max = resultado.filtros.get("precio_max")
+                if isinstance(precio_max, (int, float)) and not isinstance(precio_max, bool) and precio_max > 0:
+                    candidatos = [candidato for candidato in candidatos if candidato["precio"] <= precio_max]
+
                 if not candidatos:
                     ingredientes_faltantes.append(ingrediente["ingrediente"])
                     continue
