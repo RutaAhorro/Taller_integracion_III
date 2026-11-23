@@ -274,4 +274,4 @@ nunca deja datos a medias.
 - [x] **Equipo:** ¿agregar un producto sin stock debe rechazarse o permitirse
   con una advertencia? **Se permite con advertencia** (revisión de #133, SUP-241).
 - [x] **Equipo:** valores iniciales para el máximo de cantidad por artículo y de
-  artículos por lista. **99 envases y 100 artículos** (SUP-241), configurables.
+  artículos por lista. **99 envases y 100 artículos** (SUP-241), fijos como constantes en `internal/listas`.

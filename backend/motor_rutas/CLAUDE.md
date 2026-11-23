@@ -6,7 +6,7 @@
 - `internal/config` (entorno), `internal/auth` (JWT), `internal/db` (pool pgx y
   verificación de grants), `internal/listas` (modelo y SQL),
   `internal/httpapi` (rutas, CORS, `X-Request-ID`, errores y handlers).
-- `RUTAS_DB_URL`/`app_rutas`: CRUD listas y solo lectura de artículos.
+- `RUTAS_DB_URL`/`app_rutas`: CRUD de listas y de sus artículos.
   No leer `api.usuarios` ni tablas de Catálogo. Sin migraciones ni AutoMigrate.
 - Sesión solo cookie HttpOnly `jwt` de Identidad. Filtrar siempre por dueño;
   lista ajena/id inválido devuelve 404 sin revelar existencia.

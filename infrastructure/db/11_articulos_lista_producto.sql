@@ -7,8 +7,11 @@
 -- - producto_normalizado_id se elimina con su FK hacia api.productos_normalizados,
 --   tabla que nunca se llenó.
 -- - Filas previas: se conservan con producto_id NULL (no resolubles) en vez de
---   inventarles un producto. Los CHECK son NOT VALID para que solo apliquen a
---   filas nuevas o modificadas.
+--   inventarles un producto. Por eso producto_id no lleva CHECK: un CHECK NOT
+--   VALID también se evalúa al modificar una fila e impediría marcar como
+--   comprado un artículo previo. Motor exige producto_id en cada alta.
+-- - El CHECK de cantidad es NOT VALID para que solo aplique a filas nuevas o
+--   modificadas.
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -17,14 +20,11 @@ SET LOCAL statement_timeout = '60s';
 ALTER TABLE rutas.articulos_lista_compras ADD COLUMN IF NOT EXISTS producto_id UUID;
 ALTER TABLE rutas.articulos_lista_compras DROP COLUMN IF EXISTS producto_normalizado_id;
 
+-- Versiones previas de esta migración agregaban un CHECK de producto_id.
+ALTER TABLE rutas.articulos_lista_compras DROP CONSTRAINT IF EXISTS articulos_lista_producto_requerido;
+
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM pg_constraint
-                   WHERE conrelid = 'rutas.articulos_lista_compras'::regclass
-                     AND conname = 'articulos_lista_producto_requerido') THEN
-        ALTER TABLE rutas.articulos_lista_compras
-            ADD CONSTRAINT articulos_lista_producto_requerido CHECK (producto_id IS NOT NULL) NOT VALID;
-    END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_constraint
                    WHERE conrelid = 'rutas.articulos_lista_compras'::regclass
                      AND conname = 'articulos_lista_cantidad_positiva') THEN

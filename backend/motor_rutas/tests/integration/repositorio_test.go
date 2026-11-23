@@ -220,9 +220,8 @@ func TestMigracionRechazaArticulosInvalidos(prueba *testing.T) {
 	}
 	prueba.Cleanup(func() { _, _ = repo.Eliminar(context.Background(), usuario, lista.ID) })
 
-	// Los CHECK de la migración 11 aplican a filas nuevas aunque sean NOT VALID.
+	// El CHECK de cantidad de la migración 11 aplica a filas nuevas aunque sea NOT VALID.
 	for _, sentencia := range []string{
-		"INSERT INTO rutas.articulos_lista_compras (lista_id, producto_id, cantidad) VALUES ($1, NULL, 1)",
 		"INSERT INTO rutas.articulos_lista_compras (lista_id, producto_id, cantidad) VALUES ($1, gen_random_uuid(), 0)",
 	} {
 		_, errorObtenido := pool.Exec(contexto, sentencia, lista.ID)
@@ -230,6 +229,31 @@ func TestMigracionRechazaArticulosInvalidos(prueba *testing.T) {
 		if !errors.As(errorObtenido, &pgErr) || pgErr.Code != codigoViolacionCheck {
 			prueba.Errorf("%s: se esperaba violación de CHECK (%s), se obtuvo %v", sentencia, codigoViolacionCheck, errorObtenido)
 		}
+	}
+}
+
+func TestArticuloPrevioSinProductoSePuedeModificar(prueba *testing.T) {
+	pool, repo, _ := preparar(prueba)
+	contexto := context.Background()
+	usuario := uuid.NewString()
+	lista, errorObtenido := repo.Crear(contexto, usuario, "Artículo previo")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	prueba.Cleanup(func() { _, _ = repo.Eliminar(context.Background(), usuario, lista.ID) })
+
+	// Fila anterior a la migración 11: producto_id NULL.
+	var articuloID int64
+	if errorObtenido := pool.QueryRow(contexto,
+		`INSERT INTO rutas.articulos_lista_compras (lista_id, producto_id, cantidad) VALUES ($1, NULL, 2) RETURNING id`,
+		lista.ID).Scan(&articuloID); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+
+	comprado := true
+	articulo, errorObtenido := repo.ActualizarArticulo(contexto, usuario, lista.ID, articuloID, nil, &comprado)
+	if errorObtenido != nil || articulo == nil || !articulo.EstaComprado || articulo.ProductoID != nil {
+		prueba.Fatalf("marcar comprado un artículo previo: %+v %v", articulo, errorObtenido)
 	}
 }
 

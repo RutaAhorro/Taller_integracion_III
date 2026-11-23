@@ -127,5 +127,6 @@ docker build --target test backend/motor_rutas   # lo mismo en la CI, con -race
 `RUTAS_TEST_DB_URL` (app_rutas) y `RUTAS_TEST_ADMIN_URL` (operador), con las
 migraciones de `infrastructure/db` aplicadas, incluida la 11. Prueba los grants
 reales, el aislamiento por usuario, alta, suma, topes, cambio y baja de
-artículos, altas simultáneas del mismo producto, los CHECK de la migración y el
+artículos, altas simultáneas del mismo producto, el CHECK de cantidad, la edición
+de artículos previos sin `producto_id` y el
 borrado en cascada. Nunca apuntarlas a una base compartida.
