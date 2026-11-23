@@ -20,26 +20,13 @@ import (
 // ===== Constantes =====
 
 // Claves de pg_advisory_xact_lock. Sólo las usa Catálogo y serializan, entre
-// sus réplicas, la autocreación de cadenas y sucursales y cada clave de lote.
-// Son parte del contrato operativo: no cambiarlas sin coordinar despliegue.
+// sus réplicas, la autocreación de cadenas y cada clave de lote. Son parte del
+// contrato operativo: no cambiarlas sin coordinar despliegue. (SUP-376: la
+// clave 2692, que protegía la autocreación de sucursales, se retiró junto con
+// ella; no reutilizarla para otro fin sin coordinar.)
 const (
-	bloqueoCadena   = 2691
-	bloqueoSucursal = 2692
-	bloqueoLote     = 2701
-)
-
-// Datos de la sucursal que se crea cuando una cadena aún no tiene ninguna.
-// Control resuelve sucursales sólo por cadena para fuentes online; estos datos
-// son heredados del contrato de SUP-267 (ver README, pendiente SUP-394).
-const (
-	nombreCadenaDesconocida = "Supermercado"
-	sufijoCodigoCentral     = "-CENTRAL"
-	sufijoNombreCentral     = " Central"
-	direccionCentral        = "Casa Matriz / Online"
-	comunaCentral           = "Temuco"
-	ciudadCentral           = "Temuco"
-	latitudCentral          = -38.7359
-	longitudCentral         = -72.5904
+	bloqueoCadena = 2691
+	bloqueoLote   = 2701
 )
 
 // ===== Repositorio =====
@@ -103,8 +90,12 @@ func buscarCadenaPorID(baseDatos *gorm.DB, cadenaID int) (*domain.CadenaSupermer
 // ===== Sucursales =====
 
 // ObtenerSucursal busca por ID o código (filtrando por cadena si llega). Sólo
-// con la cadena, devuelve su primera sucursal activa o crea una central bajo un
-// lock por cadena.
+// con la cadena, devuelve su primera sucursal activa (por id ascendente). Nunca
+// crea sucursales (SUP-376): antes inventaba una "<Cadena> Central" con dirección
+// y coordenadas de Temuco que quedaban como reales y el motor de rutas las
+// usaría. Si no hay ninguna sucursal activa devuelve nil sin error, y la ruta
+// interna responde 404 branch_not_found; la sucursal real debe registrarse antes.
+// Es una lectura simple, por lo que ya no necesita transacción ni advisory lock.
 func (repositorio *RepositorioIngesta) ObtenerSucursal(contexto context.Context, cadenaID int, sucursalID *int, codigoSucursal *string) (*domain.SucursalSupermercado, error) {
 	consulta := repositorio.baseDatos.WithContext(contexto)
 	if cadenaID > 0 {
@@ -118,21 +109,7 @@ func (repositorio *RepositorioIngesta) ObtenerSucursal(contexto context.Context,
 	case cadenaID <= 0:
 		return nil, nil // sin ningún criterio no hay sucursal que resolver
 	}
-
-	var resultado *domain.SucursalSupermercado
-	errorTransaccion := repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
-		if errorBloqueo := transaccion.Exec("SELECT pg_advisory_xact_lock(?, ?)", bloqueoSucursal, cadenaID).Error; errorBloqueo != nil {
-			return errorBloqueo
-		}
-		var errorBusqueda error
-		resultado, errorBusqueda = primeraSucursal(transaccion.Where("cadena_id = ? AND esta_activa = true", cadenaID).Order("id ASC"))
-		if errorBusqueda != nil || resultado != nil {
-			return errorBusqueda
-		}
-		resultado, errorBusqueda = crearSucursalCentral(transaccion, cadenaID)
-		return errorBusqueda
-	})
-	return resultado, errorTransaccion
+	return primeraSucursal(consulta.Where("esta_activa = true").Order("id ASC"))
 }
 
 // primeraSucursal ejecuta la consulta y devuelve nil sin error si no hay fila.
@@ -143,26 +120,6 @@ func primeraSucursal(consulta *gorm.DB) (*domain.SucursalSupermercado, error) {
 			return nil, nil
 		}
 		return nil, errorBusqueda
-	}
-	return &sucursal, nil
-}
-
-// crearSucursalCentral crea la sucursal por defecto de una cadena para que los
-// productos de fuentes online tengan una sucursal a la que referirse.
-func crearSucursalCentral(transaccion *gorm.DB, cadenaID int) (*domain.SucursalSupermercado, error) {
-	nombreCadena := nombreCadenaDesconocida
-	if cadena, errorCadena := buscarCadenaPorID(transaccion, cadenaID); errorCadena == nil && cadena != nil {
-		nombreCadena = cadena.Nombre
-	}
-	codigo := strings.ToUpper(strings.ReplaceAll(nombreCadena, " ", "-")) + sufijoCodigoCentral
-	comuna, ciudad := comunaCentral, ciudadCentral
-	sucursal := domain.SucursalSupermercado{
-		CadenaID: cadenaID, CodigoSucursal: &codigo, Nombre: nombreCadena + sufijoNombreCentral,
-		Direccion: direccionCentral, Comuna: &comuna, Ciudad: &ciudad,
-		Lat: latitudCentral, Lon: longitudCentral, EstaActiva: true,
-	}
-	if errorCreacion := transaccion.Create(&sucursal).Error; errorCreacion != nil {
-		return nil, errorCreacion
 	}
 	return &sucursal, nil
 }

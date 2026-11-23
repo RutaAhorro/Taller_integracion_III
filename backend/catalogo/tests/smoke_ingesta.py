@@ -94,12 +94,26 @@ if args.mode == 'normal':
         results = list(pool.map(hit, range(12)))
     assert sum(r['insertados'] for r in results) == 1 and sum(r['actualizados'] for r in results) == 11
     assert request(args.gateway_url, concurrent_job)['elementos_extraidos'] == 12
-    def resolve_new_source(i):
-        return request(args.gateway_url, '/api/v1/scraper/productos', 200, 'POST',
+    # SUP-376: Catálogo ya no inventa la sucursal "<Cadena> Central". Antes, esta
+    # sección resolvía en paralelo una cadena nueva y exigía una única sucursal
+    # autocreada. Ahora se comprueba lo mismo por separado:
+    # (a) cadena nueva sin sucursal: la concurrencia sigue dejando 1 cadena (lo
+    #     verifica verify_ingesta_ownership.sql), pero todas las peticiones
+    #     reciben 404 y no se crea ninguna sucursal (0, también en el verify).
+    def resolve_chain_without_branch(i):
+        return request(args.gateway_url, '/api/v1/scraper/productos', 404, 'POST',
             {'supermercado': 'SUP269 Auto Source', 'productos': [item('SUP269-AUTO-' + str(i))]})
     with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-        automatic = list(pool.map(resolve_new_source, range(6)))
-    branches = {r['sucursal_id'] for r in automatic}
+        list(pool.map(resolve_chain_without_branch, range(6)))
+    # (b) cadena con sucursal real sembrada en fixtures.sql: la resolución
+    #     concurrente conserva el objetivo original (una sola sucursal, sin
+    #     duplicados) y esa sucursal sirve para el cruce de cadenas.
+    def resolve_seeded_source(i):
+        return request(args.gateway_url, '/api/v1/scraper/productos', 200, 'POST',
+            {'supermercado': 'SUP376 Seeded Source', 'productos': [item('SUP376-SEEDED-' + str(i))]})
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        seeded = list(pool.map(resolve_seeded_source, range(6)))
+    branches = {r['sucursal_id'] for r in seeded}
     assert len(branches) == 1
     batch(args.gateway_url, current + '/productos', [item('SUP269-CROSS-CHAIN')], 404, sucursal_id=next(iter(branches)))
     request(args.gateway_url, concurrent_job + '/finalizar', 200, 'PUT', {'estado': 'completado'})

@@ -20,6 +20,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/repositories"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ===== Preparación =====
@@ -30,8 +31,9 @@ var (
 	tokenConsultaPostgres = strings.Repeat("c", 32)
 )
 
-// enrutadorPostgres compone el router real sobre la base de la variable.
-func enrutadorPostgres(prueba *testing.T) http.Handler {
+// baseDatosPostgres abre la base de la variable con el rol de runtime y la
+// cierra al terminar la prueba; se omite la prueba si la variable no existe.
+func baseDatosPostgres(prueba *testing.T) *gorm.DB {
 	prueba.Helper()
 	urlBaseDatos := os.Getenv("CATALOGO_TEST_DB_URL")
 	if urlBaseDatos == "" {
@@ -46,6 +48,17 @@ func enrutadorPostgres(prueba *testing.T) http.Handler {
 		prueba.Fatal(errorConexiones)
 	}
 	prueba.Cleanup(func() { _ = conexiones.Close() })
+	return baseDatos
+}
+
+// enrutadorPostgres compone el router real sobre la base de la variable.
+func enrutadorPostgres(prueba *testing.T) http.Handler {
+	prueba.Helper()
+	baseDatos := baseDatosPostgres(prueba)
+	conexiones, errorConexiones := baseDatos.DB()
+	if errorConexiones != nil {
+		prueba.Fatal(errorConexiones)
+	}
 	if errorPermisos := repositories.VerificarAlmacenamiento(prueba.Context(), baseDatos, true); errorPermisos != nil {
 		prueba.Fatalf("el rol de runtime no tiene los permisos de Catálogo: %v", errorPermisos)
 	}
@@ -92,6 +105,7 @@ func pedir(prueba *testing.T, enrutador http.Handler, metodo, ruta, token string
 // ===== Flujo completo =====
 
 func TestPostgresIngestaPreciosYDisponibilidad(prueba *testing.T) {
+	baseDatos := baseDatosPostgres(prueba)
 	enrutador := enrutadorPostgres(prueba)
 	sufijo := uuid.NewString()[:8]
 	listo := pedir(prueba, enrutador, http.MethodGet, "/_catalogo/ready", "", nil, nil, nil)
@@ -109,10 +123,12 @@ func TestPostgresIngestaPreciosYDisponibilidad(prueba *testing.T) {
 		prueba.Fatalf("la cadena se duplicó: %d y %d", cadena.ID, cadenaRepetida.ID)
 	}
 
-	// Sin sucursales, la cadena recibe su sucursal central.
+	// SUP-376: Catálogo no crea sucursales. Se registra una sucursal real (como
+	// lo haría quien administra la cadena) y recién entonces se resuelve por cadena.
+	sucursalSembrada := sembrarSucursal(prueba, baseDatos, cadena.ID, "SUC-"+sufijo, true)
 	var sucursal domain.SucursalSupermercado
-	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil, map[string]any{"cadena_id": cadena.ID}, &sucursal); estado != http.StatusOK || sucursal.CadenaID != cadena.ID {
-		prueba.Fatalf("resolver sucursal=%d %+v", estado, sucursal)
+	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil, map[string]any{"cadena_id": cadena.ID}, &sucursal); estado != http.StatusOK || sucursal.ID != sucursalSembrada {
+		prueba.Fatalf("resolver sucursal=%d %+v; se esperaba la sembrada %d", estado, sucursal, sucursalSembrada)
 	}
 
 	// Lote idempotente: oferta explícita, alias heredado `precio` y un ítem inválido.
@@ -178,4 +194,93 @@ func TestPostgresIngestaPreciosYDisponibilidad(prueba *testing.T) {
 	if estado := pedir(prueba, enrutador, http.MethodPut, ruta, "", cookieAdministrador(prueba), map[string]any{"habilitada": false}, &fuente); estado != http.StatusOK || fuente.Habilitada || fuente.TotalProductos != 2 {
 		prueba.Fatalf("actualizar fuente=%d %+v", estado, fuente)
 	}
+}
+
+// ===== Sucursales: Catálogo no las crea (SUP-376) =====
+
+// sembrarSucursal inserta una sucursal con datos de prueba y devuelve su ID. El
+// rol app_catalogo conserva INSERT sobre la tabla, pero el código de Catálogo ya
+// no lo usa: aquí actúa como quien registra la sucursal real.
+func sembrarSucursal(prueba *testing.T, baseDatos *gorm.DB, cadenaID int, codigo string, activa bool) int {
+	prueba.Helper()
+	var sucursalID int
+	errorInsercion := baseDatos.Raw(`INSERT INTO scraper.sucursales_supermercado
+		(cadena_id, codigo_sucursal, nombre, direccion, lat, lon, esta_activa)
+		VALUES (?, ?, ?, 'Dirección de prueba 123', -38.7, -72.6, ?) RETURNING id`,
+		cadenaID, codigo, "Sucursal "+codigo, activa).Scan(&sucursalID).Error
+	if errorInsercion != nil {
+		prueba.Fatalf("no se pudo sembrar la sucursal: %v", errorInsercion)
+	}
+	return sucursalID
+}
+
+// contarSucursales devuelve cuántas filas tiene la cadena, activas o no.
+func contarSucursales(prueba *testing.T, baseDatos *gorm.DB, cadenaID int) int64 {
+	prueba.Helper()
+	var total int64
+	if errorConteo := baseDatos.Table("scraper.sucursales_supermercado").Where("cadena_id = ?", cadenaID).Count(&total).Error; errorConteo != nil {
+		prueba.Fatal(errorConteo)
+	}
+	return total
+}
+
+// TestPostgresSucursalNoSeInventa cubre la regla de SUP-376: una cadena sin
+// sucursal activa no recibe ninguna fila nueva y la ruta responde 404.
+func TestPostgresSucursalNoSeInventa(prueba *testing.T) {
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba)
+	repositorio := repositories.NuevoRepositorioIngesta(baseDatos)
+	sufijo := uuid.NewString()[:8]
+
+	var cadena domain.CadenaSupermercado
+	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/cadenas/resolver", tokenIngestaPostgres, nil, map[string]any{"nombre": "Cadena Sin Sucursal " + sufijo}, &cadena); estado != http.StatusOK {
+		prueba.Fatalf("resolver cadena=%d", estado)
+	}
+
+	prueba.Run("sin sucursal activa devuelve nil y no inserta", func(subprueba *testing.T) {
+		sucursal, errorObtenido := repositorio.ObtenerSucursal(subprueba.Context(), cadena.ID, nil, nil)
+		if errorObtenido != nil || sucursal != nil {
+			subprueba.Fatalf("se esperaba nil sin error, llegó %+v, %v", sucursal, errorObtenido)
+		}
+		if total := contarSucursales(subprueba, baseDatos, cadena.ID); total != 0 {
+			subprueba.Fatalf("Catálogo insertó %d sucursales para una cadena sin sucursal", total)
+		}
+	})
+
+	prueba.Run("HTTP responde 404 branch_not_found y no inserta", func(subprueba *testing.T) {
+		peticion := httptest.NewRequest(http.MethodPost, "/internal/v1/sucursales/resolver", strings.NewReader(`{"cadena_id":`+strconv.Itoa(cadena.ID)+`}`))
+		peticion.Header.Set("Content-Type", "application/json")
+		peticion.Header.Set("Authorization", "Bearer "+tokenIngestaPostgres)
+		respuesta := httptest.NewRecorder()
+		enrutador.ServeHTTP(respuesta, peticion)
+		if respuesta.Code != http.StatusNotFound || !strings.Contains(respuesta.Body.String(), `"branch_not_found"`) {
+			subprueba.Fatalf("respuesta=%d %s", respuesta.Code, respuesta.Body)
+		}
+		if total := contarSucursales(subprueba, baseDatos, cadena.ID); total != 0 {
+			subprueba.Fatalf("la ruta insertó %d sucursales", total)
+		}
+	})
+
+	prueba.Run("una sucursal inactiva no se devuelve", func(subprueba *testing.T) {
+		sembrarSucursal(subprueba, baseDatos, cadena.ID, "INACTIVA-"+sufijo, false)
+		sucursal, errorObtenido := repositorio.ObtenerSucursal(subprueba.Context(), cadena.ID, nil, nil)
+		if errorObtenido != nil || sucursal != nil {
+			subprueba.Fatalf("la sucursal inactiva no debe resolverse: %+v, %v", sucursal, errorObtenido)
+		}
+		if total := contarSucursales(subprueba, baseDatos, cadena.ID); total != 1 {
+			subprueba.Fatalf("debía quedar sólo la sucursal sembrada, hay %d", total)
+		}
+	})
+
+	prueba.Run("con sucursal activa devuelve la primera por id", func(subprueba *testing.T) {
+		primera := sembrarSucursal(subprueba, baseDatos, cadena.ID, "ACTIVA-1-"+sufijo, true)
+		sembrarSucursal(subprueba, baseDatos, cadena.ID, "ACTIVA-2-"+sufijo, true)
+		sucursal, errorObtenido := repositorio.ObtenerSucursal(subprueba.Context(), cadena.ID, nil, nil)
+		if errorObtenido != nil || sucursal == nil || sucursal.ID != primera {
+			subprueba.Fatalf("se esperaba la sucursal %d, llegó %+v, %v", primera, sucursal, errorObtenido)
+		}
+		if total := contarSucursales(subprueba, baseDatos, cadena.ID); total != 3 {
+			subprueba.Fatalf("la resolución modificó la tabla: %d filas", total)
+		}
+	})
 }

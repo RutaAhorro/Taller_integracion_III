@@ -15,3 +15,12 @@ VALUES
   ('00000000-0000-4000-8000-000000002671', 1490, NULL, true, now() - interval '2 days'),
   ('00000000-0000-4000-8000-000000002671', 1290, 990, true, now() - interval '1 hour'),
   ('00000000-0000-4000-8000-000000002672', 1990, NULL, false, now() - interval '10 days');
+
+-- SUP-376: Catálogo ya no crea sucursales. El humo de ingesta necesita una
+-- cadena nueva con una sucursal REAL registrada de antemano (ingesta y
+-- resolución concurrente de sucursal), distinta de la cadena "SUP269 Auto
+-- Source", que se deja a propósito sin sucursal para comprobar el 404.
+INSERT INTO scraper.cadenas_supermercado (nombre, esta_activa) VALUES ('SUP376 Seeded Source', true);
+INSERT INTO scraper.sucursales_supermercado (cadena_id, codigo_sucursal, nombre, direccion, comuna, ciudad, lat, lon, esta_activa)
+SELECT id, 'SUP376-SEEDED', 'SUP376 Seeded Source Sucursal', 'Dirección de prueba SUP376 123', 'Temuco', 'Temuco', -38.7410, -72.6000, true
+FROM scraper.cadenas_supermercado WHERE nombre = 'SUP376 Seeded Source';
