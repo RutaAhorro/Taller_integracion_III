@@ -47,6 +47,12 @@ type ProductoDTO struct {
 	EnStock      bool     `json:"en_stock"`
 }
 
+// SupermercadoDTO es una cadena disponible para el filtro lateral del listado.
+type SupermercadoDTO struct {
+	ID     int    `json:"id"`
+	Nombre string `json:"nombre"`
+}
+
 // HistorialPrecioDTO es una captura histórica de precio del detalle.
 type HistorialPrecioDTO struct {
 	PrecioNormal float64   `json:"precio_normal"`
@@ -92,8 +98,12 @@ type MetadatosPaginacionDTO struct {
 
 // PaginaProductosDTO repite los metadatos en la raíz porque Frontend los lee
 // ahí e IA los lee en `paginacion`; ambos contratos siguen vigentes.
+//
+// Supermercados lista las cadenas con coincidencias para los mismos filtros
+// salvo el de supermercado, sobre todos los resultados y no sólo la página.
 type PaginaProductosDTO struct {
 	Data           []ProductoDTO          `json:"data"`
+	Supermercados  []SupermercadoDTO      `json:"supermercados"`
 	Paginacion     MetadatosPaginacionDTO `json:"paginacion"`
 	TotalRegistros int64                  `json:"total_registros"`
 	PaginaActual   int                    `json:"pagina_actual"`
@@ -116,6 +126,7 @@ type PaginaProductosAdminDTO struct {
 // RepositorioProductos lee productos y capturas de scraper.*.
 type RepositorioProductos interface {
 	Listar(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoDTO, int64, error)
+	ListarSupermercados(contexto context.Context, filtro FiltroProductosDTO) ([]SupermercadoDTO, error)
 	ListarParaAdmin(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoAdminDTO, int64, error)
 	ObtenerPorID(contexto context.Context, productoID string) (*ProductoDetalleDTO, error)
 }

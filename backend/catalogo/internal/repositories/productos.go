@@ -76,13 +76,35 @@ var marcasPropiasPorTitulo = []string{
 
 // ===== Consultas =====
 
-// consultaBase centraliza los JOINs y los filtros comunes de Listar y ListarParaAdmin.
-func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, filtro domain.FiltroProductosDTO) *gorm.DB {
+// opcionesConsulta ajusta consultaBase sin duplicar la lógica de filtros.
+type opcionesConsulta struct {
+	// omitirSupermercado deja fuera sólo el filtro de cadena: la agregación de
+	// supermercados disponibles debe conservar las alternativas al elegir una.
+	omitirSupermercado bool
+	// sinCapturas evita el JOIN LATERAL de la última captura cuando ningún
+	// filtro ni columna lo necesita (la agregación sólo lee la cadena).
+	sinCapturas bool
+}
+
+// filtroUsaPrecios indica si algún filtro lee la última captura (cp.*).
+// Todo filtro nuevo de consultaBase que lea cp.* debe sumarse aquí: si no, la
+// agregación de supermercados (sinCapturas) fallaría por falta del JOIN.
+func filtroUsaPrecios(filtro domain.FiltroProductosDTO) bool {
+	return filtro.PrecioMin != nil || filtro.PrecioMax != nil || filtro.EnOferta != nil
+}
+
+// consultaBase centraliza los JOINs y los filtros comunes de Listar,
+// ListarParaAdmin y ListarSupermercados. Es el ÚNICO lugar donde se traducen
+// los filtros a SQL: cualquier filtro nuevo (p. ej. marcas blancas) se agrega
+// aquí y lo heredan el listado, el total y los supermercados disponibles.
+func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, filtro domain.FiltroProductosDTO, opciones opcionesConsulta) *gorm.DB {
 	consulta := repositorio.baseDatos.WithContext(contexto).
 		Table("scraper.productos_crudos pc").
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
-		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id").
-		Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true")
+		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id")
+	if !opciones.sinCapturas || filtroUsaPrecios(filtro) {
+		consulta = consulta.Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true")
+	}
 
 	if filtro.Query != "" {
 		terminoBusqueda := "%" + filtro.Query + "%"
@@ -94,7 +116,7 @@ func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, 
 	if filtro.EnStock != nil {
 		consulta = consulta.Where("pc.en_stock = ?", *filtro.EnStock)
 	}
-	if filtro.Supermercado != "" {
+	if filtro.Supermercado != "" && !opciones.omitirSupermercado {
 		consulta = consulta.Where("cs.nombre ILIKE ?", "%"+filtro.Supermercado+"%")
 	}
 	if filtro.Marca != "" {
@@ -161,6 +183,16 @@ func filtroCategoriaPublico(consulta *gorm.DB, categoria string) *gorm.DB {
 	return consulta.Where("("+strings.Join(condiciones, " OR ")+")", argumentos...)
 }
 
+// consultaPublica es la consulta base más la categoría pública. La comparten el
+// listado, su total y los supermercados disponibles para que coincidan siempre.
+func (repositorio *RepositorioProductos) consultaPublica(contexto context.Context, filtro domain.FiltroProductosDTO, opciones opcionesConsulta) *gorm.DB {
+	consulta := repositorio.consultaBase(contexto, filtro, opciones)
+	if filtro.Categoria != "" {
+		consulta = filtroCategoriaPublico(consulta, filtro.Categoria)
+	}
+	return consulta
+}
+
 // ordenSeguro construye la cláusula ORDER BY sólo con columnas permitidas.
 func ordenSeguro(filtro domain.FiltroProductosDTO) string {
 	direccion := "ASC"
@@ -188,10 +220,7 @@ func paginar(consulta *gorm.DB, filtro domain.FiltroProductosDTO) *gorm.DB {
 
 // Listar ejecuta la consulta pública del catálogo. Los productos con stock se muestran primero.
 func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
-	consulta := repositorio.consultaBase(contexto, filtro)
-	if filtro.Categoria != "" {
-		consulta = filtroCategoriaPublico(consulta, filtro.Categoria)
-	}
+	consulta := repositorio.consultaPublica(contexto, filtro, opcionesConsulta{})
 
 	var total int64
 	if errorConteo := consulta.Session(&gorm.Session{}).Count(&total).Error; errorConteo != nil {
@@ -222,9 +251,26 @@ func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro
 	return items, total, nil
 }
 
+// ListarSupermercados devuelve las cadenas con al menos un producto que cumple
+// TODOS los filtros activos salvo el de supermercado, sobre el conjunto
+// completo (sin LIMIT/OFFSET): no depende de la página ni del tamaño. Respeta
+// en_stock como el listado: sin el parámetro cuentan también los agotados. El
+// orden (nombre, id) es estable y la lista nunca es nil.
+func (repositorio *RepositorioProductos) ListarSupermercados(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.SupermercadoDTO, error) {
+	supermercados := []domain.SupermercadoDTO{}
+	errorConsulta := repositorio.consultaPublica(contexto, filtro, opcionesConsulta{omitirSupermercado: true, sinCapturas: true}).
+		Select("DISTINCT cs.id AS id, cs.nombre AS nombre").
+		Order("cs.nombre ASC, cs.id ASC").
+		Scan(&supermercados).Error
+	if errorConsulta != nil {
+		return nil, errorConsulta
+	}
+	return supermercados, nil
+}
+
 // ListarParaAdmin ejecuta la consulta del dashboard administrativo y proyecta ProductoAdminDTO.
 func (repositorio *RepositorioProductos) ListarParaAdmin(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {
-	consulta := repositorio.consultaBase(contexto, filtro)
+	consulta := repositorio.consultaBase(contexto, filtro, opcionesConsulta{})
 	if filtro.Categoria != "" {
 		consulta = consulta.Where("pc.categoria_cruda ILIKE ?", "%"+filtro.Categoria+"%")
 	}
@@ -284,7 +330,7 @@ func (repositorio *RepositorioProductos) ObtenerPorID(contexto context.Context, 
 	`
 
 	var producto domain.ProductoDTO
-	resultado := repositorio.consultaBase(contexto, domain.FiltroProductosDTO{}).
+	resultado := repositorio.consultaBase(contexto, domain.FiltroProductosDTO{}, opcionesConsulta{}).
 		Where("pc.id = ?::uuid", idCanonico).
 		Select(columnas).
 		Limit(1).
