@@ -14,6 +14,41 @@ Vite se utiliza para desarrollo y compilación.
 - No confundir una ruta disponible con un flujo integrado: misiones, rutas,
   historial, planes y configuración inicial muestran avisos de no disponibilidad.
 
+## Categorías desde Catálogo
+
+El lateral consulta `GET ${VITE_API_URL}/productos/categorias` al montarse y
+al reintentar un error. Muestra una lista plana de valores de la BD, sin
+departamentos fijos ni respaldo ficticio. Puede incluir valores genéricos o
+semillas existentes y categorías sin stock: no normaliza ni corrige esos datos.
+Destacados conserva sus tres acciones estáticas; no son categorías.
+
+Seleccionar una categoría envía `categoria_exacta`; pulsarla de nuevo o limpiar
+filtros la desactiva. El prefijo interno `categoria:` evita colisiones con
+Destacados y no viaja a la API. La lista no cambia al paginar o filtrar.
+El consumo de facetas de supermercados sigue correspondiendo a SUP-375.
+
+### Comprobación manual
+
+Desde la raíz, con el entorno local configurado:
+
+```bash
+docker compose up -d --build catalogo frontend
+curl -i http://localhost:8082/api/v1/productos/categorias
+```
+
+1. En `/dashboard`, comparar las categorías del lateral con la respuesta HTTP,
+   tanto en escritorio como en móvil. La jerarquía desplegable anterior ya no existe.
+2. Seleccionar categoría y verificar `categoria_exacta` en Red; los resultados
+   deben tener esa categoría, no sólo su nombre en el título. Probar paginación,
+   cambios rápidos, supermercado, deselección, limpieza y Destacados.
+3. Bloquear sólo `*/productos/categorias`, recargar y comprobar error/reintento.
+   Para vacío, usar una respuesta controlada `{"categorias":[]}`, sin borrar datos.
+
+Si aparece la jerarquía antigua, reconstruir frontend y recargar sin caché.
+Si un nombre coincide con el anterior pero viene en la respuesta, es un dato
+de la BD, no una categoría fija del frontend. No requiere migraciones ni cambios
+al `.env`. Estas instrucciones no acreditan pruebas manuales ni despliegue.
+
 ## Desarrollo con Docker y recarga automática
 
 El Compose principal construye el frontend con el target `production` por

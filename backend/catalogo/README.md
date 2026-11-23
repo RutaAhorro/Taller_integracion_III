@@ -88,6 +88,7 @@ en cabeceras arbitrarias.
 | --- | --- | --- | --- |
 | GET | `/api/v1/productos` | Público | Listado paginado de productos con filtros |
 | GET | `/api/v1/productos/buscar` | Público | Búsqueda por texto (parámetro `q`, mínimo 3 caracteres) |
+| GET | `/api/v1/productos/categorias` | Público | Categorías existentes completas, sin paginación |
 | GET | `/api/v1/productos/:id` | Público | Detalle de producto con historial de precios |
 | GET | `/api/v1/admin/productos` | Admin (JWT) | Catálogo administrativo con paginación |
 | GET | `/api/v1/admin/productos/` | Admin (JWT) | Variante con barra final de la ruta administrativa |
@@ -342,11 +343,35 @@ No se requieren migraciones SQL de reversión; el esquema y los permisos del rol
   conexión y verificación de permisos.
 - `internal/domain`: DTO e interfaces de persistencia.
 
+## Categorías del lateral
+
+`GET /api/v1/productos/categorias` devuelve `{"categorias":["…"]}` con los
+valores distintos de `scraper.productos_crudos.categoria_cruda`, ordenados por
+categoría. Excluye `NULL` y vacíos, recorta espacios exteriores y devuelve `[]`
+si no hay categorías. Consulta directamente esa columna: no descarga productos,
+no une capturas ni depende de páginas, stock, búsqueda o supermercado seleccionado.
+
+Es una lista plana de valores existentes: no agrupa por departamentos ni unifica
+mayúsculas, tildes, nombres entre cadenas o categorías genéricas del scraper.
+Puede incluir categorías cuyos productos no tienen stock.
+
+`GET /api/v1/productos?categoria_exacta=<valor>` compara ese valor por igualdad
+con la categoría guardada, recortando espacios exteriores. Conserva signos,
+tildes y mayúsculas; `%` y `_` son literales, no comodines. Se combina con los
+demás filtros y afecta tanto a productos/total como a `supermercados`.
+Si se envían `categoria` y `categoria_exacta`, se aplican ambos.
+El parámetro anterior `categoria` conserva su búsqueda aproximada en el título:
+no se cambia el contrato de sus consumidores. `/buscar` sigue admitiendo sólo
+`q`, `page` y `limit`; usar el listado para filtrar por categoría.
+
+La ruta aprovecha el prefijo de productos del Gateway. No requiere cambios de
+BD, permisos, secretos ni configuración de infraestructura.
+
 ## Supermercados disponibles en el listado (SUP-371)
 
 `GET /api/v1/productos` (y `/buscar`) añade el campo `supermercados` para el
 filtro lateral. Contiene las cadenas con al menos un producto que cumple TODOS
-los filtros activos (`q`, `categoria`, `en_stock`, `marca`, `precio_min/max`,
+los filtros activos (`q`, `categoria`, `categoria_exacta`, `en_stock`, `marca`, `precio_min/max`,
 `en_oferta`, `solo_marcas_blancas`) EXCEPTO `supermercado`, calculadas sobre todos
 los resultados y no sobre la página descargada.
 
