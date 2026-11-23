@@ -1,11 +1,11 @@
-// Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
+// Comparte navegación, búsqueda y carrito; carga las facetas iniciales de supermercados desde Catálogo.
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { TopNav } from "@/layouts/TopNav";
 import { SideBar } from "@/layouts/Sidebar";
 import { CartSidebar } from "@/features/catalogo/CartSidebar";
 import BottomNav from "@/layouts/BottomNav";
-import { getProducts, getMarketsFromProducts } from "@/features/catalogo/products-api";
+import { getProducts } from "@/features/catalogo/products-api";
 import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/features/catalogo/CartContext";
@@ -27,6 +27,9 @@ export function MainLayout() {
   const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
   const [supermercadoActivo, setSupermercadoActivo] = useState<string | null>(null);
   const [supermercadosDisponibles, setSupermercadosDisponibles] = useState<UiSupermarket[]>([]);
+  const [cargandoSupermercados, setCargandoSupermercados] = useState(true);
+  const [errorSupermercados, setErrorSupermercados] = useState(false);
+  const [intentoSupermercados, setIntentoSupermercados] = useState(0);
   const cerrarBarraLateral = useCallback(() => setBarraLateralAbierta(false), []);
   const restablecerFiltros = () => {
     setConsulta("");
@@ -44,23 +47,30 @@ export function MainLayout() {
     'dashboard';
 
   useEffect(() => {
-    let estaMontado = true;
+    const controlador = new AbortController();
+    setCargandoSupermercados(true);
+    setErrorSupermercados(false);
+    setSupermercadosDisponibles([]);
 
-    getProducts('?limit=100&en_stock=true')
-      .then(({ products }) => {
-        if (!estaMontado) return;
+    // Las facetas cubren todo el resultado aunque sólo se pida un producto.
+    // La sincronización con búsqueda y filtros se conecta en el siguiente bloque.
+    getProducts('?limit=1&en_stock=true', controlador.signal)
+      .then(({ markets }) => {
+        if (controlador.signal.aborted) return;
 
-        // Hasta SUP-371 solo se conocen las cadenas de esta página; no se descarga todo el catálogo.
-        setSupermercadosDisponibles(getMarketsFromProducts(products));
+        setSupermercadosDisponibles(markets);
       })
       .catch(() => {
-        if (estaMontado) setSupermercadosDisponibles([]);
+        if (!controlador.signal.aborted) setErrorSupermercados(true);
+      })
+      .finally(() => {
+        if (!controlador.signal.aborted) setCargandoSupermercados(false);
       });
 
     return () => {
-      estaMontado = false;
+      controlador.abort();
     };
-  }, []);
+  }, [intentoSupermercados]);
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -71,6 +81,9 @@ export function MainLayout() {
         onResetFilters={restablecerFiltros}
         activeMarket={supermercadoActivo}
         availableMarkets={supermercadosDisponibles}
+        cargandoSupermercados={cargandoSupermercados}
+        errorSupermercados={errorSupermercados}
+        alReintentarSupermercados={() => setIntentoSupermercados((anterior) => anterior + 1)}
         onSelectCategory={(valor) => {
           setConsulta("");
           setCategoria(valor);
