@@ -585,7 +585,7 @@ data:
             permitted := CASE role_name
                 WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
                 WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
-                WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
+                WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados']
                 ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
             FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -890,6 +890,34 @@ data:
     -- Motor agrega, cambia y quita artículos. La secuencia la usa el SERIAL de id.
     GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
     GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
+
+    COMMIT;
+  12_lotes_articulos_idempotencia.sql: |
+    -- SUP-318: claves Idempotency-Key del agregado en lote de artículos
+    -- (POST /api/v1/listas/{lista_id}/articulos/lote, CONTRATO_ARTICULOS_LISTA.md §3.4).
+    -- Aplicar después de 11. Idempotente: se puede re-ejecutar en una base existente.
+    --
+    -- - Una fila por lote aplicado: si el frontend reintenta con la misma clave,
+    --   Motor la encuentra y no vuelve a sumar las cantidades.
+    -- - huella es el SHA-256 (hex) del lote normalizado: la misma clave con otro
+    --   contenido se rechaza en vez de devolver un resultado que no corresponde.
+    -- - Las filas se borran con su lista (FK interna del esquema rutas). La acción
+    --   de la FK corre con permisos del dueño, por eso app_rutas no necesita DELETE.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    CREATE TABLE IF NOT EXISTS rutas.lotes_articulos_aplicados (
+        lista_id UUID NOT NULL REFERENCES rutas.listas_compras(id) ON DELETE CASCADE,
+        clave VARCHAR(128) NOT NULL,
+        huella CHAR(64) NOT NULL,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (lista_id, clave)
+    );
+
+    -- Motor sólo consulta y registra claves; nunca las modifica ni las borra.
+    GRANT SELECT, INSERT ON rutas.lotes_articulos_aplicados TO app_rutas;
 
     COMMIT;
   init.sql: |
