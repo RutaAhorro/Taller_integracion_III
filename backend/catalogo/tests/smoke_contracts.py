@@ -3,6 +3,7 @@ import argparse
 import http.cookiejar
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 
 
@@ -66,6 +67,17 @@ if args.catalogo_only:
     raise SystemExit(0)
 
 
+def validar_supermercados(supermercados, ruta):
+    """Comprueba la forma del campo SUP-371: lista (nunca null) de {id, nombre},
+    sin duplicados y ordenada por nombre y luego id."""
+    assert isinstance(supermercados, list), 'supermercados no es lista en ' + ruta
+    for supermercado in supermercados:
+        assert set(supermercado) == {'id', 'nombre'}, 'supermercado con forma inesperada en ' + ruta
+    claves_orden = [(supermercado['nombre'], supermercado['id']) for supermercado in supermercados]
+    assert claves_orden == sorted(claves_orden), 'supermercados sin orden estable en ' + ruta
+    assert len(set(claves_orden)) == len(claves_orden), 'supermercados duplicados en ' + ruta
+
+
 def compare(path, status=200, method='GET', opener=None, headers=None):
     old = request(args.api_url, path, method=method, opener=opener, headers=headers)
     new = request(args.catalogo_url, path, method=method, opener=opener, headers=headers)
@@ -75,7 +87,14 @@ def compare(path, status=200, method='GET', opener=None, headers=None):
     if status in (401, 403):
         old_body.pop('detalle', None)
         assert 'detalle' not in new[2], 'Authentication diagnostic exposed'
-    assert old_body == new[2], 'JSON differs for ' + path
+    cuerpo_nuevo = new[2]
+    # SUP-371: Catálogo agrega el campo aditivo `supermercados` al listado; la API
+    # de referencia no lo tiene. Se excluye sólo de esta comparación y sus reglas
+    # se verifican aparte (ver comprobaciones SUP-371 más abajo).
+    if isinstance(cuerpo_nuevo, dict) and 'supermercados' in cuerpo_nuevo and 'supermercados' not in old_body:
+        cuerpo_nuevo = dict(cuerpo_nuevo)
+        validar_supermercados(cuerpo_nuevo.pop('supermercados'), path)
+    assert old_body == cuerpo_nuevo, 'JSON differs for ' + path
     assert old[1].get('Content-Type') == new[1].get('Content-Type'), 'Content-Type differs'
     if not headers or 'Origin' not in headers:
         assert 'Access-Control-Allow-Origin' not in new[1]
@@ -188,6 +207,18 @@ page_order = catalog('/api/v1/productos?limit=5')
 assert page_order['total_registros'] >= 2
 assert page_order['data'][0]['en_stock'] is True, "El primer producto debe tener stock"
 checks.append('GET /api/v1/productos: prioridad stock verificado (SUP-331)')
+# SUP-371: las cadenas se calculan sobre todos los resultados, no sobre la página,
+# e ignoran sólo el filtro de supermercado.
+supermercados_completos = catalog('/api/v1/productos')['supermercados']
+assert supermercados_completos, 'Los fixtures deben aportar al menos una cadena'
+for ruta in ('/api/v1/productos?page=2&limit=1', '/api/v1/productos?limit=1&sort_by=nombre&order=desc'):
+    assert catalog(ruta)['supermercados'] == supermercados_completos, 'supermercados depende de la página en ' + ruta
+cadena_elegida = supermercados_completos[0]['nombre']
+pagina_filtrada = catalog('/api/v1/productos?supermercado=' + urllib.parse.quote(cadena_elegida))
+assert pagina_filtrada['supermercados'] == supermercados_completos, 'Elegir una cadena oculta las alternativas'
+assert all(producto['supermercado'] == cadena_elegida for producto in pagina_filtrada['data'])
+assert catalog('/api/v1/productos?q=SinCoincidenciasSup371')['supermercados'] == []
+checks.append('GET /api/v1/productos: supermercados sobre la búsqueda completa (SUP-371)')
 # Brecha preexistente: la lectura actual no aplica caducidad a precios antiguos.
 old = catalog('/api/v1/productos/' + stale)
 assert old['precio'] == 1990 and not old['en_stock']
