@@ -105,7 +105,7 @@ type Ajustes struct {
 	PlazoPeticion, PlazoReadiness, VidaMaximaConexion, PlazoGoogle                               time.Duration
 	PlazoContador, VentanaContador                                                               time.Duration
 	MaximoBytesCabeceras, MaximoBytesCuerpo, MaximoConexionesAbiertas, MaximoConexionesInactivas int
-	MaximoLogin, MaximoRegistro, MaximoGoogle                                                    int
+	MaximoLogin, MaximoRegistro, MaximoGoogle, MaximoRestablecer                                 int
 }
 
 // AjustesPredeterminados son los valores con que corre el servicio.
@@ -134,11 +134,12 @@ func AjustesPredeterminados() Ajustes {
 		MaximoConexionesInactivas: 2,
 		VidaMaximaConexion:        30 * time.Minute,
 
-		// Contadores por IP: login cuenta fallos; registro y Google, todo.
-		PlazoContador:   time.Second,
-		VentanaContador: 15 * time.Minute,
-		MaximoLogin:     5,
-		MaximoRegistro:  30,
-		MaximoGoogle:    30,
+		// Contadores por IP: login y restablecimiento cuentan fallos; registro y Google, todo.
+		PlazoContador:     time.Second,
+		VentanaContador:   15 * time.Minute,
+		MaximoLogin:       5,
+		MaximoRestablecer: 10,
+		MaximoRegistro:    30,
+		MaximoGoogle:      30,
 	}
 }

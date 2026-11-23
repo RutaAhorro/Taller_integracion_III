@@ -49,6 +49,9 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
         has_table_privilege(current_user, 'api.usuarios', 'SELECT') AND
         has_table_privilege(current_user, 'api.usuarios', 'INSERT') AND
         has_table_privilege(current_user, 'api.usuarios', 'UPDATE') AND
+        to_regclass('api.tokens_recuperacion') IS NOT NULL AND
+        has_table_privilege(current_user, 'api.tokens_recuperacion', 'SELECT') AND
+        has_table_privilege(current_user, 'api.tokens_recuperacion', 'UPDATE') AND
         to_regclass('api.auditoria_admin_usuarios') IS NOT NULL AND
         has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'SELECT') AND
         has_table_privilege(current_user, 'api.auditoria_admin_usuarios', 'INSERT') AND
@@ -63,7 +66,7 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
 		return fmt.Errorf("no se pudo verificar el almacenamiento de Identidad: %w", errorObtenido)
 	}
 	if !permitido {
-		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql, 09_plan_y_ultimo_acceso.sql y 10_restringir_rol_usuarios.sql antes de iniciar Identidad")
+		return errors.New("aplicar 05_tokens_recuperacion.sql, 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql, 09_plan_y_ultimo_acceso.sql y 10_restringir_rol_usuarios.sql antes de iniciar Identidad")
 	}
 	return nil
 }
