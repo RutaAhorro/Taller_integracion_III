@@ -265,3 +265,28 @@ def test_vincular_ingredientes_catalogo_orden_y_limite_de_candidatos():
     candidatos = receta[0]["candidatos"]
     assert [candidato["producto_id"] for candidato in candidatos] == ["4", "2"]
     assert faltantes == []
+
+
+def test_filtrar_productos_coincide_frase_multipalabra_aji_verde():
+    """Verifica que 'aji verde' no calza con 'Té Verde Supremo' ni 'Aceitunas Verdes'."""
+    catalogo = [
+        {"id": 1, "nombre": "Té Verde Supremo", "categoria": "especias", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Aceitunas Verdes", "categoria": "conservas", "precio": 700.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Ají Verde 250g", "categoria": "especias", "precio": 800.0, "distancia_km": 1.0},
+    ]
+    filtros = {"categoria": "aji verde"}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Ají Verde 250g"
+
+
+def test_sanitizar_filtros_crudos_ingredientes_float_entero_conviene_a_int():
+    """Verifica que una cantidad de envases entera en float (2.0) se convierte a int 2."""
+    crudo = {
+        "ingredientes": [
+            {"nombre": "tomate", "cantidad_envases": 2.0},
+        ],
+    }
+    limpio = sanitizar_filtros_crudos(crudo)
+    assert limpio["ingredientes"] == [{"nombre": "tomate", "cantidad_envases": 2}]

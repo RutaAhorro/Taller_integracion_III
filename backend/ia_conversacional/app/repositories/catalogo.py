@@ -134,11 +134,11 @@ class ProductoRepositorio:
             if not isinstance(item, dict) or not item.get("en_stock", True):
                 continue
             # Descartar productos cuyo precio sea no numérico o <= 0
-            precio_raw = item.get("precio", 0.0)
+            precio_crudo = item.get("precio", 0.0)
             try:
-                precio = float(precio_raw)
+                precio = float(precio_crudo)
             except (ValueError, TypeError):
-                logger.debug("Producto %s descartado: precio no numérico (%s)", item.get("id"), precio_raw)
+                logger.debug("Producto %s descartado: precio no numérico (%s)", item.get("id"), precio_crudo)
                 continue
             if not math.isfinite(precio) or precio <= 0:
                 logger.debug("Producto %s descartado: precio inválido o <= 0 (%s)", item.get("id"), precio)

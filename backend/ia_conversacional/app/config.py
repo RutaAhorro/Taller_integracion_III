@@ -102,7 +102,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_ENDPOINT = _leer_env_str("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_MODEL_EXTRACCION = _leer_env_str("GROQ_MODEL_EXTRACCION", "llama-3.1-8b-instant")
 GROQ_MODEL_EXPLICACION = _leer_env_str("GROQ_MODEL_EXPLICACION", "llama-3.3-70b-versatile")
-GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 8.0)
+GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 6.0)
 GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 512)
 GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 200)
 GROQ_FREQUENCY_PENALTY = _leer_env_float("IA_GROQ_FREQUENCY_PENALTY", 0.4)
@@ -115,15 +115,15 @@ GEMINI_API_BASE_URL = _leer_env_str("GEMINI_API_BASE_URL", "https://generativela
     "/"
 )
 GEMINI_ENDPOINT = _leer_env_str("GEMINI_ENDPOINT", f"{GEMINI_API_BASE_URL}/models/{GEMINI_MODEL}:generateContent")
-GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 8.0)
+GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 6.0)
 GEMINI_THINKING_LEVEL = _leer_env_str("IA_GEMINI_THINKING_LEVEL", "low")
 GEMINI_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXTRACCION", 1200)
 GEMINI_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXPLICACION", 2048)
 
 # ===== Reintentos y respaldo entre proveedores =====
 
-FALLBACK_RETRIES_PRIMARIO = _leer_env_int("IA_FALLBACK_RETRIES_PRIMARIO", 1)
-FALLBACK_RETRIES_SECUNDARIO = _leer_env_int("IA_FALLBACK_RETRIES_SECUNDARIO", 1)
+FALLBACK_RETRIES_PRIMARIO = _leer_env_int("IA_FALLBACK_RETRIES_PRIMARIO", 0)
+FALLBACK_RETRIES_SECUNDARIO = _leer_env_int("IA_FALLBACK_RETRIES_SECUNDARIO", 0)
 FALLBACK_BACKOFF_BASE = _leer_env_float("IA_FALLBACK_BACKOFF_BASE", 0.5)
 FALLBACK_JITTER_MAX = _leer_env_float("IA_FALLBACK_JITTER_MAX", 0.5)
 
@@ -133,6 +133,8 @@ CHAT_MAX_MENSAJE_LEN = _leer_env_int("IA_CHAT_MAX_MENSAJE_LEN", 1000)
 EXPLICACION_MAX_PRODUCTOS = _leer_env_int("IA_EXPLICACION_MAX_PRODUCTOS", 8)
 CHAT_RATE_LIMIT_SOLICITUDES = _leer_env_int("IA_CHAT_RATE_LIMIT_SOLICITUDES", 10)
 CHAT_RATE_LIMIT_VENTANA_SEGUNDOS = _leer_env_float("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", 60.0)
+
+CHAT_TIMEOUT_TOTAL = _leer_env_float("IA_CHAT_TIMEOUT_TOTAL", 18.0)
 
 
 # ===== Validación al arrancar =====
@@ -216,6 +218,7 @@ def _validar_limites_numericos() -> None:
         ("FALLBACK_BACKOFF_BASE", FALLBACK_BACKOFF_BASE),
         ("CHAT_MAX_MENSAJE_LEN", CHAT_MAX_MENSAJE_LEN),
         ("EXPLICACION_MAX_PRODUCTOS", EXPLICACION_MAX_PRODUCTOS),
+        ("IA_CHAT_TIMEOUT_TOTAL", CHAT_TIMEOUT_TOTAL),
         # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
         ("IA_CHAT_RATE_LIMIT_SOLICITUDES", CHAT_RATE_LIMIT_SOLICITUDES),
         ("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", CHAT_RATE_LIMIT_VENTANA_SEGUNDOS),
@@ -239,6 +242,11 @@ def _advertir_configuracion_proveedores() -> None:
     """Avisa (sin detener el arranque) si no hay claves de IA o si GEMINI_ENDPOINT anula a GEMINI_MODEL."""
     if not GEMINI_API_KEY and not GROQ_API_KEY:
         logger.warning("Ni GEMINI_API_KEY ni GROQ_API_KEY estan configuradas. Los endpoints con IA fallaran.")
+
+    if not CATALOGO_CONSULTA_TOKEN:
+        logger.warning(
+            "CATALOGO_CONSULTA_TOKEN no configurado: los candidatos de receta no validaran disponibilidad en lote."
+        )
 
     endpoint_explicito = os.getenv("GEMINI_ENDPOINT")
     if endpoint_explicito:

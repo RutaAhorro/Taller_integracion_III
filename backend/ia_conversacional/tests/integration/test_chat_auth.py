@@ -619,3 +619,27 @@ def test_chat_candidato_descartado_por_precio_vencido(cliente):
         assert datos["ingredientes_faltantes"] == ["Tomate"]
         assert datos["productos_recomendados"] == []
         assert datos["respuesta"] == "No encontramos productos que coincidan con tu busqueda."
+
+
+def test_chat_timeout_total_503(cliente, monkeypatch):
+    """Test que_timeout total excedido retorna 503 (SUP-...)."""
+    # Forzar timeout inmediato reduciendo el límite
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.001)
+    token_valido = generar_token(user_id="user-timeout")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"categoria": "verduras"},
+        tiempo_extraccion_ms=10,
+    )
+
+    with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+        mock_extraer.return_value = mock_resultado
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco verduras"},
+        )
+
+        assert respuesta.status_code == 503
+        datos = respuesta.json()
+        assert "no está disponible" in datos.get("detail", "").lower()

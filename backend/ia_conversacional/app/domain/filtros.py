@@ -57,8 +57,15 @@ def _a_lista_de_ingredientes(valor) -> list[dict]:
         if not nombre_limpio:
             continue
         cantidad_envases = item.get("cantidad_envases")
-        if isinstance(cantidad_envases, bool) or not isinstance(cantidad_envases, int) or cantidad_envases < 1:
+        if (
+            isinstance(cantidad_envases, bool)
+            or not isinstance(cantidad_envases, (int, float))
+            or (isinstance(cantidad_envases, float) and not cantidad_envases.is_integer())
+            or cantidad_envases < 1
+        ):
             cantidad_envases = 1
+        else:
+            cantidad_envases = int(cantidad_envases)
         ingredientes.append({"nombre": nombre_limpio, "cantidad_envases": cantidad_envases})
     return ingredientes
 
@@ -127,7 +134,7 @@ def _normalizar_texto(texto: str) -> str:
 
 
 def _coincide_por_texto(frase: str, producto: dict) -> bool:
-    """Indica si la frase, completa o alguno de sus términos, calza con la categoría o el nombre del producto."""
+    """Indica si la frase completa o todos sus términos calzan con la categoría o el nombre del producto."""
     frase_normalizada = _normalizar_texto(frase)
     if not frase_normalizada:
         return False
@@ -135,10 +142,10 @@ def _coincide_por_texto(frase: str, producto: dict) -> bool:
     categoria_producto = _normalizar_texto(producto["categoria"])
     nombre_producto = _normalizar_texto(producto["nombre"])
     nombres_tokens = _separar_terminos(nombre_producto)
-
-    candidatos = [frase_normalizada, *_separar_terminos(frase_normalizada)]
+    terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
     objetivos = [categoria_producto, nombre_producto, *nombres_tokens]
-    return any(_texto_contiene(candidato, objetivo) for candidato in candidatos for objetivo in objetivos)
+    # Todos los términos de la frase deben calzar: "aji verde" exige "aji" y "verde".
+    return all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in terminos)
 
 
 # ===== Filtrado del catálogo =====

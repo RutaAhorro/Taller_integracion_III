@@ -90,7 +90,7 @@ class GeminiProveedor(ProveedorIA):
         try:
             partes = self._partes_visibles(datos["candidates"][0]["content"]["parts"])
         except (KeyError, IndexError):
-            return ResultadoExtraccion(error="Respuesta inesperada de Gemini")
+            raise ValueError("Respuesta inesperada de Gemini") from None
 
         for parte in partes:
             if "functionCall" in parte:

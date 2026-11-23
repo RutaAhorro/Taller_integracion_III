@@ -108,6 +108,10 @@ el límite por usuario y `503` si ningún proveedor pudo extraer filtros.
 Cuando la extracción devuelve `ingredientes` de una receta, la respuesta 200
 incluye las claves `ingredientes_receta` y `ingredientes_faltantes`:
 
+Si `CATALOGO_CONSULTA_TOKEN` no está configurado, los candidatos de receta salen
+de la caché en memoria sin validación en lote (disponibilidad y precio no se
+consultan en Catálogo).
+
 ```json
 {
   "respuesta": "Para tu receta de pasta, agrega Tomate Larga Vida.",
