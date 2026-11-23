@@ -148,12 +148,21 @@ Idempotency-Key: 6a1f0d2e-3b4c-4d5e-8f90-a1b2c3d4e5f6
   mismo resultado sin sumar las cantidades dos veces. El Gateway ya respeta esta
   cabecera en las escrituras.
 - Un mismo `producto_id` repetido dentro del lote se suma antes de guardar.
+- La misma clave con un lote distinto responde **409** con
+  `"codigo": "idempotency_conflict"` y no cambia nada: cada envío distinto
+  lleva una clave nueva. El orden de las líneas no cuenta como lote distinto. La clave es un identificador opaco de hasta 128
+  caracteres `[A-Za-z0-9._:-]` (un UUID sirve) y vale por lista.
+- El lote tiene entre 1 y 100 líneas (el máximo de artículos por lista).
 
 **200 OK**: devuelve la lista completa con su detalle actualizado (sección 3.5).
 
 **409 Conflict**, si algún producto no se puede agregar. `detalle` es un
 arreglo con cada producto rechazado y su motivo (revisión de #133), para que
-el frontend marque cuáles fallaron sin interpretar texto:
+el frontend marque cuáles fallaron sin interpretar texto. `motivo` es
+`no_encontrado` (Catálogo no lo tiene) o `cantidad_maxima` (la cantidad, sumada
+a la que ya hay en la lista o a sus repetidos en el lote, supera 99). Si el lote
+completo no cabe en la lista (más de 100 artículos distintos), responde 409 con
+el mensaje de tope de artículos y sin arreglo, porque no es culpa de un producto:
 
 ```json
 {
@@ -215,7 +224,8 @@ otro servicio. Un artículo `no_encontrado` no se borra solo; el usuario decide.
 ## 4. Errores
 
 Mismo envoltorio que hoy usan todos los servicios: `estado`, `mensaje` y
-`detalle` opcional.
+`detalle` opcional. Motor agrega `codigo`, también opcional, cuando el cliente
+necesita distinguir el error sin leer el mensaje (hoy sólo `idempotency_conflict`).
 
 | Situación | Código | `mensaje` |
 | --- | --- | --- |
@@ -223,6 +233,8 @@ Mismo envoltorio que hoy usan todos los servicios: `estado`, `mensaje` y
 | Lista o artículo inexistente, o de otro usuario | 404 | `La lista no existe.` / `El artículo no existe.` |
 | Cuerpo inválido: cantidad < 1, campos extra, `producto_id` mal formado | 400 | `Solicitud inválida.` |
 | Lote sin `Idempotency-Key` | 400 | `Solicitud inválida.` |
+| `Idempotency-Key` ya usada en la lista con otro lote | 409 | `La clave de idempotencia ya se usó con otro lote.` (`codigo`: `idempotency_conflict`) |
+| Algún producto del lote no existe o supera la cantidad | 409 | `No se pudo agregar el lote.` (`detalle`: arreglo) |
 | Producto inexistente en Catálogo | 422 | `El producto no existe en el catálogo.` |
 | Se supera el máximo de artículos | 409 | `Alcanzaste el máximo de N artículos en la lista.` |
 | Se supera la cantidad máxima, también al sumar | 409 | `La cantidad máxima por artículo es N.` |

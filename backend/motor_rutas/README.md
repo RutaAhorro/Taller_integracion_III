@@ -51,7 +51,20 @@ La forma de cada operación está en el
   artículo (409 al superarlos, también al sumar). Cantidad menor que 1, 400.
   Son constantes de `internal/listas`, no variables de entorno.
 - Un artículo de otra lista o de otro usuario responde 404.
-- El agregado en lote (`/articulos/lote`) es SUP-318.
+- Agregado en lote (SUP-318): `POST /api/v1/listas/{id}/articulos/lote` con
+  `{"articulos": [{"producto_id", "cantidad"}, ...]}` y `Idempotency-Key`
+  obligatoria (400 sin ella). Todo o nada: si un producto no existe o supera
+  la cantidad máxima al sumar, responde 409 con `detalle` como arreglo
+  `[{producto_id, motivo}]` (`no_encontrado` o `cantidad_maxima`) y no guarda
+  nada. Los repetidos se suman antes de guardar. Éxito: 200 con la lista
+  completa, igual que el detalle.
+- El reintento con la misma clave y el mismo lote (sin importar el orden)
+  devuelve el detalle sin volver a sumar; la misma clave con otro lote, 409
+  con `"codigo": "idempotency_conflict"`. Las claves viven en
+  `rutas.lotes_articulos_aplicados` (migración 12).
+- **Pendiente:** las claves de idempotencia sólo se borran con su lista (FK en
+  cascada). No hay vencimiento ni limpieza periódica: una lista muy usada
+  acumula una fila por lote aplicado.
 
 #### Antes / Ahora
 
@@ -59,8 +72,8 @@ La forma de cada operación está en el
 | --- | --- |
 | Artículo con `producto_normalizado_id` (FK a `api.productos_normalizados`, tabla vacía) | Artículo con `producto_id` de Catálogo, sin FK; `null` en filas previas |
 | Detalle con `id`, `producto_normalizado_id`, `cantidad`, `esta_comprado` | Detalle con `id`, `producto_id`, `cantidad`, `esta_comprado`, `estado_producto` y `producto` |
-| Sin endpoints de artículos | `POST`, `PUT` y `DELETE` bajo `/api/v1/listas/{id}/articulos` |
-| Arrancaba sólo con datos de la base | Exige `CATALOGO_INTERNAL_URL` y `CATALOGO_CONSULTA_TOKEN`, y la migración 11 aplicada |
+| Sin endpoints de artículos | `POST`, `PUT` y `DELETE` bajo `/api/v1/listas/{id}/articulos`, y `POST .../articulos/lote` (SUP-318) |
+| Arrancaba sólo con datos de la base | Exige `CATALOGO_INTERNAL_URL` y `CATALOGO_CONSULTA_TOKEN`, y las migraciones 11 y 12 aplicadas |
 
 Probes internos: `/_rutas/live` (sin SQL) y `/_rutas/ready` (ping SQL, 2 s).
 
@@ -81,7 +94,8 @@ Probes internos: `/_rutas/live` (sin SQL) y `/_rutas/ready` (ping SQL, 2 s).
 Ejemplo en [`.env.example`](.env.example).
 
 Al arrancar valida una vez los grants de `06_propiedad_permisos.sql` y que la
-migración 11 haya corrido (columna `producto_id` e índice único); sin ellos no
+migraciones 11 y 12 hayan corrido (columna `producto_id`, índice único y tabla
+de claves del lote); sin ellos no
 abre HTTP. No ejecuta migraciones.
 
 ## Datos y despliegue
@@ -91,7 +105,8 @@ abre HTTP. No ejecuta migraciones.
    sobre `rutas.listas_compras` y `rutas.articulos_lista_compras`, retiran la FK
    de listas hacia `api.usuarios` y cambian los artículos a `producto_id`. Ambos
    son idempotentes. Antes de la 11, contar los artículos existentes en una copia:
-   se conservan con `producto_id` NULL.
+   se conservan con `producto_id` NULL. Después, `12_lotes_articulos_idempotencia.sql`
+   crea la tabla de claves del lote con `SELECT` e `INSERT` para `app_rutas`.
 2. Activar LOGIN: en volúmenes nuevos, `07_runtime_credentials.sh` lo hace si
    existe `RUTAS_DB_PASSWORD`; en la base existente, `\password app_rutas` en psql.
 3. Kubernetes: Secret `rutas-db-secret` con `DB_URL` y `DB_PASSWORD`, y la clave
