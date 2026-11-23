@@ -8,6 +8,7 @@ precio ascendente. No depende de HTTP ni de proveedores.
 """
 
 import re
+import unicodedata
 
 # ===== Saneamiento de filtros =====
 
@@ -88,20 +89,26 @@ def _texto_contiene(texto_primero: str, texto_segundo: str) -> bool:
     return texto_primero in texto_segundo or texto_segundo in texto_primero
 
 
+def _normalizar_texto(texto: str) -> str:
+    """Quita tildes (NFD) y pasa a minúsculas para comparar sin importar la forma del texto."""
+    texto_nfd = unicodedata.normalize("NFD", texto)
+    letras_sin_marcas = [letra for letra in texto_nfd if unicodedata.category(letra) != "Mn"]
+    return "".join(letras_sin_marcas).strip().lower()
+
+
 def _coincide_por_texto(frase: str, producto: dict) -> bool:
     """Indica si la frase, completa o alguno de sus términos, calza con la categoría o el nombre del producto."""
-    frase = frase.strip().lower()
-    if not frase:
+    frase_normalizada = _normalizar_texto(frase)
+    if not frase_normalizada:
         return False
 
-    categoria_producto = producto["categoria"].lower()
-    nombre_producto = producto["nombre"].lower()
+    categoria_producto = _normalizar_texto(producto["categoria"])
+    nombre_producto = _normalizar_texto(producto["nombre"])
+    nombres_tokens = _separar_terminos(nombre_producto)
 
-    candidatos = [frase, *_separar_terminos(frase)]
-    return any(
-        _texto_contiene(candidato, categoria_producto) or _texto_contiene(candidato, nombre_producto)
-        for candidato in candidatos
-    )
+    candidatos = [frase_normalizada, *_separar_terminos(frase_normalizada)]
+    objetivos = [categoria_producto, nombre_producto, *nombres_tokens]
+    return any(_texto_contiene(candidato, objetivo) for candidato in candidatos for objetivo in objetivos)
 
 
 # ===== Filtrado del catálogo =====
@@ -109,10 +116,7 @@ def _coincide_por_texto(frase: str, producto: dict) -> bool:
 
 def filtrar_productos(catalogo: list, filtros: dict) -> list:
     """
-    Aplica precio máximo, categoría y distancia máxima, y ordena por precio.
-
-    `palabras_clave` no filtra a propósito: el modelo lo restringía tanto que
-    casi cualquier pregunta sin una palabra concreta terminaba sin resultados.
+    Aplica precio máximo, categoría, palabras clave y distancia máxima, y ordena por precio.
     """
     resultado = catalogo
 
@@ -123,6 +127,14 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
     categoria = filtros.get("categoria")
     if isinstance(categoria, str) and categoria.strip():
         resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto)]
+
+    palabras_clave = _a_lista_de_terminos(filtros.get("palabras_clave"))
+    if palabras_clave:
+        resultado = [
+            producto
+            for producto in resultado
+            if any(_coincide_por_texto(termino, producto) for termino in palabras_clave)
+        ]
 
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:

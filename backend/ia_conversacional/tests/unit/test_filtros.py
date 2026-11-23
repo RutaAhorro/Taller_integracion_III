@@ -144,3 +144,42 @@ def test_filtrar_productos_proteccion_falsos_positivos_cortos():
     nombres = [producto["nombre"] for producto in filtrados]
     assert "Ampolleta bajo consumo" in nombres
     assert "Ajo Chilote" not in nombres
+
+
+def test_filtrar_productos_coincide_ignorando_tildes():
+    """Verifica que las tildes se pliegan al comparar: 'limon' calza con 'Limón'."""
+    catalogo = [
+        {"id": 1, "nombre": "Limón", "categoria": "frutas", "precio": 700.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["limon"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Limón"
+
+
+def test_filtrar_productos_coincide_con_palabra_corta_del_nombre():
+    """Verifica que una palabra corta del nombre ('sal') calza por igualdad exacta."""
+    catalogo = [
+        {"id": 1, "nombre": "Sal de mar", "categoria": "especias", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Ajo Chilote", "categoria": "verduras", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["sal"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert nombres == ["Sal de mar"]
+
+
+def test_filtrar_productos_filtra_por_palabras_clave():
+    """Verifica que palabras_clave conserva solo los productos que coinciden con la clave."""
+    catalogo = [
+        {"id": 1, "nombre": "Leche Entera", "categoria": "lacteos", "precio": 1100.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["leche"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Leche Entera"

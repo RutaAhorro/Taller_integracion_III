@@ -484,3 +484,38 @@ def test_chat_router_ejecuta_obtener_todos_sin_bloquear():
     datos = respuesta.json()
     assert len(datos["productos_recomendados"]) == 1
     assert datos["respuesta"] == "Explicacion simulada"
+
+
+def test_chat_mensaje_solo_espacios_retorna_422(cliente):
+    """Verifica que un mensaje compuesto solo de espacios en blanco sea rechazado con 422."""
+    token_valido = generar_token()
+    respuesta = cliente.post(
+        "/api/v1/chat",
+        headers={"Authorization": f"Bearer {token_valido}"},
+        json={"mensaje": "   "},
+    )
+    assert respuesta.status_code == 422
+
+
+def test_chat_filtros_vacios_responde_sin_filtros(cliente):
+    """Verifica que cuando la extracción retorna filtros vacíos {} se responde TEXTO_SIN_FILTROS."""
+    token_valido = generar_token(user_id="user-filtros-vacios")
+    mock_resultado = ResultadoExtraccion(
+        filtros={},
+        tiempo_extraccion_ms=10,
+    )
+
+    with patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer:
+        mock_extraer.return_value = mock_resultado
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "cosas"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        assert datos["filtros_aplicados"] is None
+        assert datos["productos_recomendados"] == []
+        assert "No logré identificar qué productos buscas" in datos["respuesta"]

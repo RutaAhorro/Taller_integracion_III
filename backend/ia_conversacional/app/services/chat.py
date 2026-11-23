@@ -91,7 +91,7 @@ async def procesar_mensaje(proveedor: ProveedorIA, repositorio: ProductoReposito
         logger.error("Error del proveedor IA en extracción: %s", resultado.error)
         raise AsistenteNoDisponible(resultado.error)
 
-    if resultado.filtros is None:
+    if not resultado.filtros:
         logger.debug("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
         return _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0)
 

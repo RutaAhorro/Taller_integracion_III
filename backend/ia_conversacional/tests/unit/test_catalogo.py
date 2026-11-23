@@ -451,3 +451,151 @@ def test_catalogo_caido_modo_sin_datos_respeta_ttl():
     assert productos == []
     assert repo.fuente == "sin_datos"
     assert mock_cliente.get.call_count == 0
+
+
+def test_productos_precios_invalidos_descartados():
+    """Verifica que productos con precio no numérico o <= 0 son descartados."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    def side_effect(url, params):
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "data": [
+                {
+                    "id": "prod-precio-vacio",
+                    "nombre": "Producto Sin Precio",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": None,
+                    "precio_normal": None,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-cero",
+                    "nombre": "Producto Gratis",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": 0.0,
+                    "precio_normal": 0.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-negativo",
+                    "nombre": "Producto Negativo",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": -100.0,
+                    "precio_normal": -100.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-corrupto",
+                    "nombre": "Producto Corrupto",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": "omision",
+                    "precio_normal": "omision",
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-valido",
+                    "nombre": "Producto Valido",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": 500.0,
+                    "precio_normal": 500.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+            ],
+            "paginacion": {
+                "total_registros": 5,
+                "pagina_actual": 1,
+                "total_paginas": 1,
+                "limite": 100,
+            },
+        }
+        return mock_resp
+
+    mock_cliente.get.side_effect = side_effect
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+    )
+
+    productos = repo.obtener_todos()
+
+    # Solo el producto válido debería quedar; los demás son descartados
+    assert len(productos) == 1
+    assert productos[0]["id"] == "prod-precio-valido"
+    assert productos[0]["precio"] == 500.0
+
+
+def test_productos_precio_texto_corrupto_descartado():
+    """Verifica que productos con precio texto corrupto son descartados."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    def side_effect(url, params):
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "data": [
+                {
+                    "id": "prod-texto-1",
+                    "nombre": "Producto Texto",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": "precio-inesperado",
+                    "precio_normal": "precio-inesperado",
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+            ],
+            "paginacion": {
+                "total_registros": 1,
+                "pagina_actual": 1,
+                "total_paginas": 1,
+                "limite": 100,
+            },
+        }
+        return mock_resp
+
+    mock_cliente.get.side_effect = side_effect
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+    )
+
+    productos = repo.obtener_todos()
+    assert len(productos) == 0

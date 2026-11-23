@@ -68,6 +68,8 @@ class GeminiProveedor(ProveedorIA):
 
     async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
         """Etapa 1 con function calling obligatorio; devuelve un resultado con `error` si la API falla."""
+        if not self.clave_api:
+            raise ValueError("GEMINI_API_KEY no configurada")
         inicio = time.perf_counter()
         cuerpo = {
             "contents": [{"role": "user", "parts": [{"text": mensaje}]}],
@@ -81,21 +83,7 @@ class GeminiProveedor(ProveedorIA):
             },
         }
 
-        try:
-            datos = await self._enviar(cuerpo)
-        except httpx.HTTPStatusError as error_http:
-            estado_http = error_http.response.status_code
-            mensaje_error = error_http.response.text
-            try:
-                cuerpo_error = error_http.response.json().get("error", {})
-                mensaje_error = cuerpo_error.get("message", mensaje_error)
-            except ValueError:
-                pass
-            logger.warning("Gemini respondio %s: %s", estado_http, mensaje_error)
-            return ResultadoExtraccion(error=f"Gemini respondio {estado_http}: {mensaje_error}")
-        except httpx.RequestError as error_red:
-            logger.warning("Error de red conectando a Gemini: %s", error_red)
-            return ResultadoExtraccion(error=f"No se pudo conectar a Gemini: {error_red}")
+        datos = await self._enviar(cuerpo)
 
         tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
 

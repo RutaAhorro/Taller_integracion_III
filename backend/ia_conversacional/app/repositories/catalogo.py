@@ -11,6 +11,7 @@ inventar productos ni tumbar el servicio.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from typing import Any
@@ -123,10 +124,23 @@ class ProductoRepositorio:
         return cuerpo.get("data", []), total_paginas
 
     def _productos_en_stock(self, items: list[Any]) -> list[dict[str, Any]]:
-        """Normaliza los ítems válidos que siguen en stock."""
-        return [
-            self._normalizar_producto(item) for item in items if isinstance(item, dict) and item.get("en_stock", True)
-        ]
+        """Normaliza los ítems válidos que siguen en stock, descartando precios inválidos o <= 0."""
+        resultado = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("en_stock", True):
+                continue
+            # Descartar productos cuyo precio sea no numérico o <= 0
+            precio_raw = item.get("precio", 0.0)
+            try:
+                precio = float(precio_raw)
+            except (ValueError, TypeError):
+                logger.debug("Producto %s descartado: precio no numérico (%s)", item.get("id"), precio_raw)
+                continue
+            if not math.isfinite(precio) or precio <= 0:
+                logger.debug("Producto %s descartado: precio inválido o <= 0 (%s)", item.get("id"), precio)
+                continue
+            resultado.append(self._normalizar_producto(item))
+        return resultado
 
     def _descargar_catalogo(self) -> list[dict[str, Any]]:
         """Recorre las páginas hasta el máximo configurado; cierra el cliente propio aunque falle."""
