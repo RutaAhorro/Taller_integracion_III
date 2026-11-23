@@ -173,12 +173,6 @@ func (repositorio *RepositorioIngesta) IngestarLote(contexto context.Context, lo
 			resultado.Actualizados = len(capturas) - insertados
 			resultado.PreciosRegistrados = len(capturas)
 		}
-			// Cada aparición válida cuenta: la primera de un SKU nuevo es inserción y
-			// las demás (también las repetidas dentro del lote) son actualizaciones.
-			resultado.Insertados = insertados
-			resultado.Actualizados = len(capturas) - insertados
-			resultado.PreciosRegistrados = len(capturas)
-		}
 		resultado.Mensaje = fmt.Sprintf("Lote procesado: %d insertados, %d actualizados, %d precios guardados", resultado.Insertados, resultado.Actualizados, resultado.PreciosRegistrados)
 		if lote.LoteID == "" {
 			return nil

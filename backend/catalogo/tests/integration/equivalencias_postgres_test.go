@@ -41,7 +41,8 @@ func eanUnicoPorSufijo(sufijo, prefijo string) (string, string, string) {
 // comprueba los cuatro resultados: comparable con ceros iniciales, sin EAN,
 // EAN inválido y conflicto de presentación.
 func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
-	enrutador := enrutadorPostgres(prueba)
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := uuid.NewString()[:8]
 
 	// Cada cadena recibe su sucursal central para no depender de datos semilla.
@@ -150,7 +151,8 @@ func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
 // prueba funcional con datos creados por la propia prueba; la cobertura real
 // de EAN se mide por separado sobre los datos persistidos por el scraper.
 func TestPostgresEquivalenciaCategoriaComunPorCadena(prueba *testing.T) {
-	enrutador := enrutadorPostgres(prueba)
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := uuid.NewString()[:8]
 	categoria := "Lacteos Eq" + sufijo
 	nombreProducto := "Leche Categoria Comun " + sufijo
