@@ -61,7 +61,8 @@ func NuevoServicioProductos(repositorio domain.RepositorioProductos, limites Lim
 	return &ServicioProductos{repositorio: repositorio, limites: limites}
 }
 
-// ObtenerCatalogo normaliza el filtro público y devuelve la página pedida.
+// ObtenerCatalogo normaliza el filtro público y devuelve la página pedida junto
+// con los supermercados disponibles para los filtros activos.
 func (servicio *ServicioProductos) ObtenerCatalogo(contexto context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosDTO, error) {
 	filtro, errorFiltro := servicio.normalizarFiltro(filtro, ordenesPublicos)
 	if errorFiltro != nil {
@@ -71,9 +72,17 @@ func (servicio *ServicioProductos) ObtenerCatalogo(contexto context.Context, fil
 	if errorConsulta != nil {
 		return nil, errorConsulta
 	}
+	// Las cadenas se calculan sobre todos los resultados, no sobre la página.
+	supermercados, errorSupermercados := servicio.repositorio.ListarSupermercados(contexto, filtro)
+	if errorSupermercados != nil {
+		return nil, errorSupermercados
+	}
+	if supermercados == nil {
+		supermercados = []domain.SupermercadoDTO{} // JSON [] y no null
+	}
 	paginacion := metadatos(filtro, total)
 	return &domain.PaginaProductosDTO{
-		Data: productos, Paginacion: paginacion,
+		Data: productos, Supermercados: supermercados, Paginacion: paginacion,
 		TotalRegistros: paginacion.TotalRegistros, PaginaActual: paginacion.PaginaActual,
 		TotalPaginas: paginacion.TotalPaginas, Limite: paginacion.Limite,
 	}, nil

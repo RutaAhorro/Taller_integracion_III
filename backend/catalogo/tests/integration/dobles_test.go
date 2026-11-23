@@ -24,6 +24,10 @@ type mockProductoRepository struct {
 	err        error
 	lastFilter domain.FiltroProductosDTO
 	detalle    *domain.ProductoDetalleDTO
+	// supermercados es lo que devuelve ListarSupermercados; filtroSupermercados
+	// guarda el filtro recibido para comprobar que no se pierde ningún criterio.
+	supermercados       []domain.SupermercadoDTO
+	filtroSupermercados domain.FiltroProductosDTO
 }
 
 func (repositorio *mockProductoRepository) Listar(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
@@ -32,6 +36,14 @@ func (repositorio *mockProductoRepository) Listar(contexto context.Context, filt
 		return nil, 0, repositorio.err
 	}
 	return repositorio.items, repositorio.total, nil
+}
+
+func (repositorio *mockProductoRepository) ListarSupermercados(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.SupermercadoDTO, error) {
+	repositorio.filtroSupermercados = filtro
+	if repositorio.err != nil {
+		return nil, repositorio.err
+	}
+	return repositorio.supermercados, nil
 }
 
 func (repositorio *mockProductoRepository) ListarParaAdmin(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoAdminDTO, int64, error) {

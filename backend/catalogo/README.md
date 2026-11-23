@@ -328,6 +328,48 @@ No se requieren migraciones SQL de reversión; el esquema y los permisos del rol
   conexión y verificación de permisos.
 - `internal/domain`: DTO e interfaces de persistencia.
 
+## Supermercados disponibles en el listado (SUP-371)
+
+`GET /api/v1/productos` (y `/buscar`) añade el campo `supermercados` para el
+filtro lateral. Contiene las cadenas con al menos un producto que cumple TODOS
+los filtros activos (`q`, `categoria`, `en_stock`, `marca`, `precio_min/max`,
+`en_oferta`, `solo_marcas_blancas`) EXCEPTO `supermercado`, calculadas sobre todos
+los resultados y no sobre la página descargada.
+
+```json
+{
+  "data": [{"id": "…", "supermercado": "Lider", "…": "…"}],
+  "supermercados": [{"id": 1, "nombre": "Jumbo"}, {"id": 2, "nombre": "Lider"}],
+  "paginacion": {"total_registros": 57, "pagina_actual": 2, "total_paginas": 3, "limite": 20},
+  "total_registros": 57, "pagina_actual": 2, "total_paginas": 3, "limite": 20
+}
+```
+
+Reglas del contrato:
+
+- Orden estable por `nombre` y luego `id`; sin duplicados. Sin coincidencias es
+  `[]`, nunca `null`.
+- `page`, `limit`, `sort_by` y `order` no cambian el campo.
+- `supermercado=X` filtra `data` y `total_registros`, pero `supermercados` sigue
+  mostrando las alternativas válidas para los demás filtros.
+- "Disponible" usa la semántica del listado: con `en_stock=true` sólo cuentan
+  productos con stock; sin el parámetro cuentan también los agotados, igual que
+  `total_registros`.
+- Implementación: una sola función (`consultaBase`, `internal/repositories/productos.go`)
+  traduce los filtros a SQL para el listado, el total y esta agregación (opción
+  `omitirSupermercado`); un filtro nuevo se agrega ahí y lo heredan los tres. Es
+  una consulta extra `SELECT DISTINCT cs.id, cs.nombre` sin `LIMIT/OFFSET` ni
+  `LATERAL` de capturas salvo que un filtro de precio u oferta lo requiera. No
+  requiere migraciones ni permisos nuevos (`SELECT` ya concedido).
+
+| Antes | Ahora |
+| --- | --- |
+| La respuesta no traía cadenas; el cliente las deducía de la página descargada | Campo aditivo `supermercados: [{id, nombre}]` calculado sobre todos los resultados |
+| Cambiar de página alteraba las cadenas visibles | Las cadenas no dependen de `page` ni `limit` |
+| Elegir una cadena dejaba sólo esa cadena en el filtro | Se conservan las alternativas válidas para los demás filtros |
+
+Clientes que ignoran el campo no se rompen. Los demás campos no cambian.
+
 ## Cambios de contrato (SUP-385)
 
 Rutas, campos JSON, tablas, columnas y variables de entorno no cambian. Sí cambia:
