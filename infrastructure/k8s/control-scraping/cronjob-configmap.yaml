@@ -115,6 +115,11 @@ data:
                 contenido = respuesta.read()
         except urllib.error.HTTPError as error_http:
             raise ErrorControl(f"Control respondió HTTP {error_http.code} en {url}") from error_http
+        except TimeoutError as error_tiempo:
+            # socket.timeout es TimeoutError en Python 3.10+: puede venir de
+            # urlopen o de respuesta.read(). Se convierte en fallo de cadena
+            # para que main() siga con las demás y el Job no muera a mitad.
+            raise ErrorControl(f"Timeout al contactar a Control en {url}") from error_tiempo
         except urllib.error.URLError as error_url:
             raise ErrorControl(f"No se pudo contactar a Control en {url}") from error_url
 

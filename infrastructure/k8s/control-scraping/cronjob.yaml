@@ -9,6 +9,8 @@ spec:
   # (ver GUIA_CONTROL_SCRAPING_DESACOPLADO.md). timeZone existe desde K8s 1.27.
   schedule: "0 3 * * *"
   timeZone: "America/Santiago"
+  # Forbid evita solapar Jobs del programador; NO limita las extracciones
+  # asíncronas que dejan encoladas (ésas las gobierna Control/worker).
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 300
   successfulJobsHistoryLimit: 2

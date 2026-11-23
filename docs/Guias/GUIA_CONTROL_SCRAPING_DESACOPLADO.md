@@ -171,9 +171,12 @@ lo escribe en logs.
 Para no romper la cuota del namespace ([2 GiB / 2000m / 20 pods](../Metricas/02_Escalado_y_recursos.md)):
 un solo pod efímero por ejecución, `concurrencyPolicy: Forbid`, `backoffLimit: 0`,
 `restartPolicy: Never`, límite de 900 s y requests/limits de `50m/64Mi` →
-`200m/128Mi`. No se reintenta automáticamente porque `POST /trabajos` no es
-idempotente: si una ejecución falla a mitad, revisa los trabajos creados antes
-de lanzar otra.
+`200m/128Mi`. `Forbid` evita solapar **Jobs del programador**, no las
+extracciones que éstos dejan encoladas: si un spider sigue corriendo al día
+siguiente, Control y el worker pueden tener varios trabajos en curso. La
+concurrencia de extracción la gobierna el worker, no este CronJob. No se
+reintenta automáticamente porque `POST /trabajos` no es idempotente: si una
+ejecución falla a mitad, revisa los trabajos creados antes de lanzar otra.
 
 Aplicación y comprobación:
 
