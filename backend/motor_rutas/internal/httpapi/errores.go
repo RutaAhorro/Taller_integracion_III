@@ -35,6 +35,11 @@ const (
 	mensajeTokenInvalido     = "Token inválido o expirado."
 	mensajeOrigenNoPermitido = "Origen no permitido."
 
+	// Artículos (SUP-241), con los textos del contrato de artículos.
+	mensajeArticuloNoExiste     = "El artículo no existe."
+	mensajeProductoNoExiste     = "El producto no existe en el catálogo."
+	mensajeCatalogoNoDisponible = "No se pudo verificar el producto. Intenta de nuevo."
+
 	largoMaximoDetalle = 500 // recorta "detalle" para no devolver textos enormes
 )
 

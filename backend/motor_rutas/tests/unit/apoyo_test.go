@@ -63,13 +63,15 @@ func tokenDe(prueba *testing.T, usuario string) string {
 
 // repositorioMemoria implementa listas.Repositorio sólo para las pruebas HTTP.
 type repositorioMemoria struct {
-	mu    sync.Mutex
-	filas map[string]*fila
+	mu          sync.Mutex
+	filas       map[string]*fila
+	siguienteID int64 // imita el SERIAL de rutas.articulos_lista_compras
 }
 
 type fila struct {
-	usuario string
-	lista   listas.Lista
+	usuario   string
+	lista     listas.Lista
+	articulos []listas.Articulo
 }
 
 func nuevaMemoria() *repositorioMemoria { return &repositorioMemoria{filas: map[string]*fila{}} }
@@ -120,7 +122,129 @@ func (repositorio *repositorioMemoria) Obtener(_ context.Context, usuarioID, lis
 	if !existe || filaLista.usuario != usuarioID {
 		return nil, nil
 	}
-	return &listas.ListaDetalle{Lista: filaLista.lista, Articulos: []listas.Articulo{}}, nil
+	detalle := &listas.ListaDetalle{Lista: filaLista.lista, Articulos: []listas.ArticuloDetalle{}}
+	for _, articulo := range filaLista.articulos {
+		detalle.Articulos = append(detalle.Articulos, listas.ArticuloDetalle{Articulo: articulo})
+	}
+	detalle.TotalArticulos = len(filaLista.articulos)
+	return detalle, nil
+}
+
+// filaDelUsuario devuelve la lista si es del usuario; nil si no existe o es ajena.
+// Se llama con el mutex tomado.
+func (repositorio *repositorioMemoria) filaDelUsuario(usuarioID, listaID string) *fila {
+	filaLista, existe := repositorio.filas[listaID]
+	if !existe || filaLista.usuario != usuarioID {
+		return nil
+	}
+	return filaLista
+}
+
+func (repositorio *repositorioMemoria) AgregarArticulo(_ context.Context, usuarioID, listaID, productoID string, cantidad int, limites listas.Limites) (*listas.Articulo, bool, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	filaLista := repositorio.filaDelUsuario(usuarioID, listaID)
+	if filaLista == nil {
+		return nil, false, nil
+	}
+	for indice := range filaLista.articulos {
+		articulo := &filaLista.articulos[indice]
+		if articulo.ProductoID != nil && *articulo.ProductoID == productoID {
+			if articulo.Cantidad+cantidad > limites.MaxCantidad {
+				return nil, false, listas.ErrMaxCantidad
+			}
+			articulo.Cantidad += cantidad
+			copia := *articulo
+			return &copia, false, nil
+		}
+	}
+	if len(filaLista.articulos) >= limites.MaxArticulos {
+		return nil, false, listas.ErrMaxArticulos
+	}
+	repositorio.siguienteID++
+	articulo := listas.Articulo{ID: repositorio.siguienteID, ProductoID: &productoID, Cantidad: cantidad}
+	filaLista.articulos = append(filaLista.articulos, articulo)
+	return &articulo, true, nil
+}
+
+func (repositorio *repositorioMemoria) ActualizarArticulo(_ context.Context, usuarioID, listaID string, articuloID int64, cantidad *int, estaComprado *bool) (*listas.Articulo, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	filaLista := repositorio.filaDelUsuario(usuarioID, listaID)
+	if filaLista == nil {
+		return nil, nil
+	}
+	for indice := range filaLista.articulos {
+		articulo := &filaLista.articulos[indice]
+		if articulo.ID != articuloID {
+			continue
+		}
+		if cantidad != nil {
+			articulo.Cantidad = *cantidad
+		}
+		if estaComprado != nil {
+			articulo.EstaComprado = *estaComprado
+		}
+		copia := *articulo
+		return &copia, nil
+	}
+	return nil, nil
+}
+
+func (repositorio *repositorioMemoria) EliminarArticulo(_ context.Context, usuarioID, listaID string, articuloID int64) (bool, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	filaLista := repositorio.filaDelUsuario(usuarioID, listaID)
+	if filaLista == nil {
+		return false, nil
+	}
+	for indice, articulo := range filaLista.articulos {
+		if articulo.ID == articuloID {
+			filaLista.articulos = append(filaLista.articulos[:indice], filaLista.articulos[indice+1:]...)
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// =============================================================================
+// Catálogo falso (reemplaza la consulta HTTP de disponibilidad)
+// =============================================================================
+
+// catalogoFalso responde con los estados cargados en la prueba. Un producto
+// que no está cargado se informa "no_encontrado", igual que el cliente real.
+// caido simula que Catálogo no responde.
+type catalogoFalso struct {
+	mu        sync.Mutex
+	estados   map[string]listas.Disponibilidad
+	caido     bool
+	consultas int
+}
+
+func (catalogo *catalogoFalso) Consultar(_ context.Context, productoIDs []string) (map[string]listas.Disponibilidad, error) {
+	catalogo.mu.Lock()
+	defer catalogo.mu.Unlock()
+	catalogo.consultas++
+	if catalogo.caido {
+		return nil, listas.ErrCatalogoNoDisponible
+	}
+	resultado := map[string]listas.Disponibilidad{}
+	for _, productoID := range productoIDs {
+		disponibilidad, existe := catalogo.estados[productoID]
+		if !existe {
+			disponibilidad = listas.Disponibilidad{Estado: listas.EstadoNoEncontrado}
+		}
+		resultado[productoID] = disponibilidad
+	}
+	return resultado, nil
+}
+
+// producto carga un producto en el catálogo falso con el estado indicado.
+func (catalogo *catalogoFalso) producto(productoID, estado string) {
+	catalogo.mu.Lock()
+	defer catalogo.mu.Unlock()
+	catalogo.estados[productoID] = listas.Disponibilidad{Estado: estado,
+		Producto: &listas.ProductoCatalogo{Nombre: "Leche entera 1 L", Supermercado: "Lider"}}
 }
 
 func (repositorio *repositorioMemoria) Actualizar(_ context.Context, usuarioID, listaID string, nombre, estado *string) (*listas.Lista, error) {
@@ -162,14 +286,24 @@ type cliente struct {
 	manejador http.Handler
 	jwt       string
 	repo      *repositorioMemoria
+	catalogo  *catalogoFalso
 	extra     http.Header
 }
 
+// Topes chicos para poder probar los límites con pocas peticiones.
+const (
+	maxArticulosPrueba = 3
+	maxCantidadPrueba  = 10
+)
+
 func nuevoCliente(prueba *testing.T) *cliente {
 	repo := nuevaMemoria()
-	manejador := httpapi.Nuevo(httpapi.Opciones{Repo: repo, JWTSecret: secreto, OrigenesCORS: []string{origen},
-		MaxListas: 100, Log: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	return &cliente{prueba: prueba, manejador: manejador, repo: repo, jwt: tokenDe(prueba, usuarioA)}
+	catalogo := &catalogoFalso{estados: map[string]listas.Disponibilidad{}}
+	manejador := httpapi.Nuevo(httpapi.Opciones{Repo: repo, Catalogo: catalogo, JWTSecret: secreto,
+		OrigenesCORS: []string{origen}, MaxListas: 100,
+		Limites: listas.Limites{MaxArticulos: maxArticulosPrueba, MaxCantidad: maxCantidadPrueba},
+		Log:     slog.New(slog.NewTextHandler(io.Discard, nil))})
+	return &cliente{prueba: prueba, manejador: manejador, repo: repo, catalogo: catalogo, jwt: tokenDe(prueba, usuarioA)}
 }
 
 func (clienteHTTP *cliente) pedir(metodo, ruta, cuerpo string, cabeceras map[string]string) *httptest.ResponseRecorder {

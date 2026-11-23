@@ -12,6 +12,12 @@
 //	CORS_ALLOWED_ORIGINS  orígenes permitidos, separados por coma
 //	RUTAS_DB_POOL_MAX     conexiones máximas del pool, 1–20 (por defecto 5)
 //	RUTAS_MAX_LISTAS      listas máximas por usuario, 1–1000 (por defecto 100)
+//	CATALOGO_INTERNAL_URL origen interno de Catálogo, sin ruta (obligatoria)
+//	CATALOGO_CONSULTA_TOKEN token de la consulta de disponibilidad (obligatorio, ≥ 32 bytes)
+//	RUTAS_CATALOGO_TIMEOUT plazo por consulta a Catálogo (por defecto 2s, máximo 30s)
+//
+// Los topes de artículos no son variables: son constantes de internal/listas
+// (ver MaxArticulosPorLista y MaxEnvasesPorArticulo).
 package config
 
 import (
@@ -19,6 +25,17 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+)
+
+// =============================================================================
+// Límites de las variables
+// =============================================================================
+
+const (
+	largoMinimoSecreto  = 32               // bytes mínimos de JWT_SECRET y CATALOGO_CONSULTA_TOKEN
+	plazoMaximoCatalogo = 30 * time.Second // RUTAS_CATALOGO_TIMEOUT más largo aceptado
+	maximoTopes         = 1000             // RUTAS_MAX_LISTAS más alto aceptado
 )
 
 // =============================================================================
@@ -33,6 +50,10 @@ type Config struct {
 	OrigenesCORS []string // orígenes exactos que pueden llamar con cookies
 	DBPoolMax    int32    // conexiones máximas abiertas a la base
 	MaxListas    int      // tope de listas por usuario
+
+	CatalogoURL   string        // origen interno de Catálogo ("http://catalogo:8080")
+	CatalogoToken string        // Bearer de la consulta de disponibilidad (no registrar)
+	CatalogoPlazo time.Duration // timeout de cada consulta a Catálogo
 }
 
 // =============================================================================
@@ -67,9 +88,7 @@ func Cargar(buscarVariable func(string) (string, bool)) (Config, error) {
 	// --- JWT_SECRET ----------------------------------------------------------
 	// Espacios al inicio o al final suelen ser un error de copiado del Secret.
 	configuracion.JWTSecret = leerVariable("JWT_SECRET", "")
-	secretoCorto := len(configuracion.JWTSecret) < 32
-	secretoConEspacios := strings.TrimSpace(configuracion.JWTSecret) != configuracion.JWTSecret
-	if secretoCorto || secretoConEspacios {
+	if !secretoValido(configuracion.JWTSecret) {
 		return Config{}, errors.New("JWT_SECRET requiere al menos 32 bytes y no admite espacios externos")
 	}
 
@@ -94,9 +113,28 @@ func Cargar(buscarVariable func(string) (string, bool)) (Config, error) {
 
 	// --- RUTAS_MAX_LISTAS ----------------------------------------------------
 	// Tope defensivo por usuario: el servicio no tiene un límite de peticiones propio.
-	configuracion.MaxListas, errorObtenido = entero(leerVariable("RUTAS_MAX_LISTAS", "100"), 1, 1000)
+	configuracion.MaxListas, errorObtenido = entero(leerVariable("RUTAS_MAX_LISTAS", "100"), 1, maximoTopes)
 	if errorObtenido != nil {
 		return Config{}, errors.New("RUTAS_MAX_LISTAS debe estar entre 1 y 1000")
+	}
+
+	// --- Catálogo (SUP-241) --------------------------------------------------
+	// Obligatorio: sin Catálogo, Motor no puede verificar productos y agregar
+	// artículos fallaría en cada petición. Mejor no arrancar.
+	configuracion.CatalogoURL = strings.TrimSuffix(leerVariable("CATALOGO_INTERNAL_URL", ""), "/")
+	if !origenExacto(configuracion.CatalogoURL) {
+		return Config{}, errors.New("CATALOGO_INTERNAL_URL requiere un origen HTTP(S) exacto, sin ruta ni credenciales")
+	}
+	configuracion.CatalogoToken = leerVariable("CATALOGO_CONSULTA_TOKEN", "")
+	if !secretoValido(configuracion.CatalogoToken) {
+		return Config{}, errors.New("CATALOGO_CONSULTA_TOKEN requiere al menos 32 bytes y no admite espacios externos")
+	}
+	if configuracion.CatalogoToken == configuracion.JWTSecret {
+		return Config{}, errors.New("CATALOGO_CONSULTA_TOKEN debe ser distinto de JWT_SECRET")
+	}
+	configuracion.CatalogoPlazo, errorObtenido = time.ParseDuration(leerVariable("RUTAS_CATALOGO_TIMEOUT", "2s"))
+	if errorObtenido != nil || configuracion.CatalogoPlazo <= 0 || configuracion.CatalogoPlazo > plazoMaximoCatalogo {
+		return Config{}, errors.New("RUTAS_CATALOGO_TIMEOUT debe ser una duración positiva de hasta 30s")
 	}
 
 	return configuracion, nil
@@ -119,6 +157,12 @@ func entero(crudo string, minimo, maximo int) (int, error) {
 		return 0, errors.New("fuera de rango")
 	}
 	return numero, nil
+}
+
+// secretoValido exige al menos largoMinimoSecreto bytes y ningún espacio en
+// los extremos, que suele ser un error al copiar el Secret.
+func secretoValido(secreto string) bool {
+	return len(secreto) >= largoMinimoSecreto && strings.TrimSpace(secreto) == secreto
 }
 
 // puertoValido acepta un número de puerto TCP entre 1 y 65535.
