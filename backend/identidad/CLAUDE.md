@@ -12,12 +12,15 @@
   revalidan estado y rol contra usuarios; no confiar en headers del cliente.
 - Roles `registrado`, `colaborador`, `admin`, garantizados por `usuarios_rol_check`
   (migración 10); plan comercial separado del rol.
-- Login/registro/Google usan contadores Redis; no desactivar límites para pruebas.
+- Login/registro/Google/restablecimiento usan contadores Redis; no desactivar
+  límites para pruebas.
 - Conservar validación criptográfica Google, PasswordHash opcional para SSO y
   exigencia de contraseña actual al cambiar correo/contraseña local.
+- El restablecimiento por token consume `api.tokens_recuperacion` de forma
+  atómica (SHA-256 del token, expiración y un solo uso) y reutiliza la misma
+  validación de clave que `PUT /auth/me`; no duplicar esa política ni el envío
+  de correos, que sigue fuera de Identidad.
 - Admin: no permitir eliminar al último admin activo; registrar auditoría.
-- No hay recuperación de contraseña ni correo: se podaron por no tener endpoints.
-  Al reimplementarla, guardar tokens aleatorios sólo como hash.
 - Configurar proxies reales, CORS y Secure según entorno; no registrar cookies,
   claves ni tokens.
 - Configuración validada en `internal/config`, inyectada al arrancar. Conservar
@@ -39,9 +42,9 @@
 
 ## Índice breve generado
 
-28 archivos fuente, incluidos los de pruebas. Distribución:
+34 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 14 archivos.
-- `tests`: 13 archivos.
+- `internal`: 17 archivos.
+- `tests`: 16 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.
