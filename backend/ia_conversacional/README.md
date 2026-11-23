@@ -154,6 +154,7 @@ información usada:
 | `vigente` | Los datos se pidieron al Catálogo o la receta validó stock y precio. |
 | `memoria` | Catálogo no respondió y se conservó la carga previa. |
 | `memoria_antigua` | La carga previa se marcó como antigua según `IA_CATALOGO_ANTIGUEDAD_MAXIMA`. |
+| `sin_datos` | No hay datos cargados en el repositorio (catálogo vacío o fuente sin datos). |
 | `sin_validar_disponibilidad` | La receta usó la caché en memoria sin validar stock ni precio. |
 
 Con `memoria` y `memoria_antigua` la respuesta agrega una nota de que los datos

@@ -227,7 +227,7 @@ def _validar_limites_numericos() -> None:
         # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
         ("IA_CHAT_RATE_LIMIT_SOLICITUDES", CHAT_RATE_LIMIT_SOLICITUDES),
         ("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", CHAT_RATE_LIMIT_VENTANA_SEGUNDOS),
-        ("CATALOGO_ANTIGUEDAD_MAXIMA", CATALOGO_ANTIGUEDAD_MAXIMA),
+        ("IA_CATALOGO_ANTIGUEDAD_MAXIMA", CATALOGO_ANTIGUEDAD_MAXIMA),
     )
     for nombre, valor in estrictamente_positivos:
         if valor <= 0:

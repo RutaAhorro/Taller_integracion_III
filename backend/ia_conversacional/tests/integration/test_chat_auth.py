@@ -135,6 +135,10 @@ def catalogo_fijo(monkeypatch):
         "obtener_todos",
         lambda: productos_normalizados,
     )
+    # Asegurar que la fuente sea "catalogo" para que las pruebas de pipeline
+    # funcionen con estado vigente, tal como el test original esperaba.
+    main.repositorio_productos._fuente = "catalogo"
+    main.repositorio_productos._ultima_actualizacion = 0.0
 
 
 @pytest.fixture
@@ -1200,6 +1204,42 @@ def test_chat_catalogo_vacio_retorna_200_con_texto_no_disponible(cliente):
     assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
     assert datos["productos_recomendados"] == []
     assert "estado_datos" in datos
+
+
+def test_chat_sin_datos_retorna_200_con_estado_sin_datos(cliente):
+    """Con repositorio fuente sin_datos y catálogo vacío devuelve estado_datos == 'sin_datos'."""
+
+    class RepositorioSinDatos:
+        """Doble de repositorio con fuente sin_datos y catálogo vacío."""
+
+        fuente = "sin_datos"
+
+        def obtener_todos(self) -> list:
+            return []
+
+        def consultar_disponibilidad(self, _producto_ids: list) -> dict | None:
+            return None
+
+    class ProveedorFijo(ProveedorIA):
+        """Proveedor mínimo que devuelve filtros e explicación deterministas."""
+
+        nombre = "fijo"
+
+        async def extraer_filtros(self, mensaje: str):
+            return ResultadoExtraccion(filtros={"categoria": "verduras"}, tiempo_extraccion_ms=5)
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "Productos disponibles."
+
+    cliente_prueba = _crear_cliente_chat(RepositorioSinDatos(), ProveedorFijo())
+
+    respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco verduras"})
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["estado_datos"] == "sin_datos"
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert datos["productos_recomendados"] == []
 
 
 def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():

@@ -16,7 +16,7 @@ import anyio
 from app import config
 from app.domain.filtros import filtrar_productos, vincular_ingredientes_catalogo
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
-from app.repositories.catalogo import ProductoRepositorio
+from app.repositories.catalogo import FUENTE_MEMORIA, FUENTE_SIN_DATOS, ProductoRepositorio
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +33,11 @@ TEXTO_EXPLICACION_RESPALDO = "Encontramos estos productos para tu búsqueda."
 ESTADO_VIGENTE = "vigente"
 ESTADO_MEMORIA = "memoria"
 ESTADO_MEMORIA_ANTIGUA = "memoria_antigua"
+ESTADO_SIN_DATOS = FUENTE_SIN_DATOS
 ESTADO_SIN_VALIDAR_DISPONIBILIDAD = "sin_validar_disponibilidad"
+AVISO_MEMORIA_ANTIGUA = (
+    "Nota: los datos provienen de una carga previa antigua del catálogo y pueden estar desactualizados."
+)
 
 AVISO_CARGA_PREVIA = "Nota: los datos provienen de una carga previa del catálogo y pueden haber cambiado."
 AVISO_SIN_VALIDAR_DISPONIBILIDAD = "Nota: no fue posible validar el stock y el precio en tiempo real."
@@ -87,17 +91,21 @@ def _respuesta_chat(
 
 
 def _determinar_estado_datos(repositorio: ProductoRepositorio) -> str:
-    """Clasifica la carga del catálogo: antigua, en memoria o vigente (SUP-315)."""
-    if getattr(repositorio, "datos_antiguos", False):
+    """Clasifica la carga del catálogo: antigua, en memoria, sin datos o vigente (SUP-315)."""
+    if repositorio.fuente == FUENTE_SIN_DATOS:
+        return ESTADO_SIN_DATOS
+    if repositorio.datos_antiguos:
         return ESTADO_MEMORIA_ANTIGUA
-    if getattr(repositorio, "fuente", None) == "memoria":
+    if repositorio.fuente == FUENTE_MEMORIA:
         return ESTADO_MEMORIA
     return ESTADO_VIGENTE
 
 
 def _anexar_aviso_estado_datos(explicacion: str, estado_datos: str) -> str:
     """Añade al texto una advertencia breve cuando la respuesta se apoya en datos degradados (SUP-315)."""
-    if estado_datos in (ESTADO_MEMORIA, ESTADO_MEMORIA_ANTIGUA):
+    if estado_datos == ESTADO_MEMORIA_ANTIGUA:
+        return f"{explicacion} {AVISO_MEMORIA_ANTIGUA}"
+    if estado_datos == ESTADO_MEMORIA:
         return f"{explicacion} {AVISO_CARGA_PREVIA}"
     if estado_datos == ESTADO_SIN_VALIDAR_DISPONIBILIDAD:
         return f"{explicacion} {AVISO_SIN_VALIDAR_DISPONIBILIDAD}"
