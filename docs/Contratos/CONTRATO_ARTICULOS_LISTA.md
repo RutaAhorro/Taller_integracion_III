@@ -46,8 +46,12 @@ la sección 6.
 - **Nunca se mezcla con cantidades de receta** (gramos, tazas). Convertir
   "500 g de harina" en "1 paquete de 1 kg" es trabajo de la IA (SUP-325) y el
   usuario lo confirma en pantalla (SUP-329) antes de guardar.
-- El máximo por artículo y el máximo de artículos por lista son **configurables**
-  (variables de entorno de Motor), no valores fijos en el código.
+- Topes: **99 envases por artículo** y **100 artículos distintos por lista**.
+  Son constantes de Motor (`internal/listas`), no variables de entorno: sólo
+  frenan abusos, ningún entorno necesita otro valor y el frontend muestra los
+  mismos números. Se decidió así en SUP-241; cambiarlos exige editar el código
+  y este contrato a la vez. (`RUTAS_MAX_ARTICULOS` de `CONTRATO_MOTOR_RUTAS.md`
+  es otro tope, el del cálculo de ruta, y no se usa aquí.)
 
 ## 3. Endpoints
 
@@ -82,12 +86,21 @@ Content-Type: application/json
   "id": 41,
   "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
   "cantidad": 2,
-  "esta_comprado": false
+  "esta_comprado": false,
+  "estado_producto": "disponible",
+  "producto": { "nombre": "Leche entera 1 L", "marca": "Colún", "supermercado": "Lider",
+                "unidad": "1 L", "precio": 1190, "url_imagen": "https://..." }
 }
 ```
 
-Antes de guardar, Motor consulta a Catálogo (SUP-312) que el producto exista y
-tenga stock. Si Catálogo no responde, **no se guarda nada** (ver errores).
+Antes de guardar, Motor consulta a Catálogo (SUP-312) que el producto exista.
+Si Catálogo no responde, **no se guarda nada** (ver errores).
+
+**Sin stock se guarda con advertencia** (revisión de #133). Un producto
+`sin_stock` o `desconocido` (Catálogo no confirmó el stock) se guarda igual y
+la respuesta lo indica en `estado_producto`, para que el frontend lo advierta.
+Así el usuario puede planificar la compra aunque hoy no haya stock. Sólo un
+producto inexistente se rechaza (422).
 
 ### 3.2 Cambiar cantidad o marcar comprado
 
@@ -127,8 +140,9 @@ Idempotency-Key: 6a1f0d2e-3b4c-4d5e-8f90-a1b2c3d4e5f6
 }
 ```
 
-- **Todo o nada.** Si un producto no existe o no tiene stock, no se guarda
-  ninguno y la respuesta indica cuáles fallaron.
+- **Todo o nada.** Si un producto no existe, no se guarda ninguno y la
+  respuesta indica cuáles fallaron. Los productos sin stock se guardan con
+  `estado_producto: "sin_stock"`, igual que en el alta de uno (revisión de #133).
 - **`Idempotency-Key` obligatorio.** Si el frontend reintenta el mismo envío (por
   ejemplo, porque se cortó la conexión), Motor reconoce la clave y devuelve el
   mismo resultado sin sumar las cantidades dos veces. El Gateway ya respeta esta
@@ -137,13 +151,17 @@ Idempotency-Key: 6a1f0d2e-3b4c-4d5e-8f90-a1b2c3d4e5f6
 
 **200 OK**: devuelve la lista completa con su detalle actualizado (sección 3.5).
 
-**409 Conflict**, si algún producto no se puede agregar:
+**409 Conflict**, si algún producto no se puede agregar. `detalle` es un
+arreglo con cada producto rechazado y su motivo (revisión de #133), para que
+el frontend marque cuáles fallaron sin interpretar texto:
 
 ```json
 {
   "estado": 409,
   "mensaje": "No se pudo agregar el lote.",
-  "detalle": "Productos no disponibles: 1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f (sin_stock)."
+  "detalle": [
+    { "producto_id": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f", "motivo": "no_encontrado" }
+  ]
 }
 ```
 
@@ -187,8 +205,8 @@ devuelve Catálogo, **solo para mostrarlos**.
 | --- | --- | --- |
 | `disponible` | Existe y tiene stock | Con datos |
 | `sin_stock` | Existe, pero hoy no tiene stock | Con datos |
-| `no_encontrado` | Catálogo ya no lo tiene (dejó de extraerse) | `null` |
-| `desconocido` | Catálogo no respondió a tiempo | `null` |
+| `no_encontrado` | Catálogo ya no lo tiene (dejó de extraerse), o el artículo es anterior a la migración 11 y no tiene `producto_id` | `null` |
+| `desconocido` | Catálogo no respondió a tiempo, o respondió pero no tiene una captura vigente que confirme el stock | `null` si no respondió; con datos si respondió |
 
 Si Catálogo está caído, **la lista igual se muestra** con
 `estado_producto: "desconocido"`: el usuario no pierde su lista por una falla de
@@ -206,8 +224,8 @@ Mismo envoltorio que hoy usan todos los servicios: `estado`, `mensaje` y
 | Cuerpo inválido: cantidad < 1, campos extra, `producto_id` mal formado | 400 | `Solicitud inválida.` |
 | Lote sin `Idempotency-Key` | 400 | `Solicitud inválida.` |
 | Producto inexistente en Catálogo | 422 | `El producto no existe en el catálogo.` |
-| Producto sin stock | 409 | `El producto no tiene stock.` |
-| Se supera el máximo de artículos o de cantidad | 409 | `Alcanzaste el máximo de artículos en la lista.` |
+| Se supera el máximo de artículos | 409 | `Alcanzaste el máximo de N artículos en la lista.` |
+| Se supera la cantidad máxima, también al sumar | 409 | `La cantidad máxima por artículo es N.` |
 | Catálogo no responde al agregar | 503 | `No se pudo verificar el producto. Intenta de nuevo.` |
 
 **Regla:** si Motor no pudo verificar un producto, no lo guarda. Un error 503
@@ -253,7 +271,7 @@ nunca deja datos a medias.
   de ver un producto y después vuelve a encontrarlo?
 - [ ] **Renato:** ¿la IA puede proponer la cantidad en envases a partir de la
   presentación que devuelve Catálogo, o solo el producto?
-- [ ] **Equipo:** ¿agregar un producto sin stock debe rechazarse (propuesta
-  actual, 409) o permitirse con una advertencia, para planificar la compra?
-- [ ] **Equipo:** valores iniciales para el máximo de cantidad por artículo y de
-  artículos por lista.
+- [x] **Equipo:** ¿agregar un producto sin stock debe rechazarse o permitirse
+  con una advertencia? **Se permite con advertencia** (revisión de #133, SUP-241).
+- [x] **Equipo:** valores iniciales para el máximo de cantidad por artículo y de
+  artículos por lista. **99 envases y 100 artículos** (SUP-241), configurables.
