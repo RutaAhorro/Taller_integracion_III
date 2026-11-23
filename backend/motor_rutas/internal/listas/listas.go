@@ -1,5 +1,5 @@
 // Package listas define el modelo de las listas de compra y sus artículos
-// (SUP-240, SUP-241), su persistencia en PostgreSQL (postgres.go) y la
+// (SUP-240, SUP-241, lote SUP-318), su persistencia en PostgreSQL (postgres.go) y la
 // consulta de disponibilidad a Catálogo (catalogo.go).
 //
 // Los nombres JSON van en snake_case, igual que en Catálogo. La forma de los
@@ -8,8 +8,11 @@ package listas
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -144,6 +147,82 @@ type Repositorio interface {
 	ActualizarArticulo(contexto context.Context, usuarioID, listaID string, articuloID int64, cantidad *int, estaComprado *bool) (*Articulo, error)
 	// EliminarArticulo quita el artículo y devuelve true si existía en esa lista.
 	EliminarArticulo(contexto context.Context, usuarioID, listaID string, articuloID int64) (bool, error)
+
+	// HuellaLote devuelve la huella del lote ya aplicado con esa clave en la
+	// lista del usuario; existe es false si la clave no se usó todavía.
+	HuellaLote(contexto context.Context, usuarioID, listaID, clave string) (huella string, existe bool, errorObtenido error)
+	// AgregarLote aplica todos los artículos del lote o ninguno (SUP-318) y
+	// registra la clave de idempotencia en la misma transacción.
+	AgregarLote(contexto context.Context, usuarioID, listaID string, lote Lote, limites Limites) (ResultadoLote, error)
+}
+
+// =============================================================================
+// Agregado en lote (SUP-318)
+// =============================================================================
+
+// Motivos de rechazo de un producto del lote (detalle del 409 del contrato).
+const (
+	MotivoNoEncontrado   = "no_encontrado"   // Catálogo no tiene el producto
+	MotivoCantidadMaxima = "cantidad_maxima" // la cantidad, sumada a la que ya hay, supera el tope
+)
+
+// ArticuloLote es un producto pedido en el lote, ya validado y sin repetidos.
+type ArticuloLote struct {
+	ProductoID string
+	Cantidad   int
+}
+
+// Lote es lo que se guarda de una vez: los artículos, la Idempotency-Key y la
+// huella del contenido que se registra junto a la clave.
+type Lote struct {
+	Clave     string
+	Huella    string
+	Articulos []ArticuloLote
+}
+
+// Rechazo indica un producto del lote que no se pudo agregar y por qué.
+type Rechazo struct {
+	ProductoID string `json:"producto_id"`
+	Motivo     string `json:"motivo"`
+}
+
+// ResultadoLote informa qué pasó con el lote. Si Rechazados no está vacío no
+// se guardó nada.
+type ResultadoLote struct {
+	ListaExiste bool      // false si la lista no existe o es de otro usuario
+	Repetido    bool      // la clave ya se había aplicado con la misma huella: no se sumó otra vez
+	Rechazados  []Rechazo // productos que superan la cantidad máxima
+}
+
+// ErrClaveReutilizada indica que la Idempotency-Key ya se usó en esa lista con
+// un lote distinto. Devolver el resultado anterior engañaría al cliente.
+var ErrClaveReutilizada = errors.New("la clave de idempotencia ya se usó con otro lote")
+
+// NormalizarLote suma los productos repetidos (regla del contrato) y los
+// ordena por producto_id. El orden fijo hace que la huella no dependa del
+// orden en que el frontend envía los artículos.
+func NormalizarLote(articulos []ArticuloLote) []ArticuloLote {
+	sumados := map[string]int{}
+	for _, articulo := range articulos {
+		sumados[articulo.ProductoID] += articulo.Cantidad
+	}
+	normalizados := make([]ArticuloLote, 0, len(sumados))
+	for productoID, cantidad := range sumados {
+		normalizados = append(normalizados, ArticuloLote{ProductoID: productoID, Cantidad: cantidad})
+	}
+	sort.Slice(normalizados, func(izquierda, derecha int) bool {
+		return normalizados[izquierda].ProductoID < normalizados[derecha].ProductoID
+	})
+	return normalizados
+}
+
+// HuellaDe calcula el SHA-256 hexadecimal de un lote ya normalizado.
+func HuellaDe(articulos []ArticuloLote) string {
+	resumen := sha256.New()
+	for _, articulo := range articulos {
+		fmt.Fprintf(resumen, "%s:%d;", articulo.ProductoID, articulo.Cantidad)
+	}
+	return hex.EncodeToString(resumen.Sum(nil))
 }
 
 // Catalogo es lo que Motor necesita de Catálogo: el estado de varios productos

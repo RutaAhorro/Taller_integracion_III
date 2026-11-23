@@ -23,8 +23,8 @@ const (
 )
 
 // consultaPermisos confirma que app_rutas tiene exactamente lo que el servicio
-// usa y que la migración 11 ya corrió: la columna producto_id y su índice único
-// ("sumar si ya existe"). Así el propio código exige el orden de despliegue.
+// usa y que las migraciones 11 y 12 ya corrieron: la columna producto_id, su
+// índice único ("sumar si ya existe") y la tabla de claves del lote (SUP-318). Así el propio código exige el orden de despliegue.
 // app_rutas tiene search_path = pg_catalog, por eso todo se califica con "rutas.".
 const consultaPermisos = `
 SELECT has_schema_privilege(current_user, 'rutas', 'USAGE')
@@ -37,6 +37,8 @@ SELECT has_schema_privilege(current_user, 'rutas', 'USAGE')
    AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'UPDATE')
    AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'DELETE')
    AND has_sequence_privilege(current_user, 'rutas.articulos_lista_compras_id_seq', 'USAGE')
+   AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'SELECT')
+   AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'INSERT')
    AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
                WHERE attrelid = 'rutas.articulos_lista_compras'::regclass
                  AND attname = 'producto_id' AND NOT attisdropped)
@@ -83,7 +85,7 @@ func Abrir(contexto context.Context, dsn string, maximoConexiones int32) (*pgxpo
 	}
 	if !tienePermisos {
 		pool.Close()
-		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql y 11_articulos_lista_producto.sql antes de iniciar el motor de rutas")
+		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql, 11_articulos_lista_producto.sql y 12_lotes_articulos_idempotencia.sql antes de iniciar el motor de rutas")
 	}
 	return pool, nil
 }

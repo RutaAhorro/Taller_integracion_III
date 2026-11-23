@@ -295,3 +295,137 @@ func (repositorio *Postgres) EliminarArticulo(contexto context.Context, usuarioI
         SELECT count(*) FROM borrado`, articuloID, listaID, usuarioID).Scan(&borrados)
 	return borrados == 1, errorObtenido
 }
+
+// =============================================================================
+// Agregado en lote (SUP-318)
+// =============================================================================
+
+// HuellaLote busca la clave en la lista del usuario. El JOIN con la lista
+// filtra por dueño: una clave de una lista ajena no se revela.
+func (repositorio *Postgres) HuellaLote(contexto context.Context, usuarioID, listaID, clave string) (string, bool, error) {
+	var huella string
+	errorObtenido := repositorio.pool.QueryRow(contexto, `
+        SELECT lote.huella FROM rutas.lotes_articulos_aplicados lote
+        JOIN rutas.listas_compras lista ON lista.id = lote.lista_id
+        WHERE lote.lista_id = $1 AND lista.usuario_id = $2 AND lote.clave = $3`,
+		listaID, usuarioID, clave).Scan(&huella)
+	if errors.Is(errorObtenido, pgx.ErrNoRows) {
+		return "", false, nil
+	}
+	if errorObtenido != nil {
+		return "", false, errorObtenido
+	}
+	return huella, true, nil
+}
+
+// AgregarLote aplica el lote completo o nada. Bloquea la fila de la lista
+// igual que AgregarArticulo: dos lotes (o un lote y un alta) simultáneos no
+// superan juntos los topes, y un reintento concurrente con la misma clave
+// espera y luego la encuentra registrada.
+func (repositorio *Postgres) AgregarLote(contexto context.Context, usuarioID, listaID string, lote Lote, limites Limites) (ResultadoLote, error) {
+	transaccion, errorObtenido := repositorio.pool.Begin(contexto)
+	if errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	defer transaccion.Rollback(contexto) // no hace nada si ya se confirmó
+
+	// --- La lista debe ser del usuario ---------------------------------------
+	errorObtenido = transaccion.QueryRow(contexto, `
+        SELECT 1 FROM rutas.listas_compras
+        WHERE id = $1 AND usuario_id = $2
+        FOR UPDATE`, listaID, usuarioID).Scan(new(int))
+	if errors.Is(errorObtenido, pgx.ErrNoRows) {
+		return ResultadoLote{}, nil
+	}
+	if errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+
+	// --- Clave ya aplicada: mismo lote no suma otra vez ----------------------
+	var huellaRegistrada string
+	errorObtenido = transaccion.QueryRow(contexto, `
+        SELECT huella FROM rutas.lotes_articulos_aplicados
+        WHERE lista_id = $1 AND clave = $2`, listaID, lote.Clave).Scan(&huellaRegistrada)
+	switch {
+	case errorObtenido == nil && huellaRegistrada == lote.Huella:
+		return ResultadoLote{ListaExiste: true, Repetido: true}, nil
+	case errorObtenido == nil:
+		return ResultadoLote{}, ErrClaveReutilizada
+	case !errors.Is(errorObtenido, pgx.ErrNoRows):
+		return ResultadoLote{}, errorObtenido
+	}
+
+	// --- Topes: cantidad por artículo y artículos distintos por lista --------
+	cantidadesActuales := map[string]int{}
+	filas, errorObtenido := transaccion.Query(contexto, `
+        SELECT producto_id::text, cantidad FROM rutas.articulos_lista_compras
+        WHERE lista_id = $1 AND producto_id IS NOT NULL`, listaID)
+	if errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	var totalArticulos int
+	for filas.Next() {
+		var (
+			productoID string
+			cantidad   int
+		)
+		if errorObtenido := filas.Scan(&productoID, &cantidad); errorObtenido != nil {
+			filas.Close()
+			return ResultadoLote{}, errorObtenido
+		}
+		cantidadesActuales[productoID] = cantidad
+	}
+	filas.Close()
+	if errorObtenido := filas.Err(); errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	// El total incluye los artículos previos a la migración 11 (sin producto_id).
+	if errorObtenido := transaccion.QueryRow(contexto,
+		`SELECT count(*) FROM rutas.articulos_lista_compras WHERE lista_id = $1`, listaID).Scan(&totalArticulos); errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+
+	resultado := ResultadoLote{ListaExiste: true}
+	nuevos := 0
+	for _, articulo := range lote.Articulos {
+		cantidadActual, yaEsta := cantidadesActuales[articulo.ProductoID]
+		if !yaEsta {
+			nuevos++
+		}
+		if cantidadActual+articulo.Cantidad > limites.MaxCantidad {
+			resultado.Rechazados = append(resultado.Rechazados, Rechazo{ProductoID: articulo.ProductoID, Motivo: MotivoCantidadMaxima})
+		}
+	}
+	if len(resultado.Rechazados) > 0 {
+		return resultado, nil
+	}
+	if totalArticulos+nuevos > limites.MaxArticulos {
+		return ResultadoLote{}, ErrMaxArticulos
+	}
+
+	// --- Guardar: insertar o sumar según el índice único (lista, producto) ---
+	for _, articulo := range lote.Articulos {
+		if _, errorObtenido := transaccion.Exec(contexto, `
+            INSERT INTO rutas.articulos_lista_compras AS articulo (lista_id, producto_id, cantidad)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (lista_id, producto_id) DO UPDATE SET cantidad = articulo.cantidad + EXCLUDED.cantidad`,
+			listaID, articulo.ProductoID, articulo.Cantidad); errorObtenido != nil {
+			return ResultadoLote{}, errorObtenido
+		}
+	}
+
+	// --- Registrar la clave, marcar la lista y confirmar ---------------------
+	if _, errorObtenido := transaccion.Exec(contexto, `
+        INSERT INTO rutas.lotes_articulos_aplicados (lista_id, clave, huella) VALUES ($1, $2, $3)`,
+		listaID, lote.Clave, lote.Huella); errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	if _, errorObtenido := transaccion.Exec(contexto,
+		`UPDATE rutas.listas_compras SET actualizada_el = now() WHERE id = $1`, listaID); errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	if errorObtenido := transaccion.Commit(contexto); errorObtenido != nil {
+		return ResultadoLote{}, errorObtenido
+	}
+	return resultado, nil
+}
