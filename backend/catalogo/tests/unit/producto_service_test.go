@@ -13,6 +13,7 @@ import (
 
 // mockProductoRepository simula la capa de acceso a datos para pruebas unitarias
 type mockProductoRepository struct {
+	categorias []string
 	items      []domain.ProductoDTO
 	adminItems []domain.ProductoAdminDTO
 	total      int64
@@ -26,6 +27,11 @@ type mockProductoRepository struct {
 	// errorSupermercados falla sólo la agregación, para probar esa rama aunque
 	// Listar haya respondido bien.
 	errorSupermercados error
+}
+
+// ListarCategorias entrega valores controlados sin consultar una BD compartida.
+func (repositorio *mockProductoRepository) ListarCategorias(contexto context.Context) ([]string, error) {
+	return repositorio.categorias, repositorio.err
 }
 
 // limitesProductosDePrueba son los límites por defecto de internal/config.

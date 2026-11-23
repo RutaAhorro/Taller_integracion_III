@@ -18,6 +18,7 @@ import (
 )
 
 type mockProductoRepository struct {
+	categorias []string
 	items      []domain.ProductoDTO
 	adminItems []domain.ProductoAdminDTO
 	total      int64
@@ -28,6 +29,11 @@ type mockProductoRepository struct {
 	// guarda el filtro recibido para comprobar que no se pierde ningún criterio.
 	supermercados       []domain.SupermercadoDTO
 	filtroSupermercados domain.FiltroProductosDTO
+}
+
+// ListarCategorias controla el contrato HTTP sin acceder a PostgreSQL.
+func (repositorio *mockProductoRepository) ListarCategorias(contexto context.Context) ([]string, error) {
+	return repositorio.categorias, repositorio.err
 }
 
 func (repositorio *mockProductoRepository) Listar(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {

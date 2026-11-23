@@ -1,9 +1,8 @@
-// Reúne navegación y filtros; las cadenas proceden de productos reales y los permisos de la sesión.
+// Reúne navegación y filtros: categorías desde Catálogo y cadenas de los productos recibidos.
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 
 import {
-  ChevronDown,
   Flame,
   MapPin,
   Percent,
@@ -22,7 +21,9 @@ import { Button } from '@/components/ui/button'
 import { useRole } from '@/features/autenticacion/useRole'
 import type { UiSupermarket } from '@/features/catalogo/tipos'
 import { PLAN_PREMIUM, type PlanUsuario } from '@/features/autenticacion/tipos'
+import { obtenerCategorias, PREFIJO_CATEGORIA } from '@/features/catalogo/products-api'
 
+// Mantiene la selección en el layout para compartirla con el listado paginado.
 type PropiedadesBarraLateral = {
   open: boolean
   onClose: () => void
@@ -36,68 +37,11 @@ type PropiedadesBarraLateral = {
   activeCity?: string
 }
 
+// ===== Navegación estática: no son categorías del catálogo =====
 const destacados = [
   { id: 'ofertas', label: 'Mejores ofertas', icon: Flame },
   { id: 'descuentos', label: 'Mayor descuento', icon: Percent },
   { id: 'marcas', label: 'Marcas blancas', icon: Tag },
-]
-
-const departamentos: { id: string; label: string; items: string[] }[] = [
-  {
-    id: 'frutas-verduras',
-    label: 'Frutas y Verduras',
-    items: ['Frutas', 'Verduras'],
-  },
-  {
-    id: 'lacteos',
-    label: 'Lácteos, Huevos y Refrigerados',
-    items: ['Leches', 'Quesos', 'Yogures', 'Mantequillas', 'Huevos'],
-  },
-  {
-    id: 'despensa',
-    label: 'Despensa y Abarrotes',
-    items: [
-      'Arroz',
-      'Legumbres',
-      'Fideos',
-      'Pastas',
-      'Aceites',
-      'Harinas',
-      'Azúcares',
-      'Conservas',
-    ],
-  },
-  {
-    id: 'panaderia',
-    label: 'Panadería y Pastelería',
-    items: ['Pan', 'Galletas', 'Tortas', 'Masas'],
-  },
-  {
-    id: 'carnes',
-    label: 'Carnes y Pescados',
-    items: ['Vacuno', 'Pollo', 'Cerdo', 'Pescados', 'Mariscos'],
-  },
-  {
-    id: 'bebidas',
-    label: 'Bebidas, Aguas y Licores',
-    items: [
-      'Bebidas',
-      'Jugos',
-      'Aguas',
-      'Cervezas',
-      'Vinos',
-    ],
-  },
-  {
-    id: 'hogar',
-    label: 'Electrodomésticos y Hogar',
-    items: ['Electrodomésticos', 'Menaje', 'Limpieza', 'Aseo'],
-  },
-  {
-    id: 'libreria',
-    label: 'Librería y Oficina',
-    items: ['Cuadernos', 'Papelería', 'Útiles'],
-  },
 ]
 
 const enlacesHerramientas = [
@@ -107,6 +51,7 @@ const enlacesHerramientas = [
   { to: '/colaborador', label: 'Misiones', icon: Users },
 ]
 
+// Comparte los estilos de navegación sin duplicar la indicación de selección.
 const claseEnlaceNavegacion = (activo: boolean, pesoFuente: string) =>
   `flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${pesoFuente} transition-colors ${
     activo
@@ -114,12 +59,15 @@ const claseEnlaceNavegacion = (activo: boolean, pesoFuente: string) =>
       : 'text-foreground hover:bg-accent hover:text-accent-foreground'
   }`
 
+// Separa visualmente las secciones de filtros y navegación.
 function TituloSeccion({ children }: { children: string }) {
   return <p className="px-2 pb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{children}</p>
 }
 
+// Describe el control común de destacados y supermercados.
 type PropiedadesBotonFiltro = { icon: LucideIcon; label: string; active: boolean; onClick: () => void; disabled?: boolean }
 
+// Conserva una presentación común para las opciones con icono.
 function BotonFiltro({ icon: Icono, label, active, onClick, disabled = false }: PropiedadesBotonFiltro) {
   return (
     <button
@@ -136,6 +84,7 @@ function BotonFiltro({ icon: Icono, label, active, onClick, disabled = false }: 
   )
 }
 
+// Carga categorías reales y ofrece los filtros sin mantener una clasificación fija.
 export function SideBar({
   open,
   onClose,
@@ -148,7 +97,10 @@ export function SideBar({
   userPlan,
   activeCity
 }: PropiedadesBarraLateral) {
-  const [departamentoAbierto, setDepartamentoAbierto] = useState<string | null>(null)
+  const [categorias, setCategorias] = useState<string[]>([])
+  const [cargandoCategorias, setCargandoCategorias] = useState(true)
+  const [errorCategorias, setErrorCategorias] = useState(false)
+  const [intentoCategorias, setIntentoCategorias] = useState(0)
   const referenciaPanel = useRef<HTMLElement>(null)
   const referenciaBotonCerrar = useRef<HTMLButtonElement>(null)
   const navegar = useNavigate()
@@ -156,6 +108,29 @@ export function SideBar({
   // SUP-256: Misiones solo colaborador o admin.
   const { canAccessColaborador } = useRole()
 
+  // Carga una lista completa por montaje/reintento, sin repetirla al paginar
+  // o abrir el panel. Cancela al salir para no aplicar respuestas tardías.
+  useEffect(() => {
+    const controlador = new AbortController()
+    setCargandoCategorias(true)
+    setErrorCategorias(false)
+    obtenerCategorias(controlador.signal)
+      .then((resultado) => {
+        if (!controlador.signal.aborted) setCategorias(resultado)
+      })
+      .catch(() => {
+        if (!controlador.signal.aborted) {
+          setCategorias([])
+          setErrorCategorias(true)
+        }
+      })
+      .finally(() => {
+        if (!controlador.signal.aborted) setCargandoCategorias(false)
+      })
+    return () => controlador.abort()
+  }, [intentoCategorias])
+
+  // Lleva la selección al catálogo y libera el espacio del panel en móvil.
   const manejarSeleccionCategoria = (categoria: string, cerrarBarra = true) => {
     onSelectCategory(categoria)
     navegar('/dashboard')
@@ -281,69 +256,34 @@ export function SideBar({
             </ul>
           </nav>
 
-          <nav aria-label="Departamentos y categorías">
-            <TituloSeccion>Departamentos y categorías</TituloSeccion>
+          <nav aria-label="Categorías">
+            <TituloSeccion>Categorías</TituloSeccion>
+            {cargandoCategorias && <p role="status" className="px-2 text-sm text-muted-foreground">Cargando categorías…</p>}
+            {errorCategorias && (
+              <div role="alert" className="px-2 text-sm">
+                <p>No se pudieron cargar las categorías.</p>
+                <button type="button" className="underline" onClick={() => setIntentoCategorias((anterior) => anterior + 1)}>Reintentar</button>
+              </div>
+            )}
+            {!cargandoCategorias && !errorCategorias && categorias.length === 0 && (
+              <p className="px-2 text-sm text-muted-foreground">No hay categorías disponibles.</p>
+            )}
             <ul className="flex flex-col gap-0.5">
-              {departamentos.map((departamento) => {
-                const expandido = departamentoAbierto === departamento.id
+              {categorias.map((categoria) => {
+                const seleccion = `${PREFIJO_CATEGORIA}${categoria}`
+                const activa = activeCategory === seleccion
                 return (
-                  <li key={departamento.id}>
+                  <li key={categoria}>
                     <button
                       type="button"
-                      // Expandir no filtra: solo muestra las subcategorías.
-                      onClick={() => setDepartamentoAbierto((anterior) => (anterior === departamento.id ? null : departamento.id))}
-                      aria-expanded={expandido}
-                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      <ChevronDown
-                        className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 ${
-                          expandido ? 'rotate-0' : '-rotate-90'
-                        }`}
-                        aria-hidden="true"
-                      />
-                      <span className="text-pretty leading-snug">
-                        {departamento.label}
-                      </span>
-                    </button>
-                    <div
-                      inert={!expandido}
-                      className={`grid transition-all duration-200 ease-out ${
-                        expandido
-                          ? 'grid-rows-[1fr] opacity-100'
-                          : 'grid-rows-[0fr] opacity-0'
+                      aria-pressed={activa}
+                      onClick={() => manejarSeleccionCategoria(activa ? '' : seleccion)}
+                      className={`flex w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                        activa ? 'bg-accent text-primary font-bold' : 'text-muted-foreground hover:bg-accent hover:text-primary'
                       }`}
                     >
-                      <ul className="ml-6 overflow-hidden border-l border-border pl-3">
-                        <li>
-                          <button
-                            type="button"
-                            onClick={() => manejarSeleccionCategoria(departamento.label)}
-                            className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
-                              activeCategory === departamento.label
-                                ? 'bg-accent text-primary font-bold'
-                                : 'text-foreground font-semibold hover:bg-accent hover:text-primary'
-                            }`}
-                          >
-                            Ver todo en {departamento.label.split(',')[0]}
-                          </button>
-                        </li>
-                        {departamento.items.map((subcategoria) => (
-                          <li key={subcategoria}>
-                            <button
-                              type="button"
-                              onClick={() => manejarSeleccionCategoria(activeCategory === subcategoria ? "" : subcategoria)}
-                              className={`flex w-full items-center rounded-md px-3 py-2 text-sm transition-colors ${
-                                activeCategory === subcategoria
-                                  ? 'bg-accent text-primary font-bold'
-                                  : 'text-muted-foreground hover:bg-accent hover:text-primary'
-                              }`}
-                            >
-                              {subcategoria}
-                            </button>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
+                      {categoria}
+                    </button>
                   </li>
                 )
               })}

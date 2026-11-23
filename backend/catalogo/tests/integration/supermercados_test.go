@@ -69,6 +69,12 @@ func TestListarSupermercados_SQL(prueba *testing.T) {
 			noContener: []string{"cs.nombre ILIKE", "LIMIT", "OFFSET", "LATERAL"},
 		},
 		{
+			nombre:       "la categoría exacta se comparte con el listado sin unir capturas",
+			filtro:       domain.FiltroProductosDTO{CategoriaExacta: "Pan / masas", Supermercado: "Lider"},
+			debeContener: []string{"BTRIM(pc.categoria_cruda) ="},
+			noContener:   []string{"pc.titulo_crudo ILIKE", "cs.nombre ILIKE", "LATERAL"},
+		},
+		{
 			nombre:       "un filtro de precio sí une la última captura",
 			filtro:       domain.FiltroProductosDTO{PrecioMin: &precioMinimo},
 			debeContener: []string{"LATERAL", "COALESCE(cp.precio_oferta, cp.precio_normal, 0) >="},
@@ -96,6 +102,58 @@ func TestListarSupermercados_SQL(prueba *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestPostgresCategorias verifica valores completos y selección exacta contra
+// PostgreSQL aislado, incluyendo signos, duplicados y cadenas fuera de la página.
+func TestPostgresCategorias(prueba *testing.T) {
+	enrutador := enrutadorPostgres(prueba)
+	sufijo := strings.ToUpper(uuid.NewString()[:8])
+	categoria := "Lácteos / masas & 100%_" + sufijo
+	alfa := sembrarCadena(prueba, enrutador, "Categoria Alfa "+sufijo)
+	beta := sembrarCadena(prueba, enrutador, "Categoria Beta "+sufijo)
+	sembrarProducto(prueba, enrutador, alfa, "Producto A "+sufijo, categoria, 1000, true)
+	sembrarProducto(prueba, enrutador, beta, "Producto B "+sufijo, " "+categoria+" ", 2000, true)
+	sembrarProducto(prueba, enrutador, beta, "Producto C "+sufijo, categoria+" especial", 3000, true)
+	sembrarProducto(prueba, enrutador, beta, "Producto D "+sufijo, "", 4000, true)
+
+	var respuesta struct {
+		Categorias []string `json:"categorias"`
+	}
+	if estado := pedir(prueba, enrutador, http.MethodGet, "/api/v1/productos/categorias", "", nil, nil, &respuesta); estado != http.StatusOK {
+		prueba.Fatalf("categorías: HTTP %d", estado)
+	}
+	coincidencias := 0
+	for _, valor := range respuesta.Categorias {
+		if valor == "" || valor != strings.TrimSpace(valor) {
+			prueba.Fatalf("categoría vacía o con espacios exteriores: %q", valor)
+		}
+		if valor == categoria {
+			coincidencias++
+		}
+	}
+	if coincidencias != 1 {
+		prueba.Fatalf("categoría no deduplicada: %v", respuesta.Categorias)
+	}
+
+	// El título no contiene la categoría. Solo la igualdad con categoria_cruda
+	// puede devolver estos dos productos, nunca el de la categoría más larga.
+	parametros := url.Values{"categoria_exacta": {categoria}, "en_stock": {"true"}, "limit": {"1"}, "page": {"2"}}
+	pagina := consultarListado(prueba, enrutador, parametros)
+	if pagina.TotalRegistros != 2 || len(pagina.Data) != 1 ||
+		!reflect.DeepEqual(nombresDe(pagina.Supermercados), []string{alfa.Nombre, beta.Nombre}) {
+		prueba.Fatalf("categoría exacta/paginación/facetas: %+v", pagina)
+	}
+	parametros.Set("supermercado", alfa.Nombre)
+	pagina = consultarListado(prueba, enrutador, parametros)
+	if pagina.TotalRegistros != 1 || !reflect.DeepEqual(nombresDe(pagina.Supermercados), []string{alfa.Nombre, beta.Nombre}) {
+		prueba.Fatalf("se perdieron alternativas: %+v", pagina)
+	}
+	parametros.Set("categoria_exacta", categoria+" inexistente")
+	pagina = consultarListado(prueba, enrutador, parametros)
+	if pagina.TotalRegistros != 0 || len(pagina.Supermercados) != 0 {
+		prueba.Fatalf("se aceptó una coincidencia aproximada: %+v", pagina)
 	}
 }
 
