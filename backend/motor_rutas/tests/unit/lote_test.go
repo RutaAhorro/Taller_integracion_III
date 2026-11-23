@@ -5,6 +5,7 @@ package unit_test
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"testing"
@@ -130,6 +131,10 @@ func TestLoteTodoONada(prueba *testing.T) {
 			map[string]string{productoLeche: listas.MotivoCantidadMaxima}},
 		{"supera la cantidad al sumar repetidos", cuerpoLote(productoPan, 6, productoPan, 5), http.StatusConflict,
 			map[string]string{productoPan: listas.MotivoCantidadMaxima}},
+		// Reproducción de la revisión de #176: sin saturar, la suma desborda y
+		// guarda 1 con 200.
+		{"la suma de repetidos desborda", cuerpoLote(productoPan, math.MaxInt, productoPan, math.MaxInt, productoPan, 3), http.StatusConflict,
+			map[string]string{productoPan: listas.MotivoCantidadMaxima}},
 		{"supera el máximo de artículos", cuerpoLote(productoPan, 1, productoArroz, 1, productoCafe, 1), http.StatusConflict, nil},
 	}
 	for indice, caso := range casos {
@@ -228,6 +233,12 @@ func TestLoteEnListaAjenaResponde404(prueba *testing.T) {
 	if codigo, cuerpo := enviarLote(prueba, clienteHTTP, idLista, claveLote, cuerpoLote(productoLeche, 1)); codigo != http.StatusNotFound || cuerpo["mensaje"] != "La lista no existe." {
 		prueba.Fatalf("lista ajena: %d %v", codigo, cuerpo)
 	}
+	// Con Catálogo caído tampoco se revela que la lista existe.
+	clienteHTTP.catalogo.caido = true
+	if codigo, _ := enviarLote(prueba, clienteHTTP, idLista, "otra-clave", cuerpoLote(productoLeche, 1)); codigo != http.StatusNotFound {
+		prueba.Fatalf("lista ajena con Catálogo caído: %d", codigo)
+	}
+	clienteHTTP.catalogo.caido = false
 	if codigo, _ := enviarLote(prueba, clienteHTTP, "no-es-uuid", claveLote, cuerpoLote(productoLeche, 1)); codigo != http.StatusNotFound {
 		prueba.Fatalf("id inválido: %d", codigo)
 	}

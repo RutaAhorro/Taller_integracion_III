@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -200,11 +201,14 @@ var ErrClaveReutilizada = errors.New("la clave de idempotencia ya se usó con ot
 
 // NormalizarLote suma los productos repetidos (regla del contrato) y los
 // ordena por producto_id. El orden fijo hace que la huella no dependa del
-// orden en que el frontend envía los artículos.
+// orden en que el frontend envía los artículos. La suma se satura en
+// math.MaxInt en vez de desbordar: así una suma enorme sigue superando la
+// cantidad máxima y el lote se rechaza con 409, en lugar de dar la vuelta a un
+// número pequeño y guardarse.
 func NormalizarLote(articulos []ArticuloLote) []ArticuloLote {
 	sumados := map[string]int{}
 	for _, articulo := range articulos {
-		sumados[articulo.ProductoID] += articulo.Cantidad
+		sumados[articulo.ProductoID] = sumarSinDesbordar(sumados[articulo.ProductoID], articulo.Cantidad)
 	}
 	normalizados := make([]ArticuloLote, 0, len(sumados))
 	for productoID, cantidad := range sumados {
@@ -214,6 +218,15 @@ func NormalizarLote(articulos []ArticuloLote) []ArticuloLote {
 		return normalizados[izquierda].ProductoID < normalizados[derecha].ProductoID
 	})
 	return normalizados
+}
+
+// sumarSinDesbordar suma dos cantidades positivas y devuelve math.MaxInt si el
+// resultado no cabe en un int.
+func sumarSinDesbordar(acumulado, cantidad int) int {
+	if cantidad > math.MaxInt-acumulado {
+		return math.MaxInt
+	}
+	return acumulado + cantidad
 }
 
 // HuellaDe calcula el SHA-256 hexadecimal de un lote ya normalizado.
