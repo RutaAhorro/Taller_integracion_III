@@ -344,8 +344,10 @@ ejemplo son ilustrativas: la vigencia se calcula con la hora de la consulta.
 **Límites conocidos.** La calidad depende de que el scraper haya extraído el EAN
 y de que esté almacenado sin errores. La normalización en SQL
 (`regexp_replace` + `lpad` hasta 14 dígitos, igual que en el servicio) no usa un
-índice funcional, por lo que la consulta recorre los productos candidatos;
-añadir ese índice sería una migración fuera de SUP-244.
+índice funcional, por lo que la consulta recorre los productos candidatos. En
+una medición con 100.000 productos y 100 IDs, `EXPLAIN ANALYZE` mostró un
+`Seq Scan on productos_crudos` de ~360 ms. Añadir un índice funcional (o filtrar
+antes por `ean_gtin` crudo) requiere migración y va fuera de SUP-244.
 No se usa la tabla legada `api.equivalencias_productos`.
 
 Para medir la cobertura real en una base concreta, sin inventar datos:

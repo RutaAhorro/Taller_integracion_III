@@ -55,15 +55,10 @@ func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
 		map[string]any{"nombre": "Cadena Destino " + sufijo}, &cadenaDestino); estado != http.StatusOK {
 		prueba.Fatalf("resolver cadena destino=%d", estado)
 	}
-	var sucursalOrigen, sucursalDestino domain.SucursalSupermercado
-	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil,
-		map[string]any{"cadena_id": cadenaOrigen.ID}, &sucursalOrigen); estado != http.StatusOK {
-		prueba.Fatalf("resolver sucursal origen=%d", estado)
-	}
-	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil,
-		map[string]any{"cadena_id": cadenaDestino.ID}, &sucursalDestino); estado != http.StatusOK {
-		prueba.Fatalf("resolver sucursal destino=%d", estado)
-	}
+	// Desde SUP-376 Catálogo ya no crea sucursales: la prueba las siembra
+	// directamente, como lo haría quien registra la sucursal real.
+	sucursalOrigen := domain.SucursalSupermercado{ID: sembrarSucursal(prueba, baseDatos, cadenaOrigen.ID, "SUC-O-"+sufijo, true)}
+	sucursalDestino := domain.SucursalSupermercado{ID: sembrarSucursal(prueba, baseDatos, cadenaDestino.ID, "SUC-D-"+sufijo, true)}
 
 	eanLeche13, eanLeche12, canonicoLeche := eanUnicoPorSufijo(sufijo, "780")
 	eanConflicto13, _, _ := eanUnicoPorSufijo(sufijo, "179")
@@ -166,11 +161,9 @@ func TestPostgresEquivalenciaCategoriaComunPorCadena(prueba *testing.T) {
 			map[string]any{"nombre": nombreCadena}, &cadena); estado != http.StatusOK || cadena.ID == 0 {
 			prueba.Fatalf("resolver cadena %s=%d %+v", nombreCadena, estado, cadena)
 		}
-		var sucursal domain.SucursalSupermercado
-		if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil,
-			map[string]any{"cadena_id": cadena.ID}, &sucursal); estado != http.StatusOK || sucursal.ID == 0 {
-			prueba.Fatalf("resolver sucursal de %s=%d %+v", nombreCadena, estado, sucursal)
-		}
+		sucursal := domain.SucursalSupermercado{ID: sembrarSucursal(
+			prueba, baseDatos, cadena.ID, "SUC-"+strconv.Itoa(indice)+"-"+sufijo, true,
+		)}
 		precio := float64(1000 + indice*10)
 		preciosEsperados[cadena.Nombre] = precio
 		lote := map[string]any{"sucursal_id": sucursal.ID, "productos": []map[string]any{{
