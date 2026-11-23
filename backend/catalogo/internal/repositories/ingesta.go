@@ -29,6 +29,14 @@ const (
 	bloqueoLote   = 2701
 )
 
+// Parámetros de la escritura masiva. PostgreSQL admite 65535 parámetros por
+// sentencia; con 11 columnas por producto, 5000 filas usan 55000 y dejan margen.
+const (
+	tamanoBloqueIngesta = 5000
+	columnasProducto    = 11
+	columnasCaptura     = 9
+)
+
 // ===== Repositorio =====
 
 // RepositorioIngesta implementa domain.RepositorioIngesta.
@@ -146,10 +154,21 @@ func (repositorio *RepositorioIngesta) IngestarLote(contexto context.Context, lo
 			}
 		}
 		ahora := time.Now()
-		for indice, producto := range lote.Productos {
-			if errorProducto := guardarProducto(transaccion, lote.SucursalID, indice, producto, ahora, resultado); errorProducto != nil {
-				return errorProducto
+		productos, capturas := normalizarProductos(lote.Productos, resultado)
+		// Sin ítems válidos no hay INSERT masivo vacío.
+		if len(capturas) > 0 {
+			idPorSKU, insertados, errorProductos := guardarProductos(transaccion, lote.SucursalID, productos, ahora)
+			if errorProductos != nil {
+				return errorProductos
 			}
+			if errorCapturas := guardarCapturas(transaccion, idPorSKU, capturas, ahora); errorCapturas != nil {
+				return errorCapturas
+			}
+			// Cada aparición válida cuenta: la primera de un SKU nuevo es inserción y
+			// las demás (también las repetidas dentro del lote) son actualizaciones.
+			resultado.Insertados = insertados
+			resultado.Actualizados = len(capturas) - insertados
+			resultado.PreciosRegistrados = len(capturas)
 		}
 		resultado.Mensaje = fmt.Sprintf("Lote procesado: %d insertados, %d actualizados, %d precios guardados", resultado.Insertados, resultado.Actualizados, resultado.PreciosRegistrados)
 		if lote.LoteID == "" {
@@ -187,35 +206,128 @@ func leerRecibo(transaccion *gorm.DB, loteID, huella string, resultado *domain.R
 	return true, json.Unmarshal([]byte(recibo.Resultado), resultado)
 }
 
-// guardarProducto hace upsert del producto y registra su captura de precio. Un
-// producto sin SKU o título se informa en Errores sin abortar el lote.
-func guardarProducto(transaccion *gorm.DB, sucursalID, indice int, producto domain.ProductoScrapeadoDTO, ahora time.Time, resultado *domain.ResultadoIngestaDTO) error {
-	sku, titulo := strings.TrimSpace(producto.SKU), strings.TrimSpace(producto.Producto)
-	if sku == "" || titulo == "" {
-		resultado.Errores = append(resultado.Errores, fmt.Sprintf("item %d: SKU o título vacío", indice))
-		return nil
+// ===== Normalización y deduplicación en memoria =====
+
+// productoNormalizado es un producto válido, ya recortado y con los alias
+// resueltos, listo para el upsert. Un SKU repetido en el lote se fusiona en una
+// sola instancia con el resultado que dejaría aplicar las apariciones en orden.
+type productoNormalizado struct {
+	sku, titulo                                                  string
+	eanGTIN, marca, categoria, formatoCrudo, urlProducto, imagen *string
+	enStock                                                      bool
+}
+
+// capturaPendiente es la captura de precio de UNA aparición de un producto:
+// cada aparición en el lote registra su captura aunque el SKU se repita.
+type capturaPendiente struct {
+	sku                                          string
+	precioNormal                                 float64
+	precioOferta, precioTarjeta, precioPorUnidad *float64
+	metricaUnidad, mecanicaPromocion             *string
+	enStock                                      bool
+}
+
+// fusionarOpcional replica en memoria el COALESCE(NULLIF(...)) del upsert: un
+// valor nulo o vacío conserva el anterior.
+func fusionarOpcional(actual, nuevo *string) *string {
+	if nuevo != nil && *nuevo != "" {
+		return nuevo
 	}
-	// url_imagen prevalece sobre el alias heredado imagen.
-	var imagen *string
-	if producto.URLImagen != nil && strings.TrimSpace(*producto.URLImagen) != "" {
-		imagen = producto.URLImagen
-	} else if producto.Imagen != nil && strings.TrimSpace(*producto.Imagen) != "" {
-		imagen = producto.Imagen
+	return actual
+}
+
+// normalizarProductos valida y normaliza el lote en memoria. Los ítems sin SKU
+// o título se informan en Errores con su índice original sin abortar el lote.
+// Devuelve los productos únicos (en orden de primera aparición) y las capturas
+// (una por aparición válida).
+func normalizarProductos(productos []domain.ProductoScrapeadoDTO, resultado *domain.ResultadoIngestaDTO) ([]productoNormalizado, []capturaPendiente) {
+	unicos := make([]productoNormalizado, 0, len(productos))
+	posicionPorSKU := make(map[string]int, len(productos))
+	capturas := make([]capturaPendiente, 0, len(productos))
+	for indice, producto := range productos {
+		sku, titulo := strings.TrimSpace(producto.SKU), strings.TrimSpace(producto.Producto)
+		if sku == "" || titulo == "" {
+			resultado.Errores = append(resultado.Errores, fmt.Sprintf("item %d: SKU o título vacío", indice))
+			continue
+		}
+		// url_imagen prevalece sobre el alias heredado imagen.
+		var imagen *string
+		if producto.URLImagen != nil && strings.TrimSpace(*producto.URLImagen) != "" {
+			imagen = producto.URLImagen
+		} else if producto.Imagen != nil && strings.TrimSpace(*producto.Imagen) != "" {
+			imagen = producto.Imagen
+		}
+		enStock := true
+		if producto.EnStock != nil {
+			enStock = *producto.EnStock
+		}
+		aparicion := productoNormalizado{
+			sku: sku, titulo: titulo, eanGTIN: producto.EANGTIN, marca: producto.Marca,
+			categoria: producto.Categoria, formatoCrudo: producto.FormatoCrudo,
+			urlProducto: producto.URLProducto, imagen: imagen, enStock: enStock,
+		}
+		if posicion, repetido := posicionPorSKU[sku]; repetido {
+			// El último gana en título y stock; los opcionales vacíos conservan lo previo.
+			previo := &unicos[posicion]
+			previo.titulo, previo.enStock = aparicion.titulo, aparicion.enStock
+			previo.eanGTIN = fusionarOpcional(previo.eanGTIN, aparicion.eanGTIN)
+			previo.marca = fusionarOpcional(previo.marca, aparicion.marca)
+			previo.categoria = fusionarOpcional(previo.categoria, aparicion.categoria)
+			previo.formatoCrudo = fusionarOpcional(previo.formatoCrudo, aparicion.formatoCrudo)
+			previo.urlProducto = fusionarOpcional(previo.urlProducto, aparicion.urlProducto)
+			previo.imagen = fusionarOpcional(previo.imagen, aparicion.imagen)
+		} else {
+			posicionPorSKU[sku] = len(unicos)
+			unicos = append(unicos, aparicion)
+		}
+		// precio_oferta prevalece; el alias heredado precio sólo cuenta como oferta
+		// si es menor que el normal.
+		oferta := producto.PrecioOferta
+		if oferta == nil && producto.Precio != nil && *producto.Precio < producto.PrecioNormal {
+			oferta = producto.Precio
+		}
+		capturas = append(capturas, capturaPendiente{
+			sku: sku, precioNormal: producto.PrecioNormal, precioOferta: oferta,
+			precioTarjeta: producto.PrecioTarjeta, precioPorUnidad: producto.PrecioPorUnidad,
+			metricaUnidad: producto.MetricaUnidad, mecanicaPromocion: producto.MecanicaPromocion, enStock: enStock,
+		})
 	}
-	enStock := true
-	if producto.EnStock != nil {
-		enStock = *producto.EnStock
-	}
-	var fila struct {
-		ID        string
-		Insertado bool
-	}
-	// uq_sucursal_sku serializa upserts concurrentes. NULL o vacío conserva los
-	// campos opcionales del producto existente.
-	consulta := transaccion.Raw(`INSERT INTO scraper.productos_crudos AS pc
+	return unicos, capturas
+}
+
+// ===== Escritura masiva =====
+
+// marcadoresFilas arma "(?, ?), (?, ?)..." para un INSERT multi-fila.
+func marcadoresFilas(filas, columnas int) string {
+	fila := "(" + strings.TrimSuffix(strings.Repeat("?, ", columnas), ", ") + ")"
+	return strings.TrimSuffix(strings.Repeat(fila+", ", filas), ", ")
+}
+
+// guardarProductos hace upsert masivo por bloques y devuelve el ID de cada SKU y
+// cuántos productos se insertaron (xmax = 0 distingue insertado de actualizado).
+// Los SKU ya llegan únicos: PostgreSQL rechaza afectar una fila dos veces en un
+// mismo INSERT ... ON CONFLICT. uq_sucursal_sku serializa upserts concurrentes;
+// NULL o vacío conserva los campos opcionales del producto existente.
+func guardarProductos(transaccion *gorm.DB, sucursalID int, productos []productoNormalizado, ahora time.Time) (map[string]string, int, error) {
+	idPorSKU := make(map[string]string, len(productos))
+	insertados := 0
+	for inicio := 0; inicio < len(productos); inicio += tamanoBloqueIngesta {
+		bloque := productos[inicio:min(inicio+tamanoBloqueIngesta, len(productos))]
+		argumentos := make([]any, 0, len(bloque)*columnasProducto)
+		for _, producto := range bloque {
+			argumentos = append(argumentos, sucursalID, producto.sku, producto.eanGTIN, producto.titulo,
+				producto.marca, producto.categoria, producto.formatoCrudo, producto.urlProducto,
+				producto.imagen, producto.enStock, ahora)
+		}
+		var filas []struct {
+			ID        string `gorm:"column:id"`
+			SKU       string `gorm:"column:sku"`
+			Insertado bool   `gorm:"column:insertado"`
+		}
+		consulta := transaccion.Raw(`INSERT INTO scraper.productos_crudos AS pc
     (sucursal_id, sku, ean_gtin, titulo_crudo, marca_cruda, categoria_cruda,
      formato_crudo, url_producto, url_imagen, en_stock, ultima_extraccion_el)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES `+marcadoresFilas(len(bloque), columnasProducto)+`
     ON CONFLICT (sucursal_id, sku) DO UPDATE SET
      titulo_crudo = EXCLUDED.titulo_crudo, en_stock = EXCLUDED.en_stock,
      ultima_extraccion_el = EXCLUDED.ultima_extraccion_el,
@@ -225,29 +337,36 @@ func guardarProducto(transaccion *gorm.DB, sucursalID, indice int, producto doma
      formato_crudo = COALESCE(NULLIF(EXCLUDED.formato_crudo, ''), pc.formato_crudo),
      url_producto = COALESCE(NULLIF(EXCLUDED.url_producto, ''), pc.url_producto),
      url_imagen = COALESCE(NULLIF(EXCLUDED.url_imagen, ''), pc.url_imagen)
-    RETURNING id, (xmax = 0) AS insertado`, sucursalID, sku, producto.EANGTIN,
-		titulo, producto.Marca, producto.Categoria, producto.FormatoCrudo, producto.URLProducto, imagen, enStock, ahora).Scan(&fila)
-	if consulta.Error != nil {
-		return consulta.Error
+    RETURNING id, sku, (xmax = 0) AS insertado`, argumentos...).Scan(&filas)
+		if consulta.Error != nil {
+			return nil, 0, consulta.Error
+		}
+		for _, fila := range filas {
+			idPorSKU[fila.SKU] = fila.ID
+			if fila.Insertado {
+				insertados++
+			}
+		}
 	}
-	if fila.Insertado {
-		resultado.Insertados++
-	} else {
-		resultado.Actualizados++
-	}
-	// precio_oferta prevalece; el alias heredado precio sólo cuenta como oferta
-	// si es menor que el normal.
-	oferta := producto.PrecioOferta
-	if oferta == nil && producto.Precio != nil && *producto.Precio < producto.PrecioNormal {
-		oferta = producto.Precio
-	}
-	if errorCaptura := transaccion.Exec(`INSERT INTO scraper.capturas_precios
+	return idPorSKU, insertados, nil
+}
+
+// guardarCapturas inserta por bloques una captura por cada aparición válida.
+func guardarCapturas(transaccion *gorm.DB, idPorSKU map[string]string, capturas []capturaPendiente, ahora time.Time) error {
+	for inicio := 0; inicio < len(capturas); inicio += tamanoBloqueIngesta {
+		bloque := capturas[inicio:min(inicio+tamanoBloqueIngesta, len(capturas))]
+		argumentos := make([]any, 0, len(bloque)*columnasCaptura)
+		for _, captura := range bloque {
+			argumentos = append(argumentos, idPorSKU[captura.sku], captura.precioNormal, captura.precioOferta,
+				captura.precioTarjeta, captura.precioPorUnidad, captura.metricaUnidad,
+				captura.mecanicaPromocion, captura.enStock, ahora)
+		}
+		if errorCaptura := transaccion.Exec(`INSERT INTO scraper.capturas_precios
     (producto_crudo_id, precio_normal, precio_oferta, precio_tarjeta,
      precio_por_unidad, metrica_unidad, mecanica_promocion, esta_disponible, capturado_el)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, fila.ID, producto.PrecioNormal, oferta,
-		producto.PrecioTarjeta, producto.PrecioPorUnidad, producto.MetricaUnidad, producto.MecanicaPromocion, enStock, ahora).Error; errorCaptura != nil {
-		return errorCaptura
+    VALUES `+marcadoresFilas(len(bloque), columnasCaptura), argumentos...).Error; errorCaptura != nil {
+			return errorCaptura
+		}
 	}
-	resultado.PreciosRegistrados++
 	return nil
 }
