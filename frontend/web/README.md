@@ -25,7 +25,46 @@ Destacados conserva sus tres acciones estáticas; no son categorías.
 Seleccionar una categoría envía `categoria_exacta`; pulsarla de nuevo o limpiar
 filtros la desactiva. El prefijo interno `categoria:` evita colisiones con
 Destacados y no viaja a la API. La lista no cambia al paginar o filtrar.
-El consumo de facetas de supermercados sigue correspondiendo a SUP-375.
+Los supermercados se sincronizan por separado con las facetas del listado (SUP-375).
+
+## Supermercados sincronizados con el catálogo (SUP-375)
+
+`MainLayout` comparte una sola instancia de `useCatalog` con el lateral y el
+listado. Cada consulta recibe productos, totales y `supermercados` del mismo
+`GET /productos`: no se deducen las cadenas de la primera página ni se descarga
+todo el catálogo.
+
+- Búsqueda, categoría, ofertas, Marcas blancas y cadena seleccionada reinician la
+  página. Catálogo aplica los filtros antes de paginar.
+- La selección de cadena filtra productos, pero las facetas conservan las otras
+  cadenas válidas. Sólo una respuesta exitosa puede limpiar una selección que
+  ya no está disponible; una carga o un fallo no la desactivan.
+- Cargar más productos no cambia las alternativas del lateral. Un fallo de
+  paginación conserva lo descargado y permite reintentar esa página.
+- Los cambios de filtros cancelan peticiones anteriores y descartan sus
+  respuestas. No se aplica un segundo filtro local de búsqueda.
+- Una búsqueda no vacía de menos de 3 bytes UTF-8 muestra un aviso y no consulta
+  productos ni facetas, conforme al mínimo actual de Catálogo. Por ejemplo,
+  `te` espera más texto; `té` ya tiene 3 bytes. El servidor conserva la validación
+  y el saneamiento definitivos.
+- Carga, error con reintento y facetas vacías tienen mensajes explícitos. No hay
+  cadenas de ejemplo como respaldo.
+
+### Comprobación manual de supermercados
+
+1. En escritorio y móvil, buscar un producto y comparar el lateral con
+   `supermercados` de la respuesta de `/api/v1/productos`. Paginar no debe cambiar
+   esas alternativas.
+2. Seleccionar una cadena y comprobar que viaja en `supermercado`, sin ocultar
+   las otras alternativas válidas. Probar categoría, ofertas y Marcas blancas.
+3. Con red lenta, cambiar rápidamente la búsqueda: sólo debe quedar el último
+   resultado. Repetir mientras carga una página adicional.
+4. Probar una búsqueda sin coincidencias, limpiar filtros y una selección que
+   deje de ser válida: no deben quedar cadenas antiguas ni peticiones en bucle.
+5. Bloquear `/productos` sin bloquear `/productos/categorias`: ambos estados de
+   error deben ser explícitos. Desbloquear y reintentar con los filtros actuales.
+6. Escribir `te`, luego `té`: el primero muestra el aviso, el segundo consulta
+   la API. Estos pasos son una guía; no acreditan una prueba manual realizada.
 
 ### Comprobación manual
 

@@ -54,17 +54,6 @@ export function slugifyMarket(nombre: string | null | undefined) {
 
 export const FALLBACK_MARKET_NAME = 'Sin supermercado';
 
-/** Obtiene solo las cadenas presentes en la muestra recibida; no representa todo el catálogo. */
-export function getMarketsFromProducts(productos: Producto[]): UiSupermarket[] {
-  const supermercados = new Map<string, UiSupermarket>();
-  for (const producto of productos) {
-    const nombre = producto.supermarketName?.trim();
-    if (!nombre || nombre === FALLBACK_MARKET_NAME || !producto.supermarketId) continue;
-    supermercados.set(producto.supermarketId, { id: producto.supermarketId, name: nombre });
-  }
-  return Array.from(supermercados.values());
-}
-
 /** Comprueba el contrato de facetas antes de convertirlo al modelo de interfaz. */
 function esSupermercadoApi(valor: unknown): valor is SupermercadoApi {
   return (

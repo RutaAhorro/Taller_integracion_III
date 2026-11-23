@@ -32,6 +32,7 @@ type PropiedadesBarraLateral = {
   availableMarkets: UiSupermarket[]
   cargandoSupermercados: boolean
   errorSupermercados: boolean
+  avisoSupermercados?: string | null
   alReintentarSupermercados: () => void
   onSelectCategory: (categoria: string) => void
   onSelectMarket: (id: string | null) => void
@@ -96,6 +97,7 @@ export function SideBar({
   availableMarkets,
   cargandoSupermercados,
   errorSupermercados,
+  avisoSupermercados,
   alReintentarSupermercados,
   onSelectCategory,
   onSelectMarket,
@@ -298,7 +300,10 @@ export function SideBar({
 
           <nav aria-label="Supermercados">
             <TituloSeccion>Supermercados</TituloSeccion>
-            <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas del catálogo con productos en stock.</p>
+            <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas con productos en stock para los filtros actuales.</p>
+            {avisoSupermercados && (
+              <p role="status" className="px-2 text-sm text-muted-foreground">{avisoSupermercados}</p>
+            )}
             {cargandoSupermercados && (
               <p role="status" className="px-2 text-sm text-muted-foreground">Cargando supermercados…</p>
             )}
@@ -308,7 +313,7 @@ export function SideBar({
                 <button type="button" className="underline" onClick={alReintentarSupermercados}>Reintentar</button>
               </div>
             )}
-            {!cargandoSupermercados && !errorSupermercados && availableMarkets.length === 0 && (
+            {!cargandoSupermercados && !errorSupermercados && !avisoSupermercados && availableMarkets.length === 0 && (
               <p className="px-2 text-sm text-muted-foreground">No hay supermercados disponibles.</p>
             )}
             <ul className="flex flex-col gap-1">

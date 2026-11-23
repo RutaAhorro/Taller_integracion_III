@@ -1,11 +1,11 @@
-// Comparte navegación, búsqueda y carrito; carga las facetas iniciales de supermercados desde Catálogo.
+// Comparte filtros, productos y facetas para que el lateral y el listado usen la misma consulta.
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { TopNav } from "@/layouts/TopNav";
 import { SideBar } from "@/layouts/Sidebar";
 import { CartSidebar } from "@/features/catalogo/CartSidebar";
 import BottomNav from "@/layouts/BottomNav";
-import { getProducts } from "@/features/catalogo/products-api";
+import { useCatalog } from "@/features/catalogo/useCatalog";
 import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/features/catalogo/CartContext";
@@ -14,6 +14,7 @@ type TipoContextoDiseno = {
   activeMarket: string | null;
   category: string;
   markets: UiSupermarket[];
+  catalogo: ReturnType<typeof useCatalog>;
 };
 
 export function useLayoutContext() {
@@ -25,11 +26,9 @@ export function MainLayout() {
   const [categoria, setCategoria] = useState("");
   // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
   const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
-  const [supermercadoActivo, setSupermercadoActivo] = useState<string | null>(null);
-  const [supermercadosDisponibles, setSupermercadosDisponibles] = useState<UiSupermarket[]>([]);
-  const [cargandoSupermercados, setCargandoSupermercados] = useState(true);
-  const [errorSupermercados, setErrorSupermercados] = useState(false);
-  const [intentoSupermercados, setIntentoSupermercados] = useState(0);
+  // El nombre seleccionado no depende de las facetas que se vacían durante una carga.
+  const [supermercadoActivo, setSupermercadoActivo] = useState<UiSupermarket | null>(null);
+  const catalogo = useCatalog(consulta, categoria, supermercadoActivo);
   const cerrarBarraLateral = useCallback(() => setBarraLateralAbierta(false), []);
   const restablecerFiltros = () => {
     setConsulta("");
@@ -47,30 +46,12 @@ export function MainLayout() {
     'dashboard';
 
   useEffect(() => {
-    const controlador = new AbortController();
-    setCargandoSupermercados(true);
-    setErrorSupermercados(false);
-    setSupermercadosDisponibles([]);
-
-    // Las facetas cubren todo el resultado aunque sólo se pida un producto.
-    // La sincronización con búsqueda y filtros se conecta en el siguiente bloque.
-    getProducts('?limit=1&en_stock=true', controlador.signal)
-      .then(({ markets }) => {
-        if (controlador.signal.aborted) return;
-
-        setSupermercadosDisponibles(markets);
-      })
-      .catch(() => {
-        if (!controlador.signal.aborted) setErrorSupermercados(true);
-      })
-      .finally(() => {
-        if (!controlador.signal.aborted) setCargandoSupermercados(false);
-      });
-
-    return () => {
-      controlador.abort();
-    };
-  }, [intentoSupermercados]);
+    // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
+    if (catalogo.marketsReady && supermercadoActivo &&
+        !catalogo.markets.some((supermercado) => supermercado.id === supermercadoActivo.id)) {
+      setSupermercadoActivo(null);
+    }
+  }, [catalogo.marketsReady, catalogo.markets, supermercadoActivo]);
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -79,17 +60,18 @@ export function MainLayout() {
         open={barraLateralAbierta}
         onClose={cerrarBarraLateral}
         onResetFilters={restablecerFiltros}
-        activeMarket={supermercadoActivo}
-        availableMarkets={supermercadosDisponibles}
-        cargandoSupermercados={cargandoSupermercados}
-        errorSupermercados={errorSupermercados}
-        alReintentarSupermercados={() => setIntentoSupermercados((anterior) => anterior + 1)}
+        activeMarket={supermercadoActivo?.id ?? null}
+        availableMarkets={catalogo.markets}
+        cargandoSupermercados={catalogo.isLoading}
+        errorSupermercados={catalogo.error !== null}
+        avisoSupermercados={catalogo.notice}
+        alReintentarSupermercados={catalogo.retry}
         onSelectCategory={(valor) => {
           setConsulta("");
           setCategoria(valor);
         }}
         onSelectMarket={(id) => {
-          setSupermercadoActivo(id);
+          setSupermercadoActivo(catalogo.markets.find((supermercado) => supermercado.id === id) ?? null);
           setBarraLateralAbierta(false);
         }}
         activeCategory={categoria}
@@ -107,7 +89,7 @@ export function MainLayout() {
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo, category: categoria, markets: supermercadosDisponibles } satisfies TipoContextoDiseno} />
+        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo?.id ?? null, category: categoria, markets: catalogo.markets, catalogo } satisfies TipoContextoDiseno} />
       </div>
 
       {totalItems > 0 && (

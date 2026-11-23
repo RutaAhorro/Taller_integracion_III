@@ -1,111 +1,187 @@
-// Gestiona la carga paginada del catálogo y los filtros disponibles en la API.
-import { useState, useEffect, useMemo, useRef } from 'react';
-import { useLayoutContext } from '@/layouts/MainLayout';
+// Comparte una sola carga paginada de productos y facetas entre el catálogo y su lateral.
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getProducts, parametrosCategoria } from '@/features/catalogo/products-api';
 import { calculateDiscountPct } from '@/features/catalogo/formatters';
-import type { UiProduct as Producto } from '@/features/catalogo/tipos';
+import type { UiProduct as Producto, UiSupermarket } from '@/features/catalogo/tipos';
 
 const TAMANO_PAGINA = 24;
+const MINIMO_BYTES_BUSQUEDA = 3; // El mínimo de q en Catálogo se mide en bytes UTF-8.
+const PRODUCTOS_VACIOS: Producto[] = [];
+const SUPERMERCADOS_VACIOS: UiSupermarket[] = [];
 
+/** Conserva juntos los datos y el filtro que los produjo para no mezclar búsquedas. */
+type EstadoCatalogo = {
+  clave: string;
+  productos: Producto[];
+  supermercados: UiSupermarket[];
+  pagina: number;
+  totalPaginas: number;
+  cargando: boolean;
+  cargandoMas: boolean;
+  error: string | null;
+  errorMas: string | null;
+};
+
+/** Reinicia página, productos y facetas al comenzar una consulta o un reintento. */
+function estadoInicial(clave: string, cargando: boolean): EstadoCatalogo {
+  return {
+    clave,
+    productos: [],
+    supermercados: [],
+    pagina: 1,
+    totalPaginas: 1,
+    cargando,
+    cargandoMas: false,
+    error: null,
+    errorMas: null,
+  };
+}
+
+/** Calcula el ahorro sólo para conservar la presentación local de las ofertas ya descargadas. */
 const calcularAhorro = (producto: Producto) => producto.originalPrice - producto.price;
 
-export function useCatalog(consulta: string, categoria: string | null, supermercadoActivo: string | null) {
-  const { markets } = useLayoutContext();
-  const [productos, setProductos] = useState<Producto[]>([]);
-  const [pagina, setPagina] = useState(1);
-  const [totalPaginas, setTotalPaginas] = useState(1);
-  const [cargando, setCargando] = useState(true);
-  const [cargandoMas, setCargandoMas] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // Descarta respuestas de peticiones que quedaron obsoletas al cambiar filtros.
-  const idPeticion = useRef(0);
+/** Coordina productos y facetas; sólo una respuesta de los filtros vigentes puede actualizar la vista. */
+export function useCatalog(consulta: string, categoria: string | null, supermercadoActivo: UiSupermarket | null) {
+  const [intento, setIntento] = useState(0);
+  const textoBusqueda = consulta.trim();
+  const nombreSupermercado = supermercadoActivo?.name ?? null;
+  const busquedaCorta = textoBusqueda !== '' && new TextEncoder().encode(textoBusqueda).length < MINIMO_BYTES_BUSQUEDA;
+  const claveConsulta = JSON.stringify([textoBusqueda, categoria, nombreSupermercado, intento]);
+  const [estado, setEstado] = useState<EstadoCatalogo>(() => estadoInicial(claveConsulta, !busquedaCorta));
+  const versionPeticion = useRef(0);
+  const controladorConsulta = useRef<AbortController | null>(null);
+  // El ref bloquea dos eventos de scroll antes de que React publique cargandoMas.
+  const cargaMasEnCurso = useRef(false);
 
-  const nombreSupermercado = markets.find((supermercado) => supermercado.id === supermercadoActivo)?.name ?? null;
-
-  // Construye una página con los filtros admitidos por Catálogo.
-  const cargarPagina = (numeroPagina: number) => {
-    const parametros = new URLSearchParams({ page: String(numeroPagina), limit: String(TAMANO_PAGINA), en_stock: 'true' });
-    const textoBusqueda = consulta.trim();
-    if (textoBusqueda.length >= 3) parametros.set('q', textoBusqueda);
+  const parametrosFiltros = useMemo(() => {
+    const parametros = new URLSearchParams({ en_stock: 'true' });
+    if (textoBusqueda && !busquedaCorta) parametros.set('q', textoBusqueda);
     parametrosCategoria(categoria).forEach((valor, nombre) => parametros.set(nombre, valor));
     if (nombreSupermercado) parametros.set('supermercado', nombreSupermercado);
-    return getProducts(`?${parametros}`);
-  };
+    return parametros.toString();
+  }, [textoBusqueda, busquedaCorta, categoria, nombreSupermercado]);
 
-  // Primera página cada vez que cambian los filtros.
+  /** Usa exactamente los mismos filtros para productos y facetas, cambiando sólo la página. */
+  const cargarPagina = useCallback(
+    (numeroPagina: number, signal: AbortSignal) => {
+      const parametros = new URLSearchParams(parametrosFiltros);
+      parametros.set('page', String(numeroPagina));
+      parametros.set('limit', String(TAMANO_PAGINA));
+      return getProducts(`?${parametros}`, signal);
+    },
+    [parametrosFiltros],
+  );
+
   useEffect(() => {
-    const peticionActual = ++idPeticion.current;
-    setCargando(true);
-    setError(null);
+    const versionActual = ++versionPeticion.current;
+    const controlador = new AbortController();
+    controladorConsulta.current = controlador;
+    cargaMasEnCurso.current = false;
+    setEstado(estadoInicial(claveConsulta, !busquedaCorta));
 
-    cargarPagina(1)
+    // No se sustituye una búsqueda corta por un filtro local de la primera página.
+    if (!busquedaCorta) {
+      cargarPagina(1, controlador.signal)
+        .then((resultado) => {
+          if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
+          setEstado({
+            ...estadoInicial(claveConsulta, false),
+            productos: resultado.products,
+            supermercados: resultado.markets,
+            pagina: resultado.page,
+            totalPaginas: resultado.totalPages,
+          });
+        })
+        .catch(() => {
+          if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
+          setEstado({
+            ...estadoInicial(claveConsulta, false),
+            error: 'No se pudo cargar el catálogo ni sus supermercados. Intenta de nuevo.',
+          });
+        });
+    }
+
+    return () => controlador.abort();
+  }, [claveConsulta, busquedaCorta, cargarPagina]);
+
+  // La clave evita mostrar datos antiguos incluso antes del cleanup del efecto.
+  const resultadoVigente = estado.clave === claveConsulta;
+  const cargando = !resultadoVigente || estado.cargando;
+
+  /** Agrega una sola página sin reemplazar las facetas completas de la búsqueda. */
+  const cargarMas = () => {
+    const controlador = controladorConsulta.current;
+    if (
+      busquedaCorta ||
+      cargando ||
+      cargaMasEnCurso.current ||
+      estado.error ||
+      estado.pagina >= estado.totalPaginas ||
+      !controlador ||
+      controlador.signal.aborted
+    )
+      return;
+
+    const versionActual = versionPeticion.current;
+    cargaMasEnCurso.current = true;
+    setEstado((anterior) => ({ ...anterior, cargandoMas: true, errorMas: null }));
+
+    cargarPagina(estado.pagina + 1, controlador.signal)
       .then((resultado) => {
-        if (idPeticion.current !== peticionActual) return;
-        setProductos(resultado.products);
-        setPagina(resultado.page);
-        setTotalPaginas(resultado.totalPages);
+        if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
+        setEstado((anterior) => {
+          if (anterior.clave !== claveConsulta) return anterior;
+          const vistos = new Set(anterior.productos.map((producto) => producto.id));
+          return {
+            ...anterior,
+            productos: [...anterior.productos, ...resultado.products.filter((producto) => !vistos.has(producto.id))],
+            pagina: resultado.page,
+            totalPaginas: resultado.totalPages,
+          };
+        });
       })
       .catch(() => {
-        if (idPeticion.current !== peticionActual) return;
-        setProductos([]);
-        setError('No se pudo cargar el catálogo desde la base de datos.');
+        if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
+        setEstado((anterior) => ({ ...anterior, errorMas: 'No se pudieron cargar más productos.' }));
       })
       .finally(() => {
-        if (idPeticion.current === peticionActual) setCargando(false);
+        if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
+        cargaMasEnCurso.current = false;
+        setEstado((anterior) => ({ ...anterior, cargandoMas: false }));
       });
-
-    return () => {
-      idPeticion.current++;
-    };
-  }, [consulta, categoria, nombreSupermercado]);
-
-  // Agrega la página siguiente al continuar el desplazamiento, sin duplicar productos.
-  const cargarMas = () => {
-    if (cargandoMas || cargando || pagina >= totalPaginas) return;
-    const peticionActual = idPeticion.current;
-    setCargandoMas(true);
-
-    cargarPagina(pagina + 1)
-      .then((resultado) => {
-        if (idPeticion.current !== peticionActual) return;
-        setProductos((anteriores) => {
-          const vistos = new Set(anteriores.map((producto) => producto.id));
-          return [...anteriores, ...resultado.products.filter((producto) => !vistos.has(producto.id))];
-        });
-        setPagina(resultado.page);
-        setTotalPaginas(resultado.totalPages);
-      })
-      .catch(() => {
-        if (idPeticion.current === peticionActual) setError('No se pudieron cargar más productos.');
-      })
-      .finally(() => setCargandoMas(false));
   };
 
+  const productos = resultadoVigente && !estado.error ? estado.productos : PRODUCTOS_VACIOS;
+  const supermercados = resultadoVigente && !estado.error ? estado.supermercados : SUPERMERCADOS_VACIOS;
   const filtrados = useMemo(() => {
-    // Búsquedas de 1-2 letras no viajan a la API; se filtran aquí.
-    const busqueda = consulta.trim().toLowerCase();
-    const resultado = busqueda
-      ? productos.filter((producto) => producto.name.toLowerCase().includes(busqueda) || producto.brand.toLowerCase().includes(busqueda))
-      : productos;
-
-    // "Mejores ofertas" ordena por ahorro en $; "Mayor descuento", por %.
-    if (categoria === 'ofertas') return [...resultado].sort((productoAnterior, productoSiguiente) => calcularAhorro(productoSiguiente) - calcularAhorro(productoAnterior));
+    // La búsqueda y los filtros se aplican en Catálogo; no se vuelve a filtrar su respuesta.
+    if (categoria === 'ofertas') {
+      return [...productos].sort((anterior, siguiente) => calcularAhorro(siguiente) - calcularAhorro(anterior));
+    }
     if (categoria === 'descuentos') {
-      return [...resultado].sort(
-        (productoAnterior, productoSiguiente) => calculateDiscountPct(productoSiguiente.originalPrice, productoSiguiente.price) - calculateDiscountPct(productoAnterior.originalPrice, productoAnterior.price),
+      return [...productos].sort(
+        (anterior, siguiente) =>
+          calculateDiscountPct(siguiente.originalPrice, siguiente.price) -
+          calculateDiscountPct(anterior.originalPrice, anterior.price),
       );
     }
-    return resultado;
-  }, [productos, consulta, categoria]);
+    return productos;
+  }, [productos, categoria]);
 
-  const cantidadSupermercados = useMemo(() => new Set(filtrados.map((producto) => producto.supermarketId)).size, [filtrados]);
+  /** Reintenta los filtros actuales, no una carga inicial sin búsqueda. */
+  const reintentar = useCallback(() => setIntento((anterior) => anterior + 1), []);
 
   return {
     isLoading: cargando,
-    error,
+    error: resultadoVigente ? estado.error : null,
     filtered: filtrados,
-    supermarketCount: cantidadSupermercados,
-    isFetchingMore: cargandoMas,
+    markets: supermercados,
+    marketsReady: resultadoVigente && !estado.cargando && !estado.error && !busquedaCorta,
+    supermarketCount: cargando ? 0 : supermercadoActivo ? (filtrados.length > 0 ? 1 : 0) : supermercados.length,
+    notice: busquedaCorta ? 'Escribe una búsqueda más larga para consultar productos y supermercados.' : null,
+    isFetchingMore: resultadoVigente && estado.cargandoMas,
+    loadMoreError: resultadoVigente ? estado.errorMas : null,
     fetchMore: cargarMas,
+    retry: reintentar,
   };
 }
