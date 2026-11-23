@@ -111,7 +111,7 @@ Gateway ni en Ingress público:
 | Método | Ruta | Payload JSON | Descripción |
 | --- | --- | --- | --- |
 | POST | `/internal/v1/cadenas/resolver` | `{"cadena_id": int, "nombre": string}` | Resuelve o registra una cadena con lock transaccional |
-| POST | `/internal/v1/sucursales/resolver` | `{"cadena_id": int, "sucursal_id": *int, "codigo_sucursal": *string}` | Resuelve o registra una sucursal para la cadena |
+| POST | `/internal/v1/sucursales/resolver` | `{"cadena_id": int, "sucursal_id": *int, "codigo_sucursal": *string}` | Resuelve una sucursal existente; nunca la crea (404 `branch_not_found` si no hay) |
 | POST | `/internal/v1/ingestas` | `{"sucursal_id": int, "lote_id": string, "productos": [...]}` | Persistencia atómica de 1 a 1000 productos y capturas de precio |
 | POST | `/internal/v1/productos/disponibilidad` | `{"producto_ids": ["uuid", ...]}` | Consulta en lote de existencia, stock, precio, sucursal y captura más reciente |
 | POST | `/internal/v1/productos/equivalencias` | `{"producto_ids": ["uuid", ...]}` | Agrupa por EAN exacto los productos equivalentes y su oferta actual por sucursal |
@@ -463,6 +463,20 @@ de 5 s antes de abrir el puerto HTTP. Si los privilegios son insuficientes, el
 proceso aborta. Durante la ejecución normal, la sonda de preparación únicamente
 comprueba conectividad mediante `PingContext`.
 
+### Sucursales: Catálogo ya no las crea (SUP-376)
+
+`POST /internal/v1/sucursales/resolver` solo busca (por `sucursal_id`, por
+`codigo_sucursal` o, con solo `cadena_id`, la primera sucursal activa por `id`).
+Una cadena nueva necesita una sucursal real registrada (con dirección y
+coordenadas verdaderas) antes de ingestar. Rutas, campos, tablas y variables no
+cambian; Control ya trata el 404 como `ErrSucursalNoEncontrada` permanente.
+
+| Antes | Ahora |
+| --- | --- |
+| Solo `cadena_id` y sin sucursal activa: creaba "<Cadena> Central" (dirección "Casa Matriz / Online", Temuco, -38.7359, -72.5904) y respondía 200 | No crea nada: responde 404 `{"error":"branch_not_found"}` |
+| La resolución era una transacción con `pg_advisory_xact_lock` (clave 2692) | Es una lectura simple; la clave 2692 se retiró |
+| La ingesta de una cadena nueva "funcionaba" con coordenadas inventadas que el motor de rutas habría usado | El lote se rechaza hasta que exista una sucursal real |
+
 ## Ingesta idempotente y consistencia
 
 Catálogo persiste productos y precios de forma atómica:
@@ -599,8 +613,14 @@ Rutas, campos JSON, tablas, columnas y variables de entorno no cambian. Sí camb
   avisar; el mínimo de 3 se mide en bytes.
 - Alias heredados de ingesta `precio` e `imagen`; Control debería enviar sólo
   `precio_oferta` y `url_imagen`.
-- La sucursal central autocreada usa datos fijos de Temuco
-  (`internal/repositories/ingesta.go`).
+- La sucursal central autocreada se retiró (SUP-376). Sobra el permiso `INSERT`
+  de `app_catalogo` sobre `scraper.sucursales_supermercado` (y su secuencia
+  `USAGE`); el arranque aún lo exige para esa tabla en `VerificarAlmacenamiento`.
+  Retirarlo es cambio de `infrastructure/db` y del código, a coordinar.
+- Las sucursales sembradas 5 y 6 (A Cuenta y Cugat, `ACUENTA-CENTRAL` y
+  `CUGAT-CENTRAL`) en `infrastructure/db/init.sql`, `04_migracion_nuevas_cadenas.sql`
+  y `infrastructure/k8s/db/configmap.yaml` tienen los mismos datos inventados
+  ("Casa Matriz / Online", coordenadas del centro de Temuco). Sin corregir.
 - `cadenas_supermercado.nombre` no tiene unicidad sin distinguir mayúsculas: la
   resolución usa `ILIKE` bajo lock. Candidato a índice único `LOWER(BTRIM(nombre))`
   (sección 8.4, coordinar con `infrastructure/db`).
