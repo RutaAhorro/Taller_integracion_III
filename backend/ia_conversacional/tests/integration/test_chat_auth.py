@@ -519,3 +519,103 @@ def test_chat_filtros_vacios_responde_sin_filtros(cliente):
         assert datos["filtros_aplicados"] is None
         assert datos["productos_recomendados"] == []
         assert "No logré identificar qué productos buscas" in datos["respuesta"]
+
+
+def test_chat_receta_ingredientes_encontrados_y_faltantes(cliente):
+    """Test SUP-325: receta con ingredientes encontrados y faltantes informa ingredientes_receta e ingredientes_faltantes."""
+    token_valido = generar_token(user_id="user-receta-ingredientes")
+    mock_resultado = ResultadoExtraccion(
+        filtros={
+            "ingredientes": [
+                {"nombre": "Tomate", "cantidad_envases": 2},
+                {"nombre": "Perejil", "cantidad_envases": 1},
+            ],
+        },
+        tiempo_extraccion_ms=35,
+    )
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Para tu receta de pasta, agrega Tomate Larga Vida."
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de pasta con tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+
+        mock_extraer.assert_awaited_once_with("busco una receta de pasta con tomate")
+
+        assert len(datos["ingredientes_receta"]) == 1
+        assert datos["ingredientes_receta"][0]["ingrediente"] == "Tomate"
+        assert datos["ingredientes_receta"][0]["cantidad_sugerida"] == 2
+        assert len(datos["ingredientes_receta"][0]["candidatos"]) == 1
+        assert datos["ingredientes_receta"][0]["candidatos"][0]["producto_id"] == "prod-tomate-1"
+
+        assert datos["ingredientes_faltantes"] == ["Perejil"]
+
+        assert len(datos["productos_recomendados"]) == 1
+        assert datos["productos_recomendados"][0]["id"] == "prod-tomate-1"
+
+        mock_explicar.assert_awaited_once()
+        args_llamada = mock_explicar.call_args[0]
+        assert args_llamada[0] == "busco una receta de pasta con tomate"
+        assert args_llamada[1] == datos["productos_recomendados"]
+
+
+def test_chat_candidato_descartado_por_precio_vencido(cliente):
+    """Test SUP-325: candidato descartado cuando la disponibilidad reporta estado_precio vencido."""
+    token_valido = generar_token(user_id="user-receta-vencido")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=25,
+    )
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vencido",
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Los productos más convenientes son Tomate y Ajo."
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de salsa de tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+
+        assert datos["ingredientes_receta"] == []
+        assert datos["ingredientes_faltantes"] == ["Tomate"]
+        assert datos["productos_recomendados"] == []
+        assert datos["respuesta"] == "No encontramos productos que coincidan con tu busqueda."

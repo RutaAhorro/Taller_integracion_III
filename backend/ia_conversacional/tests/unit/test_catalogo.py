@@ -599,3 +599,68 @@ def test_productos_precio_texto_corrupto_descartado():
 
     productos = repo.obtener_todos()
     assert len(productos) == 0
+
+
+def test_consulta_disponibilidad_exito_retorna_items_por_producto():
+    """Verifica la respuesta exitosa de la consulta en lote de disponibilidad."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    item_disponibilidad = {
+        "producto_id": "prod-uuid-1",
+        "estado_producto": "disponible",
+        "en_stock": True,
+        "estado_precio": "disponible",
+    }
+    mock_respuesta.json.return_value = {"productos": [item_disponibilidad]}
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.post.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta="token-lectura-valido",
+    )
+
+    disponibilidad = repo.consultar_disponibilidad(["prod-uuid-1"])
+
+    mock_cliente.post.assert_called_with(
+        "http://catalogo:8080/internal/v1/productos/disponibilidad",
+        json={"producto_ids": ["prod-uuid-1"]},
+        headers={"Authorization": "Bearer token-lectura-valido"},
+    )
+    assert disponibilidad == {"prod-uuid-1": item_disponibilidad}
+
+
+def test_consulta_disponibilidad_sin_token_retorna_none():
+    """Verifica que sin token de consulta la disponibilidad no se consulta y retorna None."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta=None,
+    )
+
+    assert repo.consultar_disponibilidad(["prod-uuid-1"]) is None
+    mock_cliente.post.assert_not_called()
+
+
+def test_consulta_disponibilidad_error_http_retorna_none():
+    """Verifica que ante un error HTTP se registra la advertencia y se retorna None."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.status_code = 503
+    mock_respuesta.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "503 Service Unavailable",
+        request=MagicMock(),
+        response=mock_respuesta,
+    )
+    mock_cliente.post.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta="token-lectura-valido",
+    )
+
+    assert repo.consultar_disponibilidad(["prod-uuid-1"]) is None

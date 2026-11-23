@@ -94,6 +94,7 @@ CATALOGO_TIMEOUT = _leer_env_float("CATALOGO_TIMEOUT", 5.0)
 CATALOGO_CACHE_TTL = _leer_env_float("IA_CATALOGO_CACHE_TTL", 60.0)
 CATALOGO_PAGE_LIMIT = _leer_env_int("IA_CATALOGO_PAGE_LIMIT", 100)
 CATALOGO_MAX_PAGINAS = _leer_env_int("IA_CATALOGO_MAX_PAGINAS", 10)
+CATALOGO_CONSULTA_TOKEN = os.getenv("CATALOGO_CONSULTA_TOKEN", "").strip() or None
 
 # ===== Proveedor Groq (secundario) =====
 

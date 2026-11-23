@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 
 import anyio
 
-from app.domain.filtros import filtrar_productos
+from app.domain.filtros import filtrar_productos, vincular_ingredientes_catalogo
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
 from app.repositories.catalogo import ProductoRepositorio
 
@@ -43,6 +43,8 @@ def _respuesta_chat(
     productos: list,
     tiempo_extraccion_ms: int,
     tiempo_explicacion_ms: int,
+    ingredientes_receta: list | None = None,
+    ingredientes_faltantes: list | None = None,
 ) -> dict:
     """Arma la respuesta con la misma forma en todos los casos, para que el cliente no deba adivinar claves."""
     return {
@@ -51,6 +53,8 @@ def _respuesta_chat(
         "productos_recomendados": productos,
         "tiempo_extraccion_ms": tiempo_extraccion_ms,
         "tiempo_explicacion_ms": tiempo_explicacion_ms,
+        "ingredientes_receta": ingredientes_receta or [],
+        "ingredientes_faltantes": ingredientes_faltantes or [],
     }
 
 
@@ -99,6 +103,63 @@ async def procesar_mensaje(proveedor: ProveedorIA, repositorio: ProductoReposito
     productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)
     if not productos:
         return _respuesta_chat(TEXTO_CATALOGO_NO_DISPONIBLE, resultado.filtros, [], resultado.tiempo_extraccion_ms, 0)
+
+    if "ingredientes" in resultado.filtros:
+        # Receta: se vincula cada ingrediente con los candidatos del catalogo y se valida disponibilidad (SUP-325).
+        ingredientes_receta, ingredientes_faltantes = vincular_ingredientes_catalogo(
+            productos, resultado.filtros["ingredientes"]
+        )
+
+        ids_candidatos = sorted(
+            {candidato["producto_id"] for ingrediente in ingredientes_receta for candidato in ingrediente["candidatos"]}
+        )
+        repositorio_consulta = getattr(repositorio, "consultar_disponibilidad", None)
+        disponibilidad = None
+        if callable(repositorio_consulta):
+            disponibilidad = await anyio.to_thread.run_sync(repositorio_consulta, ids_candidatos)
+
+        # Solo se conservan los candidatos con stock y precio vigentes; el ingrediente pasa a faltantes si ninguno aplica.
+        ingredientes_receta_validados = []
+        productos_receta = []
+        for ingrediente in ingredientes_receta:
+            candidatos = ingrediente["candidatos"]
+            if disponibilidad is not None:
+                candidatos = [
+                    candidato
+                    for candidato in candidatos
+                    if candidato["producto_id"] in disponibilidad
+                    and disponibilidad[candidato["producto_id"]].get("estado_producto") == "disponible"
+                    and disponibilidad[candidato["producto_id"]].get("estado_precio") == "vigente"
+                ]
+            if not candidatos:
+                ingredientes_faltantes.append(ingrediente["ingrediente"])
+                continue
+            ingredientes_receta_validados.append(
+                {
+                    "ingrediente": ingrediente["ingrediente"],
+                    "cantidad_sugerida": ingrediente["cantidad_sugerida"],
+                    "candidatos": candidatos,
+                }
+            )
+            producto_encontrado = next(
+                (producto for producto in productos if str(producto.get("id")) == candidatos[0]["producto_id"]),
+                candidatos[0],
+            )
+            productos_receta.append(producto_encontrado)
+
+        # Etapa 3: explicación solo con los productos reales seleccionados para la receta.
+        explicacion, tiempo_explicacion_ms = await generar_explicacion_con_tiempo(
+            proveedor.generar_explicacion, mensaje, productos_receta
+        )
+        return _respuesta_chat(
+            explicacion,
+            resultado.filtros,
+            productos_receta,
+            resultado.tiempo_extraccion_ms,
+            tiempo_explicacion_ms,
+            ingredientes_receta=ingredientes_receta_validados,
+            ingredientes_faltantes=ingredientes_faltantes,
+        )
 
     productos_filtrados = filtrar_productos(productos, resultado.filtros)
 

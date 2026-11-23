@@ -26,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 # Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=
 RUTA_PRODUCTOS_CATALOGO = "/api/v1/productos"
+# Contrato de Catálogo: POST /internal/v1/productos/disponibilidad (SUP-312).
+RUTA_DISPONIBILIDAD_CATALOGO = "/internal/v1/productos/disponibilidad"
 PRIMERA_PAGINA = 1
 
 FUENTE_CATALOGO = "catalogo"
@@ -44,6 +46,7 @@ class ProductoRepositorio:
         url_base: str = config.CATALOGO_INTERNAL_URL,
         tiempo_espera: float = config.CATALOGO_TIMEOUT,
         cliente: httpx.Client | None = None,
+        token_consulta: str | None = config.CATALOGO_CONSULTA_TOKEN,
         ttl_cache: float = config.CATALOGO_CACHE_TTL,
         limite_pagina: int = config.CATALOGO_PAGE_LIMIT,
         max_paginas: int = config.CATALOGO_MAX_PAGINAS,
@@ -60,6 +63,7 @@ class ProductoRepositorio:
         self._limite_pagina = limite_pagina
         self._max_paginas = max_paginas
         self._cliente = cliente
+        self._token_consulta = token_consulta
         self._candado = threading.Lock()
         self._productos: list[dict[str, Any]] = []
         self._ultima_actualizacion: float = 0.0
@@ -159,6 +163,30 @@ class ProductoRepositorio:
                 items, _ = self._pedir_pagina(cliente_http, pagina)
                 productos.extend(self._productos_en_stock(items))
             return productos
+        finally:
+            if self._cliente is None:
+                cliente_http.close()
+
+    def consultar_disponibilidad(self, producto_ids: list[str]) -> dict[str, dict[str, Any]] | None:
+        """Consulta en lote la disponibilidad de candidatos ante Catálogo (SUP-312)."""
+        if not self._token_consulta or not producto_ids:
+            return None
+        cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        try:
+            respuesta = cliente_http.post(
+                f"{self._url_base}{RUTA_DISPONIBILIDAD_CATALOGO}",
+                json={"producto_ids": producto_ids},
+                headers={"Authorization": f"Bearer {self._token_consulta}"},
+            )
+            respuesta.raise_for_status()
+            return {
+                str(item["producto_id"]): item
+                for item in respuesta.json().get("productos", [])
+                if isinstance(item, dict) and item.get("producto_id")
+            }
+        except (httpx.HTTPError, ValueError) as error_consulta:
+            logger.warning("No fue posible consultar disponibilidad en Catálogo (%s).", error_consulta)
+            return None
         finally:
             if self._cliente is None:
                 cliente_http.close()

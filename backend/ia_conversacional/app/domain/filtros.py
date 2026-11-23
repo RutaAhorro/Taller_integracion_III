@@ -37,6 +37,32 @@ def _a_lista_de_terminos(valor) -> list[str]:
     return [termino.strip() for termino in terminos if isinstance(termino, str) and termino.strip()]
 
 
+def _a_lista_de_ingredientes(valor) -> list[dict]:
+    """
+    Normaliza la lista de ingredientes de una receta.
+
+    Cada ingrediente exige un nombre no vacio (se strip) y una cantidad de
+    envases entera >= 1 (con default 1 si falta o es invalida, excluyendo bools).
+    """
+    if not isinstance(valor, list):
+        return []
+    ingredientes = []
+    for item in valor:
+        if not isinstance(item, dict):
+            continue
+        nombre = item.get("nombre")
+        if not isinstance(nombre, str):
+            continue
+        nombre_limpio = nombre.strip()
+        if not nombre_limpio:
+            continue
+        cantidad_envases = item.get("cantidad_envases")
+        if isinstance(cantidad_envases, bool) or not isinstance(cantidad_envases, int) or cantidad_envases < 1:
+            cantidad_envases = 1
+        ingredientes.append({"nombre": nombre_limpio, "cantidad_envases": cantidad_envases})
+    return ingredientes
+
+
 def sanitizar_filtros_crudos(crudo: dict) -> dict:
     """
     Conserva solo los campos con el tipo esperado.
@@ -60,6 +86,10 @@ def sanitizar_filtros_crudos(crudo: dict) -> dict:
     palabras_clave = _a_lista_de_terminos(crudo.get("palabras_clave"))
     if palabras_clave:
         limpio["palabras_clave"] = palabras_clave
+
+    ingredientes = _a_lista_de_ingredientes(crudo.get("ingredientes"))
+    if ingredientes:
+        limpio["ingredientes"] = ingredientes
 
     return limpio
 
@@ -141,3 +171,52 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
         resultado = [producto for producto in resultado if producto["distancia_km"] <= distancia_max]
 
     return sorted(resultado, key=lambda producto: producto["precio"])
+
+
+# ===== Vinculación de ingredientes con el catálogo =====
+
+
+def vincular_ingredientes_catalogo(
+    catalogo: list, ingredientes: list[dict], limite_candidatos: int = 3
+) -> tuple[list[dict], list[str]]:
+    """
+    Vincula los ingredientes de una receta con los productos reales del catálogo.
+
+    Devuelve los ingredientes resueltos con sus candidatos sugeridos (ordenados
+    por precio ascendente, hasta el limite) y los nombres sin candidato.
+    """
+    ingredientes_receta = []
+    ingredientes_faltantes = []
+
+    for item in ingredientes:
+        candidatos = [
+            producto
+            for producto in catalogo
+            if producto.get("id") is not None and _coincide_por_texto(item["nombre"], producto)
+        ]
+        candidatos = sorted(candidatos, key=lambda producto: producto["precio"])[:limite_candidatos]
+
+        if not candidatos:
+            ingredientes_faltantes.append(item["nombre"])
+            continue
+
+        ingredientes_receta.append(
+            {
+                "ingrediente": item["nombre"],
+                "cantidad_sugerida": item["cantidad_envases"],
+                "candidatos": [
+                    {
+                        "producto_id": str(producto["id"]),
+                        "nombre": producto["nombre"],
+                        "marca": producto.get("marca", ""),
+                        "unidad": producto.get("unidad", ""),
+                        "precio": producto["precio"],
+                        "supermercado": producto.get("supermercado", ""),
+                        "url_imagen": producto.get("url_imagen", ""),
+                    }
+                    for producto in candidatos
+                ],
+            }
+        )
+
+    return ingredientes_receta, ingredientes_faltantes
