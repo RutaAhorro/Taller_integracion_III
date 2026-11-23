@@ -95,7 +95,8 @@ Respuesta 200 de `/api/v1/chat`:
   "filtros_aplicados": {"categoria": "verduras", "precio_max": 2000},
   "productos_recomendados": [{"id": "...", "nombre": "...", "precio": 890.0}],
   "tiempo_extraccion_ms": 420,
-  "tiempo_explicacion_ms": 610
+  "tiempo_explicacion_ms": 610,
+  "estado_datos": "vigente"
 }
 ```
 
@@ -142,6 +143,26 @@ consultan en Catálogo).
   validados (stock y precio vigentes).
 - `ingredientes_faltantes` lista los ingredientes sin candidato disponible.
 - Sin receta, ambas listas son `[]`.
+
+### Estado de los datos (SUP-315)
+
+Cada respuesta 200 incluye `estado_datos`, que indica la frescura de la
+información usada:
+
+| Valor | Significado |
+|---|---|
+| `vigente` | Los datos se pidieron al Catálogo o la receta validó stock y precio. |
+| `memoria` | Catálogo no respondió y se conservó la carga previa. |
+| `memoria_antigua` | La carga previa se marcó como antigua según `IA_CATALOGO_ANTIGUEDAD_MAXIMA`. |
+| `sin_datos` | No hay datos cargados en el repositorio (catálogo vacío o fuente sin datos). |
+| `sin_validar_disponibilidad` | La receta usó la caché en memoria sin validar stock ni precio. |
+
+Con `memoria` y `memoria_antigua` la respuesta agrega una nota de que los datos
+provienen de una carga previa y pueden haber cambiado; con
+`sin_validar_disponibilidad`, una nota de que no se pudo validar stock y precio
+en tiempo real. `IA_CATALOGO_ANTIGUEDAD_MAXIMA` define la antigüedad máxima
+tolerada para considerar vigente una carga previa. Si el repositorio no informa
+la antigüedad, la respuesta asume `vigente`.
 
 ### Cambios de contrato (SUP-387)
 

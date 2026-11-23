@@ -50,6 +50,7 @@ class ProductoRepositorio:
         ttl_cache: float = config.CATALOGO_CACHE_TTL,
         limite_pagina: int = config.CATALOGO_PAGE_LIMIT,
         max_paginas: int = config.CATALOGO_MAX_PAGINAS,
+        antiguedad_maxima: float = config.CATALOGO_ANTIGUEDAD_MAXIMA,
     ) -> None:
         """
         Prepara el repositorio sin llamar a la red.
@@ -66,13 +67,28 @@ class ProductoRepositorio:
         self._token_consulta = token_consulta
         self._candado = threading.Lock()
         self._productos: list[dict[str, Any]] = []
+        self._antiguedad_maxima: float = antiguedad_maxima
         self._ultima_actualizacion: float = 0.0
+        self._ultima_carga_exitosa: float = 0.0
         self._fuente: str = FUENTE_SIN_DATOS
 
     @property
     def fuente(self) -> str:
         """Origen de los productos en memoria: 'catalogo', 'memoria' o 'sin_datos'."""
         return self._fuente
+
+    @property
+    def datos_antiguos(self) -> bool:
+        """Indica si los datos en caché superaron el límite de antigüedad máxima.
+
+        Retorna True solo cuando la fuente es 'memoria' (catálogo inalcanzable)
+        y la última carga exitosa desde Catálogo superó antigüedad_maxima.
+        """
+        return (
+            self._fuente == FUENTE_MEMORIA
+            and self._ultima_carga_exitosa > 0
+            and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
+        )
 
     def __len__(self) -> int:
         """Cantidad en memoria, sin red, para que /health no dependa de Catálogo."""
@@ -210,6 +226,7 @@ class ProductoRepositorio:
                 self._productos = productos
                 self._fuente = FUENTE_CATALOGO
                 self._ultima_actualizacion = time.time()
+                self._ultima_carga_exitosa = self._ultima_actualizacion
                 logger.info(
                     "Catálogo cargado exitosamente desde %s (%d productos vigentes con stock)",
                     self._url_base,
@@ -230,6 +247,9 @@ class ProductoRepositorio:
             )
 
         # Se renueva la marca de tiempo también al degradar, para no reintentar en ráfaga.
+        # NOTA: _ultima_carga_exitosa NO se sobrescribe al degradar a FUENTE_MEMORIA,
+        #       para que datos_antiguos pueda detectar cuándo la última carga válida
+        #       superó el límite de antigüedad.
         self._ultima_actualizacion = time.time()
         if self._productos:
             self._fuente = FUENTE_MEMORIA

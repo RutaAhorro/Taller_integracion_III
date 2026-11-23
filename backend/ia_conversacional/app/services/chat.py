@@ -9,13 +9,14 @@ router traduce `AsistenteNoDisponible` a 503.
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 import anyio
 
 from app import config
 from app.domain.filtros import filtrar_productos, vincular_ingredientes_catalogo
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
-from app.repositories.catalogo import ProductoRepositorio
+from app.repositories.catalogo import FUENTE_MEMORIA, FUENTE_SIN_DATOS, ProductoRepositorio
 
 logger = logging.getLogger(__name__)
 
@@ -28,11 +29,39 @@ TEXTO_CATALOGO_NO_DISPONIBLE = (
 TEXTO_SIN_PRODUCTOS = "No encontramos productos que coincidan con tu busqueda."
 TEXTO_EXPLICACION_RESPALDO = "Encontramos estos productos para tu búsqueda."
 
+# Estados de los datos usados en la respuesta (SUP-315).
+ESTADO_VIGENTE = "vigente"
+ESTADO_MEMORIA = "memoria"
+ESTADO_MEMORIA_ANTIGUA = "memoria_antigua"
+ESTADO_SIN_DATOS = FUENTE_SIN_DATOS
+ESTADO_SIN_VALIDAR_DISPONIBILIDAD = "sin_validar_disponibilidad"
+AVISO_MEMORIA_ANTIGUA = (
+    "Nota: los datos provienen de una carga previa antigua del catálogo y pueden estar desactualizados."
+)
+
+AVISO_CARGA_PREVIA = "Nota: los datos provienen de una carga previa del catálogo y pueden haber cambiado."
+AVISO_SIN_VALIDAR_DISPONIBILIDAD = "Nota: no fue posible validar el stock y el precio en tiempo real."
+
 GeneradorExplicacion = Callable[[str, list], Awaitable[str]]
 
 
 class AsistenteNoDisponible(Exception):
     """Ningún proveedor pudo extraer filtros: el chat no puede responder con datos validados."""
+
+
+# ===== Datos de la etapa 3 =====
+
+
+@dataclass(frozen=True)
+class DatosEtapa3:
+    """Datos validados de la etapa 2 que la etapa 3 necesita explicar (SUP-315)."""
+
+    productos: list
+    filtros: dict | None
+    tiempo_extraccion_ms: int
+    ingredientes_receta: list | None = None
+    ingredientes_faltantes: list | None = None
+    estado_datos: str = ESTADO_VIGENTE
 
 
 # ===== Respuesta =====
@@ -46,6 +75,7 @@ def _respuesta_chat(
     tiempo_explicacion_ms: int,
     ingredientes_receta: list | None = None,
     ingredientes_faltantes: list | None = None,
+    estado_datos: str = ESTADO_VIGENTE,
 ) -> dict:
     """Arma la respuesta con la misma forma en todos los casos, para que el cliente no deba adivinar claves."""
     return {
@@ -56,7 +86,30 @@ def _respuesta_chat(
         "tiempo_explicacion_ms": tiempo_explicacion_ms,
         "ingredientes_receta": ingredientes_receta or [],
         "ingredientes_faltantes": ingredientes_faltantes or [],
+        "estado_datos": estado_datos,
     }
+
+
+def _determinar_estado_datos(repositorio: ProductoRepositorio) -> str:
+    """Clasifica la carga del catálogo: antigua, en memoria, sin datos o vigente (SUP-315)."""
+    if repositorio.fuente == FUENTE_SIN_DATOS:
+        return ESTADO_SIN_DATOS
+    if repositorio.datos_antiguos:
+        return ESTADO_MEMORIA_ANTIGUA
+    if repositorio.fuente == FUENTE_MEMORIA:
+        return ESTADO_MEMORIA
+    return ESTADO_VIGENTE
+
+
+def _anexar_aviso_estado_datos(explicacion: str, estado_datos: str) -> str:
+    """Añade al texto una advertencia breve cuando la respuesta se apoya en datos degradados (SUP-315)."""
+    if estado_datos == ESTADO_MEMORIA_ANTIGUA:
+        return f"{explicacion} {AVISO_MEMORIA_ANTIGUA}"
+    if estado_datos == ESTADO_MEMORIA:
+        return f"{explicacion} {AVISO_CARGA_PREVIA}"
+    if estado_datos == ESTADO_SIN_VALIDAR_DISPONIBILIDAD:
+        return f"{explicacion} {AVISO_SIN_VALIDAR_DISPONIBILIDAD}"
+    return explicacion
 
 
 # ===== Etapa 3 con respaldo =====
@@ -112,7 +165,7 @@ def _aplicar_datos_vigentes(destino: dict, datos_producto: dict) -> None:
 
 async def _ejecutar_etapas_1_y_2(
     proveedor: ProveedorIA, repositorio: ProductoRepositorio, mensaje: str
-) -> tuple[dict | None, tuple | None]:
+) -> tuple[dict | None, DatosEtapa3 | None]:
     """
     Ejecuta las etapas 1 y 2 dentro del plazo total acotado.
 
@@ -134,9 +187,15 @@ async def _ejecutar_etapas_1_y_2(
 
         # Etapa 2: filtrado determinista. La carga de Catálogo es bloqueante y va en un hilo.
         productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)
+        estado_datos = _determinar_estado_datos(repositorio)
         if not productos:
             return _respuesta_chat(
-                TEXTO_CATALOGO_NO_DISPONIBLE, resultado.filtros, [], resultado.tiempo_extraccion_ms, 0
+                TEXTO_CATALOGO_NO_DISPONIBLE,
+                resultado.filtros,
+                [],
+                resultado.tiempo_extraccion_ms,
+                0,
+                estado_datos=estado_datos,
             ), None
 
         if "ingredientes" in resultado.filtros:
@@ -166,6 +225,8 @@ async def _ejecutar_etapas_1_y_2(
             # Si disponibilidad es None, loguear warning y continuar con caché en memoria
             if disponibilidad is None:
                 logger.warning("Disponibilidad no validada para receta: usando caché en memoria.")
+                if estado_datos == ESTADO_VIGENTE:
+                    estado_datos = ESTADO_SIN_VALIDAR_DISPONIBILIDAD
 
             # Validar disponibilidad y actualizar campos de los candidatos desde disponibilidad
             ingredientes_receta_validados = []
@@ -227,13 +288,13 @@ async def _ejecutar_etapas_1_y_2(
 
             return (
                 None,
-                (
-                    True,
-                    productos_receta,
-                    resultado.filtros,
-                    resultado.tiempo_extraccion_ms,
-                    ingredientes_receta_validados,
-                    ingredientes_faltantes,
+                DatosEtapa3(
+                    productos=productos_receta,
+                    filtros=resultado.filtros,
+                    tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
+                    ingredientes_receta=ingredientes_receta_validados,
+                    ingredientes_faltantes=ingredientes_faltantes,
+                    estado_datos=estado_datos,
                 ),
             )
 
@@ -241,13 +302,11 @@ async def _ejecutar_etapas_1_y_2(
         productos_filtrados = filtrar_productos(productos, resultado.filtros)
         return (
             None,
-            (
-                False,
-                productos_filtrados,
-                resultado.filtros,
-                resultado.tiempo_extraccion_ms,
-                None,
-                None,
+            DatosEtapa3(
+                productos=productos_filtrados,
+                filtros=resultado.filtros,
+                tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
+                estado_datos=estado_datos,
             ),
         )
 
@@ -271,31 +330,23 @@ async def procesar_mensaje(proveedor: ProveedorIA, repositorio: ProductoReposito
     if respuesta is not None:
         return respuesta
 
-    (
-        _es_receta,
-        productos_etapa_3,
-        filtros_etapa_3,
-        tiempo_extraccion_ms,
-        ingredientes_receta,
-        ingredientes_faltantes,
-    ) = datos_etapa_3
-
     # Fuera del bloque fail_after: calcular tiempo restante y ejecutar Etapa 3
     tiempo_restante = max(0.5, config.CHAT_TIMEOUT_TOTAL - (time.monotonic() - inicio))
 
     explicacion, tiempo_explicacion_ms = await generar_explicacion_con_tiempo(
         proveedor.generar_explicacion,
         mensaje,
-        productos_etapa_3,
+        datos_etapa_3.productos,
         tiempo_limite=tiempo_restante,
     )
 
     return _respuesta_chat(
-        explicacion,
-        filtros_etapa_3,
-        productos_etapa_3,
-        tiempo_extraccion_ms,
+        _anexar_aviso_estado_datos(explicacion, datos_etapa_3.estado_datos),
+        datos_etapa_3.filtros,
+        datos_etapa_3.productos,
+        datos_etapa_3.tiempo_extraccion_ms,
         tiempo_explicacion_ms,
-        ingredientes_receta=ingredientes_receta,
-        ingredientes_faltantes=ingredientes_faltantes,
+        ingredientes_receta=datos_etapa_3.ingredientes_receta,
+        ingredientes_faltantes=datos_etapa_3.ingredientes_faltantes,
+        estado_datos=datos_etapa_3.estado_datos,
     )

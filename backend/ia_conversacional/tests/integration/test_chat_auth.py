@@ -13,6 +13,7 @@ Criterios de aceptación verificados:
 - 503 ante falla irrecuperable de proveedores.
 """
 
+import logging
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -29,6 +30,10 @@ from app.api.sesion import UsuarioAutenticado, obtener_usuario_actual
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.main import app
 from app.repositories.catalogo import ProductoRepositorio
+from app.repositories.gemini import GeminiProveedor
+from app.repositories.groq import GroqProveedor
+from app.services.chat import TEXTO_CATALOGO_NO_DISPONIBLE
+from app.services.fallback import FallbackProveedor
 
 TEST_JWT_SECRET = "super-secret-key-32-bytes-minimum-length-fixture!"
 
@@ -130,6 +135,10 @@ def catalogo_fijo(monkeypatch):
         "obtener_todos",
         lambda: productos_normalizados,
     )
+    # Asegurar que la fuente sea "catalogo" para que las pruebas de pipeline
+    # funcionen con estado vigente, tal como el test original esperaba.
+    main.repositorio_productos._fuente = "catalogo"
+    main.repositorio_productos._ultima_actualizacion = 0.0
 
 
 @pytest.fixture
@@ -1080,3 +1089,212 @@ def test_chat_receta_revalida_precio_max_tras_disponibilidad(cliente):
         assert datos["ingredientes_receta"] == []
         assert datos["ingredientes_faltantes"] == ["Tomate"]
         assert datos["productos_recomendados"] == []
+
+
+# ===== Pruebas controladas de fallos (SUP-315) =====
+
+
+def _crear_cliente_chat(repositorio, proveedor) -> TestClient:
+    """Arma una aplicación mínima con el router real del chat y la sesión ya resuelta."""
+    aplicacion_prueba = FastAPI()
+    aplicacion_prueba.include_router(crear_router_chat(repositorio, proveedor))
+    aplicacion_prueba.dependency_overrides[obtener_usuario_actual] = lambda: UsuarioAutenticado(
+        user_id="usuario-sup-315",
+    )
+    return TestClient(aplicacion_prueba)
+
+
+def test_chat_sin_claves_de_proveedores_retorna_503_sin_registrar_claves(caplog):
+    """Sin GEMINI_API_KEY ni GROQ_API_KEY el respaldo falla y el chat responde 503 sin filtrar claves al log."""
+    proveedor_respaldo = FallbackProveedor(
+        proveedores=[
+            GeminiProveedor(clave_api=None, url_endpoint="https://ejemplo.invalid/gemini"),
+            GroqProveedor(
+                clave_api=None,
+                url_endpoint="https://ejemplo.invalid/groq",
+                modelo_extraccion="modelo-extraccion",
+                modelo_explicacion="modelo-explicacion",
+            ),
+        ],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+        espera_base=0.0,
+        variacion_maxima=0.0,
+    )
+    cliente_prueba = _crear_cliente_chat(main.repositorio_productos, proveedor_respaldo)
+
+    with caplog.at_level(logging.WARNING):
+        respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco tomates"})
+
+    assert respuesta.status_code == 503
+    assert "no está disponible" in respuesta.json().get("detail", "")
+    # Las claves ausentes no deben aparecer como valor de encabezado ni como texto en los logs.
+    assert "None" not in caplog.text
+    assert "Bearer None" not in caplog.text
+
+
+def test_chat_gemini_responde_429_y_groq_ok_retorna_200(monkeypatch):
+    """Ante un 429 de Gemini, el respaldo conmuta a Groq y el chat responde 200 con los productos filtrados."""
+    solicitud_gemini = httpx.Request("POST", "https://ejemplo.invalid/gemini")
+    respuesta_429 = httpx.Response(429, request=solicitud_gemini)
+    error_429 = httpx.HTTPStatusError("429 Too Many Requests", request=solicitud_gemini, response=respuesta_429)
+
+    proveedor_gemini = GeminiProveedor(clave_api="clave-gemini-ficticia", url_endpoint="https://ejemplo.invalid/gemini")
+    proveedor_groq = GroqProveedor(
+        clave_api="clave-groq-ficticia",
+        url_endpoint="https://ejemplo.invalid/groq",
+        modelo_extraccion="modelo-extraccion",
+        modelo_explicacion="modelo-explicacion",
+    )
+
+    async def gemini_responde_429(_cuerpo):
+        raise error_429
+
+    async def groq_responde_ok(cuerpo):
+        if "tools" in cuerpo:
+            return {
+                "choices": [{"message": {"tool_calls": [{"function": {"arguments": '{"categoria": "verduras"}'}}]}}]
+            }
+        return {"choices": [{"message": {"content": "Verduras disponibles en el catálogo."}}]}
+
+    monkeypatch.setattr(proveedor_gemini, "_enviar", gemini_responde_429)
+    monkeypatch.setattr(proveedor_groq, "_enviar", groq_responde_ok)
+
+    proveedor_respaldo = FallbackProveedor(
+        proveedores=[proveedor_gemini, proveedor_groq],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+        espera_base=0.0,
+        variacion_maxima=0.0,
+    )
+    cliente_prueba = _crear_cliente_chat(main.repositorio_productos, proveedor_respaldo)
+
+    respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco verduras"})
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["respuesta"] == "Verduras disponibles en el catálogo."
+    assert datos["estado_datos"] == "vigente"
+    assert len(datos["productos_recomendados"]) > 0
+    assert all(producto["categoria"] == "verduras" for producto in datos["productos_recomendados"])
+
+
+def test_chat_catalogo_vacio_retorna_200_con_texto_no_disponible(cliente):
+    """Con el catálogo vacío se informa la indisponibilidad sin inventar productos y sin 503."""
+    token_valido = generar_token(user_id="user-catalogo-vacio")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"categoria": "verduras"},
+        tiempo_extraccion_ms=10,
+    )
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch.object(main.repositorio_productos, "obtener_todos", return_value=[]),
+    ):
+        mock_extraer.return_value = mock_resultado
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco verduras"},
+        )
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert datos["productos_recomendados"] == []
+    assert "estado_datos" in datos
+
+
+def test_chat_sin_datos_retorna_200_con_estado_sin_datos(cliente):
+    """Con repositorio fuente sin_datos y catálogo vacío devuelve estado_datos == 'sin_datos'."""
+
+    class RepositorioSinDatos:
+        """Doble de repositorio con fuente sin_datos y catálogo vacío."""
+
+        fuente = "sin_datos"
+
+        def obtener_todos(self) -> list:
+            return []
+
+        def consultar_disponibilidad(self, _producto_ids: list) -> dict | None:
+            return None
+
+    class ProveedorFijo(ProveedorIA):
+        """Proveedor mínimo que devuelve filtros e explicación deterministas."""
+
+        nombre = "fijo"
+
+        async def extraer_filtros(self, mensaje: str):
+            return ResultadoExtraccion(filtros={"categoria": "verduras"}, tiempo_extraccion_ms=5)
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "Productos disponibles."
+
+    cliente_prueba = _crear_cliente_chat(RepositorioSinDatos(), ProveedorFijo())
+
+    respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco verduras"})
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["estado_datos"] == "sin_datos"
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert datos["productos_recomendados"] == []
+
+
+def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():
+    """Una carga previa antigua se informa como memoria_antigua y agrega un aviso en la respuesta."""
+    productos_en_memoria = [
+        {
+            "id": "prod-tomate-1",
+            "nombre": "Tomate Larga Vida",
+            "marca": "Generica",
+            "categoria": "verduras",
+            "supermercado": "Lider",
+            "precio": 890.0,
+            "precio_normal": 890.0,
+            "precio_oferta": None,
+            "en_oferta": False,
+            "url_imagen": "https://img.super.cl/tomate.png",
+            "unidad": "1kg",
+            "en_stock": True,
+            "distancia_km": 0.0,
+        }
+    ]
+
+    class RepositorioMemoriaAntigua:
+        """Doble de repositorio que representa una carga previa antigua del catálogo."""
+
+        datos_antiguos = True
+
+        @property
+        def fuente(self) -> str:
+            return "memoria"
+
+        def obtener_todos(self) -> list:
+            return productos_en_memoria
+
+        def consultar_disponibilidad(self, _producto_ids: list):
+            return None
+
+    class ProveedorFijo(ProveedorIA):
+        """Proveedor mínimo que devuelve filtros e explicación deterministas."""
+
+        nombre = "fijo"
+
+        async def extraer_filtros(self, mensaje: str):
+            return ResultadoExtraccion(filtros={"categoria": "verduras"}, tiempo_extraccion_ms=5)
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "Tomate disponible."
+
+    cliente_prueba = _crear_cliente_chat(RepositorioMemoriaAntigua(), ProveedorFijo())
+
+    respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco verduras"})
+
+    assert respuesta.status_code == 200
+    datos = respuesta.json()
+    assert datos["estado_datos"] == "memoria_antigua"
+    assert "carga previa" in datos["respuesta"]
+    assert datos["respuesta"].startswith("Tomate disponible.")
+    assert len(datos["productos_recomendados"]) == 1
