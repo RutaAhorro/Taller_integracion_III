@@ -869,3 +869,163 @@ def test_chat_receta_cuatro_candidatos_4to_vigente(cliente, monkeypatch):
         # Los productos recomendados deberían incluir el 4º candidato
         assert len(datos["productos_recomendados"]) >= 1
         # Los productos recomendados deberían incluir el 4º candidato
+
+
+# Nuevo test (a): Receta con precio vigente distinto: la caché del repositorio conserva su precio original
+def test_chat_receta_caché_no_se_muta_precio_vigente(cliente, monkeypatch):
+    """Test: tras una receta cuyo precio vigente difiere del de la caché, obtener_todos mantiene el original."""
+    token_valido = generar_token(user_id="user-receta-cache-no-muta")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=25,
+    )
+    # Disponibilidad con precio vigente 1500 (distinto al precio original de la caché: 890)
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+            "producto": {
+                "precio": 1500,
+                "unidad": "1kg",
+                "supermercado": "Lider",
+                "marca": "Generica",
+                "url_imagen": "https://img.super.cl/tomate.png",
+            },
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Explicacion con tomate"
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de salsa de tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+        # El precio vigente (1500) se usa para la recomendación...
+        assert datos["productos_recomendados"][0]["precio"] == 1500
+
+        # ... pero la caché del repositorio conserva su precio original (890).
+        productos_en_caché = main.repositorio_productos.obtener_todos()
+        producto_en_caché = next(
+            (producto for producto in productos_en_caché if producto.get("id") == "prod-tomate-1"),
+            None,
+        )
+        assert producto_en_caché is not None
+        assert producto_en_caché["precio"] == 890.0
+
+
+# Nuevo test (b): Tras actualizar los precios vigentes, el candidato más barato queda primero
+def test_chat_receta_candidato_reordenado_por_precio_vigente(cliente, monkeypatch):
+    """Test: el candidato B ($1500 en caché) pasa a $900 vigente y el candidato A ($1000) a $1200; el B queda primero."""
+    token_valido = generar_token(user_id="user-receta-reordenar")
+    mock_resultado = ResultadoExtraccion(
+        filtros={"ingredientes": [{"nombre": "Tomate", "cantidad_envases": 1}]},
+        tiempo_extraccion_ms=25,
+    )
+    # Disponibilidad: candidato A (caché $1000) pasa a $1200 vigente y candidato B (caché $1500) a $900 vigente.
+    disponibilidad_simulada = {
+        "prod-tomate-1": {
+            "producto_id": "prod-tomate-1",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+            "producto": {
+                "precio": 1200,
+                "unidad": "1kg",
+                "supermercado": "Lider",
+                "marca": "Generica",
+                "url_imagen": "https://img.super.cl/tomate.png",
+            },
+        },
+        "prod-tomate-2": {
+            "producto_id": "prod-tomate-2",
+            "estado_producto": "disponible",
+            "en_stock": True,
+            "estado_precio": "vigente",
+            "producto": {
+                "precio": 900,
+                "unidad": "1kg",
+                "supermercado": "Jumbo",
+                "marca": "Generica",
+                "url_imagen": "https://img.super.cl/tomate.png",
+            },
+        },
+    }
+
+    with (
+        patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
+        patch("app.main.proveedor_respaldo.generar_explicacion", new_callable=AsyncMock) as mock_explicar,
+        patch.object(
+            main.repositorio_productos, "consultar_disponibilidad", lambda producto_ids: disponibilidad_simulada
+        ),
+        patch(
+            "app.services.chat.vincular_ingredientes_catalogo",
+            return_value=(
+                [
+                    {
+                        "ingrediente": "Tomate",
+                        "cantidad_sugerida": 1,
+                        "candidatos": [
+                            {
+                                "producto_id": "prod-tomate-1",
+                                "nombre": "Tomate Larga Vida",
+                                "marca": "Generica",
+                                "unidad": "1kg",
+                                "precio": 1000,
+                                "supermercado": "Lider",
+                                "url_imagen": "https://img.super.cl/tomate.png",
+                            },
+                            {
+                                "producto_id": "prod-tomate-2",
+                                "nombre": "Tomate Chico",
+                                "marca": "Generica",
+                                "unidad": "1kg",
+                                "precio": 1500,
+                                "supermercado": "Jumbo",
+                                "url_imagen": "https://img.super.cl/tomate.png",
+                            },
+                        ],
+                    }
+                ],
+                [],
+            ),
+        ),
+    ):
+        mock_extraer.return_value = mock_resultado
+        mock_explicar.return_value = "Explicacion con tomates"
+
+        respuesta = cliente.post(
+            "/api/v1/chat",
+            headers={"Authorization": f"Bearer {token_valido}"},
+            json={"mensaje": "busco una receta de salsa con tomate"},
+        )
+
+        assert respuesta.status_code == 200
+        datos = respuesta.json()
+
+        # El candidato A pasa a $1200 y el candidato B a $900 vigentes: el B queda primero al reordenar.
+        candidatos = datos["ingredientes_receta"][0]["candidatos"]
+        assert len(candidatos) == 2
+        assert candidatos[0]["producto_id"] == "prod-tomate-2"
+        assert candidatos[0]["precio"] == 900
+        assert candidatos[1]["producto_id"] == "prod-tomate-1"
+        assert candidatos[1]["precio"] == 1200
+
+        assert datos["ingredientes_faltantes"] == []
+
+        assert len(datos["productos_recomendados"]) >= 1
+        assert datos["productos_recomendados"][0]["producto_id"] == "prod-tomate-2"
+        assert datos["productos_recomendados"][0]["precio"] == 900
