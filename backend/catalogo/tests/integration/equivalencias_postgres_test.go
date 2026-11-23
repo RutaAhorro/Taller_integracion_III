@@ -5,11 +5,37 @@ package integration_test
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
 )
+
+// eanUnicoPorSufijo deriva un GTIN-13 válido, su UPC-A de 12 dígitos (que
+// canoniza al mismo valor) y el GTIN-14 canónico. Cada ejecución usa códigos
+// distintos para que la prueba se pueda repetir sobre la misma base sin que
+// se mezclen grupos de corridas anteriores.
+func eanUnicoPorSufijo(sufijo, prefijo string) (string, string, string) {
+	var digitos strings.Builder
+	for _, caracter := range sufijo {
+		valor, _ := strconv.ParseUint(string(caracter), 16, 8)
+		digitos.WriteString(strconv.FormatUint(valor%10, 10))
+	}
+	base12 := "0" + prefijo + digitos.String()
+	suma := 0
+	for posicion, caracter := range base12 {
+		digito := int(caracter - '0')
+		if posicion%2 == 0 {
+			suma += digito
+		} else {
+			suma += 3 * digito
+		}
+	}
+	ean13 := base12 + strconv.Itoa((10-suma%10)%10)
+	return ean13, ean13[1:], "0" + ean13
+}
 
 // TestPostgresEquivalenciaPorEAN ingiere el mismo EAN en dos sucursales y
 // comprueba los cuatro resultados: comparable con ceros iniciales, sin EAN,
@@ -38,17 +64,20 @@ func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
 		prueba.Fatalf("resolver sucursal destino=%d", estado)
 	}
 
+	eanLeche13, eanLeche12, canonicoLeche := eanUnicoPorSufijo(sufijo, "780")
+	eanConflicto13, _, _ := eanUnicoPorSufijo(sufijo, "179")
+
 	nombreLeche := "Leche Eq" + sufijo
 	nombreConflicto := "Conflicto Eq" + sufijo
 	nombreSinEAN := "SinEAN Eq" + sufijo
 	loteOrigen := map[string]any{"sucursal_id": sucursalOrigen.ID, "productos": []map[string]any{
-		{"sku": "LECHE-" + sufijo, "ean_gtin": "0036000291452", "producto": nombreLeche, "formato_crudo": "1 L", "precio_normal": 1290},
-		{"sku": "CONFLICTO-" + sufijo, "ean_gtin": "7802900000004", "producto": nombreConflicto, "formato_crudo": "1 L", "precio_normal": 1500},
+		{"sku": "LECHE-" + sufijo, "ean_gtin": eanLeche13, "producto": nombreLeche, "formato_crudo": "1 L", "precio_normal": 1290},
+		{"sku": "CONFLICTO-" + sufijo, "ean_gtin": eanConflicto13, "producto": nombreConflicto, "formato_crudo": "1 L", "precio_normal": 1500},
 		{"sku": "SINEAN-" + sufijo, "producto": nombreSinEAN, "formato_crudo": "500 g", "precio_normal": 800},
 	}}
 	loteDestino := map[string]any{"sucursal_id": sucursalDestino.ID, "productos": []map[string]any{
-		{"sku": "LECHE-" + sufijo, "ean_gtin": "036000291452", "producto": nombreLeche, "formato_crudo": "1 L", "precio_normal": 1190},
-		{"sku": "CONFLICTO-" + sufijo, "ean_gtin": "7802900000004", "producto": nombreConflicto, "formato_crudo": "1.5 L", "precio_normal": 1900},
+		{"sku": "LECHE-" + sufijo, "ean_gtin": eanLeche12, "producto": nombreLeche, "formato_crudo": "1 L", "precio_normal": 1190},
+		{"sku": "CONFLICTO-" + sufijo, "ean_gtin": eanConflicto13, "producto": nombreConflicto, "formato_crudo": "1.5 L", "precio_normal": 1900},
 		{"sku": "SINEAN-" + sufijo, "producto": nombreSinEAN, "formato_crudo": "500 g", "precio_normal": 850},
 	}}
 	for nombreLote, lote := range map[string]map[string]any{"origen": loteOrigen, "destino": loteDestino} {
@@ -85,7 +114,7 @@ func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
 	}
 
 	leche := itemsPorID[productoLeche.ID]
-	if leche.Estado != domain.EstadoEquivalenciaComparable || leche.EAN == nil || *leche.EAN != "00036000291452" || len(leche.Ofertas) != 2 {
+	if leche.Estado != domain.EstadoEquivalenciaComparable || leche.EAN == nil || *leche.EAN != canonicoLeche || len(leche.Ofertas) != 2 {
 		prueba.Fatalf("leche comparable incorrecta: %+v", leche)
 	}
 	precios := make(map[float64]bool, len(leche.Ofertas))
@@ -112,5 +141,80 @@ func TestPostgresEquivalenciaPorEAN(prueba *testing.T) {
 	if respuesta.Resumen.Solicitados != 3 || respuesta.Resumen.Comparables != 1 ||
 		respuesta.Resumen.ConflictosPresentacion != 1 || respuesta.Resumen.SinEAN != 1 {
 		prueba.Fatalf("resumen inesperado: %+v", respuesta.Resumen)
+	}
+}
+
+// TestPostgresEquivalenciaCategoriaComunPorCadena comprueba una categoría
+// común a las seis cadenas sembradas: un producto por cadena con el mismo EAN
+// debe formar un solo grupo comparable con seis ofertas vigentes. Es una
+// prueba funcional con datos creados por la propia prueba; la cobertura real
+// de EAN se mide por separado sobre los datos persistidos por el scraper.
+func TestPostgresEquivalenciaCategoriaComunPorCadena(prueba *testing.T) {
+	enrutador := enrutadorPostgres(prueba)
+	sufijo := uuid.NewString()[:8]
+	categoria := "Lacteos Eq" + sufijo
+	nombreProducto := "Leche Categoria Comun " + sufijo
+	ean13, _, canonico := eanUnicoPorSufijo(sufijo, "906")
+	cadenas := []string{"Jumbo", "Lider", "Unimarc", "Santa Isabel", "A Cuenta", "Cugat"}
+	preciosEsperados := make(map[string]float64, len(cadenas))
+
+	for indice, nombreCadena := range cadenas {
+		var cadena domain.CadenaSupermercado
+		if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/cadenas/resolver", tokenIngestaPostgres, nil,
+			map[string]any{"nombre": nombreCadena}, &cadena); estado != http.StatusOK || cadena.ID == 0 {
+			prueba.Fatalf("resolver cadena %s=%d %+v", nombreCadena, estado, cadena)
+		}
+		var sucursal domain.SucursalSupermercado
+		if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil,
+			map[string]any{"cadena_id": cadena.ID}, &sucursal); estado != http.StatusOK || sucursal.ID == 0 {
+			prueba.Fatalf("resolver sucursal de %s=%d %+v", nombreCadena, estado, sucursal)
+		}
+		precio := float64(1000 + indice*10)
+		preciosEsperados[cadena.Nombre] = precio
+		lote := map[string]any{"sucursal_id": sucursal.ID, "productos": []map[string]any{{
+			"sku": "CATCOM-" + sufijo, "ean_gtin": ean13, "producto": nombreProducto,
+			"categoria": categoria, "formato_crudo": "1 L", "precio_normal": precio,
+		}}}
+		var resultado domain.ResultadoIngestaDTO
+		if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/ingestas", tokenIngestaPostgres, nil, lote, &resultado); estado != http.StatusOK || resultado.Insertados != 1 {
+			prueba.Fatalf("ingesta %s=%d %+v", nombreCadena, estado, resultado)
+		}
+	}
+
+	var pagina domain.PaginaProductosDTO
+	if estado := pedir(prueba, enrutador, http.MethodGet, "/api/v1/productos?q=Categoria+Comun+"+sufijo+"&limit=50", "", nil, nil, &pagina); estado != http.StatusOK {
+		prueba.Fatalf("catálogo público=%d", estado)
+	}
+	if pagina.TotalRegistros != int64(len(cadenas)) || len(pagina.Data) != len(cadenas) {
+		prueba.Fatalf("se esperaban %d productos, se obtuvieron %d: %+v", len(cadenas), pagina.TotalRegistros, pagina)
+	}
+	ids := make([]string, 0, len(pagina.Data))
+	for _, producto := range pagina.Data {
+		ids = append(ids, producto.ID)
+	}
+
+	var respuesta domain.RespuestaEquivalenciaDTO
+	// El contrato devuelve un grupo por cada ID solicitado, aunque todos
+	// pertenezcan al mismo EAN.
+	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/productos/equivalencias", tokenConsultaPostgres, nil,
+		map[string]any{"producto_ids": ids}, &respuesta); estado != http.StatusOK || len(respuesta.Productos) != len(cadenas) {
+		prueba.Fatalf("equivalencias=%d %+v", estado, respuesta)
+	}
+	for _, item := range respuesta.Productos {
+		if item.Estado != domain.EstadoEquivalenciaComparable || item.EAN == nil || *item.EAN != canonico || len(item.Ofertas) != len(cadenas) {
+			prueba.Fatalf("grupo de categoría común incorrecto: %+v", item)
+		}
+		preciosVistos := make(map[string]float64, len(cadenas))
+		for _, oferta := range item.Ofertas {
+			if oferta.EstadoPrecio != domain.EstadoPrecioVigente || oferta.Precio == nil {
+				prueba.Fatalf("oferta sin precio vigente: %+v", oferta)
+			}
+			preciosVistos[oferta.Cadena] = *oferta.Precio
+		}
+		for _, nombreCadena := range cadenas {
+			if precio, encontrado := preciosVistos[nombreCadena]; !encontrado || precio != preciosEsperados[nombreCadena] {
+				prueba.Fatalf("cadena %s: precio=%v encontrado=%t esperado=%v", nombreCadena, precio, encontrado, preciosEsperados[nombreCadena])
+			}
+		}
 	}
 }

@@ -27,13 +27,18 @@ func NuevoRepositorioEquivalencias(baseDatos *gorm.DB) *RepositorioEquivalencias
 
 // ===== Consulta por lote =====
 
-// eanNormalizadoProducto deja sólo dígitos y conserva los ceros iniciales: el
-// código se compara como texto, nunca como número. La misma expresión se usa
-// para los productos solicitados y para sus candidatos.
-const eanNormalizadoProducto = `regexp_replace(COALESCE(pc.ean_gtin, ''), '[^0-9]', '', 'g')`
+// eanCanonicoProducto deja sólo dígitos y rellena con ceros a la izquierda
+// hasta 14, igual que el servicio. Así un UPC-A de 12 dígitos y su EAN-13 con
+// cero inicial comparten clave. El código se compara como texto, nunca como
+// número; el servicio descarta después los largos y dígitos verificadores
+// inválidos.
+const eanCanonicoProducto = `lpad(regexp_replace(COALESCE(pc.ean_gtin, ''), '[^0-9]', '', 'g'), 14, '0')`
+
+// eanCanonicoSolicitado aplica la misma canonización a los IDs del lote.
+const eanCanonicoSolicitado = `lpad(regexp_replace(COALESCE(solicitado.ean_gtin, ''), '[^0-9]', '', 'g'), 14, '0')`
 
 // ConsultarPorIDs devuelve los productos solicitados y, en la misma consulta,
-// todos los productos cuyo EAN normalizado coincide con alguno de ellos. La
+// todos los productos cuyo EAN canónico coincide con alguno de ellos. La
 // agrupación y el descarte de códigos inválidos quedan en el servicio; aquí
 // sólo se leen filas del dominio Catálogo con su última captura.
 func (repositorio *RepositorioEquivalencias) ConsultarPorIDs(contexto context.Context, productoIDs []string) ([]domain.ProductoEquivalenciaRegistro, error) {
@@ -50,8 +55,8 @@ func (repositorio *RepositorioEquivalencias) ConsultarPorIDs(contexto context.Co
 			ORDER BY capturado_el DESC
 			LIMIT 1
 		) cp ON true`).
-		Where(`pc.id = ANY(?::uuid[]) OR (`+eanNormalizadoProducto+` <> '' AND `+eanNormalizadoProducto+` IN (
-			SELECT regexp_replace(COALESCE(solicitado.ean_gtin, ''), '[^0-9]', '', 'g')
+		Where(`pc.id = ANY(?::uuid[]) OR (`+eanCanonicoProducto+` <> '00000000000000' AND `+eanCanonicoProducto+` IN (
+			SELECT `+eanCanonicoSolicitado+`
 			FROM scraper.productos_crudos solicitado
 			WHERE solicitado.id = ANY(?::uuid[])
 		))`, pq.Array(productoIDs), pq.Array(productoIDs)).

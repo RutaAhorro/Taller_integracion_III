@@ -53,6 +53,8 @@ func TestEquivalenciasRepositorioNormalizaEANYLeeLaUltimaCaptura(prueba *testing
 		"LIMIT 1",
 		"regexp_replace",
 		"'[^0-9]'",
+		"lpad(",
+		"14, '0')",
 		"pc.id = ANY(",
 		"::uuid[]",
 		"pc.ean_gtin AS codigo_ean",

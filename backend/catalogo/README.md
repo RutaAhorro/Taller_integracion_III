@@ -343,8 +343,9 @@ ejemplo son ilustrativas: la vigencia se calcula con la hora de la consulta.
 
 **Límites conocidos.** La calidad depende de que el scraper haya extraído el EAN
 y de que esté almacenado sin errores. La normalización en SQL
-(`regexp_replace`) no usa un índice funcional, por lo que la consulta recorre los
-productos candidatos; añadir ese índice sería una migración fuera de SUP-244.
+(`regexp_replace` + `lpad` hasta 14 dígitos, igual que en el servicio) no usa un
+índice funcional, por lo que la consulta recorre los productos candidatos;
+añadir ese índice sería una migración fuera de SUP-244.
 No se usa la tabla legada `api.equivalencias_productos`.
 
 Para medir la cobertura real en una base concreta, sin inventar datos:
@@ -360,6 +361,33 @@ FROM scraper.productos_crudos;
 
 Ese conteo no valida el dígito verificador; la respuesta de la consulta sí lo
 hace producto por producto y lo refleja en `resumen`.
+
+### Medición en una base desechable (2026-11-23)
+
+Con `infrastructure/db` cargado en un PostgreSQL aislado y
+`CATALOGO_TEST_DB_URL` apuntando al rol `app_catalogo`:
+
+- **Datos sembrados reales:** 45 productos, todos de Jumbo en una sola
+  categoría (`Scraped Category`), **0 con EAN** (0 %). Las otras cinco cadenas
+  no tienen productos cargados, por lo que **no existe ninguna categoría en
+  común con datos** entre las seis.
+- **Prueba funcional `TestPostgresEquivalenciaCategoriaComunPorCadena`:**
+  crea un producto por cada una de las seis cadenas en una única categoría con
+  el mismo EAN; la consulta devuelve seis grupos comparables con seis ofertas
+  vigentes y el precio correcto por cadena. Son datos sintéticos creados por la
+  prueba: validan el contrato, **no la cobertura**.
+
+Para repetir la medición y las pruebas:
+
+```bash
+export CATALOGO_TEST_DB_URL='postgres://app_catalogo:...@127.0.0.1:55432/sup244_ean?sslmode=disable'
+cd backend/catalogo
+go test -count=1 -v -run Postgres ./tests/integration/
+```
+
+Mientras el scraper no persista `ean_gtin` para las demás cadenas, SUP-244
+entregará `sin_ean` para esos productos: el contrato está listo, la cobertura
+depende de la extracción real.
 
 Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,

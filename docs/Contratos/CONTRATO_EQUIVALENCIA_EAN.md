@@ -206,8 +206,9 @@ Catálogo no puede resolver un producto, debe informarlo con su estado y su
 
 - La calidad depende de que el scraper haya extraído el EAN y de que esté
   almacenado sin errores. La consulta informa la cobertura, no la mejora.
-- La normalización en SQL (`regexp_replace`) no usa un índice funcional. Añadir
-  ese índice sería una migración fuera de SUP-244.
+- La normalización en SQL (`regexp_replace` + `lpad` a 14 dígitos, la misma
+  canonización que aplica el servicio) no usa un índice funcional. Añadir ese
+  índice sería una migración fuera de SUP-244.
 - Un formato vacío no permite detectar un conflicto de presentación; se prefiere
   no bloquear el grupo con un dato que no prueba nada.
 - Un mismo EAN puede aparecer en varias sucursales de la misma cadena; cada
