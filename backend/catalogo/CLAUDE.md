@@ -40,5 +40,4 @@
 - `internal`: 22 archivos.
 - `tests`: 23 archivos.
 
-
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.
