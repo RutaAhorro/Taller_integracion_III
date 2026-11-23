@@ -23,6 +23,9 @@ type mockProductoRepository struct {
 	// guarda el filtro recibido para comprobar que no se pierde ningún criterio.
 	supermercados       []domain.SupermercadoDTO
 	filtroSupermercados domain.FiltroProductosDTO
+	// errorSupermercados falla sólo la agregación, para probar esa rama aunque
+	// Listar haya respondido bien.
+	errorSupermercados error
 }
 
 // limitesProductosDePrueba son los límites por defecto de internal/config.
@@ -42,6 +45,9 @@ func (repositorio *mockProductoRepository) Listar(ctx context.Context, filtro do
 
 func (repositorio *mockProductoRepository) ListarSupermercados(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.SupermercadoDTO, error) {
 	repositorio.filtroSupermercados = filtro
+	if repositorio.errorSupermercados != nil {
+		return nil, repositorio.errorSupermercados
+	}
 	if repositorio.err != nil {
 		return nil, repositorio.err
 	}

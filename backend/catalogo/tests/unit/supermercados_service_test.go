@@ -63,11 +63,21 @@ func TestProductoService_SupermercadosRecibenFiltroNormalizado(prueba *testing.T
 }
 
 // TestProductoService_ErrorDeSupermercadosSePropaga comprueba que un fallo de
-// la agregación no devuelve una página con filtro lateral incompleto.
+// la agregación no devuelve una página con filtro lateral incompleto. Listar
+// responde bien, así que el error sólo puede venir de ListarSupermercados.
 func TestProductoService_ErrorDeSupermercadosSePropaga(prueba *testing.T) {
-	repositorio := &mockProductoRepository{err: errors.New("base caída")}
+	errorAgregacion := errors.New("falló la agregación de supermercados")
+	repositorio := &mockProductoRepository{
+		items:              []domain.ProductoDTO{{ID: "producto-1"}},
+		total:              1,
+		errorSupermercados: errorAgregacion,
+	}
 	servicio := services.NuevoServicioProductos(repositorio, limitesProductosDePrueba)
-	if _, errorObtenido := servicio.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{}); errorObtenido == nil {
-		prueba.Fatal("se esperaba el error del repositorio")
+	pagina, errorObtenido := servicio.ObtenerCatalogo(context.Background(), domain.FiltroProductosDTO{})
+	if !errors.Is(errorObtenido, errorAgregacion) {
+		prueba.Fatalf("se esperaba el error de la agregación, se obtuvo %v", errorObtenido)
+	}
+	if pagina != nil {
+		prueba.Fatal("no debe devolverse una página con el filtro lateral incompleto")
 	}
 }
