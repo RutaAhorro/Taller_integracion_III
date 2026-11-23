@@ -69,6 +69,18 @@ func (manejador *handlerListas) agregarLote(respuesta http.ResponseWriter, petic
 
 	usuarioID, idLista := sesion(peticion).UsuarioID, listaID(peticion)
 
+	// --- La lista debe ser del usuario antes de consultar a Catálogo ---------
+	// Igual que el alta de uno: una lista ajena responde 404 aunque Catálogo falle.
+	esDelUsuario, errorObtenido := manejador.opciones.Repo.ListaEsDelUsuario(peticion.Context(), usuarioID, idLista)
+	if errorObtenido != nil {
+		manejador.fallo(respuesta, peticion, errorObtenido)
+		return
+	}
+	if !esDelUsuario {
+		escribirError(respuesta, http.StatusNotFound, mensajeListaNoExiste, "")
+		return
+	}
+
 	// --- Reintento con la misma clave ----------------------------------------
 	huella, yaAplicado, errorObtenido := manejador.opciones.Repo.HuellaLote(peticion.Context(), usuarioID, idLista, clave)
 	if errorObtenido != nil {
