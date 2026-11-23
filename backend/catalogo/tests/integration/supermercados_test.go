@@ -17,6 +17,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 )
 
 // ===== Contrato JSON =====
@@ -108,18 +109,16 @@ type cadenaDePrueba struct {
 	SucursalID int
 }
 
-// sembrarCadena crea (por la API interna) una cadena con su sucursal central.
-func sembrarCadena(prueba *testing.T, enrutador http.Handler, nombre string) cadenaDePrueba {
+// sembrarCadena crea (por la API interna) una cadena y le registra una
+// sucursal real; desde SUP-376 Catálogo ya no la inventa al resolver la cadena.
+func sembrarCadena(prueba *testing.T, baseDatos *gorm.DB, enrutador http.Handler, nombre string) cadenaDePrueba {
 	prueba.Helper()
 	var cadena domain.CadenaSupermercado
 	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/cadenas/resolver", tokenIngestaPostgres, nil, map[string]any{"nombre": nombre}, &cadena); estado != http.StatusOK {
 		prueba.Fatalf("resolver cadena=%d", estado)
 	}
-	var sucursal domain.SucursalSupermercado
-	if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/sucursales/resolver", tokenIngestaPostgres, nil, map[string]any{"cadena_id": cadena.ID}, &sucursal); estado != http.StatusOK {
-		prueba.Fatalf("resolver sucursal=%d", estado)
-	}
-	return cadenaDePrueba{ID: cadena.ID, Nombre: nombre, SucursalID: sucursal.ID}
+	sucursalID := sembrarSucursal(prueba, baseDatos, cadena.ID, "SUC-"+uuid.NewString()[:8], true)
+	return cadenaDePrueba{ID: cadena.ID, Nombre: nombre, SucursalID: sucursalID}
 }
 
 // sembrarProducto ingesta un producto con su stock y precio en la cadena.
@@ -156,15 +155,16 @@ func nombresDe(supermercados []domain.SupermercadoDTO) []string {
 // reales: cadenas en páginas posteriores, independencia de la paginación,
 // selección de cadena, stock, vacío y recálculo al limpiar la búsqueda.
 func TestPostgresSupermercadosDisponibles(prueba *testing.T) {
-	enrutador := enrutadorPostgres(prueba)
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := strings.ToUpper(uuid.NewString()[:8])
 	termino := "Leche" + sufijo // único: aísla la prueba de otros datos de la base
 
 	// Los nombres ordenan Alfa < Beta < Gamma < Delta-sin-stock (por nombre).
-	alfa := sembrarCadena(prueba, enrutador, "A-Alfa "+sufijo)
-	beta := sembrarCadena(prueba, enrutador, "B-Beta "+sufijo)
-	gamma := sembrarCadena(prueba, enrutador, "C-Gamma "+sufijo)
-	agotada := sembrarCadena(prueba, enrutador, "D-Agotada "+sufijo)
+	alfa := sembrarCadena(prueba, baseDatos, enrutador, "A-Alfa "+sufijo)
+	beta := sembrarCadena(prueba, baseDatos, enrutador, "B-Beta "+sufijo)
+	gamma := sembrarCadena(prueba, baseDatos, enrutador, "C-Gamma "+sufijo)
+	agotada := sembrarCadena(prueba, baseDatos, enrutador, "D-Agotada "+sufijo)
 
 	// Precios crecientes: con orden por precio, cada cadena cae en una página distinta con limit=1.
 	sembrarProducto(prueba, enrutador, alfa, termino+" entera", "Lacteos", 1000, true)
