@@ -51,10 +51,10 @@ func baseDatosPostgres(prueba *testing.T) *gorm.DB {
 	return baseDatos
 }
 
-// enrutadorPostgres compone el router real sobre la base de la variable.
-func enrutadorPostgres(prueba *testing.T) http.Handler {
+// enrutadorPostgres compone el router real sobre la base ya abierta por la
+// prueba, para que la prueba y el router compartan una sola conexión.
+func enrutadorPostgres(prueba *testing.T, baseDatos *gorm.DB) http.Handler {
 	prueba.Helper()
-	baseDatos := baseDatosPostgres(prueba)
 	conexiones, errorConexiones := baseDatos.DB()
 	if errorConexiones != nil {
 		prueba.Fatal(errorConexiones)
@@ -106,7 +106,7 @@ func pedir(prueba *testing.T, enrutador http.Handler, metodo, ruta, token string
 
 func TestPostgresIngestaPreciosYDisponibilidad(prueba *testing.T) {
 	baseDatos := baseDatosPostgres(prueba)
-	enrutador := enrutadorPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := uuid.NewString()[:8]
 	listo := pedir(prueba, enrutador, http.MethodGet, "/_catalogo/ready", "", nil, nil, nil)
 	if listo != http.StatusOK {
@@ -228,7 +228,7 @@ func contarSucursales(prueba *testing.T, baseDatos *gorm.DB, cadenaID int) int64
 // sucursal activa no recibe ninguna fila nueva y la ruta responde 404.
 func TestPostgresSucursalNoSeInventa(prueba *testing.T) {
 	baseDatos := baseDatosPostgres(prueba)
-	enrutador := enrutadorPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	repositorio := repositories.NuevoRepositorioIngesta(baseDatos)
 	sufijo := uuid.NewString()[:8]
 

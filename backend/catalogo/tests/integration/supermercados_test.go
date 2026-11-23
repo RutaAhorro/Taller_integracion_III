@@ -156,7 +156,7 @@ func nombresDe(supermercados []domain.SupermercadoDTO) []string {
 // selección de cadena, stock, vacío y recálculo al limpiar la búsqueda.
 func TestPostgresSupermercadosDisponibles(prueba *testing.T) {
 	baseDatos := baseDatosPostgres(prueba)
-	enrutador := enrutadorPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := strings.ToUpper(uuid.NewString()[:8])
 	termino := "Leche" + sufijo // único: aísla la prueba de otros datos de la base
 
