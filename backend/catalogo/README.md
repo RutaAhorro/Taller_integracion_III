@@ -26,14 +26,14 @@ go run ./cmd/catalogo
 | `DB_URL` | Obligatoria | Conexión PostgreSQL con usuario `app_catalogo` |
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
 | `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer de escritura para la ingesta interna. Vacía deshabilita `/internal/v1/ingestas` y las rutas de resolución |
-| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad`. Vacía deshabilita la consulta |
+| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad` y `/internal/v1/productos/equivalencias`. Vacía deshabilita ambas consultas |
 | `PORT` | `8080` | Puerto de escucha HTTP |
 | `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas; tiene prioridad sobre `CORS_ALLOWED_ORIGINS`. Ambas vacías, se rechazan las peticiones con `Origin` |
 | `CORS_ALLOWED_ORIGINS` | Vacía | Respaldo genérico. Compose la define a partir de `CATALOGO_CORS_ALLOWED_ORIGINS` del `.env` raíz |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
 | `DB_MAX_IDLE_CONNS` | `5` | Conexiones inactivas máximas (no puede superar `DB_MAX_OPEN_CONNS`) |
 | `DB_CONN_MAX_LIFETIME` | `30m` | Tiempo máximo de vida por conexión |
-| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en `/internal/v1/productos/disponibilidad` |
+| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en las consultas internas de disponibilidad y equivalencia |
 | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
 | `CATALOGO_TEST_DB_URL` | Sólo pruebas | Base PostgreSQL aislada con rol `app_catalogo` para `tests/integration/postgres_test.go`; vacía omite la prueba |
 
@@ -102,11 +102,11 @@ en cabeceras arbitrarias.
 | GET | `/_catalogo/ready` | Público | Sonda de preparación (readiness); verifica PostgreSQL con timeout de 2 s (503 si falla) |
 | GET | `/health` | Público | Alias de preparación equivalente a `/_catalogo/ready` |
 
-### API interna de ingesta y disponibilidad
+### API interna de ingesta, disponibilidad y equivalencia
 
 Rutas privadas bajo el prefijo `/internal/v1` destinadas a la coordinación de
-scraping y a la consulta de disponibilidad de Listas e IA. No se exponen a
-través del Gateway ni en Ingress público:
+scraping y a las consultas de Listas, IA y Rutas. No se exponen a través del
+Gateway ni en Ingress público:
 
 | Método | Ruta | Payload JSON | Descripción |
 | --- | --- | --- | --- |
@@ -114,16 +114,17 @@ través del Gateway ni en Ingress público:
 | POST | `/internal/v1/sucursales/resolver` | `{"cadena_id": int, "sucursal_id": *int, "codigo_sucursal": *string}` | Resuelve o registra una sucursal para la cadena |
 | POST | `/internal/v1/ingestas` | `{"sucursal_id": int, "lote_id": string, "productos": [...]}` | Persistencia atómica de 1 a 1000 productos y capturas de precio |
 | POST | `/internal/v1/productos/disponibilidad` | `{"producto_ids": ["uuid", ...]}` | Consulta en lote de existencia, stock, precio, sucursal y captura más reciente |
+| POST | `/internal/v1/productos/equivalencias` | `{"producto_ids": ["uuid", ...]}` | Agrupa por EAN exacto los productos equivalentes y su oferta actual por sucursal |
 
 ## Ingesta interna y token privado
 
 Las operaciones de `/internal/v1` aplican las siguientes reglas:
 
 1. **Autenticación en tiempo constante:** la ingesta exige
-   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>` y la consulta de
-   disponibilidad exige `Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>`. La
-   comparación es segura frente a ataques de temporización
-   (`subtle.ConstantTimeCompare`).
+   `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>` y las consultas de
+   disponibilidad y equivalencia exigen `Authorization: Bearer
+   <CATALOGO_CONSULTA_TOKEN>`. La comparación es segura frente a ataques de
+   temporización (`subtle.ConstantTimeCompare`).
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
@@ -131,8 +132,8 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    (`DisallowUnknownFields`), rechazo de contenido extra tras el cierre del JSON
    y lote acotado de 1 a 1000 productos.
 4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío no se registra
-   la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registra la
-   consulta. Cada ruta depende sólo de su propio token.
+   la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registran la
+   disponibilidad ni la equivalencia. Cada ruta depende sólo de su propio token.
 5. **Seguridad de los tokens:** ambos deben ser cadenas aleatorias de al menos
    32 caracteres (generables con `openssl rand -hex 32`), privadas,
    estrictamente distintas de `JWT_SECRET` y distintas entre sí. En Kubernetes
@@ -226,6 +227,144 @@ Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,
 `413` para cuerpos mayores a 8 MiB y
 `500 catalogo_internal_error` sin detalle SQL.
+
+## Consulta interna de equivalencia por EAN (SUP-244)
+
+Rutas usa esta consulta para saber si dos productos de sucursales distintas son
+el mismo artículo y comparar su precio. La coincidencia es **exacta por EAN**: no
+hay nombres, IA, homologación manual ni coincidencia difusa. Comparte el token
+`CATALOGO_CONSULTA_TOKEN`, el límite de lote y el cuerpo JSON estricto de la
+consulta de disponibilidad. No crea tablas, columnas ni variables de entorno.
+
+```http
+POST /internal/v1/productos/equivalencias
+Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>
+Content-Type: application/json
+
+{
+  "producto_ids": [
+    "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+    "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+  ]
+}
+```
+
+- Acepta entre 1 y `CATALOGO_MAX_PRODUCTOS_CONSULTA` IDs (1000 por defecto).
+- Deduplica los UUID y conserva el orden de la primera aparición. Un UUID
+  inválido rechaza el lote completo.
+- Devuelve un elemento por producto solicitado, incluso si no existe en la base.
+
+### Normalización del EAN
+
+1. Se conservan sólo los dígitos del `ean_gtin` almacenado; los separadores se
+   descartan. El código se compara como texto, nunca como número, para no perder
+   ceros iniciales.
+2. Sólo son válidos los largos GTIN de 8, 12, 13 o 14 dígitos con dígito
+   verificador módulo 10 correcto.
+3. El código válido se canoniza a 14 dígitos rellenando con ceros a la izquierda.
+   Así un UPC-A de 12 dígitos (`036000291452`) y su EAN-13 con cero inicial
+   (`0036000291452`) son la misma clave.
+4. Un código inválido nunca se usa para unir productos: no se corrige ni se
+   adivina un dígito.
+
+### Estados
+
+| Valor | Significado | Ofertas devueltas |
+| --- | --- | --- |
+| `comparable` | Tiene EAN válido y el grupo no presenta conflicto | Todas las sucursales del grupo |
+| `sin_ean` | No tiene `ean_gtin` o está vacío | Sólo la oferta del propio producto |
+| `ean_invalido` | Tiene código, pero el largo o el dígito verificador no son válidos | Sólo la oferta del propio producto |
+| `conflicto_presentacion` | El grupo comparte EAN, pero tiene formatos explícitos distintos | Sólo la oferta del propio producto |
+| `no_encontrado` | El UUID no existe en `productos_crudos` | `[]` |
+
+**Conflicto de presentación.** Se comparan sólo formatos explícitos
+(`formato_crudo`) normalizados a minúsculas y espacios simples. Dos formatos no
+vacíos distintos, por ejemplo `1 L` y `1.5 L`, marcan el grupo como conflictivo.
+Un formato vacío no conflictúa porque no prueba una presentación distinta.
+
+### Ofertas y vigencia
+
+Cada oferta corresponde al producto real que se compra en una sucursal y usa su
+captura más reciente (`scraper.capturas_precios`):
+
+- `producto_id_oferta` conserva el `id` real de Catálogo de esa sucursal, igual
+  que el contrato del motor de rutas. Puede diferir del producto solicitado.
+- `precio`, `precio_normal`, `precio_oferta` y `en_stock` sólo se publican si la
+  captura tiene a lo más `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` (48 h por
+  defecto). Si falta, está vencida o tiene fecha futura, llegan en `null` y
+  `estado_precio` es `sin_captura` o `vencido`. `capturado_el` se informa igual
+  para que el consumidor conozca la fecha del dato.
+- Las ofertas se ordenan por `sucursal_id` y luego por `producto_id_oferta`.
+- **Sin geografía.** No incluye latitud, longitud ni filtro por radio: SUP-317
+  agrega esos datos sobre este contrato.
+
+```json
+{
+  "productos": [
+    {
+      "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+      "estado": "comparable",
+      "ean": "00036000291452",
+      "presentacion": "1 L",
+      "ofertas": [
+        {
+          "producto_id_oferta": "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+          "sucursal_id": 1,
+          "cadena": "Jumbo",
+          "sucursal": "Jumbo Centro",
+          "nombre": "Leche entera 1 L",
+          "unidad": "1 L",
+          "precio": 1190,
+          "precio_normal": 1190,
+          "precio_oferta": null,
+          "en_stock": true,
+          "capturado_el": "2026-11-16T10:00:00Z",
+          "estado_precio": "vigente"
+        }
+      ]
+    }
+  ],
+  "resumen": {
+    "solicitados": 1,
+    "comparables": 1,
+    "sin_ean": 0,
+    "ean_invalidos": 0,
+    "conflictos_presentacion": 0,
+    "no_encontrados": 0
+  }
+}
+```
+
+`resumen` mide la cobertura de esa misma consulta. Es la forma honesta de
+informar cuántos productos no se pueden comparar: EAN ausente, código inválido,
+conflicto o UUID inexistente. Si la cobertura real de EAN en la base es baja,
+este contador lo muestra; no se rellena con datos ficticios. Las fechas del
+ejemplo son ilustrativas: la vigencia se calcula con la hora de la consulta.
+
+**Límites conocidos.** La calidad depende de que el scraper haya extraído el EAN
+y de que esté almacenado sin errores. La normalización en SQL
+(`regexp_replace`) no usa un índice funcional, por lo que la consulta recorre los
+productos candidatos; añadir ese índice sería una migración fuera de SUP-244.
+No se usa la tabla legada `api.equivalencias_productos`.
+
+Para medir la cobertura real en una base concreta, sin inventar datos:
+
+```sql
+SELECT count(*) AS productos,
+       count(*) FILTER (
+         WHERE regexp_replace(COALESCE(ean_gtin, ''), '[^0-9]', '', 'g')
+               ~ '^([0-9]{8}|[0-9]{12}|[0-9]{13}|[0-9]{14})$'
+       ) AS con_largo_gtin
+FROM scraper.productos_crudos;
+```
+
+Ese conteo no valida el dígito verificador; la respuesta de la consulta sí lo
+hace producto por producto y lo refleja en `resumen`.
+
+Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
+`400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,
+`413` para cuerpos mayores a 8 MiB y `500 catalogo_internal_error` sin detalle
+SQL.
 
 ## Base de datos y permisos (rol `app_catalogo`)
 
@@ -323,9 +462,10 @@ No se requieren migraciones SQL de reversión; el esquema y los permisos del rol
 - `internal/config`: lectura única del entorno y plazos/límites fijos.
 - `internal/api`: router, sondas, CORS, correlación, sesión JWT, rutas internas,
   handlers de productos y fuentes y formato de errores.
-- `internal/services`: normalización de filtros, fuentes y regla de vigencia.
-- `internal/repositories`: SQL de productos, fuentes, disponibilidad e ingesta,
-  conexión y verificación de permisos.
+- `internal/services`: normalización de filtros, fuentes, vigencia y equivalencia
+  exacta por EAN.
+- `internal/repositories`: SQL de productos, fuentes, disponibilidad,
+  equivalencia e ingesta, conexión y verificación de permisos.
 - `internal/domain`: DTO e interfaces de persistencia.
 
 ## Supermercados disponibles en el listado (SUP-371)
@@ -415,8 +555,8 @@ go build -o /tmp/catalogo ./cmd/catalogo
 ```
 
 Con un PostgreSQL desechable inicializado con `infrastructure/db` (nunca una base
-compartida), la prueba de ingesta, precios, disponibilidad y fuentes corre con el
-rol de runtime:
+compartida), la prueba de ingesta, precios, disponibilidad, equivalencia y
+fuentes corre con el rol de runtime:
 
 ```bash
 CATALOGO_TEST_DB_URL='postgres://app_catalogo:<clave>@127.0.0.1:55432/<base>?sslmode=disable' \
