@@ -137,6 +137,58 @@ Gateway no tiene pool SQL. Las réplicas del worker conservan su política propi
 con un valor de `openssl rand -hex 32` distinto del token interno de Catálogo.
 Desplegar Control junto con worker y bot: una versión sin token recibe 401.
 
+## Programación de actualizaciones (SUP-366)
+
+El CronJob `scraping-scheduler` de
+`infrastructure/k8s/control-scraping/cronjob.yaml` reemplaza el lanzamiento
+manual del bot para la actualización masiva diaria. Corre a las **03:00 de
+`America/Santiago`**, fuera del horario de mayor uso, sin detener Gateway,
+Control ni el worker: sólo encola trabajos en el outbox ya existente.
+
+`spec.schedule` no admite variables de entorno ni referencias a ConfigMap, así
+que el horario vive literal en el manifiesto y se puede cambiar sin editar el
+archivo:
+
+```bash
+kubectl patch cronjob scraping-scheduler -n <namespace> --type=merge \
+  -p '{"spec":{"schedule":"0 4 * * *","timeZone":"America/Santiago"}}'
+```
+
+El script `programar_scraping.py` se monta desde
+`infrastructure/k8s/control-scraping/cronjob-configmap.yaml`. Para cada cadena
+del catálogo del bot crea un trabajo (`POST .../trabajos` con `cadena_id`) y
+encola su spider (`POST .../trabajos/{id}/ejecutar`). Llama al alias
+`http://api:8080/api/v1/scraper/trabajos`, es decir, Gateway, no directamente a
+Control: la NetworkPolicy de Control sólo acepta ingreso desde pods Gateway.
+La lista de cadenas y la URL base también están en ese ConfigMap, así que se
+pueden ajustar sin reconstruir imágenes.
+
+El manifiesto **no contiene secretos**: `SCRAPING_SERVICE_TOKEN` se inyecta con
+`secretKeyRef` desde `scraping-service-secret` (clave `token`), el mismo Secret
+que usa el bot y el worker. El script valida que exista antes de llamar y nunca
+lo escribe en logs.
+
+Para no romper la cuota del namespace ([2 GiB / 2000m / 20 pods](../Metricas/02_Escalado_y_recursos.md)):
+un solo pod efímero por ejecución, `concurrencyPolicy: Forbid`, `backoffLimit: 0`,
+`restartPolicy: Never`, límite de 900 s y requests/limits de `50m/64Mi` →
+`200m/128Mi`. No se reintenta automáticamente porque `POST /trabajos` no es
+idempotente: si una ejecución falla a mitad, revisa los trabajos creados antes
+de lanzar otra.
+
+Aplicación y comprobación:
+
+```bash
+kubectl apply -f infrastructure/k8s/control-scraping/cronjob-configmap.yaml
+kubectl apply -f infrastructure/k8s/control-scraping/cronjob.yaml
+kubectl get cronjob -l app=scraping-scheduler -n <namespace>
+# Ejecución manual de prueba, sin esperar al horario:
+kubectl create job --from=cronjob/scraping-scheduler scraping-scheduler-prueba -n <namespace>
+kubectl logs -l app=scraping-scheduler -n <namespace> --tail=100
+```
+
+El bot sigue disponible para lanzamientos puntuales; el CronJob cubre la
+programación diaria de RNF-03.
+
 Desde SUP-312, `catalogo-internal-secret` admite dos claves: `token`
 (escritura, usada por la ingesta) y `consulta-token` (sólo lectura, usada por
 `/internal/v1/productos/disponibilidad`), que es opcional. Crearlo o actualizarlo

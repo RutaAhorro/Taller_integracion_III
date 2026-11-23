@@ -1,0 +1,186 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: scraping-scheduler-config
+  labels: {app: scraping-scheduler}
+data:
+  # Gateway enruta /api/v1/scraper hacia Control; NP de Control sólo acepta Gateway.
+  SCRAPER_API_BASE_URL: "http://api:8080/api/v1/scraper/trabajos"
+  # Contrato del bot (backend/bot_discord/internal/scraping/cadenas.go).
+  SCRAPING_CADENAS: |
+    [
+      {"cadena_id": 1, "spider": "jumbo_rsc", "nombre": "Jumbo"},
+      {"cadena_id": 2, "spider": "lider_rsc", "nombre": "Lider"},
+      {"cadena_id": 4, "spider": "santa_isabel_rsc", "nombre": "Santa Isabel"},
+      {"cadena_id": 5, "spider": "acuenta_rsc", "nombre": "A Cuenta"},
+      {"cadena_id": 6, "spider": "cugat_rsc", "nombre": "Cugat"}
+    ]
+  programar_scraping.py: |
+    #!/usr/bin/env python3
+    """Encola los trabajos de scraping programados llamando a Control.
+
+    Ejecutado por el CronJob scraping-scheduler desde un ConfigMap. El token de
+    servicio se lee de SCRAPING_SERVICE_TOKEN (Secret) y nunca se registra.
+    """
+
+    import json
+    import os
+    import sys
+    import urllib.error
+    import urllib.request
+
+    CADENAS_PREDETERMINADAS = [
+        {"cadena_id": 1, "spider": "jumbo_rsc", "nombre": "Jumbo"},
+        {"cadena_id": 2, "spider": "lider_rsc", "nombre": "Lider"},
+        {"cadena_id": 4, "spider": "santa_isabel_rsc", "nombre": "Santa Isabel"},
+        {"cadena_id": 5, "spider": "acuenta_rsc", "nombre": "A Cuenta"},
+        {"cadena_id": 6, "spider": "cugat_rsc", "nombre": "Cugat"},
+    ]
+    SPIDERS_PERMITIDOS = {
+        "jumbo_rsc",
+        "lider_rsc",
+        "santa_isabel_rsc",
+        "acuenta_rsc",
+        "cugat_rsc",
+    }
+    TIEMPO_ESPERA_SEGUNDOS = 20
+
+
+    class ErrorConfiguracion(Exception):
+        """La configuración del programador es inválida."""
+
+
+    class ErrorControl(Exception):
+        """Control rechazó una de las operaciones."""
+
+
+    def leer_configuracion():
+        url_base = os.environ.get(
+            "SCRAPER_API_BASE_URL",
+            "http://api:8080/api/v1/scraper/trabajos",
+        ).strip().rstrip("/")
+        token = os.environ.get("SCRAPING_SERVICE_TOKEN", "").strip()
+        if not url_base:
+            raise ErrorConfiguracion("SCRAPER_API_BASE_URL está vacía")
+        if not token:
+            raise ErrorConfiguracion(
+                "SCRAPING_SERVICE_TOKEN está vacío; falta el Secret scraping-service-secret"
+            )
+
+        cadenas_crudas = os.environ.get("SCRAPING_CADENAS", "").strip()
+        if cadenas_crudas:
+            try:
+                cadenas = json.loads(cadenas_crudas)
+            except json.JSONDecodeError as error_json:
+                raise ErrorConfiguracion(
+                    "SCRAPING_CADENAS no es JSON válido"
+                ) from error_json
+        else:
+            cadenas = CADENAS_PREDETERMINADAS
+
+        if not isinstance(cadenas, list) or not cadenas:
+            raise ErrorConfiguracion("SCRAPING_CADENAS debe ser una lista no vacía")
+
+        cadenas_validas = []
+        for cadena in cadenas:
+            if not isinstance(cadena, dict):
+                raise ErrorConfiguracion("Cada cadena debe ser un objeto")
+            cadena_id = cadena.get("cadena_id")
+            spider = cadena.get("spider")
+            nombre = cadena.get("nombre", spider)
+            if not isinstance(cadena_id, int) or isinstance(cadena_id, bool) or cadena_id <= 0:
+                raise ErrorConfiguracion(f"cadena_id inválido en {nombre!r}")
+            if spider not in SPIDERS_PERMITIDOS:
+                raise ErrorConfiguracion(f"spider no permitido en {nombre!r}: {spider!r}")
+            cadenas_validas.append(
+                {"cadena_id": cadena_id, "spider": spider, "nombre": str(nombre)}
+            )
+        return url_base, token, cadenas_validas
+
+
+    def enviar(url, token, cuerpo):
+        datos = json.dumps(cuerpo).encode("utf-8")
+        solicitud = urllib.request.Request(
+            url,
+            data=datos,
+            method="POST",
+            headers={
+                "Authorization": "Bearer " + token,
+                "Content-Type": "application/json",
+            },
+        )
+        try:
+            with urllib.request.urlopen(solicitud, timeout=TIEMPO_ESPERA_SEGUNDOS) as respuesta:
+                codigo = respuesta.status
+                contenido = respuesta.read()
+        except urllib.error.HTTPError as error_http:
+            raise ErrorControl(f"Control respondió HTTP {error_http.code} en {url}") from error_http
+        except urllib.error.URLError as error_url:
+            raise ErrorControl(f"No se pudo contactar a Control en {url}") from error_url
+
+        if not contenido:
+            return codigo, {}
+        try:
+            return codigo, json.loads(contenido)
+        except json.JSONDecodeError as error_json:
+            raise ErrorControl(f"Control devolvió JSON inválido en {url}") from error_json
+
+
+    def crear_trabajo(url_base, token, cadena):
+        codigo, cuerpo = enviar(url_base, token, {"cadena_id": cadena["cadena_id"]})
+        if codigo != 201:
+            raise ErrorControl(f"HTTP {codigo} al crear el trabajo de {cadena['nombre']}")
+        trabajo_id = cuerpo.get("id") if isinstance(cuerpo, dict) else None
+        if not isinstance(trabajo_id, str) or not trabajo_id:
+            raise ErrorControl(f"Control no devolvió id para {cadena['nombre']}")
+        return trabajo_id
+
+
+    def ejecutar_trabajo(url_base, token, trabajo_id, cadena):
+        codigo, _ = enviar(
+            f"{url_base}/{trabajo_id}/ejecutar",
+            token,
+            {"spider": cadena["spider"]},
+        )
+        if codigo != 202:
+            raise ErrorControl(
+                f"HTTP {codigo} al encolar {cadena['nombre']} (trabajo {trabajo_id})"
+            )
+
+
+    def main():
+        try:
+            url_base, token, cadenas = leer_configuracion()
+        except ErrorConfiguracion as error_configuracion:
+            print(f"configuración inválida: {error_configuracion}", file=sys.stderr)
+            return 2
+
+        fallos = 0
+        for cadena in cadenas:
+            nombre = cadena["nombre"]
+            try:
+                trabajo_id = crear_trabajo(url_base, token, cadena)
+                ejecutar_trabajo(url_base, token, trabajo_id, cadena)
+                print(
+                    f"cadena={nombre} trabajo_id={trabajo_id} "
+                    f"estado=encolado spider={cadena['spider']}",
+                    flush=True,
+                )
+            except ErrorControl as error_control:
+                fallos += 1
+                print(f"cadena={nombre} error={error_control}", file=sys.stderr, flush=True)
+
+        if fallos:
+            print(
+                f"fallaron {fallos} de {len(cadenas)} cadenas; no se reintenta "
+                "automáticamente porque POST /trabajos no es idempotente",
+                file=sys.stderr,
+                flush=True,
+            )
+            return 1
+        print(f"encoladas {len(cadenas)} cadenas", flush=True)
+        return 0
+
+
+    if __name__ == "__main__":
+        sys.exit(main())
