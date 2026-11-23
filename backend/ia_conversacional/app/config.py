@@ -137,6 +137,11 @@ CHAT_RATE_LIMIT_VENTANA_SEGUNDOS = _leer_env_float("IA_CHAT_RATE_LIMIT_VENTANA_S
 CHAT_TIMEOUT_TOTAL = _leer_env_float("IA_CHAT_TIMEOUT_TOTAL", 18.0)
 
 
+# ===== Antigüedad de la caché de Catálogo (SUP-315) =====
+
+CATALOGO_ANTIGUEDAD_MAXIMA = _leer_env_float("IA_CATALOGO_ANTIGUEDAD_MAXIMA", 3600.0)
+
+
 # ===== Validación al arrancar =====
 
 
@@ -222,6 +227,7 @@ def _validar_limites_numericos() -> None:
         # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
         ("IA_CHAT_RATE_LIMIT_SOLICITUDES", CHAT_RATE_LIMIT_SOLICITUDES),
         ("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", CHAT_RATE_LIMIT_VENTANA_SEGUNDOS),
+        ("CATALOGO_ANTIGUEDAD_MAXIMA", CATALOGO_ANTIGUEDAD_MAXIMA),
     )
     for nombre, valor in estrictamente_positivos:
         if valor <= 0:

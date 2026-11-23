@@ -664,3 +664,65 @@ def test_consulta_disponibilidad_error_http_retorna_none():
     )
 
     assert repo.consultar_disponibilidad(["prod-uuid-1"]) is None
+
+
+def test_datos_antiguos_con_catalogo_fresco():
+    """Verifica que datos_antiguos sea False cuando el catálogo cargó productos recientemente."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.get.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
+        antiguedad_maxima=3600.0,
+    )
+
+    # Carga exitosa reciente: fuente = catalogo, ultima_carga_exitosa es reciente
+    repo._cargar_sin_candado()  # force fresh catalog load
+
+    # datos_antiguos debe ser False porque fuente es catalogo (no memoria)
+    assert repo.datos_antiguos is False
+
+
+def test_datos_antiguos_despues_de_fallo_catalogo():
+    """Verifica que datos_antiguos sea True cuando Catálogo falla y la última carga superó antiguedade_maxima."""
+    import time
+
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    # Primera carga exitosa desde Catálogo
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.get.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
+        antiguedad_maxima=1.0,  # límite muy bajo para el test
+    )
+
+    # Carga exitosa inicial (simula tiempo pasado forzando la diferencia)
+    repo._cargar_sin_candado()
+
+    # Avanzar el tiempo para superar antiguedad_maxima
+    repo._ultima_carga_exitosa = time.time() - 2.0  # 2 segundos atrás, > 1.0 máximo
+
+    # Ahora simula que Catálogo falla en la siguiente recarga
+    mock_cliente.get.side_effect = httpx.TimeoutException("Catálogo caído")
+    productos = repo.cargar_productos()
+
+    # Debe degradarse a memoria (fuente = memoria) conservando productos previos
+    assert repo.fuente == "memoria"
+    assert len(productos) == 2
+
+    # datos_antiguos debe ser True porque:
+    # - fuente es memoria
+    # - ultima_carga_exitosa > 0 (tiene valor de la carga exitosa anterior)
+    # - tiempo transcurrido > antiguedad_maxima (2.0 > 1.0)
+    assert repo.datos_antiguos is True
