@@ -6,7 +6,7 @@ y delega el pipeline en `app/services/chat.py`.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app import config
 from app.api.sesion import LimitadorSolicitudes, UsuarioAutenticado, obtener_usuario_actual
@@ -32,6 +32,17 @@ class PeticionChat(BaseModel):
         max_length=config.CHAT_MAX_MENSAJE_LEN,
         description="Mensaje del usuario",
     )
+
+    @field_validator("mensaje", mode="before")
+    @classmethod
+    def _validar_mensaje_no_solo_espacios(cls, valor: object) -> str:
+        """Recorta espacios externos y rechaza mensajes vacíos sin convertir otros tipos a texto."""
+        if not isinstance(valor, str):
+            raise ValueError("El mensaje debe ser una cadena de texto")
+        texto_limpio = valor.strip()
+        if not texto_limpio:
+            raise ValueError("El mensaje no puede ser solo espacios en blanco")
+        return texto_limpio
 
 
 # ===== Router =====

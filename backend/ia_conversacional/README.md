@@ -103,6 +103,46 @@ Respuesta 200 de `/api/v1/chat`:
 sin sesión válida, `422` mensaje inválido, `429` con `Retry-After` al exceder
 el límite por usuario y `503` si ningún proveedor pudo extraer filtros.
 
+### Respuesta de receta (SUP-325 / SUP-329)
+
+Cuando la extracción devuelve `ingredientes` de una receta, la respuesta 200
+incluye las claves `ingredientes_receta` y `ingredientes_faltantes`:
+
+Si `CATALOGO_CONSULTA_TOKEN` no está configurado, los candidatos de receta salen
+de la caché en memoria sin validación en lote (disponibilidad y precio no se
+consultan en Catálogo).
+
+```json
+{
+  "respuesta": "Para tu receta de pasta, agrega Tomate Larga Vida.",
+  "filtros_aplicados": {"ingredientes": [{"nombre": "tomate", "cantidad_envases": 2}]},
+  "productos_recomendados": [
+    {"id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e", "nombre": "Tomate Larga Vida", "precio": 890.0}
+  ],
+  "tiempo_extraccion_ms": 420,
+  "tiempo_explicacion_ms": 610,
+  "ingredientes_receta": [
+    {
+      "ingrediente": "tomate",
+      "cantidad_sugerida": 2,
+      "candidatos": [
+        {
+          "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "nombre": "Tomate Larga Vida",
+          "precio": 890.0
+        }
+      ]
+    }
+  ],
+  "ingredientes_faltantes": ["perejil"]
+}
+```
+
+- `ingredientes_receta` lista los ingredientes resueltos con sus candidatos
+  validados (stock y precio vigentes).
+- `ingredientes_faltantes` lista los ingredientes sin candidato disponible.
+- Sin receta, ambas listas son `[]`.
+
 ### Cambios de contrato (SUP-387)
 
 El frontend solo lee `respuesta`; ningún consumidor del repositorio lee las

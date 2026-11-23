@@ -88,6 +88,38 @@ DECLARACION_FUNCION_FILTROS = {
                     "usa 'categoria' en vez de esto y deja este campo vacio."
                 ),
             },
+            "ingredientes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "nombre": {
+                            "type": "string",
+                            "description": (
+                                "Ingrediente real de la receta, no el plato ni la "
+                                "categoria (ej. 'papa' para una cazuela). Si el "
+                                "usuario no pide una receta, NO incluyas esta clave."
+                            ),
+                        },
+                        "cantidad_envases": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": (
+                                "Cantidad en envases del ingrediente que el usuario "
+                                "podria necesitar para la receta. Si el usuario no "
+                                "menciona una cantidad, usala como 1."
+                            ),
+                        },
+                    },
+                    "required": ["nombre"],
+                },
+                "description": (
+                    "Lista de ingredientes reales para una preparacion o receta, "
+                    "con su cantidad en envases, cuando el pedido sugiere hacer una "
+                    "comida casera. Si el pedido no es una receta, NO incluyas esta "
+                    "clave."
+                ),
+            },
         },
         "required": [],
     },
