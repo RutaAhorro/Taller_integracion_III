@@ -32,6 +32,9 @@ func TestEnrutamientoPorDominio(prueba *testing.T) {
 		{"/api/v1/auth", "identidad"}, {"/api/v1/auth/login", "identidad"}, {"/api/v1/auth/a%2Fb", "identidad"},
 		{"/api/v1/admin/usuarios", "identidad"}, {"/api/v1/admin/usuarios/", "identidad"},
 		{"/api/v1/admin/usuarios/2f1c1c1e-0000-4000-8000-000000000000", "identidad"},
+		// SUP-239: direcciones del usuario. El prefijo es la ruta completa, no /api/v1/usuarios.
+		{"/api/v1/usuarios/me/direcciones", "identidad"}, {"/api/v1/usuarios/me/direcciones/", "identidad"},
+		{"/api/v1/usuarios/me/direcciones/2f1c1c1e-0000-4000-8000-000000000000", "identidad"},
 		// Catálogo.
 		{"/api/v1/productos", "catalogo"}, {"/api/v1/productos/", "catalogo"}, {"/api/v1/productos/a%2Fb", "catalogo"},
 		{"/api/v1/admin/productos", "catalogo"}, {"/api/v1/admin/productos/", "catalogo"},
@@ -45,6 +48,7 @@ func TestEnrutamientoPorDominio(prueba *testing.T) {
 		{"/", "scraping"}, {"/health", "scraping"}, {"/api/v1/health", "scraping"},
 		// Sin dueño: prefijos vecinos y sondas internas de cada servicio.
 		{"/api/v1/authentication", ""}, {"/api/v1/auth-falso", ""}, {"/api/v1/admin/usuarios-falso", ""},
+		{"/api/v1/usuarios/me/direccionesx", ""}, {"/api/v1/usuarios/me", ""}, {"/api/v1/usuarios", ""}, {"/api/v1/usuarios/me/direcciones-falsas", ""},
 		{"/api/v1/productos-falso", ""}, {"/api/v1/admin/productos-falso", ""},
 		{"/api/v1/listas-falsas", ""}, {"/api/v1/listasx", ""},
 		{"/api/v1/chat-falso", ""}, {"/api/v1/chatx", ""}, {"/api/v1/scrapertools", ""},

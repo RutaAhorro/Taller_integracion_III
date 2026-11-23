@@ -8,7 +8,7 @@
   (`reenvio.go`) y sondas `/_gateway/*` (`salud.go`).
 - Sin SQL, Redis, JWT_SECRET ni lógica de negocio. No agregar autenticación
   centralizada ni agregación de métricas; cada servicio aplica sus permisos.
-- Enrutar auth/admin usuarios a Identidad, productos/admin productos a Catálogo,
+- Enrutar auth, admin usuarios y direcciones del usuario (`/api/v1/usuarios/me/direcciones`) a Identidad, productos/admin productos a Catálogo,
   listas a Motor de rutas (`RUTAS_URL`), chat a IA (`IA_URL`) y scraper,
   swagger y `/health` a Control (`SCRAPING_URL`, obligatoria). Misiones no está
   enrutado. Prefijos delimitados; ruta sin dueño responde 404, sin respaldo

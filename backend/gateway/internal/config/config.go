@@ -188,7 +188,7 @@ func cargarPrefijos(leerEntorno func(string) string, configuracion *Configuracio
 		destino    *[]string
 		porDefecto []string
 	}{
-		{"GATEWAY_IDENTIDAD_PREFIXES", &configuracion.PrefijosIdentidad, []string{"/api/v1/auth", "/api/v1/admin/usuarios"}},
+		{"GATEWAY_IDENTIDAD_PREFIXES", &configuracion.PrefijosIdentidad, []string{"/api/v1/auth", "/api/v1/admin/usuarios", "/api/v1/usuarios/me/direcciones"}},
 		{"GATEWAY_CATALOGO_PREFIXES", &configuracion.PrefijosCatalogo, []string{"/api/v1/productos", "/api/v1/admin/productos"}},
 		{"GATEWAY_RUTAS_PREFIXES", &configuracion.PrefijosRutas, []string{"/api/v1/listas"}},
 		{"GATEWAY_SCRAPING_PREFIXES", &configuracion.PrefijosScraping, []string{"/api/v1/scraper", "/swagger"}},
