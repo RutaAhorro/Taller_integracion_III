@@ -364,20 +364,22 @@ hace producto por producto y lo refleja en `resumen`.
 
 ### Medición en una base desechable (2026-11-23)
 
-Con `infrastructure/db` cargado en un PostgreSQL aislado y
-`CATALOGO_TEST_DB_URL` apuntando al rol `app_catalogo`:
+Se hicieron dos mediciones distintas. No se debe confundir la cobertura de los
+datos que vienen en el repositorio con la de una extracción real cargada a mano
+en una base aislada.
 
-- **Datos sembrados reales:** 45 productos, todos de Jumbo en una sola
-  categoría (`Scraped Category`), **0 con EAN** (0 %). Las otras cinco cadenas
-  no tienen productos cargados, por lo que **no existe ninguna categoría en
-  común con datos** entre las seis.
-- **Prueba funcional `TestPostgresEquivalenciaCategoriaComunPorCadena`:**
-  crea un producto por cada una de las seis cadenas en una única categoría con
-  el mismo EAN; la consulta devuelve seis grupos comparables con seis ofertas
-  vigentes y el precio correcto por cadena. Son datos sintéticos creados por la
-  prueba: validan el contrato, **no la cobertura**.
+#### Datos sembrados por `infrastructure/db`
 
-Para repetir la medición y las pruebas:
+Con `infrastructure/db` cargado en PostgreSQL y `CATALOGO_TEST_DB_URL`
+apuntando al rol `app_catalogo`:
+
+- **45 productos sembrados**, todos de Jumbo en una sola categoría
+  (`Scraped Category`), **0 con EAN** (0 %). Las otras cinco cadenas no tienen
+  productos cargados, por lo que **no hay una categoría en común con datos**
+  entre las seis.
+- **`TestPostgresEquivalenciaCategoriaComunPorCadena`** crea un producto por
+  cada una de las seis cadenas con el mismo EAN y verifica seis ofertas. Son
+  datos sintéticos de la prueba: validan el contrato, **no la cobertura**.
 
 ```bash
 export CATALOGO_TEST_DB_URL='postgres://app_catalogo:...@127.0.0.1:55432/sup244_ean?sslmode=disable'
@@ -385,9 +387,50 @@ cd backend/catalogo
 go test -count=1 -v -run Postgres ./tests/integration/
 ```
 
-Mientras el scraper no persista `ean_gtin` para las demás cadenas, SUP-244
-entregará `sin_ean` para esos productos: el contrato está listo, la cobertura
-depende de la extracción real.
+#### Extracción real de quesos y fiambres
+
+Se extrajo HTML real con `backend/scraper_go/cmd/extract` (sin Redis, Control
+ni spool), una página por categoría y con pausa entre peticiones. Los JSONL
+resultantes se cargaron en la misma base desechable con el esquema vigente; no
+se crearon columnas ni tablas.
+
+| Cadena | URL de categoría | Productos | EAN válidos | Observación |
+| --- | --- | ---: | ---: | --- |
+| Jumbo | `https://www.jumbo.cl/quesos-y-fiambres` | 40 | 40 | El listado no trae EAN; se completó con `-enrich-ean` en cada ficha. |
+| Santa Isabel | `https://www.santaisabel.cl/quesos-y-fiambres` | 40 | 40 | El listado no trae EAN; se leyó cada ficha con `-product`. |
+| A Cuenta | `https://www.acuenta.cl/ca/frescos-y-lacteos/quesos-y-quesillos/07/0707` | 50 | 49 | Un producto del listado no publica EAN. |
+| Cugat | `https://cugat.cl/categoria-producto/fiambreria-embutidos-y-quesos/` | 0 | 0 | El sitio respondió `challenge-platform`; el crawler bloqueó la petición. |
+| Lider | `/browse/.../quesos/45669105_72564080` y `/browse/.../fiambres-y-embutidos/45669105_22196003` | 0 | 0 | Los selectores actuales del spider no reconocieron productos en esas páginas. |
+| Unimarc | — | — | — | No hay spider configurado. |
+
+Total cargado: **130 productos reales, 129 con EAN válido**. Al llamar a
+`POST /internal/v1/productos/equivalencias` con los 130 UUID:
+
+| `resumen` | Valor |
+| --- | ---: |
+| `solicitados` | 130 |
+| `comparables` | 124 |
+| `sin_ean` | 1 |
+| `ean_invalidos` | 0 |
+| `conflictos_presentacion` | 5 |
+| `no_encontrados` | 0 |
+
+Además, agrupando las respuestas por EAN canónico:
+
+- **115 grupos distintos**, de los cuales **13 tienen ofertas de más de una
+  cadena**: 7 Jumbo–Santa Isabel, 4 Jumbo–A Cuenta, 1 A Cuenta–Santa Isabel y
+  1 con las tres cadenas.
+- **11 de esos 13 grupos son `comparables`**. Los otros 2 terminaron en
+  `conflicto_presentacion` porque el `formato_crudo` de Santa Isabel es una
+  descripción de marketing y difiere del formato de la otra cadena.
+- **22 de los 130 productos (16,9 %)** recibieron al menos una oferta
+  comparable de otra cadena. Las 130 capturas estaban vigentes.
+
+Esta medición usa datos reales de tres cadenas; no usa el test sintético de seis
+cadenas como cobertura. Cugat, Lider y Unimarc quedan fuera por las razones de
+la tabla. El contrato está validado con datos reales, pero la cobertura sigue
+dependiendo de que la extracción persista `ean_gtin` y de que los selectores de
+cada spider sigan vigentes.
 
 Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `400 invalid_batch`, `400 invalid_product_id`, `400 invalid_payload`,

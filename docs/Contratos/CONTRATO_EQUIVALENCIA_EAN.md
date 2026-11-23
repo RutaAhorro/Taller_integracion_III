@@ -173,6 +173,15 @@ sin rellenar el caso con datos ficticios. Si la cobertura real de EAN es baja,
 el contador lo muestra. Las fechas del ejemplo son ilustrativas: la vigencia se
 calcula con la hora de la consulta.
 
+**Medición real (2026-11-23).** Con extracción real de quesos y fiambres de
+Jumbo, Santa Isabel y A Cuenta cargada en una base desechable, la consulta con
+130 productos devolvió 124 `comparables`, 1 `sin_ean`, 0 `ean_invalidos`,
+5 `conflictos_presentacion` y 0 `no_encontrados`. De 13 grupos con más de una
+cadena, 11 fueron comparables; 22 productos (16,9 %) recibieron una oferta de
+otra cadena. El detalle, incluidas las cadenas no cubiertas, está en
+[`backend/catalogo/README.md`](../../backend/catalogo/README.md). El test
+sintético de seis cadenas valida el contrato, no la cobertura.
+
 ## 6. Errores
 
 Mismo formato que el resto de las rutas internas: `{"error": "<código>"}`, sin
