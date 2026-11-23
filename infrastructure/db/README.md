@@ -31,7 +31,8 @@ El orden real es este:
 | 12 | `08_normalizar_rol_admin_y_auditoria.sql` | Rol `admin` y auditoría (SUP-242) |
 | 13 | `09_plan_y_ultimo_acceso.sql` | Plan y último acceso de usuarios (SUP-242) |
 | 14 | `10_restringir_rol_usuarios.sql` | Restricción de los roles de usuario (SUP-347) |
-| 15 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
+| 15 | `11_articulos_lista_producto.sql` | Artículos de lista por `producto_id` de Catálogo (SUP-327) |
+| 16 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -67,6 +68,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [08_normalizar_rol_admin_y_auditoria.sql](08_normalizar_rol_admin_y_auditoria.sql) | Normaliza el alias histórico `administrador` a `admin` y crea `api.auditoria_admin_usuarios` con permisos para Identidad (SUP-242). Aplicar después de 06; el `06` vigente restaura esos grants si se re-ejecuta sobre una base ya migrada. |
 | [09_plan_y_ultimo_acceso.sql](09_plan_y_ultimo_acceso.sql) | Agrega `api.usuarios.plan` (`basico`/`premium`) y `ultimo_acceso`, usados por el panel administrativo (SUP-242). Aplicar después de 08. Idempotente; no requiere grants nuevos porque el permiso es de tabla. El DDL y el `VALIDATE CONSTRAINT` corren en transacciones separadas para no retener el `AccessExclusiveLock` durante el escaneo. |
 | [10_restringir_rol_usuarios.sql](10_restringir_rol_usuarios.sql) | Normaliza `api.usuarios.rol` y agrega `usuarios_rol_check`, que sólo admite `admin`, `colaborador` y `registrado` (SUP-347). Aborta si encuentra otro valor, para corregirlo a mano. Aplicar después de 09: Identidad no arranca sin esta restricción. Idempotente; valida en una transacción aparte, igual que la 09. |
+| [11_articulos_lista_producto.sql](11_articulos_lista_producto.sql) | Cambia `rutas.articulos_lista_compras` al `producto_id` de Catálogo, sin FK, y elimina `producto_normalizado_id` con su FK hacia `api.productos_normalizados` (SUP-327, [contrato](../../docs/Contratos/CONTRATO_ARTICULOS_LISTA.md)). Los artículos previos se conservan con `producto_id` NULL. Da a `app_rutas` `INSERT`, `UPDATE` y `DELETE` sobre la tabla; el `06` vigente ya los concede. Aplicar después de 10. Idempotente. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para

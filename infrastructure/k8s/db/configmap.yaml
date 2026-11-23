@@ -568,12 +568,13 @@ data:
     GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
         scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
 
-    -- SUP-240: CRUD de listas. Los artículos sólo se leen para el detalle; agregarlos
-    -- y quitarlos llega con SUP-241. Borrar una lista elimina sus artículos por la FK
-    -- interna, que PostgreSQL ejecuta como dueño de la tabla, no como app_rutas.
+    -- SUP-240: CRUD de listas. SUP-327: Motor también agrega, cambia y quita
+    -- artículos (11_articulos_lista_producto.sql reaplica estos grants en bases
+    -- existentes). Borrar una lista elimina sus artículos por la FK interna.
     GRANT USAGE ON SCHEMA rutas TO app_rutas;
     GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
-    GRANT SELECT ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
 
     -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
     -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
@@ -596,12 +597,11 @@ data:
                             AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                         AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                             OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
-                                OR (role_name = 'app_rutas' AND relation.name = 'rutas.listas_compras')))
+                                OR (role_name = 'app_rutas' AND relation.name IN ('rutas.listas_compras', 'rutas.articulos_lista_compras'))))
                             OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
                             OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
                                 AND relation.name = 'scraper.cadenas_supermercado'
-                                AND has_table_privilege(role_name, relation.oid, 'UPDATE'))
-                            OR (role_name = 'app_rutas' AND privilege_name <> 'SELECT' AND relation.name = 'rutas.articulos_lista_compras')) THEN
+                                AND has_table_privilege(role_name, relation.oid, 'UPDATE'))) THEN
                         RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                     END IF;
                 END LOOP;
@@ -617,6 +617,8 @@ data:
                                 AND relation.name IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq'))
                             OR (role_name = 'app_identity' AND privilege_name IN ('USAGE','SELECT')
                                 AND relation.name = 'api.auditoria_admin_usuarios_id_seq')
+                            OR (role_name = 'app_rutas' AND privilege_name = 'USAGE'
+                                AND relation.name = 'rutas.articulos_lista_compras_id_seq')
                         ) THEN
                         RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar secuencias', role_name, privilege_name, relation.name;
                     END IF;
@@ -844,6 +846,52 @@ data:
     SET statement_timeout = '0';
 
     ALTER TABLE api.usuarios VALIDATE CONSTRAINT usuarios_rol_check;
+  11_articulos_lista_producto.sql: |
+    -- SUP-327: los artículos de lista identifican el producto por el UUID que publica
+    -- Catálogo (scraper.productos_crudos.id), según docs/Contratos/CONTRATO_ARTICULOS_LISTA.md.
+    -- Aplicar después de 10. Idempotente: se puede re-ejecutar en una base existente.
+    --
+    -- - producto_id no lleva FK: el producto pertenece a Catálogo y Motor no consulta
+    --   sus tablas. La existencia y disponibilidad se validan por HTTP.
+    -- - producto_normalizado_id se elimina con su FK hacia api.productos_normalizados,
+    --   tabla que nunca se llenó.
+    -- - Filas previas: se conservan con producto_id NULL (no resolubles) en vez de
+    --   inventarles un producto. Los CHECK son NOT VALID para que solo apliquen a
+    --   filas nuevas o modificadas.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    ALTER TABLE rutas.articulos_lista_compras ADD COLUMN IF NOT EXISTS producto_id UUID;
+    ALTER TABLE rutas.articulos_lista_compras DROP COLUMN IF EXISTS producto_normalizado_id;
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                       WHERE conrelid = 'rutas.articulos_lista_compras'::regclass
+                         AND conname = 'articulos_lista_producto_requerido') THEN
+            ALTER TABLE rutas.articulos_lista_compras
+                ADD CONSTRAINT articulos_lista_producto_requerido CHECK (producto_id IS NOT NULL) NOT VALID;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                       WHERE conrelid = 'rutas.articulos_lista_compras'::regclass
+                         AND conname = 'articulos_lista_cantidad_positiva') THEN
+            ALTER TABLE rutas.articulos_lista_compras
+                ADD CONSTRAINT articulos_lista_cantidad_positiva CHECK (cantidad >= 1) NOT VALID;
+        END IF;
+    END $$;
+
+    -- "Sumar si ya existe": un producto aparece una sola vez por lista. Los NULL
+    -- previos no chocan entre sí.
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_articulos_lista_producto
+        ON rutas.articulos_lista_compras (lista_id, producto_id);
+
+    -- Motor agrega, cambia y quita artículos. La secuencia la usa el SERIAL de id.
+    GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
+
+    COMMIT;
   init.sql: |
     -- Script de inicialización automatizada para el servidor PostgreSQL + PostGIS
     -- Creado con 100% DATOS REALES extraídos mediante scraping directo a Jumbo.cl
