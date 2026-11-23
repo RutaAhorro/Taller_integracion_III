@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import httpx
 
-from app.domain.filtros import filtrar_productos, sanitizar_filtros_crudos
+from app.domain.filtros import filtrar_productos, sanitizar_filtros_crudos, vincular_ingredientes_catalogo
 from app.repositories.groq import rescatar_filtros_de_error_groq
 
 
@@ -144,3 +144,166 @@ def test_filtrar_productos_proteccion_falsos_positivos_cortos():
     nombres = [producto["nombre"] for producto in filtrados]
     assert "Ampolleta bajo consumo" in nombres
     assert "Ajo Chilote" not in nombres
+
+
+def test_filtrar_productos_coincide_ignorando_tildes():
+    """Verifica que las tildes se pliegan al comparar: 'limon' calza con 'Limón'."""
+    catalogo = [
+        {"id": 1, "nombre": "Limón", "categoria": "frutas", "precio": 700.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["limon"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Limón"
+
+
+def test_filtrar_productos_coincide_con_palabra_corta_del_nombre():
+    """Verifica que una palabra corta del nombre ('sal') calza por igualdad exacta."""
+    catalogo = [
+        {"id": 1, "nombre": "Sal de mar", "categoria": "especias", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Ajo Chilote", "categoria": "verduras", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["sal"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert nombres == ["Sal de mar"]
+
+
+def test_filtrar_productos_filtra_por_palabras_clave():
+    """Verifica que palabras_clave conserva solo los productos que coinciden con la clave."""
+    catalogo = [
+        {"id": 1, "nombre": "Leche Entera", "categoria": "lacteos", "precio": 1100.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 1.0},
+    ]
+    filtros = {"palabras_clave": ["leche"]}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Leche Entera"
+
+
+def test_sanitizar_filtros_crudos_ingredientes_validos_con_defaults():
+    """Verifica saneamiento de ingredientes de receta: nombre limpio y cantidad con default."""
+    crudo = {
+        "ingredientes": [
+            {"nombre": " tomate ", "cantidad_envases": 2},
+            {"nombre": "cebolla"},
+        ],
+    }
+    limpio = sanitizar_filtros_crudos(crudo)
+    assert limpio["ingredientes"] == [
+        {"nombre": "tomate", "cantidad_envases": 2},
+        {"nombre": "cebolla", "cantidad_envases": 1},
+    ]
+
+
+def test_sanitizar_filtros_crudos_ingredientes_invalidos_se_descartan():
+    """Verifica descarte de ingredientes mal tipados y default de cantidad invalida."""
+    crudo = {
+        "ingredientes": [
+            {"nombre": "  ", "cantidad_envases": 2},
+            {"nombre": "aguacate", "cantidad_envases": True},
+            {"nombre": 42, "cantidad_envases": 2},
+            {"cantidad_envases": 2},
+            {"nombre": "pimiento", "cantidad_envases": 0},
+        ],
+    }
+    limpio = sanitizar_filtros_crudos(crudo)
+    assert limpio["ingredientes"] == [
+        {"nombre": "aguacate", "cantidad_envases": 1},
+        {"nombre": "pimiento", "cantidad_envases": 1},
+    ]
+
+
+def test_sanitizar_filtros_crudos_ingredientes_lista_vacia_no_se_guarda():
+    """Verifica que una lista de ingredientes vacia no se guarda en el filtro limpio."""
+    limpio = sanitizar_filtros_crudos({"ingredientes": []})
+    assert "ingredientes" not in limpio
+
+
+def test_vincular_ingredientes_catalogo_encuentra_candidatos_y_falta():
+    """Verifica vinculacion de ingredientes con candidatos del catalogo y nombres faltantes."""
+    catalogo = [
+        {"id": 1, "nombre": "Tomate", "categoria": "abrupto", "precio": 1500.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Tomate", "categoria": "abrupto", "precio": 900.0, "distancia_km": 1.0},
+        {"nombre": "Cilantro", "categoria": "condimentos", "precio": 800.0, "distancia_km": 1.0},
+    ]
+    ingredientes = [
+        {"nombre": "Tomate", "cantidad_envases": 2},
+        {"nombre": "Perejil", "cantidad_envases": 1},
+    ]
+
+    receta, faltantes = vincular_ingredientes_catalogo(catalogo, ingredientes)
+
+    assert len(receta) == 1
+    assert receta[0]["ingrediente"] == "Tomate"
+    assert receta[0]["cantidad_sugerida"] == 2
+    assert len(receta[0]["candidatos"]) == 2
+    assert receta[0]["candidatos"][0]["producto_id"] == "2"
+    assert receta[0]["candidatos"][0]["nombre"] == "Tomate"
+    assert receta[0]["candidatos"][0]["precio"] == 900.0
+    assert receta[0]["candidatos"][1]["producto_id"] == "1"
+    assert faltantes == ["Perejil"]
+
+
+def test_vincular_ingredientes_catalogo_orden_y_limite_de_candidatos():
+    """Verifica que los candidatos se ordenen por precio ascendente y se respeten el limite."""
+    catalogo = [
+        {"id": 1, "nombre": "Tomate", "categoria": "abrupto", "precio": 1500.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Tomate", "categoria": "abrupto", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Tomate", "categoria": "abrupto", "precio": 1200.0, "distancia_km": 1.0},
+        {"id": 4, "nombre": "Tomate", "categoria": "abrupto", "precio": 700.0, "distancia_km": 1.0},
+    ]
+
+    receta, faltantes = vincular_ingredientes_catalogo(
+        catalogo, [{"nombre": "Tomate", "cantidad_envases": 1}], limite_candidatos=2
+    )
+
+    candidatos = receta[0]["candidatos"]
+    assert [candidato["producto_id"] for candidato in candidatos] == ["4", "2"]
+    assert faltantes == []
+
+
+def test_filtrar_productos_coincide_frase_multipalabra_aji_verde():
+    """Verifica que 'aji verde' no calza con 'Té Verde Supremo' ni 'Aceitunas Verdes'."""
+    catalogo = [
+        {"id": 1, "nombre": "Té Verde Supremo", "categoria": "especias", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Aceitunas Verdes", "categoria": "conservas", "precio": 700.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Ají Verde 250g", "categoria": "especias", "precio": 800.0, "distancia_km": 1.0},
+    ]
+    filtros = {"categoria": "aji verde"}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    assert len(filtrados) == 1
+    assert filtrados[0]["nombre"] == "Ají Verde 250g"
+
+
+def test_sanitizar_filtros_crudos_ingredientes_float_entero_conviene_a_int():
+    """Verifica que una cantidad de envases entera en float (2.0) se convierte a int 2."""
+    crudo = {
+        "ingredientes": [
+            {"nombre": "tomate", "cantidad_envases": 2.0},
+        ],
+    }
+    limpio = sanitizar_filtros_crudos(crudo)
+    assert limpio["ingredientes"] == [{"nombre": "tomate", "cantidad_envases": 2}]
+
+
+def test_filtrar_productos_categoria_compuesta_frutas_y_verduras():
+    """Verifica que la categoria compuesta 'frutas y verduras' matchea productos de frutas o verduras."""
+    catalogo = [
+        {"id": 1, "nombre": "Manzana", "categoria": "frutas", "precio": 600.0, "distancia_km": 0.5},
+        {"id": 2, "nombre": "Tomate", "categoria": "verduras", "precio": 900.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Leche Entera", "categoria": "lacteos", "precio": 1100.0, "distancia_km": 1.0},
+    ]
+    filtros = {"categoria": "frutas y verduras"}
+    filtrados = filtrar_productos(catalogo, filtros)
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert len(filtrados) == 2
+    assert "Manzana" in nombres
+    assert "Tomate" in nombres
+    assert "Leche Entera" not in nombres

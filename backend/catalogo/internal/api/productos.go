@@ -41,6 +41,17 @@ func (manejador manejadorProductos) buscar(contexto *gin.Context) {
 	responderPagina(contexto, pagina, errorCatalogo, "Error interno al buscar productos")
 }
 
+// categorias publica las categorías existentes sin depender de páginas de productos.
+func (manejador manejadorProductos) categorias(contexto *gin.Context) {
+	categorias, errorConsulta := manejador.servicio.ObtenerCategorias(contexto.Request.Context())
+	if errorConsulta != nil {
+		registrarErrorInterno(contexto, errorConsulta)
+		contexto.JSON(http.StatusInternalServerError, gin.H{"error": "No se pudieron obtener las categorías"})
+		return
+	}
+	contexto.JSON(http.StatusOK, gin.H{"categorias": categorias})
+}
+
 // detalle atiende GET /api/v1/productos/:id con el historial de precios.
 func (manejador manejadorProductos) detalle(contexto *gin.Context) {
 	producto, errorDetalle := manejador.servicio.ObtenerPorID(contexto.Request.Context(), contexto.Param("id"))
@@ -97,6 +108,7 @@ func leerFiltro(contexto *gin.Context) domain.FiltroProductosDTO {
 		Page:              leerEntero(contexto, "page"),
 		Limit:             leerEntero(contexto, "limit"),
 		Categoria:         contexto.Query("categoria"),
+		CategoriaExacta:   contexto.Query("categoria_exacta"),
 		Supermercado:      contexto.Query("supermercado"),
 		Marca:             contexto.Query("marca"),
 		SKU:               contexto.Query("sku"),

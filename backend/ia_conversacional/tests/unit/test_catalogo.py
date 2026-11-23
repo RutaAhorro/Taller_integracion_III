@@ -451,3 +451,278 @@ def test_catalogo_caido_modo_sin_datos_respeta_ttl():
     assert productos == []
     assert repo.fuente == "sin_datos"
     assert mock_cliente.get.call_count == 0
+
+
+def test_productos_precios_invalidos_descartados():
+    """Verifica que productos con precio no numérico o <= 0 son descartados."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    def side_effect(url, params):
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "data": [
+                {
+                    "id": "prod-precio-vacio",
+                    "nombre": "Producto Sin Precio",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": None,
+                    "precio_normal": None,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-cero",
+                    "nombre": "Producto Gratis",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": 0.0,
+                    "precio_normal": 0.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-negativo",
+                    "nombre": "Producto Negativo",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": -100.0,
+                    "precio_normal": -100.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-corrupto",
+                    "nombre": "Producto Corrupto",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": "omision",
+                    "precio_normal": "omision",
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+                {
+                    "id": "prod-precio-valido",
+                    "nombre": "Producto Valido",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": 500.0,
+                    "precio_normal": 500.0,
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+            ],
+            "paginacion": {
+                "total_registros": 5,
+                "pagina_actual": 1,
+                "total_paginas": 1,
+                "limite": 100,
+            },
+        }
+        return mock_resp
+
+    mock_cliente.get.side_effect = side_effect
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+    )
+
+    productos = repo.obtener_todos()
+
+    # Solo el producto válido debería quedar; los demás son descartados
+    assert len(productos) == 1
+    assert productos[0]["id"] == "prod-precio-valido"
+    assert productos[0]["precio"] == 500.0
+
+
+def test_productos_precio_texto_corrupto_descartado():
+    """Verifica que productos con precio texto corrupto son descartados."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    def side_effect(url, params):
+        mock_resp = MagicMock(spec=httpx.Response)
+        mock_resp.raise_for_status.return_value = None
+        mock_resp.json.return_value = {
+            "data": [
+                {
+                    "id": "prod-texto-1",
+                    "nombre": "Producto Texto",
+                    "marca": "Generica",
+                    "categoria": "otros",
+                    "supermercado": "Lider",
+                    "precio": "precio-inesperado",
+                    "precio_normal": "precio-inesperado",
+                    "precio_oferta": None,
+                    "en_oferta": False,
+                    "url_imagen": "",
+                    "unidad": "un",
+                    "en_stock": True,
+                },
+            ],
+            "paginacion": {
+                "total_registros": 1,
+                "pagina_actual": 1,
+                "total_paginas": 1,
+                "limite": 100,
+            },
+        }
+        return mock_resp
+
+    mock_cliente.get.side_effect = side_effect
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+    )
+
+    productos = repo.obtener_todos()
+    assert len(productos) == 0
+
+
+def test_consulta_disponibilidad_exito_retorna_items_por_producto():
+    """Verifica la respuesta exitosa de la consulta en lote de disponibilidad."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    item_disponibilidad = {
+        "producto_id": "prod-uuid-1",
+        "estado_producto": "disponible",
+        "en_stock": True,
+        "estado_precio": "disponible",
+    }
+    mock_respuesta.json.return_value = {"productos": [item_disponibilidad]}
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.post.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta="token-lectura-valido",
+    )
+
+    disponibilidad = repo.consultar_disponibilidad(["prod-uuid-1"])
+
+    mock_cliente.post.assert_called_with(
+        "http://catalogo:8080/internal/v1/productos/disponibilidad",
+        json={"producto_ids": ["prod-uuid-1"]},
+        headers={"Authorization": "Bearer token-lectura-valido"},
+    )
+    assert disponibilidad == {"prod-uuid-1": item_disponibilidad}
+
+
+def test_consulta_disponibilidad_sin_token_retorna_none():
+    """Verifica que sin token de consulta la disponibilidad no se consulta y retorna None."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta=None,
+    )
+
+    assert repo.consultar_disponibilidad(["prod-uuid-1"]) is None
+    mock_cliente.post.assert_not_called()
+
+
+def test_consulta_disponibilidad_error_http_retorna_none():
+    """Verifica que ante un error HTTP se registra la advertencia y se retorna None."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.status_code = 503
+    mock_respuesta.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "503 Service Unavailable",
+        request=MagicMock(),
+        response=mock_respuesta,
+    )
+    mock_cliente.post.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        token_consulta="token-lectura-valido",
+    )
+
+    assert repo.consultar_disponibilidad(["prod-uuid-1"]) is None
+
+
+def test_datos_antiguos_con_catalogo_fresco():
+    """Verifica que datos_antiguos sea False cuando el catálogo cargó productos recientemente."""
+    mock_cliente = MagicMock(spec=httpx.Client)
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.get.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
+        antiguedad_maxima=3600.0,
+    )
+
+    # Carga exitosa reciente: fuente = catalogo, ultima_carga_exitosa es reciente
+    repo._cargar_sin_candado()  # force fresh catalog load
+
+    # datos_antiguos debe ser False porque fuente es catalogo (no memoria)
+    assert repo.datos_antiguos is False
+
+
+def test_datos_antiguos_despues_de_fallo_catalogo():
+    """Verifica que datos_antiguos sea True cuando Catálogo falla y la última carga superó antiguedade_maxima."""
+    import time
+
+    mock_cliente = MagicMock(spec=httpx.Client)
+
+    # Primera carga exitosa desde Catálogo
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.json.return_value = MOCK_CATALOGO_PAGINA_1
+    mock_respuesta.raise_for_status.return_value = None
+    mock_cliente.get.return_value = mock_respuesta
+
+    repo = ProductoRepositorio(
+        url_base="http://catalogo:8080",
+        cliente=mock_cliente,
+        ttl_cache=60.0,
+        antiguedad_maxima=1.0,  # límite muy bajo para el test
+    )
+
+    # Carga exitosa inicial (simula tiempo pasado forzando la diferencia)
+    repo._cargar_sin_candado()
+
+    # Avanzar el tiempo para superar antiguedad_maxima
+    repo._ultima_carga_exitosa = time.time() - 2.0  # 2 segundos atrás, > 1.0 máximo
+
+    # Ahora simula que Catálogo falla en la siguiente recarga
+    mock_cliente.get.side_effect = httpx.TimeoutException("Catálogo caído")
+    productos = repo.cargar_productos()
+
+    # Debe degradarse a memoria (fuente = memoria) conservando productos previos
+    assert repo.fuente == "memoria"
+    assert len(productos) == 2
+
+    # datos_antiguos debe ser True porque:
+    # - fuente es memoria
+    # - ultima_carga_exitosa > 0 (tiene valor de la carga exitosa anterior)
+    # - tiempo transcurrido > antiguedad_maxima (2.0 > 1.0)
+    assert repo.datos_antiguos is True

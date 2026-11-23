@@ -2,9 +2,11 @@ package integration_test
 
 import (
 	"encoding/json"
+	"errors"
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/api"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -12,6 +14,34 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/services"
 	"github.com/gin-gonic/gin"
 )
+
+// TestRutaCategorias distingue el recurso estático del detalle y mantiene errores genéricos.
+func TestRutaCategorias(prueba *testing.T) {
+	repositorio := &mockProductoRepository{categorias: []string{"Lácteos / huevos", "Pan"}}
+	enrutador := nuevoEnrutadorDePrueba(api.Dependencias{
+		Productos: services.NuevoServicioProductos(repositorio, limitesProductosDePrueba),
+	})
+	for _, caso := range []struct {
+		nombre        string
+		categorias    []string
+		errorConsulta error
+		estado        int
+		esperado      string
+	}{
+		{"lista", repositorio.categorias, nil, http.StatusOK, `{"categorias":["Lácteos / huevos","Pan"]}`},
+		{"vacía", nil, nil, http.StatusOK, `{"categorias":[]}`},
+		{"fallo", nil, errors.New("detalle SQL privado"), http.StatusInternalServerError, `{"error":"No se pudieron obtener las categorías"}`},
+	} {
+		prueba.Run(caso.nombre, func(subprueba *testing.T) {
+			repositorio.categorias, repositorio.err = caso.categorias, caso.errorConsulta
+			respuesta := httptest.NewRecorder()
+			enrutador.ServeHTTP(respuesta, httptest.NewRequest(http.MethodGet, "/api/v1/productos/categorias", nil))
+			if respuesta.Code != caso.estado || strings.TrimSpace(respuesta.Body.String()) != caso.esperado {
+				subprueba.Fatalf("respuesta inesperada: %d %s", respuesta.Code, respuesta.Body.String())
+			}
+		})
+	}
+}
 
 func TestProductoHandler_ObtenerProductos(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)

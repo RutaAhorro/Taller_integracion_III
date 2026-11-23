@@ -110,6 +110,8 @@ class GroqProveedor(ProveedorIA):
 
     async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
         """Etapa 1 con tool call obligatoria; rescata filtros si Groq rechaza el esquema."""
+        if not self.clave_api:
+            raise ValueError("GROQ_API_KEY no configurada")
         inicio = time.perf_counter()
         cuerpo = {
             "model": self.modelo_extraccion,
@@ -130,10 +132,8 @@ class GroqProveedor(ProveedorIA):
                 return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms)
             estado_http = error_http.response.status_code
             logger.warning("Groq respondio %s: %s", estado_http, error_http.response.text)
-            return ResultadoExtraccion(error=f"Groq respondio {estado_http}: {error_http.response.text}")
-        except httpx.RequestError as error_red:
-            logger.warning("Error de red conectando a Groq: %s", error_red)
-            return ResultadoExtraccion(error=f"No se pudo conectar a Groq: {error_red}")
+            # Sin filtros rescatables el error debe relanzarse: el respaldo ya decide reintentar/conmutar.
+            raise
 
         tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
         mensaje_modelo = datos["choices"][0]["message"]

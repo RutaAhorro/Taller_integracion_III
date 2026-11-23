@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
+from app.repositories.gemini import GeminiProveedor
 from app.services.fallback import FallbackProveedor
 
 
@@ -136,3 +137,67 @@ async def test_generar_explicacion_no_reintenta_error_400_no_recuperable(monkeyp
     assert proveedor_secundario.llamadas_explicacion == 1
     # Cero llamadas a sleep porque no hubo reintentos
     assert mock_dormir.await_count == 0
+
+
+@pytest.mark.anyio
+async def test_fallback_extraer_filtros_conmuta_gemini_429_a_groq(monkeypatch):
+    """Verifica que FallbackProveedor extrae filtros: ante un 429 recuperable en Gemini reintenta y conmuta a Groq."""
+    mock_dormir = AsyncMock()
+    monkeypatch.setattr("app.services.fallback.asyncio.sleep", mock_dormir)
+
+    proveedor_gemini = ProveedorFalso("gemini")
+
+    mock_respuesta = MagicMock(spec=httpx.Response)
+    mock_respuesta.status_code = 429
+    error_429 = httpx.HTTPStatusError("Rate limit", request=MagicMock(), response=mock_respuesta)
+
+    async def gemini_falla(*args, **kwargs):
+        proveedor_gemini.llamadas_extraccion += 1
+        raise error_429
+
+    proveedor_gemini.extraer_filtros = gemini_falla
+
+    proveedor_groq = ProveedorFalso("groq")
+
+    orquestador = FallbackProveedor(
+        proveedores=[proveedor_gemini, proveedor_groq],
+        reintentos_primario=1,
+        reintentos_secundario=0,
+        espera_base=0.01,
+        variacion_maxima=0.0,
+    )
+
+    resultado = await orquestador.extraer_filtros(mensaje="quiero verduras")
+
+    assert resultado.error is None
+    assert resultado.filtros == {}
+    # El 429 fue recuperable: un reintento en Gemini y luego la conmutacion a Groq.
+    assert proveedor_gemini.llamadas_extraccion == 2
+    assert proveedor_groq.llamadas_extraccion == 1
+    assert mock_dormir.await_count == 1
+
+
+@pytest.mark.anyio
+async def test_fallback_extraer_filtros_sin_clave_api_conmuta_sin_reintentos(monkeypatch):
+    """Verifica que un proveedor sin clave API conmute al siguiente sin reintentos ni sleep."""
+    mock_dormir = AsyncMock()
+    monkeypatch.setattr("app.services.fallback.asyncio.sleep", mock_dormir)
+
+    proveedor_gemini_sin_clave = GeminiProveedor(clave_api=None, url_endpoint="https://ejemplo.com/gemini")
+    proveedor_groq = ProveedorFalso("groq")
+
+    orquestador = FallbackProveedor(
+        proveedores=[proveedor_gemini_sin_clave, proveedor_groq],
+        reintentos_primario=3,
+        reintentos_secundario=3,
+        espera_base=5.0,
+        variacion_maxima=0.0,
+    )
+
+    resultado = await orquestador.extraer_filtros(mensaje="quiero verduras")
+
+    assert resultado.error is None
+    assert resultado.filtros == {}
+    # Error no recuperable (clave ausente): conmuta sin reintentos ni espera.
+    assert mock_dormir.await_count == 0
+    assert proveedor_groq.llamadas_extraccion == 1

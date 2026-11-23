@@ -110,6 +110,9 @@ func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, 
 		terminoBusqueda := "%" + filtro.Query + "%"
 		consulta = consulta.Where("(pc.titulo_crudo ILIKE ? OR pc.marca_cruda ILIKE ? OR pc.categoria_cruda ILIKE ? OR pc.sku ILIKE ?)", terminoBusqueda, terminoBusqueda, terminoBusqueda, terminoBusqueda)
 	}
+	if filtro.CategoriaExacta != "" {
+		consulta = consulta.Where("BTRIM(pc.categoria_cruda) = ?", filtro.CategoriaExacta)
+	}
 	if filtro.SKU != "" {
 		consulta = consulta.Where("pc.sku ILIKE ?", "%"+filtro.SKU+"%")
 	}
@@ -144,6 +147,19 @@ func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, 
 		)`, pq.Array(marcasPropiasPorMarca), pq.Array(marcasPropiasPorTitulo))
 	}
 	return consulta
+}
+
+// ListarCategorias consulta todo el catálogo sin paginar ni cargar productos o
+// capturas: devuelve los valores existentes, sin vacíos ni espacios exteriores.
+func (repositorio *RepositorioProductos) ListarCategorias(contexto context.Context) ([]string, error) {
+	categorias := []string{}
+	errorConsulta := repositorio.baseDatos.WithContext(contexto).
+		Table("scraper.productos_crudos").
+		Distinct("BTRIM(categoria_cruda) AS categoria").
+		Where("BTRIM(categoria_cruda) <> ''").
+		Order("categoria ASC").
+		Pluck("BTRIM(categoria_cruda) AS categoria", &categorias).Error
+	return categorias, errorConsulta
 }
 
 // Reglas de la categoría pública: separadores, conectores ignorados y largo

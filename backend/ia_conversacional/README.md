@@ -95,13 +95,74 @@ Respuesta 200 de `/api/v1/chat`:
   "filtros_aplicados": {"categoria": "verduras", "precio_max": 2000},
   "productos_recomendados": [{"id": "...", "nombre": "...", "precio": 890.0}],
   "tiempo_extraccion_ms": 420,
-  "tiempo_explicacion_ms": 610
+  "tiempo_explicacion_ms": 610,
+  "estado_datos": "vigente"
 }
 ```
 
 `filtros_aplicados` es `null` si el modelo no extrajo filtros. Errores: `401`
 sin sesión válida, `422` mensaje inválido, `429` con `Retry-After` al exceder
 el límite por usuario y `503` si ningún proveedor pudo extraer filtros.
+
+### Respuesta de receta (SUP-325 / SUP-329)
+
+Cuando la extracción devuelve `ingredientes` de una receta, la respuesta 200
+incluye las claves `ingredientes_receta` y `ingredientes_faltantes`:
+
+Si `CATALOGO_CONSULTA_TOKEN` no está configurado, los candidatos de receta salen
+de la caché en memoria sin validación en lote (disponibilidad y precio no se
+consultan en Catálogo).
+
+```json
+{
+  "respuesta": "Para tu receta de pasta, agrega Tomate Larga Vida.",
+  "filtros_aplicados": {"ingredientes": [{"nombre": "tomate", "cantidad_envases": 2}]},
+  "productos_recomendados": [
+    {"id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e", "nombre": "Tomate Larga Vida", "precio": 890.0}
+  ],
+  "tiempo_extraccion_ms": 420,
+  "tiempo_explicacion_ms": 610,
+  "ingredientes_receta": [
+    {
+      "ingrediente": "tomate",
+      "cantidad_sugerida": 2,
+      "candidatos": [
+        {
+          "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "nombre": "Tomate Larga Vida",
+          "precio": 890.0
+        }
+      ]
+    }
+  ],
+  "ingredientes_faltantes": ["perejil"]
+}
+```
+
+- `ingredientes_receta` lista los ingredientes resueltos con sus candidatos
+  validados (stock y precio vigentes).
+- `ingredientes_faltantes` lista los ingredientes sin candidato disponible.
+- Sin receta, ambas listas son `[]`.
+
+### Estado de los datos (SUP-315)
+
+Cada respuesta 200 incluye `estado_datos`, que indica la frescura de la
+información usada:
+
+| Valor | Significado |
+|---|---|
+| `vigente` | Los datos se pidieron al Catálogo o la receta validó stock y precio. |
+| `memoria` | Catálogo no respondió y se conservó la carga previa. |
+| `memoria_antigua` | La carga previa se marcó como antigua según `IA_CATALOGO_ANTIGUEDAD_MAXIMA`. |
+| `sin_datos` | No hay datos cargados en el repositorio (catálogo vacío o fuente sin datos). |
+| `sin_validar_disponibilidad` | La receta usó la caché en memoria sin validar stock ni precio. |
+
+Con `memoria` y `memoria_antigua` la respuesta agrega una nota de que los datos
+provienen de una carga previa y pueden haber cambiado; con
+`sin_validar_disponibilidad`, una nota de que no se pudo validar stock y precio
+en tiempo real. `IA_CATALOGO_ANTIGUEDAD_MAXIMA` define la antigüedad máxima
+tolerada para considerar vigente una carga previa. Si el repositorio no informa
+la antigüedad, la respuesta asume `vigente`.
 
 ### Cambios de contrato (SUP-387)
 

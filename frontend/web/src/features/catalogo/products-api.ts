@@ -77,10 +77,38 @@ export function toUiProduct(producto: ProductoApi): Producto {
 }
 
 /** Propaga los errores de las lecturas del catálogo. */
-async function solicitar<Respuesta>(ruta: string): Promise<Respuesta> {
-  const respuesta = await fetch(`${URL_API}${ruta}`)
+async function solicitar<Respuesta>(ruta: string, signal?: AbortSignal): Promise<Respuesta> {
+  const respuesta = await fetch(`${URL_API}${ruta}`, { signal })
   if (!respuesta.ok) throw new Error(`La API respondió con ${respuesta.status}`)
   return respuesta.json() as Promise<Respuesta>
+}
+
+// Separa las categorías de BD de los filtros destacados, aunque compartan nombre.
+export const PREFIJO_CATEGORIA = 'categoria:';
+
+/** Traduce la selección del lateral sin modificar el contrato de categoría anterior. */
+export function parametrosCategoria(categoria: string | null): URLSearchParams {
+  const parametros = new URLSearchParams();
+  if (categoria?.startsWith(PREFIJO_CATEGORIA)) {
+    parametros.set('categoria_exacta', categoria.slice(PREFIJO_CATEGORIA.length));
+  } else if (categoria === 'ofertas' || categoria === 'descuentos') {
+    parametros.set('en_oferta', 'true');
+  } else if (categoria === 'marcas') {
+    parametros.set('solo_marcas_blancas', 'true');
+  } else if (categoria) {
+    parametros.set('categoria', categoria);
+  }
+  return parametros;
+}
+
+/** Consulta categorías completas, no una muestra de productos; rechaza contratos inválidos. */
+export async function obtenerCategorias(signal?: AbortSignal): Promise<string[]> {
+  const datos = await solicitar<{ categorias: unknown }>('/productos/categorias', signal);
+  if (!datos || !Array.isArray(datos.categorias) ||
+      !datos.categorias.every((categoria: unknown) => typeof categoria === 'string' && categoria.trim())) {
+    throw new Error('Respuesta de categorías inválida');
+  }
+  return datos.categorias;
 }
 
 /** Recupera una página de productos con los totales informados por el servidor. */
