@@ -137,6 +137,7 @@ func acotarPeticion(ajustes config.Ajustes) gin.HandlerFunc {
 // único que main ve del servicio.
 type Modulo struct {
 	handler       *ManejadorAuth
+	restablecer   *ManejadorRestablecer
 	adminHandler  *ManejadorAdmin
 	direcciones   *ManejadorDirecciones
 	repo          domain.RepositorioUsuarios
@@ -149,8 +150,10 @@ func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, configuracion config
 	ajustes := configuracion.Ajustes
 	repositorio := repositories.NuevoRepositorioUsuarios(base)
 	repositorioAdmin := repositories.NuevoRepositorioAdmin(base)
+	repositorioRecuperacion := repositories.NuevoRepositorioRecuperacion(base)
 	return &Modulo{
 		handler:       NuevoManejadorAuth(services.NuevoServicioAuth(repositorio, idtoken.Validate, configuracion.ClienteGoogle, ajustes.PlazoGoogle), configuracion.CookieSegura, configuracion.ClaveJWT),
+		restablecer:   NuevoManejadorRestablecer(services.NuevoServicioRecuperacion(repositorioRecuperacion)),
 		adminHandler:  NuevoManejadorAdmin(services.NuevoServicioAdmin(repositorioAdmin)),
 		direcciones:   NuevoManejadorDirecciones(services.NuevoServicioDirecciones(repositories.NuevoRepositorioDirecciones(base))),
 		repo:          repositorio,
@@ -161,22 +164,24 @@ func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, configuracion config
 
 // RegistrarRutas monta /auth/*, /admin/usuarios/* y /usuarios/me/direcciones/* bajo group.
 func (modulo *Modulo) RegistrarRutas(grupo *gin.RouterGroup) {
-	RegistrarRutasAuth(grupo, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
+	RegistrarRutasAuth(grupo, modulo.handler, modulo.restablecer, modulo.redis, modulo.repo, modulo.configuracion)
 	RegistrarRutasAdminUsuarios(grupo, modulo.adminHandler, modulo.repo, modulo.configuracion.ClaveJWT)
 	RegistrarRutasDirecciones(grupo, modulo.direcciones, modulo.repo, modulo.configuracion.ClaveJWT)
 }
 
 // ===== Autenticación y perfil =====
 
-// RegistrarRutasAuth monta /auth/*. Registro, login y Google llevan contador
-// por IP; las rutas de perfil revalidan la cuenta en api.usuarios además del JWT.
-func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *ManejadorAuth, redisCliente *redis.Client, repositorio domain.RepositorioUsuarios, configuracion config.Configuracion) {
+// RegistrarRutasAuth monta /auth/*. Registro, login, Google y restablecimiento
+// llevan contador por IP; las rutas de perfil revalidan la cuenta en api.usuarios
+// además del JWT. El restablecimiento es público: lo autoriza el token de un solo uso.
+func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *ManejadorAuth, manejadorRestablecer *ManejadorRestablecer, redisCliente *redis.Client, repositorio domain.RepositorioUsuarios, configuracion config.Configuracion) {
 	ajustes := configuracion.Ajustes
 	sesion := ExigirSesion(repositorio, configuracion.ClaveJWT)
 	auth := grupo.Group("/auth")
 	auth.POST("/register", LimitarRegistro(redisCliente, ajustes), manejador.RegistrarUsuario)
 	auth.POST("/login", LimitarLogin(redisCliente, ajustes), manejador.LoginUsuario)
 	auth.POST("/google", LimitarGoogle(redisCliente, ajustes), manejador.LoginGoogleUsuario)
+	auth.POST("/restablecer", LimitarRestablecer(redisCliente, ajustes), manejadorRestablecer.Restablecer)
 	auth.POST("/logout", manejador.CerrarSesion)
 	auth.GET("/me", sesion, manejador.PerfilUsuario)
 	auth.PUT("/me", sesion, manejador.ActualizarPerfil)

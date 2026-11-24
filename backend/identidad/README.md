@@ -19,6 +19,7 @@ monolito de SUP-272 y su procedimiento de corte quedan en el historial de Git.
 | POST | `/api/v1/auth/register` | Registro local con auto-login y cookie de sesión |
 | POST | `/api/v1/auth/login` | Login local; errores de credenciales no revelan si existe la cuenta |
 | POST | `/api/v1/auth/google` | Valida criptográficamente el token de Google y emite sesión |
+| POST | `/api/v1/auth/restablecer` | Cambia la contraseña con un token de un solo uso; sin sesión previa |
 | POST | `/api/v1/auth/logout` | Expira la cookie `jwt`; responde 204 sin cuerpo |
 | GET | `/api/v1/auth/me` | Identidad de la sesión: `user_id`, rol vigente, provider y mensaje; cuenta revalidada en PostgreSQL |
 | PUT | `/api/v1/auth/me` | Actualiza el perfil de la cuenta de la sesión |
@@ -46,7 +47,7 @@ no conceden permisos administrativos.
 > | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | La migración `10_restringir_rol_usuarios.sql` normaliza esas filas y agrega `usuarios_rol_check`: la base ya no acepta otro rol. Identidad no arranca sin esa restricción, así que no puede quedar una cuenta admin sin acceso |
 > | El registro generaba un UUID en `api.usuarios.token_verificacion` | Las cuentas nuevas lo dejan en `NULL`: no hay flujo que lo consuma. La columna se conserva y ninguna respuesta HTTP lo exponía |
 > | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor |
-> | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`, ni verifica `api.tokens_recuperacion`. La tabla y sus grants se conservan; la recuperación se reimplementará completa (SUP-233/185) |
+> | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`. La tabla y sus grants se conservan; SUP-185 volvió a usarla para consumir tokens, sin reintroducir el envío de correos. La solicitud pública de token sigue pendiente (SUP-233) |
 >
 > Ningún consumidor del repositorio enviaba `offset` ni escribía `administrador`
 > al momento del cambio (el frontend usa `page` y `limit`).
@@ -58,6 +59,24 @@ esta vía. Los handlers y DTO de [internal/api](internal/api) y
 [internal/domain](internal/domain) son la referencia de campos y respuestas.
 El envoltorio de errores usa `estado`, `mensaje` y `detalle` cuando corresponde;
 los errores internos no incluyen SQL ni trazas en el JSON.
+
+`POST /auth/restablecer` recibe `{"token":"...","password":"..."}` y aplica la
+misma política de contraseñas que `PUT /auth/me`: complejidad y hash bcrypt se
+validan en un único helper del servicio, sin una segunda implementación. El
+token se recibe como SHA-256 de 32 bytes, se comprueba contra
+`api.tokens_recuperacion` usando el reloj de PostgreSQL y se consume con un
+`UPDATE ... WHERE usado_el IS NULL AND expira_el > now()` en la misma
+transacción que escribe `password_hash` e inutiliza cualquier otro token
+pendiente del mismo usuario. Token inexistente, vencido o ya usado responden 400
+con el mismo mensaje; una clave inválida también es 400 y deja el token vigente.
+La tabla no se limpia desde la aplicación: el operador conserva las filas como
+historial.
+
+**Límite conocido:** el restablecimiento no revoca las sesiones ya abiertas. Un
+JWT emitido antes del cambio sigue siendo válido hasta que expira, igual que tras
+`PUT /auth/me`. Revocar sesiones requeriría un registro de tokens o una versión
+de contraseña en el JWT y queda fuera de este cambio; para el caso "alguien entró
+a mi cuenta", el usuario debe cerrar sesión en sus otros dispositivos.
 
 Gateway conserva ruta, query, cuerpo, cookie y `Set-Cookie`, y elimina headers
 de identidad forjados. Una caída de Identidad responde 502
@@ -220,8 +239,9 @@ El rol runtime tiene SELECT/INSERT/UPDATE sobre usuarios, sin DELETE, DDL ni
 acceso a tablas de otros servicios. Sobre `api.direcciones_usuario` tiene SELECT,
 INSERT, UPDATE y DELETE (nada más): la dirección es un dato del propio usuario. La ausencia de almacenamiento base o
 permisos impide iniciar. `api.tokens_recuperacion` (`05_tokens_recuperacion.sql`)
-sigue en el esquema, pero hoy ningún código la usa.
-No se ejecuta AutoMigrate ni se amplían grants desde la aplicación.
+se verifica al arrancar: el consumo necesita SELECT y UPDATE, y la aplicación
+nunca hace DELETE sobre esa tabla. No se ejecuta AutoMigrate ni se amplían
+grants desde la aplicación.
 
 Cada réplica tiene su propio pool. Al cambiar su tamaño máximo o el
 número de réplicas, recalcular el presupuesto total de conexiones junto con
@@ -249,14 +269,15 @@ La [NetworkPolicy](../../infrastructure/k8s/identidad/networkpolicy.yaml) actual
 permite entrada a 8080 desde pods Gateway y Catálogo del mismo namespace;
 su aplicación efectiva depende del CNI. No confiar en `0.0.0.0/0` ni `::/0`.
 
-Login cuenta intentos fallidos; registro y Google, todas las solicitudes.
-Los defaults son 5 fallos de login y 30 solicitudes de registro/Google por IP
-en 15 minutos. Las réplicas comparten claves `rate_limit:login:<IP>`,
+Login y restablecimiento cuentan intentos fallidos; registro y Google, todas
+las solicitudes. Los defaults son 5 fallos de login, 10 de restablecimiento y
+30 solicitudes de registro/Google por IP en 15 minutos. Las réplicas comparten
+claves `rate_limit:login:<IP>`, `rate_limit:restablecer:<IP>`,
 `rate_limit:register:<IP>` y `rate_limit:google:<IP>`. Lua incrementa y fija
-expiración atómicamente, repara TTL ausentes y devuelve el intento de un login
-2xx. Redis debe permitir EVAL/EVALSHA, INCR, PTTL, PEXPIRE, EXISTS, GET y DECR.
-Sin Redis, estas rutas fallan cerradas con 500 genérico; no se desactiva el
-límite ni se reintentan sus escrituras.
+expiración atómicamente, repara TTL ausentes y devuelve el intento de una
+respuesta 2xx. Redis debe permitir EVAL/EVALSHA, INCR, PTTL, PEXPIRE, EXISTS,
+GET y DECR. Sin Redis, estas rutas fallan cerradas con 500 genérico; no se
+desactiva el límite ni se reintentan sus escrituras.
 
 ## Salud y operación
 
