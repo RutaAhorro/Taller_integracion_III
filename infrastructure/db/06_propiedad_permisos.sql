@@ -79,6 +79,10 @@ GRANT USAGE ON SCHEMA api TO app_identity;
 GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
 -- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
 GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
+-- SUP-239: CRUD de direcciones del usuario. DELETE es necesario porque la dirección
+-- es un dato del propio usuario, que puede eliminarla. La tabla viene de 01 y sus
+-- columnas nuevas de 11; este grant no depende de 11, así que sobrevive a re-ejecutar 06.
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.direcciones_usuario TO app_identity;
 -- SUP-242: 08 crea api.auditoria_admin_usuarios después de este script. Si ya
 -- existe (re-ejecución de 06 en una base migrada), se restauran sus grants para
 -- que la auditoría administrativa siga operativa. Sin DELETE ni UPDATE.
@@ -121,7 +125,7 @@ DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
 BEGIN
     FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         permitted := CASE role_name
-            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
+            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios','api.direcciones_usuario']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
             WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
@@ -135,7 +139,8 @@ BEGIN
                         AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                     AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                         OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
-                            OR (role_name = 'app_rutas' AND relation.name IN ('rutas.listas_compras', 'rutas.articulos_lista_compras'))))
+                            OR (role_name = 'app_rutas' AND relation.name IN ('rutas.listas_compras', 'rutas.articulos_lista_compras'))
+                            OR (role_name = 'app_identity' AND relation.name = 'api.direcciones_usuario')))
                         OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
                         OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
                             AND relation.name = 'scraper.cadenas_supermercado'

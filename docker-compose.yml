@@ -195,7 +195,7 @@ services:
       GATEWAY_RESPONSE_HEADER_TIMEOUT: ${GATEWAY_RESPONSE_HEADER_TIMEOUT:-20s}
       # Prefijos por dominio (mismos defaults que internal/config/config.go).
       # Un formato inválido impide arrancar; el "/" final se recorta.
-      GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios}
+      GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones}
       GATEWAY_CATALOGO_PREFIXES: ${GATEWAY_CATALOGO_PREFIXES:-/api/v1/productos,/api/v1/admin/productos}
       GATEWAY_RUTAS_PREFIXES: ${GATEWAY_RUTAS_PREFIXES:-/api/v1/listas}
       GATEWAY_SCRAPING_PREFIXES: ${GATEWAY_SCRAPING_PREFIXES:-/api/v1/scraper,/swagger}

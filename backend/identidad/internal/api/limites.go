@@ -1,4 +1,5 @@
-// Contadores de intentos por IP en Redis para login, registro y Google.
+// Contadores de intentos por IP en Redis para login, registro, Google y
+// restablecimiento de contraseña.
 
 package api
 
@@ -89,4 +90,11 @@ func LimitarRegistro(redisCliente *redis.Client, ajustes config.Ajustes) gin.Han
 // LimitarGoogle limita la verificación de tokens Google por IP.
 func LimitarGoogle(redisCliente *redis.Client, ajustes config.Ajustes) gin.HandlerFunc {
 	return limitarPorIP(redisCliente, "google", int64(ajustes.MaximoGoogle), ajustes.VentanaContador, false, ajustes)
+}
+
+// LimitarRestablecer limita los intentos fallidos de restablecimiento por IP.
+// El token tiene 256 bits de azar, pero el endpoint queda expuesto a quien
+// intente adivinar claves o consumir enlaces ajenos.
+func LimitarRestablecer(redisCliente *redis.Client, ajustes config.Ajustes) gin.HandlerFunc {
+	return limitarPorIP(redisCliente, "restablecer", int64(ajustes.MaximoRestablecer), ajustes.VentanaContador, true, ajustes)
 }

@@ -1,4 +1,4 @@
-// Reúne navegación y filtros: categorías desde Catálogo y cadenas de los productos recibidos.
+// Reúne navegación y filtros: categorías y facetas de supermercados recibidas de Catálogo.
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 
@@ -30,6 +30,10 @@ type PropiedadesBarraLateral = {
   onResetFilters: () => void
   activeMarket: string | null
   availableMarkets: UiSupermarket[]
+  cargandoSupermercados: boolean
+  errorSupermercados: boolean
+  avisoSupermercados?: string | null
+  alReintentarSupermercados: () => void
   onSelectCategory: (categoria: string) => void
   onSelectMarket: (id: string | null) => void
   activeCategory: string
@@ -91,6 +95,10 @@ export function SideBar({
   onResetFilters,
   activeMarket,
   availableMarkets,
+  cargandoSupermercados,
+  errorSupermercados,
+  avisoSupermercados,
+  alReintentarSupermercados,
   onSelectCategory,
   onSelectMarket,
   activeCategory,
@@ -292,7 +300,22 @@ export function SideBar({
 
           <nav aria-label="Supermercados">
             <TituloSeccion>Supermercados</TituloSeccion>
-            <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas de los productos cargados. El listado completo está pendiente de integración.</p>
+            <p className="px-2 pb-2 text-xs text-muted-foreground">Cadenas con productos en stock para los filtros actuales.</p>
+            {avisoSupermercados && (
+              <p role="status" className="px-2 text-sm text-muted-foreground">{avisoSupermercados}</p>
+            )}
+            {cargandoSupermercados && (
+              <p role="status" className="px-2 text-sm text-muted-foreground">Cargando supermercados…</p>
+            )}
+            {errorSupermercados && (
+              <div role="alert" className="px-2 text-sm">
+                <p>No se pudieron cargar los supermercados.</p>
+                <button type="button" className="underline" onClick={alReintentarSupermercados}>Reintentar</button>
+              </div>
+            )}
+            {!cargandoSupermercados && !errorSupermercados && !avisoSupermercados && availableMarkets.length === 0 && (
+              <p className="px-2 text-sm text-muted-foreground">No hay supermercados disponibles.</p>
+            )}
             <ul className="flex flex-col gap-1">
               <li>
                 <BotonFiltro
