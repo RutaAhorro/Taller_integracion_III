@@ -271,6 +271,9 @@ func TestAppRutasNoSaleDeSuMatriz(prueba *testing.T) {
 		"SELECT 1 FROM scraper.productos_crudos LIMIT 1",
 		"TRUNCATE rutas.listas_compras",
 		"TRUNCATE rutas.articulos_lista_compras",
+		// SUP-318: las claves del lote sólo se consultan y registran.
+		"UPDATE rutas.lotes_articulos_aplicados SET huella = huella WHERE false",
+		"DELETE FROM rutas.lotes_articulos_aplicados WHERE false",
 		"CREATE TABLE rutas.intrusa (id int)",
 	} {
 		_, errorObtenido := pool.Exec(contexto, sentencia)
@@ -278,5 +281,132 @@ func TestAppRutasNoSaleDeSuMatriz(prueba *testing.T) {
 		if !errors.As(errorObtenido, &pgErr) || pgErr.Code != codigoSinPermiso {
 			prueba.Errorf("%s: se esperaba permiso denegado (%s), se obtuvo %v", sentencia, codigoSinPermiso, errorObtenido)
 		}
+	}
+}
+
+// ===== Agregado en lote (SUP-318) =====
+
+// loteDe arma un lote normalizado con su huella, como lo hace el handler.
+func loteDe(clave string, articulos ...listas.ArticuloLote) listas.Lote {
+	normalizados := listas.NormalizarLote(articulos)
+	return listas.Lote{Clave: clave, Huella: listas.HuellaDe(normalizados), Articulos: normalizados}
+}
+
+func TestLoteTodoONadaEIdempotente(prueba *testing.T) {
+	_, repo, adminURL := preparar(prueba)
+	contexto := context.Background()
+	usuario, ajeno := uuid.NewString(), uuid.NewString()
+	productoA, productoB := uuid.NewString(), uuid.NewString()
+	lista, errorObtenido := repo.Crear(contexto, usuario, "Lote")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	limites := listas.Limites{MaxArticulos: 2, MaxCantidad: 5}
+	if _, _, errorObtenido := repo.AgregarArticulo(contexto, usuario, lista.ID, productoA, 4, limites); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+
+	// Cantidad sumada sobre la lista excede el tope: rechazo y nada guardado.
+	resultado, errorObtenido := repo.AgregarLote(contexto, usuario, lista.ID,
+		loteDe("k1", listas.ArticuloLote{ProductoID: productoB, Cantidad: 1}, listas.ArticuloLote{ProductoID: productoA, Cantidad: 2}), limites)
+	if errorObtenido != nil || len(resultado.Rechazados) != 1 || resultado.Rechazados[0].ProductoID != productoA ||
+		resultado.Rechazados[0].Motivo != listas.MotivoCantidadMaxima {
+		prueba.Fatalf("rechazo por cantidad: %+v %v", resultado, errorObtenido)
+	}
+	// Tres artículos distintos en una lista de máximo dos.
+	if _, errorObtenido := repo.AgregarLote(contexto, usuario, lista.ID,
+		loteDe("k2", listas.ArticuloLote{ProductoID: productoB, Cantidad: 1}, listas.ArticuloLote{ProductoID: uuid.NewString(), Cantidad: 1}), limites); !errors.Is(errorObtenido, listas.ErrMaxArticulos) {
+		prueba.Fatalf("tope de artículos: %v", errorObtenido)
+	}
+	if detalle, _ := repo.Obtener(contexto, usuario, lista.ID); len(detalle.Articulos) != 1 || detalle.Articulos[0].Cantidad != 4 {
+		prueba.Fatalf("quedaron cambios a medias: %+v", detalle.Articulos)
+	}
+
+	// Éxito: suma sobre el existente e inserta el nuevo.
+	lote := loteDe("k3", listas.ArticuloLote{ProductoID: productoA, Cantidad: 1}, listas.ArticuloLote{ProductoID: productoB, Cantidad: 2})
+	if resultado, errorObtenido := repo.AgregarLote(contexto, usuario, lista.ID, lote, limites); errorObtenido != nil || resultado.Repetido || len(resultado.Rechazados) != 0 {
+		prueba.Fatalf("lote: %+v %v", resultado, errorObtenido)
+	}
+	// Reintento: no suma; otra huella con la misma clave se rechaza.
+	if resultado, _ := repo.AgregarLote(contexto, usuario, lista.ID, lote, limites); !resultado.Repetido {
+		prueba.Fatalf("reintento no detectado: %+v", resultado)
+	}
+	if _, errorObtenido := repo.AgregarLote(contexto, usuario, lista.ID,
+		loteDe("k3", listas.ArticuloLote{ProductoID: productoB, Cantidad: 1}), limites); !errors.Is(errorObtenido, listas.ErrClaveReutilizada) {
+		prueba.Fatalf("clave reutilizada: %v", errorObtenido)
+	}
+	detalle, _ := repo.Obtener(contexto, usuario, lista.ID)
+	cantidades := map[string]int{}
+	for _, articulo := range detalle.Articulos {
+		cantidades[*articulo.ProductoID] = articulo.Cantidad
+	}
+	if len(cantidades) != 2 || cantidades[productoA] != 5 || cantidades[productoB] != 2 {
+		prueba.Fatalf("cantidades: %v", cantidades)
+	}
+
+	// La huella sólo se ve desde el dueño; la clave rechazada no quedó registrada.
+	if huella, existe, _ := repo.HuellaLote(contexto, usuario, lista.ID, "k3"); !existe || huella != lote.Huella {
+		prueba.Fatal("huella no registrada")
+	}
+	if _, existe, _ := repo.HuellaLote(contexto, ajeno, lista.ID, "k3"); existe {
+		prueba.Fatal("otro usuario ve la clave")
+	}
+	if _, existe, _ := repo.HuellaLote(contexto, usuario, lista.ID, "k1"); existe {
+		prueba.Fatal("un lote rechazado registró su clave")
+	}
+	if resultado, _ := repo.AgregarLote(contexto, ajeno, lista.ID, lote, limites); resultado.ListaExiste {
+		prueba.Fatal("otro usuario aplica un lote en la lista")
+	}
+
+	// Borrar la lista borra sus claves (FK en cascada sin DELETE para app_rutas).
+	if eliminada, _ := repo.Eliminar(contexto, usuario, lista.ID); !eliminada {
+		prueba.Fatal("no se eliminó")
+	}
+	admin, errorObtenido := pgx.Connect(contexto, adminURL)
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	defer admin.Close(contexto)
+	var restantes int
+	_ = admin.QueryRow(contexto, `SELECT count(*) FROM rutas.lotes_articulos_aplicados WHERE lista_id = $1`, lista.ID).Scan(&restantes)
+	if restantes != 0 {
+		prueba.Fatalf("quedaron %d claves", restantes)
+	}
+}
+
+func TestLotesSimultaneosConLaMismaClaveSumanUnaVez(prueba *testing.T) {
+	_, repo, _ := preparar(prueba)
+	contexto := context.Background()
+	usuario, producto := uuid.NewString(), uuid.NewString()
+	lista, errorObtenido := repo.Crear(contexto, usuario, "Reintentos")
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	prueba.Cleanup(func() { _, _ = repo.Eliminar(context.Background(), usuario, lista.ID) })
+
+	// Reintentos que llegan a la vez: el bloqueo de la lista los ordena y sólo
+	// el primero suma; el resto encuentra la clave registrada.
+	const reintentos = 6
+	lote := loteDe("misma-clave", listas.ArticuloLote{ProductoID: producto, Cantidad: 2})
+	errores := make(chan error, reintentos)
+	var grupo sync.WaitGroup
+	for range reintentos {
+		grupo.Add(1)
+		go func() {
+			defer grupo.Done()
+			_, errorLote := repo.AgregarLote(contexto, usuario, lista.ID, lote, listas.Limites{MaxArticulos: 5, MaxCantidad: 99})
+			errores <- errorLote
+		}()
+	}
+	grupo.Wait()
+	close(errores)
+	for errorLote := range errores {
+		if errorLote != nil {
+			prueba.Fatal(errorLote)
+		}
+	}
+	detalle, _ := repo.Obtener(contexto, usuario, lista.ID)
+	if len(detalle.Articulos) != 1 || detalle.Articulos[0].Cantidad != 2 {
+		prueba.Fatalf("se sumó más de una vez: %+v", detalle.Articulos)
 	}
 }

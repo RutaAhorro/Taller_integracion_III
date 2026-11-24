@@ -72,6 +72,7 @@ type fila struct {
 	usuario   string
 	lista     listas.Lista
 	articulos []listas.Articulo
+	lotes     map[string]string // Idempotency-Key → huella del lote aplicado (SUP-318)
 }
 
 func nuevaMemoria() *repositorioMemoria { return &repositorioMemoria{filas: map[string]*fila{}} }
@@ -211,6 +212,76 @@ func (repositorio *repositorioMemoria) EliminarArticulo(_ context.Context, usuar
 		}
 	}
 	return false, nil
+}
+
+// HuellaLote imita la búsqueda de la clave en rutas.lotes_articulos_aplicados.
+func (repositorio *repositorioMemoria) HuellaLote(_ context.Context, usuarioID, listaID, clave string) (string, bool, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	filaLista := repositorio.filaDelUsuario(usuarioID, listaID)
+	if filaLista == nil {
+		return "", false, nil
+	}
+	huella, existe := filaLista.lotes[clave]
+	return huella, existe, nil
+}
+
+// AgregarLote imita la transacción de Postgres: valida todos los topes antes
+// de tocar la lista, así un rechazo no deja cambios a medias.
+func (repositorio *repositorioMemoria) AgregarLote(_ context.Context, usuarioID, listaID string, lote listas.Lote, limites listas.Limites) (listas.ResultadoLote, error) {
+	repositorio.mu.Lock()
+	defer repositorio.mu.Unlock()
+	filaLista := repositorio.filaDelUsuario(usuarioID, listaID)
+	if filaLista == nil {
+		return listas.ResultadoLote{}, nil
+	}
+	if huella, existe := filaLista.lotes[lote.Clave]; existe {
+		if huella != lote.Huella {
+			return listas.ResultadoLote{}, listas.ErrClaveReutilizada
+		}
+		return listas.ResultadoLote{ListaExiste: true, Repetido: true}, nil
+	}
+
+	posiciones := map[string]int{}
+	for indice, articulo := range filaLista.articulos {
+		if articulo.ProductoID != nil {
+			posiciones[*articulo.ProductoID] = indice
+		}
+	}
+	resultado := listas.ResultadoLote{ListaExiste: true}
+	nuevos := 0
+	for _, articulo := range lote.Articulos {
+		cantidadActual := 0
+		if indice, yaEsta := posiciones[articulo.ProductoID]; yaEsta {
+			cantidadActual = filaLista.articulos[indice].Cantidad
+		} else {
+			nuevos++
+		}
+		if cantidadActual+articulo.Cantidad > limites.MaxCantidad {
+			resultado.Rechazados = append(resultado.Rechazados, listas.Rechazo{ProductoID: articulo.ProductoID, Motivo: listas.MotivoCantidadMaxima})
+		}
+	}
+	if len(resultado.Rechazados) > 0 {
+		return resultado, nil
+	}
+	if len(filaLista.articulos)+nuevos > limites.MaxArticulos {
+		return listas.ResultadoLote{}, listas.ErrMaxArticulos
+	}
+
+	for _, articulo := range lote.Articulos {
+		if indice, yaEsta := posiciones[articulo.ProductoID]; yaEsta {
+			filaLista.articulos[indice].Cantidad += articulo.Cantidad
+			continue
+		}
+		repositorio.siguienteID++
+		productoID := articulo.ProductoID
+		filaLista.articulos = append(filaLista.articulos, listas.Articulo{ID: repositorio.siguienteID, ProductoID: &productoID, Cantidad: articulo.Cantidad})
+	}
+	if filaLista.lotes == nil {
+		filaLista.lotes = map[string]string{}
+	}
+	filaLista.lotes[lote.Clave] = lote.Huella
+	return resultado, nil
 }
 
 // =============================================================================

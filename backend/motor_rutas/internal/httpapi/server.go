@@ -105,10 +105,14 @@ func rutas(opciones Opciones) http.Handler {
 // segmentoArticulos es el recurso de artículos bajo una lista.
 const segmentoArticulos = "articulos"
 
+// segmentoLote es el agregado en lote bajo los artículos (SUP-318).
+const segmentoLote = "lote"
+
 // despacharLista atiende lo que cuelga de /api/v1/listas/{lista_id}:
 //
 //	/{lista_id}                          la lista
 //	/{lista_id}/articulos                agregar un artículo
+//	/{lista_id}/articulos/lote           agregar varios, todo o nada (SUP-318)
 //	/{lista_id}/articulos/{articulo_id}  cambiar o quitar un artículo
 //
 // Cualquier otra forma responde 404 con el envoltorio común.
@@ -130,6 +134,11 @@ func despacharLista(manejador *handlerListas, respuesta http.ResponseWriter, pet
 	case len(segmentos) == 2 && segmentos[1] == segmentoArticulos:
 		despachar(respuesta, peticion, prefijoListas+"/{lista_id}/articulos", metodosPorRuta{
 			http.MethodPost: manejador.conSesion(manejador.conID(idLista, manejador.agregarArticulo)),
+		})
+	// "lote" va antes que {articulo_id}: no es un id válido y daría 404.
+	case len(segmentos) == 3 && segmentos[1] == segmentoArticulos && segmentos[2] == segmentoLote:
+		despachar(respuesta, peticion, prefijoListas+"/{lista_id}/articulos/lote", metodosPorRuta{
+			http.MethodPost: manejador.conSesion(manejador.conID(idLista, manejador.agregarLote)),
 		})
 	case len(segmentos) == 3 && segmentos[1] == segmentoArticulos:
 		idArticulo := segmentos[2]
@@ -257,7 +266,7 @@ func cors(origenesPermitidos []string, siguiente http.Handler) http.Handler {
 			cabeceras := respuesta.Header()
 			cabeceras.Set("Access-Control-Allow-Origin", origen)
 			cabeceras.Set("Access-Control-Allow-Credentials", "true")
-			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, Idempotency-Key")
 			cabeceras.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if peticion.Method == http.MethodOptions {
