@@ -1,6 +1,6 @@
 # Base de Datos — Esquemas y Migraciones
 
-Este directorio contiene las definiciones DDL del esquema PostgreSQL (PostGIS) estructurado en 3 esquemas principales (`api`, `scraper`, `rutas`), los datos de seed iniciales y las scripts de migración.
+Este directorio contiene las definiciones DDL del esquema PostgreSQL (PostGIS) estructurado en 3 esquemas principales (`api`, `scraper`, `rutas`), la configuración inicial (cadenas y sucursales) y las scripts de migración.
 
 ---
 
@@ -32,7 +32,7 @@ El orden real es este:
 | 13 | `09_plan_y_ultimo_acceso.sql` | Plan y último acceso de usuarios (SUP-242) |
 | 14 | `10_restringir_rol_usuarios.sql` | Restricción de los roles de usuario (SUP-347) |
 | 15 | `11_direcciones_usuario.sql` | Direcciones guardadas del usuario y permisos de Identidad (SUP-239) |
-| 16 | `init.sql` | Extensiones y **datos iniciales**. Va al final porque `i` se ordena después de los dígitos |
+| 16 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -47,8 +47,16 @@ después de él.
 **Finales de línea:** `.gitattributes` fuerza LF en `.sh` y `.sql`. Con CRLF,
 `07_runtime_credentials.sh` falla dentro del contenedor (`bash\r`).
 
-**Pendiente:** `init.sql` carga datos fijos de productos y precios. Se revisa
-en el barrido de Catálogo (SUP-349).
+**`init.sql` ya no siembra productos (SUP-370).** Resuelve el pendiente de
+SUP-349: sólo carga las 6 cadenas y sus 6 sucursales con ids estables. Los
+productos y precios llegan por la ingesta del scraper y los tests siembran sus
+propios datos (por ejemplo `backend/catalogo/tests/fixtures.sql`). Las
+sucursales 5 y 6 conservan ubicación provisional (ver `backend/catalogo/README.md`).
+
+**Pendiente (fuera de alcance de SUP-370):** las bases ya desplegadas conservan
+los 45 productos de demo de Jumbo, sus precios y las filas de `api.categorias`,
+`api.marcas`, `api.productos_normalizados` y `api.mapeos_productos_ia`. Retirarlos
+requiere una migración autorizada; no se creó ninguna.
 
 ---
 
@@ -76,7 +84,7 @@ migraciones ni recrear el volumen para aplicar estos scripts.
 
 | Archivo | Descripción | Cuándo usar |
 |---|---|---|
-| [`init.sql`](init.sql) | Script completo de inicialización con esquemas y datos seed de prueba (Jumbo, Lider, Santa Isabel, A Cuenta, Cugat). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |
+| [`init.sql`](init.sql) | Inicialización de extensiones y esquemas, más la configuración de las cadenas (Jumbo, Lider, Unimarc, Santa Isabel, A Cuenta, Cugat) y sus sucursales. No siembra productos ni precios (SUP-370). | Se ejecuta automáticamente al construir la BD desde cero (`docker-compose up`). |
 | [`01_schema_api.sql`](01_schema_api.sql) | Esquema `api.*` (usuarios, catálogo maestro normalizado, recetas, misiones). | Referencia DDL / auto-init. |
 | [`02_schema_scraper.sql`](02_schema_scraper.sql) | Esquema `scraper.*` (cadenas, sucursales, trabajos, productos crudos, capturas de precios). | Referencia DDL / auto-init. |
 | [`03_schema_rutas.sql`](03_schema_rutas.sql) | Esquema `rutas.*` (listas de compras, optimizaciones y paradas). | Referencia DDL / auto-init. |

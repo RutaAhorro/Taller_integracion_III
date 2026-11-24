@@ -20,9 +20,12 @@
 - Las vistas pendientes usan FeatureUnavailable, sin costos, puntos ni resultados
   simulados. Administración no sustituye errores por datos ficticios.
 - La portada es informativa y usa `src/features/landing/landing.json`; sus ejemplos no son resultados de
-  la API. En el catálogo, las cadenas corresponden a los productos recibidos;
-  cobertura completa pendiente de SUP-371. No reutilizar ejemplos de la portada como datos reales.
-- Marcas blancas está deshabilitado hasta disponer de clasificación en el backend.
+  la API. El catálogo y el lateral comparten `useCatalog` desde `MainLayout`: las
+  cadenas vienen de las facetas `supermercados`, no de los productos de una página.
+  No reutilizar ejemplos de la portada como datos reales.
+- Marcas blancas envía `solo_marcas_blancas=true`; la clasificación pertenece al backend.
+- Búsquedas cortas (menos de 3 bytes UTF-8) muestran aviso sin filtrar una página local.
+  Cancelar y descartar respuestas obsoletas; paginar conserva las facetas confirmadas.
 - Chat llama a `${VITE_API_URL}/chat`, que Gateway enruta a IA (SUP-278); no
   hay `VITE_IA_URL`. No afirmar flujo receta → lista → ruta terminado.
 - Reutilizar estilos/componentes del proyecto; comprobar imports antes de borrar.
