@@ -6,13 +6,14 @@
 - `internal/config` (entorno), `internal/auth` (JWT), `internal/db` (pool pgx y
   verificación de grants), `internal/listas` (modelo y SQL),
   `internal/httpapi` (rutas, CORS, `X-Request-ID`, errores y handlers).
-- `RUTAS_DB_URL`/`app_rutas`: CRUD listas y solo lectura de artículos.
+- `RUTAS_DB_URL`/`app_rutas`: CRUD de listas y de sus artículos.
   No leer `api.usuarios` ni tablas de Catálogo. Sin migraciones ni AutoMigrate.
 - Sesión solo cookie HttpOnly `jwt` de Identidad. Filtrar siempre por dueño;
   lista ajena/id inválido devuelve 404 sin revelar existencia.
 - 404 y 405 los despacha `httpapi.rutas` a mano para conservar el envoltorio
   `{"estado","mensaje","detalle"?}`; no reemplazar por `ServeMux` con métodos.
-- Agregar/quitar artículos y validar stock llegan con SUP-241: no conceder
+- Artículos (SUP-241) y lote todo o nada con `Idempotency-Key` (SUP-318,
+  tabla `rutas.lotes_articulos_aplicados`, migración 12): no conceder
   permisos preventivos. Sin OTP/OSRM.
 - `internal/optimizacion`: cálculo puro del contrato del motor (SUP-313/328),
   sin HTTP ni SQL; recibe parámetros, no lee el entorno. Endpoint en SUP-316.
@@ -23,9 +24,9 @@
 
 ## Índice breve generado
 
-19 archivos fuente, incluidos los de pruebas. Distribución:
+25 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 13 archivos.
-- `tests`: 5 archivos.
+- `internal`: 16 archivos.
+- `tests`: 8 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

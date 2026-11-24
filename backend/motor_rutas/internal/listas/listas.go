@@ -1,13 +1,19 @@
-// Package listas define el modelo de las listas de compra (SUP-240) y su
-// persistencia en PostgreSQL (postgres.go).
+// Package listas define el modelo de las listas de compra y sus artículos
+// (SUP-240, SUP-241, lote SUP-318), su persistencia en PostgreSQL (postgres.go) y la
+// consulta de disponibilidad a Catálogo (catalogo.go).
 //
-// Los nombres JSON van en snake_case, igual que en Catálogo.
+// Los nombres JSON van en snake_case, igual que en Catálogo. La forma de los
+// artículos sigue docs/Contratos/CONTRATO_ARTICULOS_LISTA.md.
 package listas
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -28,6 +34,42 @@ var Estados = map[string]bool{"activa": true, "completada": true, "archivada": t
 // No repite el valor recibido.
 var ErrNombre = errors.New(fmt.Sprintf("debe tener entre 1 y %d caracteres", LargoMaximoNombre))
 
+// Estados de un producto según Catálogo (SUP-312). Motor no los calcula: los
+// copia de la consulta de disponibilidad o usa "desconocido" si Catálogo no
+// respondió al mostrar la lista.
+const (
+	EstadoDisponible   = "disponible"
+	EstadoSinStock     = "sin_stock"
+	EstadoNoEncontrado = "no_encontrado"
+	EstadoDesconocido  = "desconocido"
+)
+
+// Topes de artículos del contrato (CONTRATO_ARTICULOS_LISTA.md, sección 2).
+// Son constantes y no variables de entorno: sólo frenan abusos (cantidades o
+// listas enormes que encarecen la consulta a Catálogo), ningún entorno necesita
+// otro valor y el frontend muestra los mismos números. Cambiarlos es editar
+// aquí y el contrato a la vez.
+const (
+	MaxArticulosPorLista  = 100 // una compra grande del mes ronda 40–60 productos
+	MaxEnvasesPorArticulo = 99  // máximo habitual de un selector de cantidad
+)
+
+// LimitesContrato son los topes que usa el servicio en producción.
+var LimitesContrato = Limites{MaxArticulos: MaxArticulosPorLista, MaxCantidad: MaxEnvasesPorArticulo}
+
+// Limites agrupa los topes que recibe el servidor. Existe para que las pruebas
+// usen valores pequeños; en producción siempre es LimitesContrato.
+type Limites struct {
+	MaxArticulos int // artículos distintos por lista
+	MaxCantidad  int // envases por artículo
+}
+
+// ErrMaxArticulos indica que la lista ya tiene el máximo de artículos distintos.
+var ErrMaxArticulos = errors.New("la lista alcanzó el máximo de artículos")
+
+// ErrMaxCantidad indica que sumar la cantidad pedida superaría el máximo por artículo.
+var ErrMaxCantidad = errors.New("el artículo superaría la cantidad máxima")
+
 // =============================================================================
 // Modelos (forma del JSON de respuesta)
 // =============================================================================
@@ -42,18 +84,39 @@ type Lista struct {
 	ActualizadaEl  time.Time `json:"actualizada_el"`  // siempre en UTC
 }
 
-// Articulo es un producto agregado a una lista.
+// Articulo es un producto guardado en una lista, tal como lo persiste Motor.
+// ProductoID es el UUID de scraper.productos_crudos que publica Catálogo; es
+// nil sólo en artículos anteriores a la migración 11, que no se pudieron resolver.
 type Articulo struct {
-	ID                    int64  `json:"id"`
-	ProductoNormalizadoID string `json:"producto_normalizado_id"`
-	Cantidad              int    `json:"cantidad"`
-	EstaComprado          bool   `json:"esta_comprado"`
+	ID           int64   `json:"id"`
+	ProductoID   *string `json:"producto_id"`
+	Cantidad     int     `json:"cantidad"`      // envases, no gramos ni porciones
+	EstaComprado bool    `json:"esta_comprado"` // marcado por el usuario
+}
+
+// ProductoCatalogo son los datos que Catálogo devuelve de un producto, sólo
+// para mostrarlos. Motor no los guarda: siempre se leen al momento.
+type ProductoCatalogo struct {
+	Nombre       string   `json:"nombre"`
+	Marca        string   `json:"marca"`
+	Supermercado string   `json:"supermercado"`
+	Unidad       string   `json:"unidad"`
+	Precio       *float64 `json:"precio"` // nil si Catálogo no tiene una captura vigente
+	URLImagen    string   `json:"url_imagen"`
+}
+
+// ArticuloDetalle es el artículo con su estado en Catálogo. Lo devuelven el
+// detalle de la lista y el alta de un artículo.
+type ArticuloDetalle struct {
+	Articulo
+	EstadoProducto string            `json:"estado_producto"`
+	Producto       *ProductoCatalogo `json:"producto"` // null si Catálogo no tiene datos
 }
 
 // ListaDetalle es la lista con sus artículos (respuesta de GET /listas/{id}).
 type ListaDetalle struct {
 	Lista
-	Articulos []Articulo `json:"articulos"` // nunca null: lista vacía es []
+	Articulos []ArticuloDetalle `json:"articulos"` // nunca null: lista vacía es []
 }
 
 // =============================================================================
@@ -72,6 +135,119 @@ type Repositorio interface {
 	Obtener(contexto context.Context, usuarioID, listaID string) (*ListaDetalle, error)
 	Actualizar(contexto context.Context, usuarioID, listaID string, nombre, estado *string) (*Lista, error)
 	Eliminar(contexto context.Context, usuarioID, listaID string) (bool, error)
+
+	// AgregarArticulo guarda el producto o, si ya estaba en la lista, suma la
+	// cantidad. creado es true si el artículo es nuevo. Devuelve ErrMaxArticulos
+	// o ErrMaxCantidad si se supera un tope.
+	// ListaEsDelUsuario indica si la lista existe y pertenece al usuario. Se usa
+	// antes de consultar a Catálogo: una lista ajena responde 404 aunque
+	// Catálogo esté caído o el producto no exista.
+	ListaEsDelUsuario(contexto context.Context, usuarioID, listaID string) (bool, error)
+	AgregarArticulo(contexto context.Context, usuarioID, listaID, productoID string, cantidad int, limites Limites) (articulo *Articulo, creado bool, errorObtenido error)
+	// ActualizarArticulo cambia cantidad y/o estado comprado; nil deja el valor.
+	ActualizarArticulo(contexto context.Context, usuarioID, listaID string, articuloID int64, cantidad *int, estaComprado *bool) (*Articulo, error)
+	// EliminarArticulo quita el artículo y devuelve true si existía en esa lista.
+	EliminarArticulo(contexto context.Context, usuarioID, listaID string, articuloID int64) (bool, error)
+
+	// HuellaLote devuelve la huella del lote ya aplicado con esa clave en la
+	// lista del usuario; existe es false si la clave no se usó todavía.
+	HuellaLote(contexto context.Context, usuarioID, listaID, clave string) (huella string, existe bool, errorObtenido error)
+	// AgregarLote aplica todos los artículos del lote o ninguno (SUP-318) y
+	// registra la clave de idempotencia en la misma transacción.
+	AgregarLote(contexto context.Context, usuarioID, listaID string, lote Lote, limites Limites) (ResultadoLote, error)
+}
+
+// =============================================================================
+// Agregado en lote (SUP-318)
+// =============================================================================
+
+// Motivos de rechazo de un producto del lote (detalle del 409 del contrato).
+const (
+	MotivoNoEncontrado   = "no_encontrado"   // Catálogo no tiene el producto
+	MotivoCantidadMaxima = "cantidad_maxima" // la cantidad, sumada a la que ya hay, supera el tope
+)
+
+// ArticuloLote es un producto pedido en el lote, ya validado y sin repetidos.
+type ArticuloLote struct {
+	ProductoID string
+	Cantidad   int
+}
+
+// Lote es lo que se guarda de una vez: los artículos, la Idempotency-Key y la
+// huella del contenido que se registra junto a la clave.
+type Lote struct {
+	Clave     string
+	Huella    string
+	Articulos []ArticuloLote
+}
+
+// Rechazo indica un producto del lote que no se pudo agregar y por qué.
+type Rechazo struct {
+	ProductoID string `json:"producto_id"`
+	Motivo     string `json:"motivo"`
+}
+
+// ResultadoLote informa qué pasó con el lote. Si Rechazados no está vacío no
+// se guardó nada.
+type ResultadoLote struct {
+	ListaExiste bool      // false si la lista no existe o es de otro usuario
+	Repetido    bool      // la clave ya se había aplicado con la misma huella: no se sumó otra vez
+	Rechazados  []Rechazo // productos que superan la cantidad máxima
+}
+
+// ErrClaveReutilizada indica que la Idempotency-Key ya se usó en esa lista con
+// un lote distinto. Devolver el resultado anterior engañaría al cliente.
+var ErrClaveReutilizada = errors.New("la clave de idempotencia ya se usó con otro lote")
+
+// NormalizarLote suma los productos repetidos (regla del contrato) y los
+// ordena por producto_id. El orden fijo hace que la huella no dependa del
+// orden en que el frontend envía los artículos. La suma se satura en
+// math.MaxInt en vez de desbordar: así una suma enorme sigue superando la
+// cantidad máxima y el lote se rechaza con 409, en lugar de dar la vuelta a un
+// número pequeño y guardarse.
+func NormalizarLote(articulos []ArticuloLote) []ArticuloLote {
+	sumados := map[string]int{}
+	for _, articulo := range articulos {
+		sumados[articulo.ProductoID] = sumarSinDesbordar(sumados[articulo.ProductoID], articulo.Cantidad)
+	}
+	normalizados := make([]ArticuloLote, 0, len(sumados))
+	for productoID, cantidad := range sumados {
+		normalizados = append(normalizados, ArticuloLote{ProductoID: productoID, Cantidad: cantidad})
+	}
+	sort.Slice(normalizados, func(izquierda, derecha int) bool {
+		return normalizados[izquierda].ProductoID < normalizados[derecha].ProductoID
+	})
+	return normalizados
+}
+
+// sumarSinDesbordar suma dos cantidades positivas y devuelve math.MaxInt si el
+// resultado no cabe en un int.
+func sumarSinDesbordar(acumulado, cantidad int) int {
+	if cantidad > math.MaxInt-acumulado {
+		return math.MaxInt
+	}
+	return acumulado + cantidad
+}
+
+// HuellaDe calcula el SHA-256 hexadecimal de un lote ya normalizado.
+func HuellaDe(articulos []ArticuloLote) string {
+	resumen := sha256.New()
+	for _, articulo := range articulos {
+		fmt.Fprintf(resumen, "%s:%d;", articulo.ProductoID, articulo.Cantidad)
+	}
+	return hex.EncodeToString(resumen.Sum(nil))
+}
+
+// Catalogo es lo que Motor necesita de Catálogo: el estado de varios productos
+// en una sola llamada. Devuelve ErrCatalogoNoDisponible si no pudo consultarlo.
+type Catalogo interface {
+	Consultar(contexto context.Context, productoIDs []string) (map[string]Disponibilidad, error)
+}
+
+// Disponibilidad es el estado de un producto según Catálogo.
+type Disponibilidad struct {
+	Estado   string
+	Producto *ProductoCatalogo
 }
 
 // =============================================================================

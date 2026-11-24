@@ -42,7 +42,8 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 | Catálogo / `app_catalogo` | `scraper.cadenas_supermercado` | SELECT, INSERT; UPDATE sólo columna `esta_activa` |
 | Catálogo / `app_catalogo` | `scraper.sucursales_supermercado`, `scraper.capturas_precios`, `scraper.lotes_catalogo` | SELECT, INSERT |
 | Motor de rutas / `app_rutas` | `rutas.listas_compras` | SELECT, INSERT, UPDATE, DELETE |
-| Motor de rutas / `app_rutas` | `rutas.articulos_lista_compras` | SELECT (escritura con SUP-241) |
+| Motor de rutas / `app_rutas` | `rutas.articulos_lista_compras` | SELECT, INSERT, UPDATE, DELETE (SUP-241/327) |
+| Motor de rutas / `app_rutas` | `rutas.lotes_articulos_aplicados` | SELECT, INSERT (claves del lote, SUP-318) |
 | Gateway y worker | Ninguna tabla PostgreSQL | Sin credencial PostgreSQL |
 
 Sólo Catálogo necesita USAGE en las secuencias de cadenas, sucursales y capturas.

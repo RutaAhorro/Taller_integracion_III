@@ -3,14 +3,17 @@ package unit_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/config"
 )
 
 var valido = map[string]string{
-	"RUTAS_DB_URL":         "postgres://app_rutas:fixture-private@db:5432/supermercados?sslmode=disable",
-	"JWT_SECRET":           strings.Repeat("j", 32),
-	"CORS_ALLOWED_ORIGINS": "https://frontend.example, http://localhost:5173",
+	"RUTAS_DB_URL":            "postgres://app_rutas:fixture-private@db:5432/supermercados?sslmode=disable",
+	"JWT_SECRET":              strings.Repeat("j", 32),
+	"CORS_ALLOWED_ORIGINS":    "https://frontend.example, http://localhost:5173",
+	"CATALOGO_INTERNAL_URL":   "http://catalogo:8080/",
+	"CATALOGO_CONSULTA_TOKEN": strings.Repeat("t", 32) + "-fixture-private",
 }
 
 func entorno(cambios map[string]string) func(string) (string, bool) {
@@ -32,6 +35,10 @@ func TestConfigValida(prueba *testing.T) {
 	if strings.Join(configuracion.OrigenesCORS, "|") != "https://frontend.example|http://localhost:5173" ||
 		configuracion.DBPoolMax != 5 || configuracion.MaxListas != 100 || configuracion.Puerto != "8001" {
 		prueba.Fatalf("%+v", configuracion)
+	}
+	// La barra final del origen se quita para no duplicarla al armar la URL.
+	if configuracion.CatalogoURL != "http://catalogo:8080" || configuracion.CatalogoPlazo != 2*time.Second {
+		prueba.Fatalf("catálogo por defecto: %q %v", configuracion.CatalogoURL, configuracion.CatalogoPlazo)
 	}
 }
 
@@ -55,6 +62,17 @@ func TestConfigRechazaSinExponerSecretos(prueba *testing.T) {
 		{"RUTAS_DB_POOL_MAX", "+5"},
 		{"RUTAS_MAX_LISTAS", "0"},
 		{"PORT", "http"},
+		{"CATALOGO_INTERNAL_URL", ""},
+		{"CATALOGO_INTERNAL_URL", "ftp://catalogo"},
+		{"CATALOGO_INTERNAL_URL", "http://catalogo:8080/internal"},
+		{"CATALOGO_INTERNAL_URL", "http://usuario:fixture-private@catalogo"},
+		{"CATALOGO_CONSULTA_TOKEN", ""},
+		{"CATALOGO_CONSULTA_TOKEN", "fixture-private"},
+		{"CATALOGO_CONSULTA_TOKEN", " " + strings.Repeat("t", 32) + "-fixture-private"},
+		{"CATALOGO_CONSULTA_TOKEN", valido["JWT_SECRET"]},
+		{"RUTAS_CATALOGO_TIMEOUT", "0s"},
+		{"RUTAS_CATALOGO_TIMEOUT", "31s"},
+		{"RUTAS_CATALOGO_TIMEOUT", "dos"},
 	}
 	for _, caso := range casos {
 		_, errorObtenido := config.Cargar(entorno(map[string]string{caso[0]: caso[1]}))

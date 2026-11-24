@@ -5,3 +5,5 @@ metadata:
 data:
   CORS_ALLOWED_ORIGINS: 'http://miweb-vmatus.dev.censei.cl,https://miweb-vmatus.dev.censei.cl'
   RUTAS_DB_POOL_MAX: '5'
+  # SUP-241: origen interno de Catálogo para la consulta de disponibilidad.
+  CATALOGO_INTERNAL_URL: 'http://catalogo:8080'

@@ -31,8 +31,10 @@ El orden real es este:
 | 12 | `08_normalizar_rol_admin_y_auditoria.sql` | Rol `admin` y auditoría (SUP-242) |
 | 13 | `09_plan_y_ultimo_acceso.sql` | Plan y último acceso de usuarios (SUP-242) |
 | 14 | `10_restringir_rol_usuarios.sql` | Restricción de los roles de usuario (SUP-347) |
-| 15 | `11_direcciones_usuario.sql` | Direcciones guardadas del usuario y permisos de Identidad (SUP-239) |
-| 16 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
+| 15 | `11_articulos_lista_producto.sql` | Artículos de lista por `producto_id` de Catálogo (SUP-327) |
+| 16 | `11_direcciones_usuario.sql` | Direcciones guardadas del usuario y permisos de Identidad (SUP-239) |
+| 17 | `12_lotes_articulos_idempotencia.sql` | Claves `Idempotency-Key` del lote de artículos (SUP-318) |
+| 18 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -40,7 +42,7 @@ alfabético es siempre el mismo y respeta las dependencias. No se renombran
 porque el código de Identidad, Control y Motor, los tests y las bases ya
 desplegadas los identifican por su nombre actual.
 
-**Regla para scripts nuevos:** usar el siguiente número libre (hoy `12_`) y
+**Regla para scripts nuevos:** usar el siguiente número libre (hoy `13_`) y
 nunca repetir uno existente. Si el script depende de otro, debe ordenarse
 después de él.
 
@@ -76,7 +78,9 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [08_normalizar_rol_admin_y_auditoria.sql](08_normalizar_rol_admin_y_auditoria.sql) | Normaliza el alias histórico `administrador` a `admin` y crea `api.auditoria_admin_usuarios` con permisos para Identidad (SUP-242). Aplicar después de 06; el `06` vigente restaura esos grants si se re-ejecuta sobre una base ya migrada. |
 | [09_plan_y_ultimo_acceso.sql](09_plan_y_ultimo_acceso.sql) | Agrega `api.usuarios.plan` (`basico`/`premium`) y `ultimo_acceso`, usados por el panel administrativo (SUP-242). Aplicar después de 08. Idempotente; no requiere grants nuevos porque el permiso es de tabla. El DDL y el `VALIDATE CONSTRAINT` corren en transacciones separadas para no retener el `AccessExclusiveLock` durante el escaneo. |
 | [10_restringir_rol_usuarios.sql](10_restringir_rol_usuarios.sql) | Normaliza `api.usuarios.rol` y agrega `usuarios_rol_check`, que sólo admite `admin`, `colaborador` y `registrado` (SUP-347). Aborta si encuentra otro valor, para corregirlo a mano. Aplicar después de 09: Identidad no arranca sin esta restricción. Idempotente; valida en una transacción aparte, igual que la 09. |
+| [11_articulos_lista_producto.sql](11_articulos_lista_producto.sql) | Cambia `rutas.articulos_lista_compras` al `producto_id` de Catálogo, sin FK, y elimina `producto_normalizado_id` con su FK hacia `api.productos_normalizados` (SUP-327, [contrato](../../docs/Contratos/CONTRATO_ARTICULOS_LISTA.md)). Los artículos previos se conservan con `producto_id` NULL. Da a `app_rutas` `INSERT`, `UPDATE` y `DELETE` sobre la tabla; el `06` vigente ya los concede. Aplicar después de 10. Idempotente. |
 | [11_direcciones_usuario.sql](11_direcciones_usuario.sql) | Adapta `api.direcciones_usuario` al CRUD de Identidad (SUP-239): agrega `comuna` (nullable en la base; la API la exige) y `creado_el`; hace opcionales `lat`/`lon` con CHECK de par y de rango; fija `es_principal` NOT NULL; crea el índice único parcial de una sola principal por usuario y concede a `app_identity` SELECT, INSERT, UPDATE y DELETE sobre la tabla, nada más. Aplicar después de 06 y 10: Identidad no arranca sin ella. Idempotente; si hubiera varias principales previas conserva la más antigua. Valida los CHECK en una transacción aparte, igual que la 09. El `06` vigente también concede el permiso para sobrevivir a una re-ejecución. |
+| [12_lotes_articulos_idempotencia.sql](12_lotes_articulos_idempotencia.sql) | Crea `rutas.lotes_articulos_aplicados`: una fila por lote aplicado con su `Idempotency-Key` y la huella del contenido, para que un reintento no sume dos veces (SUP-318). FK en cascada hacia la lista; `app_rutas` sólo tiene `SELECT` e `INSERT`. El `06` vigente admite la tabla en su matriz. Aplicar después de 11. Idempotente. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para

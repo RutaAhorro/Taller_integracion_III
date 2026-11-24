@@ -45,6 +45,13 @@ spec:
                 secretKeyRef:
                   name: db-secret
                   key: JWT_SECRET
+            # SUP-241: Motor verifica productos en Catálogo con el mismo token de
+            # consulta. Obligatorio: sin él el pod no arranca.
+            - name: CATALOGO_CONSULTA_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: catalogo-internal-secret
+                  key: consulta-token
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
