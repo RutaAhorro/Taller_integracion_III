@@ -6,12 +6,10 @@ import { ProductSkeleton } from '@/features/catalogo/ProductSkeleton'
 import { Footer } from '@/components/Footer'
 import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { useCart } from '@/features/catalogo/CartContext'
-import { useCatalog } from '@/features/catalogo/useCatalog'
 
 export default function Page() {
-  const { query, activeMarket, category } = useLayoutContext()
+  const { query, catalogo } = useLayoutContext()
   const { addToCart } = useCart()
-  const catalogo = useCatalog(query, category, activeMarket)
 
   const manejarDesplazamiento = (evento: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = evento.currentTarget;
@@ -64,10 +62,13 @@ export default function Page() {
                   <ProductSkeleton key={indice} />
                 ))}
               </div>
-            ) : catalogo.error ? (
+             ) : catalogo.notice ? (
+               <p role="status" className="py-12 text-center text-sm text-muted-foreground">{catalogo.notice}</p>
+             ) : catalogo.error ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
                 <Store className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
-                <p className="text-sm text-muted-foreground">{catalogo.error}</p>
+                 <p className="text-sm text-muted-foreground">{catalogo.error}</p>
+                 <button type="button" className="text-sm underline" onClick={catalogo.retry}>Reintentar</button>
               </div>
             ) : catalogo.filtered.length > 0 ? (
               <div className="flex flex-col gap-6 pb-6">
@@ -76,12 +77,18 @@ export default function Page() {
                     <ProductCard key={producto.id} product={producto} onAdd={manejarAgregar} />
                   ))}
                 </div>
-                {catalogo.isFetchingMore && (
+                 {catalogo.isFetchingMore && (
                   <div className="flex justify-center items-center py-6">
                     <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                     <span className="ml-2 text-sm font-medium text-muted-foreground">Cargando más productos...</span>
                   </div>
-                )}
+                 )}
+                 {catalogo.loadMoreError && (
+                   <div role="alert" className="py-4 text-center text-sm">
+                     <p>{catalogo.loadMoreError}</p>
+                     <button type="button" className="underline" onClick={catalogo.fetchMore}>Reintentar</button>
+                   </div>
+                 )}
               </div>
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center">
