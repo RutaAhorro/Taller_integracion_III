@@ -109,11 +109,12 @@ func TestListarSupermercados_SQL(prueba *testing.T) {
 // TestPostgresCategorias verifica valores completos y selección exacta contra
 // PostgreSQL aislado, incluyendo signos, duplicados y cadenas fuera de la página.
 func TestPostgresCategorias(prueba *testing.T) {
-	enrutador := enrutadorPostgres(prueba)
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
 	sufijo := strings.ToUpper(uuid.NewString()[:8])
 	categoria := "Lácteos / masas & 100%_" + sufijo
-	alfa := sembrarCadena(prueba, enrutador, "Categoria Alfa "+sufijo)
-	beta := sembrarCadena(prueba, enrutador, "Categoria Beta "+sufijo)
+	alfa := sembrarCadena(prueba, baseDatos, enrutador, "Categoria Alfa "+sufijo)
+	beta := sembrarCadena(prueba, baseDatos, enrutador, "Categoria Beta "+sufijo)
 	sembrarProducto(prueba, enrutador, alfa, "Producto A "+sufijo, categoria, 1000, true)
 	sembrarProducto(prueba, enrutador, beta, "Producto B "+sufijo, " "+categoria+" ", 2000, true)
 	sembrarProducto(prueba, enrutador, beta, "Producto C "+sufijo, categoria+" especial", 3000, true)

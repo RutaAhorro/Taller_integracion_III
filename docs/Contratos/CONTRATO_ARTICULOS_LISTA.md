@@ -218,7 +218,7 @@ nunca deja datos a medias.
 | Servicio | Tarea | Qué necesita de este contrato |
 | --- | --- | --- |
 | **Catálogo** (Marcelo) | SUP-312 | Una consulta interna en lote por `producto_id` que devuelva, por cada id: si existe, `en_stock`, `nombre`, `marca`, `supermercado`, `unidad`, `precio`, `url_imagen` y fecha de captura. Con token de servicio, no expuesta por el Gateway. **La forma exacta la define Marcelo en SUP-312.** |
-| **Catálogo** (Marcelo) | SUP-244 / SUP-317 | Recibir `producto_id` y resolver sus equivalentes por EAN en otras sucursales |
+| **Catálogo** (Marcelo) | SUP-244 / SUP-317 | Recibir `producto_id` y resolver sus equivalentes por EAN en otras sucursales. La forma exacta de SUP-244 está en el [contrato de equivalencia por EAN](CONTRATO_EQUIVALENCIA_EAN.md) |
 | **IA** (Renato) | SUP-325 | Devolver candidatos con `producto_id` de Catálogo y una cantidad en envases, listos para el lote |
 | **Rutas** (Vicho) | SUP-316 | Leer de la lista los pares `producto_id` + `cantidad` |
 | **Frontend** (Daniela) | SUP-252 / SUP-329 | Los endpoints de la sección 3, `estado_producto` para mostrar alertas y `Idempotency-Key` en el lote |

@@ -68,6 +68,10 @@ func ejecutar(registrador *slog.Logger) error {
 			MaximoProductos:  configuracion.MaximoProductosConsulta,
 			AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
 		}, time.Now),
+		Equivalencias: services.NuevoServicioEquivalencias(repositories.NuevoRepositorioEquivalencias(baseDatos), services.LimitesEquivalencia{
+			MaximoProductos:  configuracion.MaximoProductosConsulta,
+			AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
+		}, time.Now),
 		Ingesta:                repositories.NuevoRepositorioIngesta(baseDatos),
 		ClaveJWT:               configuracion.ClaveJWT,
 		TokenIngesta:           configuracion.TokenIngesta,
