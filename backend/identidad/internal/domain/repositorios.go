@@ -38,8 +38,9 @@ type RepositorioRecuperacion interface {
 	// Validar comprueba que el token exista, no haya expirado ni esté usado,
 	// sin consumirlo todavía.
 	Validar(contexto context.Context, hashToken []byte) error
-	// Consumir marca el token como usado y guarda el nuevo hash de contraseña
-	// en la misma transacción. Falla si otro intento lo consumió primero.
+	// Consumir marca el token como usado, inutiliza los demás tokens pendientes
+	// del usuario y guarda el nuevo hash de contraseña en la misma transacción.
+	// Falla si otro intento lo consumió primero.
 	Consumir(contexto context.Context, hashToken []byte, hashContrasena string, actualizadoEl time.Time) error
 }
 

@@ -112,6 +112,36 @@ func TestRecuperacionPostgresTokenValidoYUnSoloUso(prueba *testing.T) {
 	}
 }
 
+// TestRecuperacionPostgresInvalidaTodosLosTokensDelUsuario comprueba que, si el
+// usuario pidió varios enlaces, usar uno deja los demás sin efecto en la misma
+// transacción.
+func TestRecuperacionPostgresInvalidaTodosLosTokensDelUsuario(prueba *testing.T) {
+	runtime, operador := basesDePrueba(prueba)
+	contexto := context.Background()
+	prefijo := "recuperacion-varios-" + uuid.NewString()[:8]
+	usuarioID := cuentaConClave(prueba, runtime, operador, prefijo, "ClaveInicial1!")
+	const tokenUsado = "token-primero"
+	const tokenHermano = "token-segundo"
+	hashUsado := sembrarTokenRestablecer(prueba, runtime, usuarioID, tokenUsado, 30*time.Minute, false)
+	hashHermano := sembrarTokenRestablecer(prueba, runtime, usuarioID, tokenHermano, 30*time.Minute, false)
+	servicio := services.NuevoServicioRecuperacion(repositories.NuevoRepositorioRecuperacion(runtime))
+
+	if errorObtenido := servicio.Restablecer(contexto, tokenUsado, "ClaveNueva1!"); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+
+	if !tokenEstaUsado(prueba, runtime, hashUsado) || !tokenEstaUsado(prueba, runtime, hashHermano) {
+		prueba.Fatal("quedó un token pendiente después del restablecimiento")
+	}
+	hashFinal := hashGuardado(prueba, runtime, usuarioID)
+	if errorObtenido := servicio.Restablecer(contexto, tokenHermano, "OtraClave2!"); !errors.Is(errorObtenido, domain.ErrTokenRecuperacionInvalido) {
+		prueba.Fatalf("el token hermano sigue sirviendo: error=%v", errorObtenido)
+	}
+	if hashFinal != hashGuardado(prueba, runtime, usuarioID) {
+		prueba.Fatal("el token hermano cambió la contraseña")
+	}
+}
+
 // TestRecuperacionPostgresTokenExpirado comprueba que un token vencido no sirve
 // ni se consume.
 func TestRecuperacionPostgresTokenExpirado(prueba *testing.T) {

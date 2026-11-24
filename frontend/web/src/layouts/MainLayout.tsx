@@ -1,11 +1,11 @@
-// Comparte navegación, búsqueda y carrito; las cadenas se derivan de productos devueltos por Catálogo.
+// Comparte filtros, productos y facetas para que el lateral y el listado usen la misma consulta.
 import { useCallback, useEffect, useState } from "react";
 import { Outlet, useOutletContext, useLocation } from "react-router-dom";
 import { TopNav } from "@/layouts/TopNav";
 import { SideBar } from "@/layouts/Sidebar";
 import { CartSidebar } from "@/features/catalogo/CartSidebar";
 import BottomNav from "@/layouts/BottomNav";
-import { getProducts, getMarketsFromProducts } from "@/features/catalogo/products-api";
+import { useCatalog } from "@/features/catalogo/useCatalog";
 import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/features/catalogo/CartContext";
@@ -14,6 +14,7 @@ type TipoContextoDiseno = {
   activeMarket: string | null;
   category: string;
   markets: UiSupermarket[];
+  catalogo: ReturnType<typeof useCatalog>;
 };
 
 export function useLayoutContext() {
@@ -25,8 +26,9 @@ export function MainLayout() {
   const [categoria, setCategoria] = useState("");
   // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
   const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
-  const [supermercadoActivo, setSupermercadoActivo] = useState<string | null>(null);
-  const [supermercadosDisponibles, setSupermercadosDisponibles] = useState<UiSupermarket[]>([]);
+  // El nombre seleccionado no depende de las facetas que se vacían durante una carga.
+  const [supermercadoActivo, setSupermercadoActivo] = useState<UiSupermarket | null>(null);
+  const catalogo = useCatalog(consulta, categoria, supermercadoActivo);
   const cerrarBarraLateral = useCallback(() => setBarraLateralAbierta(false), []);
   const restablecerFiltros = () => {
     setConsulta("");
@@ -44,23 +46,12 @@ export function MainLayout() {
     'dashboard';
 
   useEffect(() => {
-    let estaMontado = true;
-
-    getProducts('?limit=100&en_stock=true')
-      .then(({ products }) => {
-        if (!estaMontado) return;
-
-        // Hasta SUP-371 solo se conocen las cadenas de esta página; no se descarga todo el catálogo.
-        setSupermercadosDisponibles(getMarketsFromProducts(products));
-      })
-      .catch(() => {
-        if (estaMontado) setSupermercadosDisponibles([]);
-      });
-
-    return () => {
-      estaMontado = false;
-    };
-  }, []);
+    // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
+    if (catalogo.marketsReady && supermercadoActivo &&
+        !catalogo.markets.some((supermercado) => supermercado.id === supermercadoActivo.id)) {
+      setSupermercadoActivo(null);
+    }
+  }, [catalogo.marketsReady, catalogo.markets, supermercadoActivo]);
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -69,14 +60,18 @@ export function MainLayout() {
         open={barraLateralAbierta}
         onClose={cerrarBarraLateral}
         onResetFilters={restablecerFiltros}
-        activeMarket={supermercadoActivo}
-        availableMarkets={supermercadosDisponibles}
+        activeMarket={supermercadoActivo?.id ?? null}
+        availableMarkets={catalogo.markets}
+        cargandoSupermercados={catalogo.isLoading}
+        errorSupermercados={catalogo.error !== null}
+        avisoSupermercados={catalogo.notice}
+        alReintentarSupermercados={catalogo.retry}
         onSelectCategory={(valor) => {
           setConsulta("");
           setCategoria(valor);
         }}
         onSelectMarket={(id) => {
-          setSupermercadoActivo(id);
+          setSupermercadoActivo(catalogo.markets.find((supermercado) => supermercado.id === id) ?? null);
           setBarraLateralAbierta(false);
         }}
         activeCategory={categoria}
@@ -94,7 +89,7 @@ export function MainLayout() {
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo, category: categoria, markets: supermercadosDisponibles } satisfies TipoContextoDiseno} />
+        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo?.id ?? null, category: categoria, markets: catalogo.markets, catalogo } satisfies TipoContextoDiseno} />
       </div>
 
       {totalItems > 0 && (

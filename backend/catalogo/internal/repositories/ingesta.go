@@ -73,7 +73,7 @@ func (repositorio *RepositorioIngesta) ObtenerCadena(contexto context.Context, c
 		if !errors.Is(errorBusqueda, gorm.ErrRecordNotFound) {
 			return errorBusqueda
 		}
-		nueva := domain.CadenaSupermercado{Nombre: nombreLimpio, EstaActiva: true, CreadoEl: time.Now()}
+		nueva := domain.CadenaSupermercado{Nombre: nombreLimpio, EstaActiva: true, CreadoEl: time.Now().UTC()}
 		if errorCreacion := transaccion.Create(&nueva).Error; errorCreacion != nil {
 			return errorCreacion
 		}
@@ -153,7 +153,10 @@ func (repositorio *RepositorioIngesta) IngestarLote(contexto context.Context, lo
 				return errorRecibo
 			}
 		}
-		ahora := time.Now()
+		// capturado_el es timestamp sin zona y el servicio compara en UTC;
+		// guardar la hora local del proceso sesgaría la vigencia del precio.
+		ahora := time.Now().UTC()
+
 		productos, capturas := normalizarProductos(lote.Productos, resultado)
 		// Sin ítems válidos no hay INSERT masivo vacío.
 		if len(capturas) > 0 {

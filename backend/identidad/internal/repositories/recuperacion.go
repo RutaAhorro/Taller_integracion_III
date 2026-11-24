@@ -42,11 +42,12 @@ func (repositorio *repositorioRecuperacion) Validar(contexto context.Context, ha
 	return nil
 }
 
-// Consumir marca el token como usado y actualiza la contraseña en una sola
-// transacción. El UPDATE condicional es el candado de un solo uso: dos
-// peticiones concurrentes compiten por la misma fila y sólo una obtiene el
-// usuario; la otra ve cero filas y se revierte. Si falla la escritura del
-// usuario, la transacción se revierte y el token queda disponible.
+// Consumir marca el token como usado, inutiliza los demás enlaces pendientes
+// del usuario y actualiza la contraseña en una sola transacción. El UPDATE
+// condicional es el candado de un solo uso: dos peticiones concurrentes compiten
+// por la misma fila y sólo una obtiene el usuario; la otra ve cero filas y se
+// revierte. Si falla alguna escritura, la transacción se revierte y ningún token
+// queda consumido.
 func (repositorio *repositorioRecuperacion) Consumir(contexto context.Context, hashToken []byte, hashContrasena string, actualizadoEl time.Time) error {
 	return repositorio.baseDatos.WithContext(contexto).Transaction(func(transaccion *gorm.DB) error {
 		var usuarioID string
@@ -59,6 +60,16 @@ func (repositorio *repositorioRecuperacion) Consumir(contexto context.Context, h
 		}
 		if usuarioID == "" {
 			return domain.ErrTokenRecuperacionInvalido
+		}
+
+		// Si el usuario pidió varios enlaces, un solo restablecimiento debe
+		// dejarlos todos sin efecto: ningún token antiguo podrá cambiar la clave
+		// después de éste. El token usado ya quedó marcado por el UPDATE anterior.
+		demasTokens := transaccion.Exec(`UPDATE api.tokens_recuperacion
+			SET usado_el = now()
+			WHERE usuario_id = ? AND usado_el IS NULL`, usuarioID)
+		if demasTokens.Error != nil {
+			return demasTokens.Error
 		}
 
 		actualizacion := transaccion.Model(&domain.Usuario{}).

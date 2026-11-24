@@ -25,6 +25,7 @@ type Dependencias struct {
 	Productos          *services.ServicioProductos
 	Fuentes            *services.ServicioFuentes
 	Disponibilidad     *services.ServicioDisponibilidad
+	Equivalencias      *services.ServicioEquivalencias
 	Ingesta            domain.RepositorioIngesta
 	ClaveJWT           string
 	TokenIngesta       string

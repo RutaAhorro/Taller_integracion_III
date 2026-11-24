@@ -182,6 +182,21 @@ for name,expected in [('a'*99+'ñ'+'z','a'*99+'ñ'), ('áéíóúñ'*20,('áéí
     assert body['nombre_completo']==expected
     assert sql("SELECT nombre_completo FROM api.usuarios WHERE correo='sup272.profile@example.test';")==expected
 request('/api/v1/admin/productos',403,opener=registered)
+# SUP-239: CRUD de direcciones tras Gateway, aislado por usuario (404, nunca 403).
+ruta_direcciones='/api/v1/usuarios/me/direcciones'
+request(ruta_direcciones,401)
+cliente_vecino=client()
+request('/api/v1/auth/register',201,method='POST',data={'correo':'sup239.vecino@example.test','password':'Sup239FixturePassword123!','nombre_completo':'Vecino'},opener=cliente_vecino)
+direccion_propia,_=request(ruta_direcciones,201,method='POST',data={'etiqueta':'Casa','texto_direccion':'Av. Alemania 0422','comuna':'Temuco','lat':-38.7359,'lon':-72.5904},opener=registered)
+assert direccion_propia['es_principal'] is True
+request(ruta_direcciones,400,method='POST',data={'texto_direccion':'Sin comuna'},opener=registered)
+request(ruta_direcciones,400,method='POST',data={'texto_direccion':'Calle','comuna':'Temuco','lat':95,'lon':0},opener=registered)
+request(ruta_direcciones+'/'+direccion_propia['id'],404,opener=cliente_vecino,method='PUT',data={'texto_direccion':'x','comuna':'y'})
+request(ruta_direcciones+'/'+direccion_propia['id'],404,opener=cliente_vecino,method='DELETE')
+lista_vecino,_=request(ruta_direcciones,opener=cliente_vecino)
+assert lista_vecino['data']==[]
+request(ruta_direcciones+'/'+direccion_propia['id'],204,method='DELETE',opener=registered)
+assert sql("SELECT count(*) FROM api.direcciones_usuario;")=='0'
 # Cambiar contraseña o correo exige la contraseña actual (una cookie robada no basta).
 request('/api/v1/auth/me',403,method='PUT',data={'password':'Sup272NewPassword123!'},opener=registered)
 request('/api/v1/auth/me',403,method='PUT',data={'correo':'sup272.hijack@example.test','current_password':'WrongPassword123!'},opener=registered)

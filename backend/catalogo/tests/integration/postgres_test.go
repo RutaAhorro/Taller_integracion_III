@@ -67,6 +67,8 @@ func enrutadorPostgres(prueba *testing.T, baseDatos *gorm.DB) http.Handler {
 		Fuentes:   services.NuevoServicioFuentes(repositories.NuevoRepositorioFuentes(baseDatos)),
 		Disponibilidad: services.NuevoServicioDisponibilidad(repositories.NuevoRepositorioDisponibilidad(baseDatos),
 			services.LimitesDisponibilidad{MaximoProductos: 10, AntiguedadMaxima: time.Hour}, time.Now),
+		Equivalencias: services.NuevoServicioEquivalencias(repositories.NuevoRepositorioEquivalencias(baseDatos),
+			services.LimitesEquivalencia{MaximoProductos: 10, AntiguedadMaxima: time.Hour}, time.Now),
 		Ingesta:       repositories.NuevoRepositorioIngesta(baseDatos),
 		TokenIngesta:  tokenIngestaPostgres,
 		TokenConsulta: tokenConsultaPostgres,

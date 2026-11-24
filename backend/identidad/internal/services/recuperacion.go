@@ -33,8 +33,9 @@ func hashTokenRestablecimiento(token string) []byte {
 
 // Restablecer comprueba primero el token, sin gastar bcrypt en tokens
 // inválidos. Después valida la clave nueva con la misma política de PUT /auth/me
-// y finalmente consume el token y guarda el hash en una sola transacción, para
-// que dos peticiones concurrentes no puedan reutilizarlo.
+// y finalmente consume el token, inutiliza los demás enlaces pendientes del
+// usuario y guarda el hash en una sola transacción, para que dos peticiones
+// concurrentes no puedan reutilizarlo.
 func (servicio *ServicioRecuperacion) Restablecer(contexto context.Context, token, contrasenaNueva string) error {
 	if strings.TrimSpace(token) == "" {
 		return domain.ErrTokenRecuperacionInvalido
