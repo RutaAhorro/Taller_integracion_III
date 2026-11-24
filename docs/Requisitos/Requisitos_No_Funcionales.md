@@ -11,7 +11,7 @@ se cumple hoy.
 | --- | --- | --- | --- |
 | RNF-01 | Extracción concurrente | La extracción no bloquea las demás operaciones | Scraper Go como worker separado, con trabajos por Redis Streams |
 | RNF-02 | Integridad de la información | Si la tienda se cae a mitad de la extracción, no se pierden los precios anteriores | Ingesta transaccional e idempotente en Catálogo ([D07](../Decisiones/07_Ingesta_idempotente.md)) |
-| RNF-03 | Frecuencia de actualización | Las actualizaciones masivas corren en horarios de baja demanda, sin detener la plataforma | **Parcial:** los trabajos corren en segundo plano, pero no hay programación horaria (no existe un CronJob); hoy se lanzan a mano con el bot |
+| RNF-03 | Frecuencia de actualización | Las actualizaciones masivas corren en horarios de baja demanda, sin detener la plataforma | Sí: CronJob `scraping-scheduler` (`infrastructure/k8s/control-scraping/cronjob.yaml`) a las 03:00 de `America/Santiago` (horario configurable). Encola las cinco cadenas por `Service/api` con `SCRAPING_SERVICE_TOKEN` desde Secret; sin detener servicios ni duplicar ejecuciones solapadas ([guía](../Guias/GUIA_CONTROL_SCRAPING_DESACOPLADO.md#programación-de-actualizaciones-sup-366)) |
 | RNF-04 | Incorporación de fuentes | Agregar un supermercado no afecta a los ya integrados | Un archivo por cadena (spider y parser) en `scraper_go/internal/extraccion/` |
 
 ## IA y servicios externos

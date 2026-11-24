@@ -1,0 +1,73 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: scraping-scheduler
+  labels: {app: scraping-scheduler}
+spec:
+  # Kubernetes no admite variables de entorno ni ConfigMap en spec.schedule.
+  # 03:00 America/Santiago es horario de baja demanda; cámbialo con kubectl patch
+  # (ver GUIA_CONTROL_SCRAPING_DESACOPLADO.md). timeZone existe desde K8s 1.27.
+  schedule: "0 3 * * *"
+  timeZone: "America/Santiago"
+  # Forbid evita solapar Jobs del programador; NO limita las extracciones
+  # asíncronas que dejan encoladas (ésas las gobierna Control/worker).
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 300
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      # POST /trabajos no es idempotente: un reintento automático podría duplicar
+      # trabajos ya encolados. Un fallo parcial se revisa antes de relanzar.
+      backoffLimit: 0
+      activeDeadlineSeconds: 900
+      template:
+        metadata:
+          labels: {app: scraping-scheduler}
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: scraping-scheduler
+              image: python:3.12-alpine
+              imagePullPolicy: IfNotPresent
+              command: ["python", "/app/programar_scraping.py"]
+              env:
+                - name: SCRAPER_API_BASE_URL
+                  valueFrom:
+                    configMapKeyRef:
+                      name: scraping-scheduler-config
+                      key: SCRAPER_API_BASE_URL
+                - name: SCRAPING_CADENAS
+                  valueFrom:
+                    configMapKeyRef:
+                      name: scraping-scheduler-config
+                      key: SCRAPING_CADENAS
+                # El valor vive fuera del repo; el manifiesto sólo referencia el Secret.
+                - name: SCRAPING_SERVICE_TOKEN
+                  valueFrom:
+                    secretKeyRef: {name: scraping-service-secret, key: token}
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 200m, memory: 128Mi}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              volumeMounts:
+                - name: scheduler-script
+                  mountPath: /app
+                  readOnly: true
+          volumes:
+            - name: scheduler-script
+              configMap:
+                name: scraping-scheduler-config
+                defaultMode: 0444
+                items:
+                  - key: programar_scraping.py
+                    path: programar_scraping.py

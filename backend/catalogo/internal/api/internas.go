@@ -169,11 +169,23 @@ func registrarIngesta(grupo *gin.RouterGroup, dependencias Dependencias) {
 	})
 }
 
-// ===== Disponibilidad =====
+// ===== Disponibilidad y equivalencias =====
 
-// registrarDisponibilidad monta la consulta por lote de Listas e IA, con un
-// token de sólo lectura distinto del de ingesta.
+// registrarDisponibilidad monta las consultas de sólo lectura de Listas, IA y
+// Rutas, con un token distinto del de ingesta. Cada consulta se registra sólo si
+// su servicio fue cableado.
 func registrarDisponibilidad(grupo *gin.RouterGroup, dependencias Dependencias) {
+	if dependencias.Disponibilidad != nil {
+		registrarConsultaDisponibilidad(grupo, dependencias)
+	}
+	if dependencias.Equivalencias != nil {
+		registrarConsultaEquivalencia(grupo, dependencias)
+	}
+}
+
+// registrarConsultaDisponibilidad atiende la verificación de stock y precio de
+// Listas e IA.
+func registrarConsultaDisponibilidad(grupo *gin.RouterGroup, dependencias Dependencias) {
 	servicio, registrador := dependencias.Disponibilidad, dependencias.Registrador
 	grupo.POST("/productos/disponibilidad", func(contexto *gin.Context) {
 		var solicitud domain.ConsultaDisponibilidadDTO
@@ -190,6 +202,30 @@ func registrarDisponibilidad(grupo *gin.RouterGroup, dependencias Dependencias) 
 			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_product_id"})
 		default:
 			registrador.Error("catalogo_disponibilidad_error", "request_id", contexto.Writer.Header().Get("X-Request-ID"), "error", errorConsulta)
+			contexto.JSON(http.StatusInternalServerError, gin.H{"error": "catalogo_internal_error"})
+		}
+	})
+}
+
+// registrarConsultaEquivalencia atiende la agrupación por EAN que usa el motor
+// de rutas para comparar el mismo producto entre sucursales.
+func registrarConsultaEquivalencia(grupo *gin.RouterGroup, dependencias Dependencias) {
+	servicio, registrador := dependencias.Equivalencias, dependencias.Registrador
+	grupo.POST("/productos/equivalencias", func(contexto *gin.Context) {
+		var solicitud domain.ConsultaEquivalenciaDTO
+		if !decodificarCuerpo(contexto, &solicitud, dependencias.MaximoBytesCuerpo) {
+			return
+		}
+		respuesta, errorConsulta := servicio.Consultar(contexto.Request.Context(), solicitud.ProductoIDs)
+		switch {
+		case errorConsulta == nil:
+			contexto.JSON(http.StatusOK, respuesta)
+		case errors.Is(errorConsulta, services.ErrLoteEquivalenciaVacio), errors.Is(errorConsulta, services.ErrLoteEquivalenciaExcesivo):
+			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_batch"})
+		case errors.Is(errorConsulta, services.ErrIDProductoEquivalencia):
+			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_product_id"})
+		default:
+			registrador.Error("catalogo_equivalencia_error", "request_id", contexto.Writer.Header().Get("X-Request-ID"), "error", errorConsulta)
 			contexto.JSON(http.StatusInternalServerError, gin.H{"error": "catalogo_internal_error"})
 		}
 	})

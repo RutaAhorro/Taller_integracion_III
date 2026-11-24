@@ -207,7 +207,9 @@ devuelve una ruta parcial.
 
 Consulta interna con token de servicio, no expuesta por el Gateway. **La forma
 exacta la define Marcelo en SUP-317.** Esta sección fija lo que Rutas necesita
-para calcular.
+para calcular. La resolución previa del mismo producto entre sucursales por EAN
+está en el [contrato de equivalencia exacta por EAN](CONTRATO_EQUIVALENCIA_EAN.md)
+(SUP-244).
 
 **Rutas envía:**
 
