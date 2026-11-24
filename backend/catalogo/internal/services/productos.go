@@ -88,6 +88,16 @@ func (servicio *ServicioProductos) ObtenerCatalogo(contexto context.Context, fil
 	}, nil
 }
 
+// ObtenerCategorias reutiliza el repositorio y garantiza un arreglo vacío en
+// lugar de null; no inventa jerarquías ni equivalencias entre supermercados.
+func (servicio *ServicioProductos) ObtenerCategorias(contexto context.Context) ([]string, error) {
+	categorias, errorConsulta := servicio.repositorio.ListarCategorias(contexto)
+	if categorias == nil {
+		categorias = []string{}
+	}
+	return categorias, errorConsulta
+}
+
 // ObtenerCatalogoAdmin normaliza el filtro administrativo (admite SKU y orden
 // por fecha) y devuelve la página pedida.
 func (servicio *ServicioProductos) ObtenerCatalogoAdmin(contexto context.Context, filtro domain.FiltroProductosDTO) (*domain.PaginaProductosAdminDTO, error) {
@@ -132,6 +142,9 @@ func (servicio *ServicioProductos) ObtenerPorID(contexto context.Context, produc
 // paginación y el orden a valores permitidos. La corrección silenciosa de
 // valores fuera de rango es contrato vigente con Frontend e IA.
 func (servicio *ServicioProductos) normalizarFiltro(filtro domain.FiltroProductosDTO, ordenesPermitidos map[string]bool) (domain.FiltroProductosDTO, error) {
+	// La categoría exacta es un valor de la BD, no un patrón: conserva signos,
+	// tildes y mayúsculas. SQL la recibe como parámetro, sin interpolación.
+	filtro.CategoriaExacta = strings.TrimSpace(filtro.CategoriaExacta)
 	if strings.TrimSpace(filtro.Query) != "" {
 		filtro.Query = servicio.sanearBusqueda(filtro.Query)
 		if len(filtro.Query) < largoMinimoBusqueda {

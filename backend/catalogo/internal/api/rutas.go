@@ -25,6 +25,7 @@ type Dependencias struct {
 	Productos          *services.ServicioProductos
 	Fuentes            *services.ServicioFuentes
 	Disponibilidad     *services.ServicioDisponibilidad
+	Equivalencias      *services.ServicioEquivalencias
 	Ingesta            domain.RepositorioIngesta
 	ClaveJWT           string
 	TokenIngesta       string
@@ -63,6 +64,7 @@ func NuevoEnrutador(dependencias Dependencias) *gin.Engine {
 	publica := enrutador.Group("/api/v1")
 	publica.GET("/productos", productos.listar)
 	publica.GET("/productos/buscar", productos.buscar)
+	publica.GET("/productos/categorias", productos.categorias)
 	publica.GET("/productos/:id", productos.detalle)
 	administracion := publica.Group("/admin/productos", exigirAdministrador(dependencias.ClaveJWT))
 	administracion.GET("", productos.listarAdmin)

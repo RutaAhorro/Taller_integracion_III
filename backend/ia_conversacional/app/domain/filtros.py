@@ -8,6 +8,7 @@ precio ascendente. No depende de HTTP ni de proveedores.
 """
 
 import re
+import unicodedata
 
 # ===== Saneamiento de filtros =====
 
@@ -36,6 +37,39 @@ def _a_lista_de_terminos(valor) -> list[str]:
     return [termino.strip() for termino in terminos if isinstance(termino, str) and termino.strip()]
 
 
+def _a_lista_de_ingredientes(valor) -> list[dict]:
+    """
+    Normaliza la lista de ingredientes de una receta.
+
+    Cada ingrediente exige un nombre no vacio (se strip) y una cantidad de
+    envases entera >= 1 (con default 1 si falta o es invalida, excluyendo bools).
+    """
+    if not isinstance(valor, list):
+        return []
+    ingredientes = []
+    for item in valor:
+        if not isinstance(item, dict):
+            continue
+        nombre = item.get("nombre")
+        if not isinstance(nombre, str):
+            continue
+        nombre_limpio = nombre.strip()
+        if not nombre_limpio:
+            continue
+        cantidad_envases = item.get("cantidad_envases")
+        if (
+            isinstance(cantidad_envases, bool)
+            or not isinstance(cantidad_envases, (int, float))
+            or (isinstance(cantidad_envases, float) and not cantidad_envases.is_integer())
+            or cantidad_envases < 1
+        ):
+            cantidad_envases = 1
+        else:
+            cantidad_envases = int(cantidad_envases)
+        ingredientes.append({"nombre": nombre_limpio, "cantidad_envases": cantidad_envases})
+    return ingredientes
+
+
 def sanitizar_filtros_crudos(crudo: dict) -> dict:
     """
     Conserva solo los campos con el tipo esperado.
@@ -59,6 +93,10 @@ def sanitizar_filtros_crudos(crudo: dict) -> dict:
     palabras_clave = _a_lista_de_terminos(crudo.get("palabras_clave"))
     if palabras_clave:
         limpio["palabras_clave"] = palabras_clave
+
+    ingredientes = _a_lista_de_ingredientes(crudo.get("ingredientes"))
+    if ingredientes:
+        limpio["ingredientes"] = ingredientes
 
     return limpio
 
@@ -88,19 +126,39 @@ def _texto_contiene(texto_primero: str, texto_segundo: str) -> bool:
     return texto_primero in texto_segundo or texto_segundo in texto_primero
 
 
-def _coincide_por_texto(frase: str, producto: dict) -> bool:
-    """Indica si la frase, completa o alguno de sus términos, calza con la categoría o el nombre del producto."""
-    frase = frase.strip().lower()
-    if not frase:
+def _normalizar_texto(texto: str) -> str:
+    """Quita tildes (NFD) y pasa a minúsculas para comparar sin importar la forma del texto."""
+    texto_nfd = unicodedata.normalize("NFD", texto)
+    letras_sin_marcas = [letra for letra in texto_nfd if unicodedata.category(letra) != "Mn"]
+    return "".join(letras_sin_marcas).strip().lower()
+
+
+def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -> bool:
+    """Indica si la frase completa o todos sus términos calzan con la categoría o el nombre del producto.
+
+    Con `exigir_todos` se exige que todos calzen; sin el flag, las frases compuestas
+    separadas por conjuncion ("frutas y verduras") se evaluan como alternativas: basta con
+    que un grupo calze.
+    """
+    frase_normalizada = _normalizar_texto(frase)
+    if not frase_normalizada:
         return False
 
-    categoria_producto = producto["categoria"].lower()
-    nombre_producto = producto["nombre"].lower()
-
-    candidatos = [frase, *_separar_terminos(frase)]
+    categoria_producto = _normalizar_texto(producto["categoria"])
+    nombre_producto = _normalizar_texto(producto["nombre"])
+    nombres_tokens = _separar_terminos(nombre_producto)
+    terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
+    objetivos = [categoria_producto, nombre_producto, *nombres_tokens]
+    if exigir_todos:
+        # Todos los términos de la frase deben calzar: "aji verde" exige "aji" y "verde".
+        return all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in terminos)
+    # Sin exigir todos, la frase puede ser una categoria compuesta ("frutas y verduras"): al
+    # separar por conjuncion queda una alternancia de subcategorias, asi que basta un grupo.
+    grupos = re.split(r"\b(?:y|o|u)\b", frase_normalizada)
     return any(
-        _texto_contiene(candidato, categoria_producto) or _texto_contiene(candidato, nombre_producto)
-        for candidato in candidatos
+        all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in _separar_terminos(grupo))
+        for grupo in grupos
+        if _separar_terminos(grupo)
     )
 
 
@@ -109,10 +167,7 @@ def _coincide_por_texto(frase: str, producto: dict) -> bool:
 
 def filtrar_productos(catalogo: list, filtros: dict) -> list:
     """
-    Aplica precio máximo, categoría y distancia máxima, y ordena por precio.
-
-    `palabras_clave` no filtra a propósito: el modelo lo restringía tanto que
-    casi cualquier pregunta sin una palabra concreta terminaba sin resultados.
+    Aplica precio máximo, categoría, palabras clave y distancia máxima, y ordena por precio.
     """
     resultado = catalogo
 
@@ -122,10 +177,71 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
 
     categoria = filtros.get("categoria")
     if isinstance(categoria, str) and categoria.strip():
-        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto)]
+        # Sin exigir_todos: las categorías compuestas ("frutas y verduras") matchean productos de cualquiera de sus partes.
+        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto, exigir_todos=False)]
+
+    palabras_clave = _a_lista_de_terminos(filtros.get("palabras_clave"))
+    if palabras_clave:
+        resultado = [
+            producto
+            for producto in resultado
+            if any(_coincide_por_texto(termino, producto) for termino in palabras_clave)
+        ]
 
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:
         resultado = [producto for producto in resultado if producto["distancia_km"] <= distancia_max]
 
     return sorted(resultado, key=lambda producto: producto["precio"])
+
+
+# ===== Vinculación de ingredientes con el catálogo =====
+
+
+def vincular_ingredientes_catalogo(
+    catalogo: list, ingredientes: list[dict], limite_candidatos: int | None = 3
+) -> tuple[list[dict], list[str]]:
+    """
+    Vincula los ingredientes de una receta con los productos reales del catálogo.
+
+    Devuelve los ingredientes resueltos con sus candidatos sugeridos (ordenados
+    por precio ascendente, hasta el limite; todos los candidatos si el limite es None) y
+    los nombres sin candidato.
+    """
+    ingredientes_receta = []
+    ingredientes_faltantes = []
+
+    for item in ingredientes:
+        candidatos = [
+            producto
+            for producto in catalogo
+            if producto.get("id") is not None and _coincide_por_texto(item["nombre"], producto)
+        ]
+        candidatos = sorted(candidatos, key=lambda producto: producto["precio"])
+        if limite_candidatos is not None:
+            candidatos = candidatos[:limite_candidatos]
+
+        if not candidatos:
+            ingredientes_faltantes.append(item["nombre"])
+            continue
+
+        ingredientes_receta.append(
+            {
+                "ingrediente": item["nombre"],
+                "cantidad_sugerida": item["cantidad_envases"],
+                "candidatos": [
+                    {
+                        "producto_id": str(producto["id"]),
+                        "nombre": producto["nombre"],
+                        "marca": producto.get("marca", ""),
+                        "unidad": producto.get("unidad", ""),
+                        "precio": producto["precio"],
+                        "supermercado": producto.get("supermercado", ""),
+                        "url_imagen": producto.get("url_imagen", ""),
+                    }
+                    for producto in candidatos
+                ],
+            }
+        )
+
+    return ingredientes_receta, ingredientes_faltantes

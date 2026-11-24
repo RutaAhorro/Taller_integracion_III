@@ -11,6 +11,7 @@ inventar productos ni tumbar el servicio.
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from typing import Any
@@ -25,6 +26,8 @@ logger = logging.getLogger(__name__)
 
 # Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=
 RUTA_PRODUCTOS_CATALOGO = "/api/v1/productos"
+# Contrato de Catálogo: POST /internal/v1/productos/disponibilidad (SUP-312).
+RUTA_DISPONIBILIDAD_CATALOGO = "/internal/v1/productos/disponibilidad"
 PRIMERA_PAGINA = 1
 
 FUENTE_CATALOGO = "catalogo"
@@ -43,9 +46,11 @@ class ProductoRepositorio:
         url_base: str = config.CATALOGO_INTERNAL_URL,
         tiempo_espera: float = config.CATALOGO_TIMEOUT,
         cliente: httpx.Client | None = None,
+        token_consulta: str | None = config.CATALOGO_CONSULTA_TOKEN,
         ttl_cache: float = config.CATALOGO_CACHE_TTL,
         limite_pagina: int = config.CATALOGO_PAGE_LIMIT,
         max_paginas: int = config.CATALOGO_MAX_PAGINAS,
+        antiguedad_maxima: float = config.CATALOGO_ANTIGUEDAD_MAXIMA,
     ) -> None:
         """
         Prepara el repositorio sin llamar a la red.
@@ -59,15 +64,31 @@ class ProductoRepositorio:
         self._limite_pagina = limite_pagina
         self._max_paginas = max_paginas
         self._cliente = cliente
+        self._token_consulta = token_consulta
         self._candado = threading.Lock()
         self._productos: list[dict[str, Any]] = []
+        self._antiguedad_maxima: float = antiguedad_maxima
         self._ultima_actualizacion: float = 0.0
+        self._ultima_carga_exitosa: float = 0.0
         self._fuente: str = FUENTE_SIN_DATOS
 
     @property
     def fuente(self) -> str:
         """Origen de los productos en memoria: 'catalogo', 'memoria' o 'sin_datos'."""
         return self._fuente
+
+    @property
+    def datos_antiguos(self) -> bool:
+        """Indica si los datos en caché superaron el límite de antigüedad máxima.
+
+        Retorna True solo cuando la fuente es 'memoria' (catálogo inalcanzable)
+        y la última carga exitosa desde Catálogo superó antigüedad_maxima.
+        """
+        return (
+            self._fuente == FUENTE_MEMORIA
+            and self._ultima_carga_exitosa > 0
+            and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
+        )
 
     def __len__(self) -> int:
         """Cantidad en memoria, sin red, para que /health no dependa de Catálogo."""
@@ -123,14 +144,28 @@ class ProductoRepositorio:
         return cuerpo.get("data", []), total_paginas
 
     def _productos_en_stock(self, items: list[Any]) -> list[dict[str, Any]]:
-        """Normaliza los ítems válidos que siguen en stock."""
-        return [
-            self._normalizar_producto(item) for item in items if isinstance(item, dict) and item.get("en_stock", True)
-        ]
+        """Normaliza los ítems válidos que siguen en stock, descartando precios inválidos o <= 0."""
+        resultado = []
+        for item in items:
+            if not isinstance(item, dict) or not item.get("en_stock", True):
+                continue
+            # Descartar productos cuyo precio sea no numérico o <= 0
+            precio_crudo = item.get("precio", 0.0)
+            try:
+                precio = float(precio_crudo)
+            except (ValueError, TypeError):
+                logger.debug("Producto %s descartado: precio no numérico (%s)", item.get("id"), precio_crudo)
+                continue
+            if not math.isfinite(precio) or precio <= 0:
+                logger.debug("Producto %s descartado: precio inválido o <= 0 (%s)", item.get("id"), precio)
+                continue
+            resultado.append(self._normalizar_producto(item))
+        return resultado
 
     def _descargar_catalogo(self) -> list[dict[str, Any]]:
-        """Recorre las páginas hasta el máximo configurado; cierra el cliente propio aunque falle."""
+        """Recorre las páginas hasta el máximo configurado o el agotamiento del tiempo; cierra el cliente propio aunque falle."""
         cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        inicio = time.monotonic()
         try:
             items, total_paginas = self._pedir_pagina(cliente_http, PRIMERA_PAGINA)
             productos = self._productos_en_stock(items)
@@ -142,9 +177,41 @@ class ProductoRepositorio:
                     total_paginas,
                 )
             for pagina in range(PRIMERA_PAGINA + 1, min(total_paginas, self._max_paginas) + 1):
+                tiempo_transcurrido = time.monotonic() - inicio
+                if tiempo_transcurrido >= self._tiempo_espera:
+                    logger.warning(
+                        "Tiempo de espera de Catálogo agotado (%.1fs): se corta la paginacion en la pagina %d",
+                        tiempo_transcurrido,
+                        pagina,
+                    )
+                    break
                 items, _ = self._pedir_pagina(cliente_http, pagina)
                 productos.extend(self._productos_en_stock(items))
             return productos
+        finally:
+            if self._cliente is None:
+                cliente_http.close()
+
+    def consultar_disponibilidad(self, producto_ids: list[str]) -> dict[str, dict[str, Any]] | None:
+        """Consulta en lote la disponibilidad de candidatos ante Catálogo (SUP-312)."""
+        if not self._token_consulta or not producto_ids:
+            return None
+        cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        try:
+            respuesta = cliente_http.post(
+                f"{self._url_base}{RUTA_DISPONIBILIDAD_CATALOGO}",
+                json={"producto_ids": producto_ids},
+                headers={"Authorization": f"Bearer {self._token_consulta}"},
+            )
+            respuesta.raise_for_status()
+            return {
+                str(item["producto_id"]): item
+                for item in respuesta.json().get("productos", [])
+                if isinstance(item, dict) and item.get("producto_id")
+            }
+        except (httpx.HTTPError, ValueError) as error_consulta:
+            logger.warning("No fue posible consultar disponibilidad en Catálogo (%s).", error_consulta)
+            return None
         finally:
             if self._cliente is None:
                 cliente_http.close()
@@ -159,6 +226,7 @@ class ProductoRepositorio:
                 self._productos = productos
                 self._fuente = FUENTE_CATALOGO
                 self._ultima_actualizacion = time.time()
+                self._ultima_carga_exitosa = self._ultima_actualizacion
                 logger.info(
                     "Catálogo cargado exitosamente desde %s (%d productos vigentes con stock)",
                     self._url_base,
@@ -179,6 +247,9 @@ class ProductoRepositorio:
             )
 
         # Se renueva la marca de tiempo también al degradar, para no reintentar en ráfaga.
+        # NOTA: _ultima_carga_exitosa NO se sobrescribe al degradar a FUENTE_MEMORIA,
+        #       para que datos_antiguos pueda detectar cuándo la última carga válida
+        #       superó el límite de antigüedad.
         self._ultima_actualizacion = time.time()
         if self._productos:
             self._fuente = FUENTE_MEMORIA

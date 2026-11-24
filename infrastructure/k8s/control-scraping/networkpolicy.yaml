@@ -10,6 +10,7 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels: {app: gateway}
+            # Etiqueta real del Deployment api-gateway (no "gateway").
+            matchLabels: {app: api-gateway}
       ports:
         - {protocol: TCP, port: 8080}

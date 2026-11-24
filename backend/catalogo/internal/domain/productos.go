@@ -17,6 +17,7 @@ type FiltroProductosDTO struct {
 	Page              int
 	Limit             int
 	Categoria         string
+	CategoriaExacta   string
 	Supermercado      string
 	Marca             string
 	PrecioMin         *float64
@@ -125,6 +126,7 @@ type PaginaProductosAdminDTO struct {
 
 // RepositorioProductos lee productos y capturas de scraper.*.
 type RepositorioProductos interface {
+	ListarCategorias(contexto context.Context) ([]string, error)
 	Listar(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoDTO, int64, error)
 	ListarSupermercados(contexto context.Context, filtro FiltroProductosDTO) ([]SupermercadoDTO, error)
 	ListarParaAdmin(contexto context.Context, filtro FiltroProductosDTO) ([]ProductoAdminDTO, int64, error)

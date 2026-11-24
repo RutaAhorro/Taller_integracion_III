@@ -1,13 +1,11 @@
 // Gestiona la carga paginada del catálogo y los filtros disponibles en la API.
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useLayoutContext } from '@/layouts/MainLayout';
-import { getProducts } from '@/features/catalogo/products-api';
+import { getProducts, parametrosCategoria } from '@/features/catalogo/products-api';
 import { calculateDiscountPct } from '@/features/catalogo/formatters';
 import type { UiProduct as Producto } from '@/features/catalogo/tipos';
 
 const TAMANO_PAGINA = 24;
-
-const esFiltroOferta = (categoria: string | null) => categoria === 'ofertas' || categoria === 'descuentos';
 
 const calcularAhorro = (producto: Producto) => producto.originalPrice - producto.price;
 
@@ -29,9 +27,7 @@ export function useCatalog(consulta: string, categoria: string | null, supermerc
     const parametros = new URLSearchParams({ page: String(numeroPagina), limit: String(TAMANO_PAGINA), en_stock: 'true' });
     const textoBusqueda = consulta.trim();
     if (textoBusqueda.length >= 3) parametros.set('q', textoBusqueda);
-    if (esFiltroOferta(categoria)) parametros.set('en_oferta', 'true');
-    else if (categoria === 'marcas') parametros.set('solo_marcas_blancas', 'true');
-    else if (categoria) parametros.set('categoria', categoria);
+    parametrosCategoria(categoria).forEach((valor, nombre) => parametros.set(nombre, valor));
     if (nombreSupermercado) parametros.set('supermercado', nombreSupermercado);
     return getProducts(`?${parametros}`);
   };
