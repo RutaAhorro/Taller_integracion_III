@@ -28,6 +28,9 @@
   Cancelar y descartar respuestas obsoletas; paginar conserva las facetas confirmadas.
 - Chat llama a `${VITE_API_URL}/chat`, que Gateway enruta a IA (SUP-278); no
   hay `VITE_IA_URL`. No afirmar flujo receta → lista → ruta terminado.
+- `/verificar-email` (SUP-249) sólo prepara la vista, pendiente de SUP-231:
+  no verifica tokens ni modifica el registro. Confirmación y aviso de correo
+  enviado sólo se conectarán a resultados reales de Identidad, nunca a parámetros de URL.
 - Reutilizar estilos/componentes del proyecto; comprobar imports antes de borrar.
 - Validar `npm run lint`, `npx tsc -b --noEmit` y
   `npm test`. Build tolera errores de tsc: su éxito
@@ -37,11 +40,11 @@
 
 ## Índice breve generado
 
-71 archivos fuente, incluidos los de pruebas. Distribución:
+72 archivos fuente, incluidos los de pruebas. Distribución:
 - `(raíz)`: 1 archivos.
 - `app`: 2 archivos.
 - `components`: 11 archivos.
-- `features`: 44 archivos.
+- `features`: 45 archivos.
 - `layouts`: 4 archivos.
 - `lib`: 2 archivos.
 - `pages`: 7 archivos.

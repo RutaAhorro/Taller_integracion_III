@@ -14,6 +14,33 @@ Vite se utiliza para desarrollo y compilación.
 - No confundir una ruta disponible con un flujo integrado: misiones, rutas,
   historial, planes y configuración inicial muestran avisos de no disponibilidad.
 
+## Verificación de correo: preparación visual (SUP-249, draft)
+
+La ruta pública `/verificar-email` no requiere sesión y todavía no llama al
+backend. Sin `token` (o con uno vacío) muestra un enlace incompleto; con token
+muestra que la verificación aún no está disponible. No lo imprime, guarda ni
+envía, y ningún parámetro de URL puede activar una confirmación exitosa.
+
+`EstadoVerificacion`, en `src/features/autenticacion/VerificarEmail.tsx`, prepara
+la presentación de carga, confirmación, enlace rechazado, error de conexión y
+aviso de correo enviado. Los estados de confirmación y envío no están
+conectados a la navegación ni al registro: sólo deben mostrarse cuando Identidad
+confirme esos resultados. El registro actual no cambia.
+
+Pendiente de SUP-231: acordar cuerpo y respuestas de la API, conectar la
+verificación con cancelación y descarte de respuestas obsoletas, y mostrar el
+aviso post-registro únicamente cuando el servidor confirme el envío. El PR
+permanece en draft; esta pantalla no acredita verificación ni entrega de correo.
+
+Comprobación visual local (sin backend, usando un token ficticio):
+
+- Abrir `/verificar-email`: aviso de enlace incompleto y acceso al login.
+- Abrir `/verificar-email?token=ejemplo-local`: aviso de función no disponible,
+  sin peticiones de verificación ni mensaje de éxito.
+- Añadir `&estado=confirmado`: no debe cambiar a un resultado exitoso.
+- Probar móvil, escritorio y navegación con teclado. El token no debe aparecer
+  en el contenido de la página ni copiarse a los enlaces de navegación.
+
 ## Categorías desde Catálogo
 
 El lateral consulta `GET ${VITE_API_URL}/productos/categorias` al montarse y

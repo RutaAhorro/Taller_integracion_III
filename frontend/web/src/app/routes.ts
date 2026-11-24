@@ -7,6 +7,7 @@ export const ROUTES = {
   ADMIN_METRICAS: '/admin/metricas',
   PRODUCTO_DETALLE: (id: string) => `/producto/${id}`,
   LOGIN: '/login',
+  VERIFICAR_EMAIL: '/verificar-email',
   ONBOARDING: '/onboarding',
   PERFIL: '/profile',
   LISTAS: '/listas',
