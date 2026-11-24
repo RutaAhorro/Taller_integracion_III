@@ -41,7 +41,9 @@ func Abrir(contexto context.Context, dsn string, ajustes config.Ajustes) (*gorm.
 // VerificarAlmacenamiento comprueba las tablas que utiliza Identidad, incluida la
 // auditoría administrativa agregada en SUP-242, y que la base sólo admita los
 // roles vigentes (10_restringir_rol_usuarios.sql). Sin esa restricción una fila
-// con un rol desconocido dejaría a su cuenta sin acceso.
+// con un rol desconocido dejaría a su cuenta sin acceso. También exige las
+// direcciones de usuario (11_direcciones_usuario.sql): permisos, columnas nuevas
+// e índice único de la dirección principal.
 func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error {
 	var permitido bool
 	errorObtenido := baseDatos.WithContext(contexto).Raw(`SELECT
@@ -56,6 +58,15 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
         (SELECT COUNT(*) FROM information_schema.columns
             WHERE table_schema = 'api' AND table_name = 'usuarios'
               AND column_name IN ('plan', 'ultimo_acceso')) = 2 AND
+        has_table_privilege(current_user, 'api.direcciones_usuario', 'SELECT') AND
+        has_table_privilege(current_user, 'api.direcciones_usuario', 'INSERT') AND
+        has_table_privilege(current_user, 'api.direcciones_usuario', 'UPDATE') AND
+        has_table_privilege(current_user, 'api.direcciones_usuario', 'DELETE') AND
+        (SELECT COUNT(*) FROM information_schema.columns
+            WHERE table_schema = 'api' AND table_name = 'direcciones_usuario'
+              AND column_name IN ('comuna', 'creado_el')) = 2 AND
+        EXISTS (SELECT 1 FROM pg_index
+            WHERE indexrelid = to_regclass('api.uq_direcciones_usuario_principal') AND indisunique AND indisvalid) AND
         EXISTS (SELECT 1 FROM pg_constraint
             WHERE conrelid = 'api.usuarios'::regclass AND conname = 'usuarios_rol_check' AND convalidated)`).Scan(&permitido).Error
 	if errorObtenido != nil {
@@ -63,7 +74,7 @@ func VerificarAlmacenamiento(contexto context.Context, baseDatos *gorm.DB) error
 		return fmt.Errorf("no se pudo verificar el almacenamiento de Identidad: %w", errorObtenido)
 	}
 	if !permitido {
-		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql, 09_plan_y_ultimo_acceso.sql y 10_restringir_rol_usuarios.sql antes de iniciar Identidad")
+		return errors.New("aplicar 06_propiedad_permisos.sql, 08_normalizar_rol_admin_y_auditoria.sql, 09_plan_y_ultimo_acceso.sql, 10_restringir_rol_usuarios.sql y 11_direcciones_usuario.sql antes de iniciar Identidad")
 	}
 	return nil
 }

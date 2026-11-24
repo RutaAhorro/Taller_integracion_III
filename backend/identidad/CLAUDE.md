@@ -10,6 +10,9 @@
   No Catálogo/Control por imports o SQL, ni AutoMigrate.
 - Cookie HttpOnly `jwt`, HS256 y expiración obligatoria. Las rutas protegidas
   revalidan estado y rol contra usuarios; no confiar en headers del cliente.
+- Direcciones del usuario (`api.direcciones_usuario`, migración 11): el dueño sale
+  sólo de la sesión; ajenas responden 404; una principal por usuario (índice único
+  parcial + advisory lock); límite 10 por usuario.
 - Roles `registrado`, `colaborador`, `admin`, garantizados por `usuarios_rol_check`
   (migración 10); plan comercial separado del rol.
 - Login/registro/Google usan contadores Redis; no desactivar límites para pruebas.
@@ -39,9 +42,9 @@
 
 ## Índice breve generado
 
-28 archivos fuente, incluidos los de pruebas. Distribución:
+34 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 14 archivos.
-- `tests`: 13 archivos.
+- `internal`: 18 archivos.
+- `tests`: 15 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

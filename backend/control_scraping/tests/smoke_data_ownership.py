@@ -77,8 +77,9 @@ def http(metodo, ruta, carga=None, estadoHTTP=200, cabeceras=None, origen=None):
 
 
 permitidas = {
-    # La auditoría administrativa se crea en 08 y sólo la escribe Identidad.
-    'app_identity': {'api.usuarios', 'api.tokens_recuperacion', 'api.auditoria_admin_usuarios'},
+    # La auditoría administrativa se crea en 08 y sólo la escribe Identidad; las
+    # direcciones del usuario (SUP-239, migración 11) también son de Identidad.
+    'app_identity': {'api.usuarios', 'api.tokens_recuperacion', 'api.auditoria_admin_usuarios', 'api.direcciones_usuario'},
     'app_scraping': {'scraper.trabajos_scraper', 'scraper.entregas_ingesta', 'scraper.entregas_trabajos'},
     'app_catalogo': {'scraper.cadenas_supermercado', 'scraper.sucursales_supermercado',
                     'scraper.productos_crudos', 'scraper.capturas_precios', 'scraper.lotes_catalogo'},
@@ -89,8 +90,11 @@ for rol, tablasPropias in permitidas.items():
     for tabla in tablas:
         runtime(rol, 'SELECT count(*) FROM ' + tabla, exito=tabla in tablasPropias)
     for tabla in tablasPropias:
+        # DELETE sólo donde el dueño lo necesita: purga de entregas (Control) y
+        # direcciones que el propio usuario elimina (Identidad).
         runtime(rol, 'DELETE FROM ' + tabla + ' WHERE false',
-                exito=rol == 'app_scraping' and tabla == 'scraper.entregas_trabajos')
+                exito=(rol == 'app_scraping' and tabla == 'scraper.entregas_trabajos')
+                or (rol == 'app_identity' and tabla == 'api.direcciones_usuario'))
         runtime(rol, 'TRUNCATE ' + tabla, exito=False)
     runtime(rol, 'CREATE TABLE public.sup271_forbidden (id INTEGER)', exito=False)
     runtime(rol, 'SET ROLE sup268', exito=False)

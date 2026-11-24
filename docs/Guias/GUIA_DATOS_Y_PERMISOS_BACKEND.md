@@ -36,6 +36,7 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 | --- | --- | --- |
 | Identidad / `app_identity` | `api.usuarios`, `api.tokens_recuperacion` (SUP-184) | SELECT, INSERT, UPDATE |
 | Identidad / `app_identity` | `api.auditoria_admin_usuarios` (SUP-242) y su secuencia | SELECT, INSERT; USAGE en la secuencia |
+| Identidad / `app_identity` | `api.direcciones_usuario` (SUP-239) | SELECT, INSERT, UPDATE, DELETE |
 | Coordinación / `app_scraping` | `scraper.trabajos_scraper`, `scraper.entregas_ingesta`, `scraper.entregas_trabajos` | SELECT, INSERT, UPDATE; DELETE sólo en `entregas_trabajos` |
 | Catálogo / `app_catalogo` | `scraper.productos_crudos` | SELECT, INSERT, UPDATE |
 | Catálogo / `app_catalogo` | `scraper.cadenas_supermercado` | SELECT, INSERT; UPDATE sólo columna `esta_activa` |

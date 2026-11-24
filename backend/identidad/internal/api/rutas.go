@@ -81,7 +81,7 @@ func cors(origenes []string) gin.HandlerFunc {
 			contexto.Header("Access-Control-Allow-Origin", origen)
 			contexto.Header("Access-Control-Allow-Credentials", "true")
 			contexto.Header("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-CSRF-Token")
-			contexto.Header("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
+			contexto.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if contexto.Request.Method == http.MethodOptions {
 			contexto.AbortWithStatus(http.StatusNoContent)
@@ -138,6 +138,7 @@ func acotarPeticion(ajustes config.Ajustes) gin.HandlerFunc {
 type Modulo struct {
 	handler       *ManejadorAuth
 	adminHandler  *ManejadorAdmin
+	direcciones   *ManejadorDirecciones
 	repo          domain.RepositorioUsuarios
 	redis         *redis.Client
 	configuracion config.Configuracion
@@ -151,16 +152,18 @@ func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, configuracion config
 	return &Modulo{
 		handler:       NuevoManejadorAuth(services.NuevoServicioAuth(repositorio, idtoken.Validate, configuracion.ClienteGoogle, ajustes.PlazoGoogle), configuracion.CookieSegura, configuracion.ClaveJWT),
 		adminHandler:  NuevoManejadorAdmin(services.NuevoServicioAdmin(repositorioAdmin)),
+		direcciones:   NuevoManejadorDirecciones(services.NuevoServicioDirecciones(repositories.NuevoRepositorioDirecciones(base))),
 		repo:          repositorio,
 		redis:         redisCliente,
 		configuracion: configuracion,
 	}
 }
 
-// RegistrarRutas monta /auth/* y /admin/usuarios/* bajo group.
+// RegistrarRutas monta /auth/*, /admin/usuarios/* y /usuarios/me/direcciones/* bajo group.
 func (modulo *Modulo) RegistrarRutas(grupo *gin.RouterGroup) {
 	RegistrarRutasAuth(grupo, modulo.handler, modulo.redis, modulo.repo, modulo.configuracion)
 	RegistrarRutasAdminUsuarios(grupo, modulo.adminHandler, modulo.repo, modulo.configuracion.ClaveJWT)
+	RegistrarRutasDirecciones(grupo, modulo.direcciones, modulo.repo, modulo.configuracion.ClaveJWT)
 }
 
 // ===== Autenticación y perfil =====
@@ -188,4 +191,17 @@ func RegistrarRutasAdminUsuarios(grupo *gin.RouterGroup, manejador *ManejadorAdm
 	admin.GET("", manejador.ListarUsuarios)
 	admin.GET("/metricas", manejador.Metricas)
 	admin.PUT("/:id", manejador.ActualizarUsuario)
+}
+
+// ===== Direcciones del usuario =====
+
+// RegistrarRutasDirecciones monta /usuarios/me/direcciones. Toda petición exige
+// sesión JWT vigente; sólo opera sobre las direcciones del usuario de la sesión.
+// Se actualiza con PUT (reemplazo de los campos editables), igual que PUT /auth/me.
+func RegistrarRutasDirecciones(grupo *gin.RouterGroup, manejador *ManejadorDirecciones, repositorio domain.RepositorioUsuarios, claveJWT string) {
+	direcciones := grupo.Group("/usuarios/me/direcciones", ExigirSesion(repositorio, claveJWT))
+	direcciones.GET("", manejador.ListarDirecciones)
+	direcciones.POST("", manejador.CrearDireccion)
+	direcciones.PUT("/:id", manejador.ActualizarDireccion)
+	direcciones.DELETE("/:id", manejador.EliminarDireccion)
 }
