@@ -31,6 +31,8 @@ const (
 	TamanoPaginaMaximoPredeterminado = 100  // CATALOGO_MAX_PAGE_SIZE
 	LargoBusquedaPredeterminado      = 100  // CATALOGO_MAX_SEARCH_LENGTH, en bytes
 	ProductosPorLotePredeterminados  = 1000 // CATALOGO_MAX_BATCH_PRODUCTOS
+	// RadioMaximoKmPredeterminado acota la consulta geoespacial de SUP-317.
+	RadioMaximoKmPredeterminado = 50 // CATALOGO_MAX_RADIO_KM
 	// BytesCuerpoPredeterminados (8 MiB, CATALOGO_MAX_BODY_BYTES) cubre un lote
 	// completo con holgura y corta antes los cuerpos que agotarían la memoria.
 	BytesCuerpoPredeterminados = 8 << 20
@@ -92,6 +94,8 @@ type Configuracion struct {
 	// Límites de la consulta interna de disponibilidad que usan Listas e IA.
 	MaximoProductosConsulta        int
 	AntiguedadMaximaDisponibilidad time.Duration
+	// RadioMaximoKm acota la consulta de precios comparables por sucursal.
+	RadioMaximoKm int
 }
 
 // Cargar lee y valida el entorno del proceso. Los mensajes de error nombran la
@@ -146,6 +150,7 @@ func Cargar() (Configuracion, error) {
 		{"CATALOGO_MAX_SEARCH_LENGTH", &configuracion.LargoMaximoBusqueda, LargoBusquedaPredeterminado},
 		{"CATALOGO_MAX_BATCH_PRODUCTOS", &configuracion.MaximoProductosPorLote, ProductosPorLotePredeterminados},
 		{"CATALOGO_MAX_BODY_BYTES", &configuracion.MaximoBytesCuerpo, BytesCuerpoPredeterminados},
+		{"CATALOGO_MAX_RADIO_KM", &configuracion.RadioMaximoKm, RadioMaximoKmPredeterminado},
 	} {
 		valor, errorEntero := leerEnteroPositivo(variable.nombre, variable.predetermina)
 		if errorEntero != nil {

@@ -66,7 +66,8 @@ func TestCargarAplicaValoresPorDefecto(prueba *testing.T) {
 		configuracion.PlazoEscritura != 30*time.Second || configuracion.PlazoInactividad != 60*time.Second ||
 		configuracion.PlazoApagado != 15*time.Second || configuracion.PlazoInicio != 5*time.Second ||
 		configuracion.PlazoReadiness != 2*time.Second || configuracion.TamanoPagina != 20 || configuracion.TamanoPaginaMaximo != 100 ||
-		configuracion.LargoMaximoBusqueda != 100 || configuracion.MaximoProductosPorLote != 1000 || configuracion.MaximoBytesCuerpo != 8<<20 {
+		configuracion.LargoMaximoBusqueda != 100 || configuracion.MaximoProductosPorLote != 1000 ||
+		configuracion.MaximoBytesCuerpo != 8<<20 || configuracion.RadioMaximoKm != 50 {
 		prueba.Fatalf("configuración predeterminada incorrecta: %+v", configuracion)
 	}
 }
@@ -76,12 +77,13 @@ func TestCargarAplicaValoresConfigurados(prueba *testing.T) {
 	prueba.Setenv("PORT", "9090")
 	prueba.Setenv("CATALOGO_MAX_PRODUCTOS_CONSULTA", "75")
 	prueba.Setenv("CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "36h")
+	prueba.Setenv("CATALOGO_MAX_RADIO_KM", "25")
 	configuracion, errorCarga := config.Cargar()
 	if errorCarga != nil {
 		prueba.Fatal(errorCarga)
 	}
 	if configuracion.DireccionEscucha != ":9090" || configuracion.MaximoProductosConsulta != 75 ||
-		configuracion.AntiguedadMaximaDisponibilidad != 36*time.Hour {
+		configuracion.AntiguedadMaximaDisponibilidad != 36*time.Hour || configuracion.RadioMaximoKm != 25 {
 		prueba.Fatalf("no se aplicaron los valores configurados: %+v", configuracion)
 	}
 }
@@ -92,6 +94,8 @@ func TestCargarRechazaValoresInvalidos(prueba *testing.T) {
 		{"DB_MAX_OPEN_CONNS", "0"}, {"DB_MAX_IDLE_CONNS", "11"},
 		{"DB_CONN_MAX_LIFETIME", "-1m"},
 		{"CATALOGO_MAX_PRODUCTOS_CONSULTA", "0"},
+		{"CATALOGO_MAX_RADIO_KM", "0"},
+		{"CATALOGO_MAX_RADIO_KM", "-1"},
 		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "0s"},
 		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "48"},
 	} {

@@ -34,7 +34,8 @@ El orden real es este:
 | 15 | `11_articulos_lista_producto.sql` | Artículos de lista por `producto_id` de Catálogo (SUP-327) |
 | 16 | `11_direcciones_usuario.sql` | Direcciones guardadas del usuario y permisos de Identidad (SUP-239) |
 | 17 | `12_lotes_articulos_idempotencia.sql` | Claves `Idempotency-Key` del lote de artículos (SUP-318) |
-| 18 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
+| 18 | `13_actualizar_sucursales_acuenta_cugat.sql` | Coordenadas y datos reales de las sucursales físicas de A Cuenta y Cugat en Temuco, más índice GiST para el radio de SUP-317 |
+| 19 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -42,7 +43,7 @@ alfabético es siempre el mismo y respeta las dependencias. No se renombran
 porque el código de Identidad, Control y Motor, los tests y las bases ya
 desplegadas los identifican por su nombre actual.
 
-**Regla para scripts nuevos:** usar el siguiente número libre (hoy `13_`) y
+**Regla para scripts nuevos:** usar el siguiente número libre (hoy `14_`) y
 nunca repetir uno existente. Si el script depende de otro, debe ordenarse
 después de él.
 
@@ -53,7 +54,8 @@ después de él.
 SUP-349: sólo carga las 6 cadenas y sus 6 sucursales con ids estables. Los
 productos y precios llegan por la ingesta del scraper y los tests siembran sus
 propios datos (por ejemplo `backend/catalogo/tests/fixtures.sql`). Las
-sucursales 5 y 6 conservan ubicación provisional (ver `backend/catalogo/README.md`).
+sucursales 5 y 6 se corrigen con `13_actualizar_sucursales_acuenta_cugat.sql`:
+pasan a ser tiendas físicas con coordenadas de OpenStreetMap (SUP-317).
 
 **Pendiente (fuera de alcance de SUP-370):** las bases ya desplegadas conservan
 los 45 productos de demo de Jumbo, sus precios y las filas de `api.categorias`,
@@ -81,6 +83,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [11_articulos_lista_producto.sql](11_articulos_lista_producto.sql) | Cambia `rutas.articulos_lista_compras` al `producto_id` de Catálogo, sin FK, y elimina `producto_normalizado_id` con su FK hacia `api.productos_normalizados` (SUP-327, [contrato](../../docs/Contratos/CONTRATO_ARTICULOS_LISTA.md)). Los artículos previos se conservan con `producto_id` NULL. Da a `app_rutas` `INSERT`, `UPDATE` y `DELETE` sobre la tabla; el `06` vigente ya los concede. Aplicar después de 10. Idempotente. |
 | [11_direcciones_usuario.sql](11_direcciones_usuario.sql) | Adapta `api.direcciones_usuario` al CRUD de Identidad (SUP-239): agrega `comuna` (nullable en la base; la API la exige) y `creado_el`; hace opcionales `lat`/`lon` con CHECK de par y de rango; fija `es_principal` NOT NULL; crea el índice único parcial de una sola principal por usuario y concede a `app_identity` SELECT, INSERT, UPDATE y DELETE sobre la tabla, nada más. Aplicar después de 06 y 10: Identidad no arranca sin ella. Idempotente; si hubiera varias principales previas conserva la más antigua. Valida los CHECK en una transacción aparte, igual que la 09. El `06` vigente también concede el permiso para sobrevivir a una re-ejecución. |
 | [12_lotes_articulos_idempotencia.sql](12_lotes_articulos_idempotencia.sql) | Crea `rutas.lotes_articulos_aplicados`: una fila por lote aplicado con su `Idempotency-Key` y la huella del contenido, para que un reintento no sume dos veces (SUP-318). FK en cascada hacia la lista; `app_rutas` sólo tiene `SELECT` e `INSERT`. El `06` vigente admite la tabla en su matriz. Aplicar después de 11. Idempotente. |
+| [13_actualizar_sucursales_acuenta_cugat.sql](13_actualizar_sucursales_acuenta_cugat.sql) | Actualiza las sucursales 5 y 6 con tiendas físicas reales (Manuel Antonio Matta 025 y Av. Barros Arana 375) y crea el índice GiST funcional sobre `ST_MakePoint(lon, lat)::geography` para `ST_DWithin` (SUP-317). No agrega columnas ni permisos: `app_catalogo` ya tiene `SELECT` sobre la tabla. Aplicar después de 04 y 12, antes de `init.sql`. Idempotente. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para
