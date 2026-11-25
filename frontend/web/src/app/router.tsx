@@ -17,6 +17,7 @@ import Home from '@/features/landing/Home';
 import Dashboard from '@/features/catalogo/Dashboard';
 import ProductDetail from '@/features/catalogo/ProductDetail';
 import Login from '@/features/autenticacion/Login';
+import VerificarEmail from '@/features/autenticacion/VerificarEmail';
 import Onboarding from '@/pages/Onboarding';
 import Profile from '@/features/autenticacion/Profile';
 import ShoppingLists from '@/features/listas/ShoppingLists';
@@ -94,6 +95,7 @@ const enrutador = createBrowserRouter([
   // ───────────────────────────────────────────────────────────
   { path: ROUTES.HOME, element: <Home />, errorElement: <ErrorBoundary /> },
   { path: ROUTES.LOGIN, element: <Login /> },
+  { path: ROUTES.VERIFICAR_EMAIL, element: <VerificarEmail /> },
   { path: ROUTES.TERMINOS, element: <Terms /> },
   {
     // SUP-256: /admin solo admin. Invitado ve acceso (ir a login);
