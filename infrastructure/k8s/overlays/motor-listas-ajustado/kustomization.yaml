@@ -1,0 +1,8 @@
+# Propuesta de una réplica para cuota limitada; medir antes de asumir capacidad.
+# El script de preparación exige sustituir la imagen por un digest confirmado.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../motor-rutas
+patches:
+  - path: recursos.yaml

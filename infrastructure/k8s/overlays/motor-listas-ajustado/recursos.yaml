@@ -1,0 +1,20 @@
+# No redistribuye recursos de otros servicios ni activa escalado automático.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: motor-rutas
+spec:
+  replicas: 1
+  template:
+    spec:
+      imagePullSecrets:
+        - name: ghcr-secret
+      containers:
+        - name: motor-rutas
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
