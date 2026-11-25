@@ -1,0 +1,7 @@
+# Base explícita de Motor/Listas. El HPA requiere otro presupuesto y se aplica aparte.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - configmap.yaml
+  - service.yaml
+  - deployment.yaml

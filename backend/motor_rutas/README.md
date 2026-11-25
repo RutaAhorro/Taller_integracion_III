@@ -108,7 +108,9 @@ abre HTTP. No ejecuta migraciones.
    se conservan con `producto_id` NULL. Después, `12_lotes_articulos_idempotencia.sql`
    crea la tabla de claves del lote con `SELECT` e `INSERT` para `app_rutas`.
 2. Activar LOGIN: en volúmenes nuevos, `07_runtime_credentials.sh` lo hace si
-   existe `RUTAS_DB_PASSWORD`; en la base existente, `\password app_rutas` en psql.
+   existe `RUTAS_DB_PASSWORD`. En una base existente, asignar contraseña no basta:
+   también se requiere LOGIN. Usar el aprovisionamiento revisado de abajo, sin
+   ejecutar el script 07 completo ni rotar credenciales de los otros servicios.
 3. Kubernetes: Secret `rutas-db-secret` con `DB_URL` y `DB_PASSWORD`, y la clave
    `consulta-token` en `catalogo-internal-secret` (la misma que usa Catálogo).
    Antes de aplicar, revisar la cuota, imagen y HPA según la preparación de abajo.
@@ -173,6 +175,127 @@ Orden propuesto para el operador, **pendiente de autorización de ejecución**:
    Registrar versión, entorno y resultados. Ante un fallo, retirar el servicio
    nuevo o volver a su imagen anterior; no borrar listas ni revertir migraciones
    automáticamente.
+
+### Asistente de preparación y aprovisionamiento (SUP-357)
+
+`scripts/habilitar_motor_listas.py` no ejecuta `kubectl apply`, no reinicia
+servicios y no crea tablas. Requiere Python 3 y kubectl con Kustomize. Mantiene
+el contexto y namespace explícitos en cada llamada. La preparación sirve para
+la **primera habilitación**: si ya existen Motor/Service/HPA, se detiene para
+no modificar despliegues ajenos.
+
+**Revisar, sin modificar el clúster:**
+
+```bash
+python3 scripts/habilitar_motor_listas.py revisar \
+  --contexto estudiante-vmatus --namespace student-vmatus
+```
+
+Comprueba todos los permisos base que exige el arranque, el estado de LOGIN,
+la columna e índice de productos y la tabla de lotes. Solo muestra nombres de
+claves de Secrets, no sus valores. El informe separa bloqueos y pendientes
+que podrá resolver el aprovisionamiento. La cuota se calcula con sus unidades
+reales: `2G` no es `2Gi`.
+
+La propuesta en `infrastructure/k8s/overlays/motor-listas-ajustado` contiene
+únicamente ConfigMap, Service y Deployment: una réplica, requests de 50m/32Mi,
+limits de 100m/128Mi, sin HPA. No modifica el presupuesto de otros servicios.
+En la revisión del 25-11-2026 cabía aritméticamente y dejaba 100m de límite CPU
+libre; no es una medición de rendimiento ni una reserva de cuota.
+
+**Preparar archivos locales, sin desplegar:**
+
+Verificar primero la imagen publicada y su digest con el operador o el registro.
+El asistente exige la forma `ghcr.io/.../...-motor-rutas@sha256:...` pero **no
+comprueba por sí mismo que ese digest exista**. En la revisión autenticada del
+25-11-2026 existía la imagen bajo `rutaahorro`; bajo `danirc2024` devolvía 404.
+No copiar a ciegas el propietario del manifiesto base.
+
+```bash
+python3 scripts/habilitar_motor_listas.py preparar \
+  --contexto estudiante-vmatus --namespace student-vmatus \
+  --imagen 'ghcr.io/rutaahorro/taller_integracion_iii-motor-rutas@sha256:DIGEST_CONFIRMADO' \
+  --salida /tmp/opencode/motor-listas.yaml
+```
+
+Sustituir `DIGEST_CONFIRMADO` por los 64 caracteres reales. Genera
+`motor-listas.yaml` y `motor-listas.catalogo-patch.json`, sin secretos. No
+sobrescribe planes anteriores. El parche de Catálogo añade solo la referencia
+`CATALOGO_CONSULTA_TOKEN` y conserva imagen/configuración restante. Incluye
+`resourceVersion`: si otro integrante actualiza Catálogo, falla por conflicto
+y se debe revisar y preparar un plan nuevo, no forzar el parche viejo.
+
+**Aprovisionar, solo tras respaldo, revisión y autorización:**
+
+Este modo **sí escribe** en Kubernetes y PostgreSQL. Antes de ejecutarlo:
+
+- Acordar responsable/ventana y confirmar un respaldo recuperable de la BD.
+  `--respaldo-confirmado` es una confirmación del operador; el script no hace
+  ni certifica el respaldo.
+- Revisar los planes y la política de registro/auditoría de PostgreSQL. El
+  asistente deshabilita el log de sentencias solo en su sesión sensible y se
+  detiene si detecta pgaudit activo; otras soluciones de auditoría deben revisarse
+  manualmente. No ejecutarlo con depuradores, trazas o captura de stdin.
+- Confirmar otra vez que no hay un despliegue de Motor en curso.
+
+```bash
+python3 scripts/habilitar_motor_listas.py aprovisionar \
+  --contexto estudiante-vmatus --namespace student-vmatus \
+  --confirmar-cambios --respaldo-confirmado
+```
+
+Genera credenciales independientes en memoria y crea `rutas-db-secret`. Añade
+`consulta-token` con control de versión al Secret existente, preservando su
+token de ingesta. Reutiliza credenciales previas y no rota la contraseña de
+un rol ya activo. Habilita LOGIN de `app_rutas` cuando estaba deshabilitado y
+reconcilia **solo SELECT/INSERT** de la tabla de lotes existente. No modifica
+usuarios, listas ni artículos. Comprueba la contraseña de Motor por TCP local
+al pod PostgreSQL, no mediante una conexión Unix que podría usar `trust`.
+
+Kubernetes y PostgreSQL no comparten una transacción: si hay un fallo parcial,
+conservar los Secrets y revisar el estado antes de reintentar. El script crea
+primero el Secret para reutilizar la misma contraseña si se interrumpe la
+primera habilitación. No borrar Secrets ni regenerar claves para “arreglar”
+un fallo. Si el rol ya admite LOGIN sin Secret conocido, se bloquea; una rotación
+requiere un procedimiento distinto y acuerdo explícito.
+
+**Validar y aplicar los recursos, en una operación autorizada aparte:**
+
+1. Repetir la revisión y consultar el diff de los manifiestos **sin Secrets**.
+2. Validar el YAML con el servidor; esto no reserva recursos ni prueba descarga:
+
+   ```bash
+   kubectl --context estudiante-vmatus -n student-vmatus apply \
+     --dry-run=server -f /tmp/opencode/motor-listas.yaml
+   ```
+
+3. Con `consulta-token` ya preparado, revisar y aplicar el parche de Catálogo:
+
+   ```bash
+   kubectl --context estudiante-vmatus -n student-vmatus patch deployment catalogo \
+     --type=strategic --patch-file=/tmp/opencode/motor-listas.catalogo-patch.json
+   kubectl --context estudiante-vmatus -n student-vmatus rollout status deployment/catalogo --timeout=180s
+   ```
+
+   Con estrategia Recreate hay una interrupción breve de Catálogo. No aplicar
+   el Deployment base completo ni cambiar su imagen por este procedimiento.
+
+4. Aplicar únicamente el manifiesto preparado de Motor y revisar su rollout:
+
+   ```bash
+   kubectl --context estudiante-vmatus -n student-vmatus apply -f /tmp/opencode/motor-listas.yaml
+   kubectl --context estudiante-vmatus -n student-vmatus rollout status deployment/motor-rutas --timeout=180s
+   ```
+
+5. Verificar probes y 401 sin sesión por Gateway. Después, con una cuenta
+   de prueba autorizada, comprobar persistencia e aislamiento según la checklist
+   del frontend. Un rollout verde o un 401 no acreditan ese recorrido.
+
+Pruebas aisladas del asistente (no usan credenciales ni ejecutan SQL real):
+
+```bash
+python3 -m unittest discover -s scripts/tests -p 'test_habilitar_motor_listas.py' -v
+```
 
 ## Estructura
 
