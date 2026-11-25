@@ -1,6 +1,6 @@
 // Gestiona listas y artículos persistidos de la cuenta actual mediante Motor y Catálogo.
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/autenticacion/useAuth";
@@ -75,6 +75,8 @@ export default function ShoppingLists() {
 
 /** Carga las listas del usuario y coordina creación y selección con operaciones reales. */
 function ContenidoListas() {
+  const [parametros] = useSearchParams();
+  const destinoSolicitado = parametros.get("lista");
   const { toast } = useToast();
   const [listas, setListas] = useState<Lista[]>([]);
   const [idSeleccionada, setIdSeleccionada] = useState<string | null>(null);
@@ -93,7 +95,14 @@ function ContenidoListas() {
     listasApi
       .listar(controlador.signal)
       .then(({ listas: datos }) => {
-        if (!controlador.signal.aborted) setListas(datos);
+        if (!controlador.signal.aborted) {
+          setListas(datos);
+          if (
+            destinoSolicitado &&
+            datos.some((lista) => lista.id === destinoSolicitado)
+          )
+            setIdSeleccionada(destinoSolicitado);
+        }
       })
       .catch((errorObtenido: unknown) => {
         if (!controlador.signal.aborted)
@@ -103,7 +112,7 @@ function ContenidoListas() {
         if (!controlador.signal.aborted) setCargando(false);
       });
     return () => controlador.abort();
-  }, [revision]);
+  }, [revision, destinoSolicitado]);
 
   /** Evita dos creaciones simultáneas antes del siguiente render. */
   async function crear(evento: FormEvent) {
@@ -138,8 +147,9 @@ function ContenidoListas() {
       <p className="rounded-xl border border-border bg-secondary/40 p-4 text-sm">
         Crear, consultar, editar y eliminar listas requiere que el servicio de
         listas esté habilitado en este entorno. Selecciona una lista para buscar
-        y agregar productos, cambiar cantidades o quitarlos. El carrito temporal
-        del catálogo no se guarda automáticamente en estas listas.
+        y agregar productos, cambiar cantidades o quitarlos. Desde el carrito
+        del catálogo puedes elegir una lista y confirmar el guardado de sus
+        productos: no se guarda automáticamente.
       </p>
       <form onSubmit={crear} className="space-y-2">
         <label htmlFor="new-list-name" className="text-sm font-medium">

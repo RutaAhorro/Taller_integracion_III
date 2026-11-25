@@ -12,6 +12,28 @@ no acredita un despliegue activo.
 
 ## API (tras el Gateway)
 
+### Carrito persistente
+
+Motor/Listas implementa además un borrador por cuenta en `rutas.carritos`,
+separado de las listas confirmadas. Requiere **14_carritos_persistentes.sql**
+antes de publicar la nueva imagen. No se ejecuta SQL de migración al arrancar.
+La edición es versionada y la confirmación aplica artículos y vacía el carrito
+en una única transacción, conservando clave y último recibo para recuperar
+respuestas perdidas. No almacena precios ni consulta tablas de otros servicios.
+
+Rutas: GET/PUT `/api/v1/listas/carrito`, POST `.../preparar` y POST
+`.../confirmar`; cookie JWT y cabecera de coherencia `X-Carrito-Cuenta`.
+Contrato, errores y orden de habilitación:
+[carrito persistente](../../docs/Contratos/CONTRATO_CARRITO.md).
+
+Las pruebas de integración cubren persistencia, aislamiento, versiones,
+confirmaciones concurrentes y conservación del borrador ante fallos, sobre una
+BD desechable. CI inicializa un PostgreSQL efímero, nunca un clúster compartido.
+Sin las variables de pruebas, la suite SQL se omite; un test unitario no acredita
+una migración ni un despliegue.
+
+### Listas y artículos
+
 | Método | Ruta | Respuesta |
 | --- | --- | --- |
 | GET | `/api/v1/listas` | `{"listas": [...]}` del usuario, más recientes primero |
@@ -93,9 +115,9 @@ Probes internos: `/_rutas/live` (sin SQL) y `/_rutas/ready` (ping SQL, 2 s).
 
 Ejemplo en [`.env.example`](.env.example).
 
-Al arrancar valida una vez los grants de `06_propiedad_permisos.sql` y que la
-migraciones 11 y 12 hayan corrido (columna `producto_id`, índice único y tabla
-de claves del lote); sin ellos no
+Al arrancar valida una vez los grants de `06_propiedad_permisos.sql` y que las
+migraciones 11, 12 y 14 hayan corrido (columna `producto_id`, índice único, tabla
+de claves del lote y carrito); sin ellos no
 abre HTTP. No ejecuta migraciones.
 
 ## Datos y despliegue

@@ -75,6 +75,7 @@ func ejecutar(log *slog.Logger) error {
 	// --- 3. Servidor HTTP --------------------------------------------------------
 	manejadorHTTP := httpapi.Nuevo(httpapi.Opciones{
 		Repo:         listas.NuevoPostgres(pool),
+		Carritos:     listas.NuevoPostgres(pool),
 		Catalogo:     listas.NuevoClienteCatalogo(configuracion.CatalogoURL, configuracion.CatalogoToken, configuracion.CatalogoPlazo),
 		JWTSecret:    configuracion.JWTSecret,
 		OrigenesCORS: configuracion.OrigenesCORS,

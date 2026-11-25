@@ -14,6 +14,73 @@ Vite se utiliza para desarrollo y compilación.
 - No confundir una ruta disponible con un flujo integrado: misiones, rutas,
   historial, planes y configuración inicial muestran avisos de no disponibilidad.
 
+## Carrito → lista persistida
+
+El carrito del catálogo se guarda por cuenta en Motor/Listas. Al iniciar sesión
+se recuperan sus productos y cantidades. Una copia local, separada por cuenta,
+conserva ediciones pendientes si falla la conexión. **Guardar en una lista**
+permite elegir o crear un destino, revisar envases y confirmar. Si el producto
+ya estaba en la lista, Motor suma cantidades con las mismas reglas del lote.
+El [contrato del carrito](../../docs/Contratos/CONTRATO_CARRITO.md) describe su
+versión, preparación durable y confirmación atómica.
+
+- Motor aplica los artículos y vacía el carrito en una única transacción. El enlace
+  **Abrir lista guardada** abre `/listas?lista={id}` con el destino seleccionado.
+- La interfaz distingue **guardado en tu cuenta** de **pendiente de sincronizar**.
+  No llama guardado a un cambio que sólo está en el navegador. No permite
+  agregar productos como invitado; una pestaña con identidad antigua no puede
+  escribir usando la cookie de otra cuenta.
+- Un rechazo definitivo de productos, cantidades o destino conserva el carrito
+  y permite corregir. Una sesión vencida conserva la copia y pide iniciar sesión.
+- Ante fallo de red, respuesta ilegible, timeout de 20 segundos o error de
+  servidor, el resultado puede ser incierto. Se bloquean modificaciones del
+  carrito y del destino; **Reintentar el mismo guardado** conserva exactamente
+  la clave y el lote. La preparación se guarda también en el servidor: se puede
+  recargar o recuperar el envío desde otro dispositivo. El último recibo permite
+  comprobar una confirmación cuya respuesta se perdió.
+- Cambios simultáneos se detectan por versión. Se muestran el borrador local y
+  el remoto para elegir explícitamente cuál conservar; no se mezclan ni se
+  sobrescriben silenciosamente. Un envío preparado no se reemplaza por una edición.
+- Limpiar los datos del navegador pierde cambios **aún no sincronizados**, no
+  el carrito confirmado por el servidor. Si Storage está bloqueado o lleno, se
+  advierte que el respaldo local no está disponible. Los precios de una copia
+  recuperada se invalidan hasta consultar Catálogo.
+- Crear el destino y guardar productos son pasos separados. La creación no es
+  idempotente: una respuesta perdida obliga a revisar/recargar los destinos
+  antes de autorizar explícitamente otra creación. No se borra una lista nueva
+  si después falla el lote.
+- El total del carrito es sólo una referencia del catálogo. Un guardado puede
+  contener productos sin stock confirmado o sin precio vigente; la lista
+  presenta esas advertencias. Esto no implementa ni acredita optimización.
+
+### Comprobación manual en el entorno Kubernetes
+
+Tras aplicar autorizadamente la migración 14 y publicar Motor y frontend por
+el procedimiento del equipo, con Catálogo habilitado:
+
+1. Agregar productos y ajustar envases. Esperar **guardado en tu cuenta**,
+   recargar, cerrar/iniciar sesión y abrir desde otro navegador. Debe recuperarse
+   el mismo borrador, no vaciarse ni tomar el de otra cuenta.
+2. Repetir creando un destino. El lote fallido no debe crear otro destino al
+   reintentar. Comprobar también listas vacías y nombres inválidos.
+3. Con herramientas de red del navegador, bloquear la sincronización: editar y
+   recargar debe recuperar el borrador local pendiente. Restablecer la red y
+   comprobar que se sincroniza. Bloquear la confirmación: no debe
+   vaciarse el carrito ni poder cambiarse mientras el resultado sea incierto.
+   Restablecer la red y reintentar; comparar la `clave` de preparación/confirmación.
+   Recargar durante el envío y comprobar que recupera la misma operación.
+4. Probar doble clic, límite sumado de 99 envases, producto inexistente,
+   lista eliminada y sesión vencida. Sólo 401 ofrece iniciar sesión; ningún
+   error debe mostrarse como guardado exitoso.
+5. Comprobar una lista con precios vencidos: debe conservar las advertencias,
+   sin inventar precios ni stock. Revisar móvil, Tab, Shift+Tab y Escape.
+6. Modificar el carrito desde dos navegadores; la versión antigua debe mostrar
+   conflicto y conservar ambos borradores hasta elegir. Cambiar de cuenta desde
+   otra pestaña debe rechazar las escrituras de la pestaña anterior.
+
+Las pruebas frontend usan HTTP controlado. Las pruebas de integración Go requieren
+PostgreSQL desechable. Ninguna acredita despliegue ni esta comprobación manual.
+
 ## Categorías desde Catálogo
 
 El lateral consulta `GET ${VITE_API_URL}/productos/categorias` al montarse y

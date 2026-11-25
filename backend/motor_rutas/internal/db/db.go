@@ -39,6 +39,9 @@ SELECT has_schema_privilege(current_user, 'rutas', 'USAGE')
    AND has_sequence_privilege(current_user, 'rutas.articulos_lista_compras_id_seq', 'USAGE')
    AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'SELECT')
    AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'INSERT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'SELECT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'INSERT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'UPDATE')
    AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
                WHERE attrelid = 'rutas.articulos_lista_compras'::regclass
                  AND attname = 'producto_id' AND NOT attisdropped)
@@ -81,11 +84,11 @@ func Abrir(contexto context.Context, dsn string, maximoConexiones int32) (*pgxpo
 	var tienePermisos bool
 	if errorObtenido := pool.QueryRow(contexto, consultaPermisos).Scan(&tienePermisos); errorObtenido != nil {
 		pool.Close()
-		return nil, fmt.Errorf("no se pudo verificar los permisos de rutas.* (%T)", errorObtenido)
+		return nil, fmt.Errorf("no se pudo verificar rutas.*; comprobar migraciones 11, 12 y 14 (%T)", errorObtenido)
 	}
 	if !tienePermisos {
 		pool.Close()
-		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql, 11_articulos_lista_producto.sql y 12_lotes_articulos_idempotencia.sql antes de iniciar el motor de rutas")
+		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql, 11_articulos_lista_producto.sql, 12_lotes_articulos_idempotencia.sql y 14_carritos_persistentes.sql antes de iniciar el motor de rutas")
 	}
 	return pool, nil
 }

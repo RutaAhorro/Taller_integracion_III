@@ -158,7 +158,7 @@ test("el acceso flotante al carrito desaparece mientras su panel está abierto",
   assert.doesNotMatch(renderizar(MainLayout), /aria-label="Ver carrito"/);
   carrito.isCartOpen = false;
   carrito.totalItems = 0;
-  assert.doesNotMatch(renderizar(MainLayout), /aria-label="Ver carrito"/);
+  assert.match(renderizar(MainLayout), /aria-label="Ver carrito"/);
 });
 
 test("listas ofrece iniciar sesión únicamente cuando la API devuelve 401", () => {

@@ -37,6 +37,7 @@ import (
 // Opciones reúne las dependencias del servidor.
 type Opciones struct {
 	Repo         listas.Repositorio         // acceso a datos (PostgreSQL o memoria en pruebas)
+	Carritos     listas.RepositorioCarrito  // borrador y envío atómico en el mismo dominio
 	Catalogo     listas.Catalogo            // disponibilidad de productos (HTTP a Catálogo o falso en pruebas)
 	JWTSecret    string                     // secreto para verificar la cookie jwt
 	OrigenesCORS []string                   // orígenes exactos permitidos
@@ -79,6 +80,19 @@ func rutas(opciones Opciones) http.Handler {
 		ruta := peticion.URL.Path
 
 		switch {
+		case ruta == prefijoListas+"/carrito":
+			despachar(respuesta, peticion, prefijoListas+"/carrito", metodosPorRuta{
+				http.MethodGet: manejador.conSesionCarrito(manejador.obtenerCarrito),
+				http.MethodPut: manejador.conSesionCarrito(manejador.guardarCarrito),
+			})
+		case ruta == prefijoListas+"/carrito/preparar":
+			despachar(respuesta, peticion, prefijoListas+"/carrito/preparar", metodosPorRuta{
+				http.MethodPost: manejador.conSesionCarrito(manejador.prepararCarrito),
+			})
+		case ruta == prefijoListas+"/carrito/confirmar":
+			despachar(respuesta, peticion, prefijoListas+"/carrito/confirmar", metodosPorRuta{
+				http.MethodPost: manejador.conSesionCarrito(manejador.confirmarCarrito),
+			})
 		// --- Sondas internas (sin sesión) ------------------------------------
 		case ruta == "/_rutas/live":
 			despachar(respuesta, peticion, ruta, metodosPorRuta{
@@ -266,7 +280,7 @@ func cors(origenesPermitidos []string, siguiente http.Handler) http.Handler {
 			cabeceras := respuesta.Header()
 			cabeceras.Set("Access-Control-Allow-Origin", origen)
 			cabeceras.Set("Access-Control-Allow-Credentials", "true")
-			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, Idempotency-Key")
+			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, Idempotency-Key, X-Carrito-Cuenta")
 			cabeceras.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if peticion.Method == http.MethodOptions {
