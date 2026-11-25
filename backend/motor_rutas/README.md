@@ -198,10 +198,41 @@ que podrá resolver el aprovisionamiento. La cuota se calcula con sus unidades
 reales: `2G` no es `2Gi`.
 
 La propuesta en `infrastructure/k8s/overlays/motor-listas-ajustado` contiene
-únicamente ConfigMap, Service y Deployment: una réplica, requests de 50m/32Mi,
+únicamente ConfigMap, Service y Deployment: una réplica, requests de 50m/64Mi,
 limits de 100m/128Mi, sin HPA. No modifica el presupuesto de otros servicios.
 En la revisión del 25-11-2026 cabía aritméticamente y dejaba 100m de límite CPU
 libre; no es una medición de rendimiento ni una reserva de cuota.
+
+Además de ResourceQuota, el asistente comprueba los LimitRanges visibles. El
+namespace exige un mínimo de 64Mi por contenedor: la propuesta anterior de
+32Mi fue rechazada al crear el pod y se corrigió a 64Mi. El dry-run de un
+Deployment valida ese objeto, no crea ni valida todos sus pods futuros.
+
+**Cuotas del clúster anfitrión:** el namespace puede tener margen y aun así
+fallar al crear un Service. En la habilitación se observó el rechazo
+`students-host-envelope`, con 120/120 Services en el anfitrión. Esa cuota puede
+no ser visible desde el contexto del estudiante. Se necesita capacidad del
+administrador o retirar, con autorización y comprobaciones, un Service propio
+realmente sobrante. No borrar ni reutilizar Services de otros estudiantes.
+No usar IPs efímeras de pods como sustituto permanente del Service.
+
+En la recuperación autorizada del 25-11-2026 se respaldó y retiró únicamente
+el Service duplicado `api-gateway`, conservando `api` y el Deployment del
+Gateway. Se corrigió la memoria solicitada de Motor a 64Mi y se creó su Service.
+Motor quedó 1/1 Running, su ready por Service devolvió 200 y listas por Gateway,
+sin sesión, devolvió 401. Gateway, frontend y Catálogo público siguieron
+respondiendo 200. La cuota visible quedó en 10/12 pods, 8/10 Services y
+1900m/2000m de límites CPU.
+
+Estas comprobaciones no prueban guardado ni aislamiento de listas con sesión.
+La checklist de navegador sigue pendiente. No reaplicar manifiestos locales
+anteriores que pidan 32Mi ni repetir el aprovisionamiento tras esta recuperación.
+
+Si `apply` creó ConfigMap y Deployment pero rechazó el Service, el estado es
+parcial: no volver a aprovisionar contraseñas, no borrar Secrets y no aplicar
+la carpeta completa. Revisar por separado la admisión del pod y la creación
+del Service. El asistente de primera habilitación se detiene ante recursos
+existentes; la recuperación requiere operaciones acotadas y coordinadas.
 
 **Preparar archivos locales, sin desplegar:**
 

@@ -14,7 +14,8 @@ spec:
           resources:
             requests:
               cpu: 50m
-              memory: 32Mi
+              # El LimitRange del namespace exige al menos 64Mi por contenedor.
+              memory: 64Mi
             limits:
               cpu: 100m
               memory: 128Mi

@@ -60,6 +60,27 @@ seguir redirects. Responde 503 si alguno falla. Este diagnóstico está desacopl
 readiness probe de Kubernetes para evitar que la caída de un servicio retire el
 tráfico hacia los dominios sanos.
 
+## Service de Kubernetes
+
+El Deployment y el pod del Gateway se llaman `api-gateway`, pero su Service de
+entrada es **`api`**, definido en `infrastructure/k8s/gateway/api-service.yaml`.
+Los Ingress y el proxy Nginx del frontend usan ese nombre. El selector sigue
+siendo `app: api-gateway`; no renombrar el Deployment para hacerlo coincidir
+con el Service.
+
+El Service adicional `api-gateway` apuntaba al mismo pod y puerto. Se retiró,
+con copia previa y autorización, el 25-11-2026 para liberar un cupo de Service
+del clúster anfitrión y habilitar Motor/Listas. Se elimina su manifiesto
+duplicado para que una aplicación posterior de la carpeta no lo recree.
+La revisión no encontró referencias explícitas en los recursos propios, el
+código, los Ingress ni el proxy del frontend.
+
+La copia original y un manifiesto restaurable se guardaron fuera del
+repositorio en el directorio de respaldos del operador. Restaurarlo requiere
+coordinar capacidad de Services; conservar una copia no reserva el cupo.
+No eliminar el Service `api`, el Deployment `api-gateway` ni su pod al
+realizar mantenimiento de este alias retirado.
+
 ## Configuración (.env)
 
 Ver `.env.example` para una plantilla lista para usar.
