@@ -105,6 +105,20 @@ func validarComplejidadContrasena(contrasena string) error {
 	return nil
 }
 
+// prepararHashContrasena aplica la política vigente antes de hashear. Es el
+// único punto donde se valida la complejidad tanto para el cambio voluntario
+// (SUP-281, PUT /auth/me) como para el restablecimiento por token.
+func prepararHashContrasena(contrasena string) (string, error) {
+	if errorValidacion := validarComplejidadContrasena(contrasena); errorValidacion != nil {
+		return "", errorValidacion
+	}
+	hash, errorHash := HashearContrasena(contrasena)
+	if errorHash != nil {
+		return "", fmt.Errorf("error al generar hash de contraseña: %w", errorHash)
+	}
+	return hash, nil
+}
+
 // normalizarCorreo deja el correo en la forma en que se guarda y se compara.
 func normalizarCorreo(correo string) string {
 	return strings.ToLower(strings.TrimSpace(correo))
@@ -354,12 +368,9 @@ func (servicio *ServicioAuth) ActualizarPerfil(contexto context.Context, usuario
 	}
 
 	if entrada.Password != nil {
-		if errorOperacion := validarComplejidadContrasena(*entrada.Password); errorOperacion != nil {
-			return nil, errorOperacion
-		}
-		hash, errorInterno := HashearContrasena(*entrada.Password)
+		hash, errorInterno := prepararHashContrasena(*entrada.Password)
 		if errorInterno != nil {
-			return nil, fmt.Errorf("error al generar hash de contraseña: %w", errorInterno)
+			return nil, errorInterno
 		}
 		datos["password_hash"] = hash
 	}

@@ -22,7 +22,9 @@ const (
 	plazoConsultaMs    = "5000"           // statement_timeout de PostgreSQL, en milisegundos
 )
 
-// consultaPermisos confirma que app_rutas tiene exactamente lo que el servicio usa.
+// consultaPermisos confirma que app_rutas tiene exactamente lo que el servicio
+// usa y que las migraciones 11 y 12 ya corrieron: la columna producto_id, su
+// índice único ("sumar si ya existe") y la tabla de claves del lote (SUP-318). Así el propio código exige el orden de despliegue.
 // app_rutas tiene search_path = pg_catalog, por eso todo se califica con "rutas.".
 const consultaPermisos = `
 SELECT has_schema_privilege(current_user, 'rutas', 'USAGE')
@@ -30,7 +32,21 @@ SELECT has_schema_privilege(current_user, 'rutas', 'USAGE')
    AND has_table_privilege(current_user, 'rutas.listas_compras', 'INSERT')
    AND has_table_privilege(current_user, 'rutas.listas_compras', 'UPDATE')
    AND has_table_privilege(current_user, 'rutas.listas_compras', 'DELETE')
-   AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'SELECT')`
+   AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'SELECT')
+   AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'INSERT')
+   AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'UPDATE')
+   AND has_table_privilege(current_user, 'rutas.articulos_lista_compras', 'DELETE')
+   AND has_sequence_privilege(current_user, 'rutas.articulos_lista_compras_id_seq', 'USAGE')
+   AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'SELECT')
+   AND has_table_privilege(current_user, 'rutas.lotes_articulos_aplicados', 'INSERT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'SELECT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'INSERT')
+   AND has_table_privilege(current_user, 'rutas.carritos', 'UPDATE')
+   AND EXISTS (SELECT 1 FROM pg_catalog.pg_attribute
+               WHERE attrelid = 'rutas.articulos_lista_compras'::regclass
+                 AND attname = 'producto_id' AND NOT attisdropped)
+   AND EXISTS (SELECT 1 FROM pg_catalog.pg_indexes
+               WHERE schemaname = 'rutas' AND indexname = 'uq_articulos_lista_producto')`
 
 // =============================================================================
 // Apertura del pool
@@ -68,11 +84,11 @@ func Abrir(contexto context.Context, dsn string, maximoConexiones int32) (*pgxpo
 	var tienePermisos bool
 	if errorObtenido := pool.QueryRow(contexto, consultaPermisos).Scan(&tienePermisos); errorObtenido != nil {
 		pool.Close()
-		return nil, fmt.Errorf("no se pudo verificar los permisos de rutas.* (%T)", errorObtenido)
+		return nil, fmt.Errorf("no se pudo verificar rutas.*; comprobar migraciones 11, 12 y 14 (%T)", errorObtenido)
 	}
 	if !tienePermisos {
 		pool.Close()
-		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql antes de iniciar el motor de rutas")
+		return nil, fmt.Errorf("aplicar 06_propiedad_permisos.sql, 11_articulos_lista_producto.sql, 12_lotes_articulos_idempotencia.sql y 14_carritos_persistentes.sql antes de iniciar el motor de rutas")
 	}
 	return pool, nil
 }

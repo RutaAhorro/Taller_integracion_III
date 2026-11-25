@@ -31,10 +31,13 @@ Gestiona las cuentas y la sesión:
 - Login con Google, con validación criptográfica del ID token.
 - Perfil de usuario.
 - `POST /auth/logout`, agregado en #124.
+- `POST /auth/restablecer`: consume un token de un solo uso y reutiliza la
+  política de contraseñas de `PUT /auth/me` (SUP-185).
 - Administración de usuarios.
 
-No hay recuperación de contraseña ni envío de correo: se podaron en SUP-347
-porque ningún endpoint los exponía, y se reimplementarán en SUP-233/185.
+El envío de correos y la solicitud pública de token se podaron en SUP-347 y
+siguen pendientes (SUP-233). La tabla `api.tokens_recuperacion` se conserva y
+SUP-185 la consume sin reintroducir SMTP.
 
 Emite la cookie `jwt`. Los roles son `registrado`, `colaborador` y `admin`. El plan (`basico` o `premium`) es independiente del rol.
 

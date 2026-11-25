@@ -152,6 +152,10 @@ services:
       RUTAS_DB_URL: postgres://app_rutas:${RUTAS_DB_PASSWORD:-}@db:5432/${DB_NAME}?sslmode=disable
       JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET}
       CORS_ALLOWED_ORIGINS: ${RUTAS_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      # SUP-241: consulta de disponibilidad. Sin el token Motor no arranca, pero
+      # se deja vacío por defecto para no romper Compose a quien no usa el perfil.
+      CATALOGO_INTERNAL_URL: http://catalogo:8080
+      CATALOGO_CONSULTA_TOKEN: ${CATALOGO_CONSULTA_TOKEN:-}
     depends_on:
       db: {condition: service_healthy}
     restart: unless-stopped
@@ -191,7 +195,7 @@ services:
       GATEWAY_RESPONSE_HEADER_TIMEOUT: ${GATEWAY_RESPONSE_HEADER_TIMEOUT:-20s}
       # Prefijos por dominio (mismos defaults que internal/config/config.go).
       # Un formato inválido impide arrancar; el "/" final se recorta.
-      GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios}
+      GATEWAY_IDENTIDAD_PREFIXES: ${GATEWAY_IDENTIDAD_PREFIXES:-/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones}
       GATEWAY_CATALOGO_PREFIXES: ${GATEWAY_CATALOGO_PREFIXES:-/api/v1/productos,/api/v1/admin/productos}
       GATEWAY_RUTAS_PREFIXES: ${GATEWAY_RUTAS_PREFIXES:-/api/v1/listas}
       GATEWAY_SCRAPING_PREFIXES: ${GATEWAY_SCRAPING_PREFIXES:-/api/v1/scraper,/swagger}

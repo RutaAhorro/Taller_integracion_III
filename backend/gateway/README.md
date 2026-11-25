@@ -10,7 +10,7 @@ de scraping. No incluye reglas de negocio ni conexión directa a PostgreSQL o Re
 flowchart LR
     Clientes[Frontend / bot / worker] --> Gateway
     Gateway -->|/api/v1/productos/*| Catalogo[Catálogo]
-    Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*| Identidad[Identidad]
+    Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*, /api/v1/usuarios/me/direcciones/*| Identidad[Identidad]
     Gateway -->|/api/v1/listas/*| Rutas[Motor de rutas]
     Gateway -->|/api/v1/chat/*| IA[IA conversacional]
     Gateway -->|/api/v1/scraper/*, /swagger/*, health| Control[Control de scraping]
@@ -22,6 +22,7 @@ flowchart LR
 | `/api/v1/admin/productos` y subrutas | Catálogo (`CATALOGO_URL`) | Gestión administrativa de catálogo |
 | `/api/v1/auth` y subrutas | Identidad (`IDENTIDAD_URL`) | Login, registro, sesiones y OAuth |
 | `/api/v1/admin/usuarios` y subrutas | Identidad (`IDENTIDAD_URL`) | Métricas y administración de cuentas |
+| `/api/v1/usuarios/me/direcciones` y subrutas | Identidad (`IDENTIDAD_URL`) | CRUD de direcciones guardadas del usuario autenticado (SUP-239). El prefijo es la ruta completa: `/api/v1/usuarios`, `/api/v1/usuarios/me` y `/api/v1/usuarios/me/direccionesX` no se enrutan y responden 404 del Gateway |
 | `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
 | `/api/v1/chat` y subrutas | IA conversacional (`IA_URL`) | Interacción con asistente de IA conversacional (SUP-278) |
 | `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
@@ -59,6 +60,27 @@ seguir redirects. Responde 503 si alguno falla. Este diagnóstico está desacopl
 readiness probe de Kubernetes para evitar que la caída de un servicio retire el
 tráfico hacia los dominios sanos.
 
+## Service de Kubernetes
+
+El Deployment y el pod del Gateway se llaman `api-gateway`, pero su Service de
+entrada es **`api`**, definido en `infrastructure/k8s/gateway/api-service.yaml`.
+Los Ingress y el proxy Nginx del frontend usan ese nombre. El selector sigue
+siendo `app: api-gateway`; no renombrar el Deployment para hacerlo coincidir
+con el Service.
+
+El Service adicional `api-gateway` apuntaba al mismo pod y puerto. Se retiró,
+con copia previa y autorización, el 25-11-2026 para liberar un cupo de Service
+del clúster anfitrión y habilitar Motor/Listas. Se elimina su manifiesto
+duplicado para que una aplicación posterior de la carpeta no lo recree.
+La revisión no encontró referencias explícitas en los recursos propios, el
+código, los Ingress ni el proxy del frontend.
+
+La copia original y un manifiesto restaurable se guardaron fuera del
+repositorio en el directorio de respaldos del operador. Restaurarlo requiere
+coordinar capacidad de Services; conservar una copia no reserva el cupo.
+No eliminar el Service `api`, el Deployment `api-gateway` ni su pod al
+realizar mantenimiento de este alias retirado.
+
 ## Configuración (.env)
 
 Ver `.env.example` para una plantilla lista para usar.
@@ -81,7 +103,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `GATEWAY_KEEPALIVE_TIMEOUT` | `30s` | Keep-alive de conexiones de lectura hacia upstreams |
 | `GATEWAY_TRUSTED_PROXIES` | Vacío | IPs o CIDRs de proxies reversos de entrada confiables |
 | `GATEWAY_CATALOGO_PREFIXES` | `/api/v1/productos,/api/v1/admin/productos` | Prefijos enrutados a Catálogo |
-| `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios` | Prefijos enrutados a Identidad |
+| `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones` | Prefijos enrutados a Identidad |
 | `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas` | Prefijos enrutados a Motor de rutas |
 | `GATEWAY_SCRAPING_PREFIXES` | `/api/v1/scraper,/swagger` | Prefijos enrutados a Control de scraping |
 | `GATEWAY_IA_PREFIXES` | `/api/v1/chat` | Prefijos enrutados a IA conversacional |
@@ -90,7 +112,9 @@ Los timeouts deben ser duraciones positivas de Go (`500ms`, `5s`, `30s`). Una
 configuración inválida aborta el arranque con mensaje explicativo.
 
 Las variables `GATEWAY_*_PREFIXES` son listas separadas por comas. Vacías usan
-el valor por defecto. Cada prefijo es un path absoluto (`/api/v1/productos`)
+el valor por defecto. Definir una variable **reemplaza** la lista completa: quien
+la sobrescriba debe incluir `/api/v1/usuarios/me/direcciones` en
+`GATEWAY_IDENTIDAD_PREFIXES` o ese CRUD responderá 404. Cada prefijo es un path absoluto (`/api/v1/productos`)
 que coincide consigo mismo y con sus rutas hijas (`/api/v1/productos/123`),
 pero no con rutas vecinas (`/api/v1/productos-falso`). Reglas al arrancar:
 

@@ -541,6 +541,10 @@ data:
     GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
     -- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
     GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
+    -- SUP-239: CRUD de direcciones del usuario. DELETE es necesario porque la dirección
+    -- es un dato del propio usuario, que puede eliminarla. La tabla viene de 01 y sus
+    -- columnas nuevas de 11; este grant no depende de 11, así que sobrevive a re-ejecutar 06.
+    GRANT SELECT, INSERT, UPDATE, DELETE ON api.direcciones_usuario TO app_identity;
     -- SUP-242: 08 crea api.auditoria_admin_usuarios después de este script. Si ya
     -- existe (re-ejecución de 06 en una base migrada), se restauran sus grants para
     -- que la auditoría administrativa siga operativa. Sin DELETE ni UPDATE.
@@ -568,12 +572,21 @@ data:
     GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
         scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
 
-    -- SUP-240: CRUD de listas. Los artículos sólo se leen para el detalle; agregarlos
-    -- y quitarlos llega con SUP-241. Borrar una lista elimina sus artículos por la FK
-    -- interna, que PostgreSQL ejecuta como dueño de la tabla, no como app_rutas.
+    -- SUP-240: CRUD de listas. SUP-327: Motor también agrega, cambia y quita
+    -- artículos (11_articulos_lista_producto.sql reaplica estos grants en bases
+    -- existentes). Borrar una lista elimina sus artículos por la FK interna.
     GRANT USAGE ON SCHEMA rutas TO app_rutas;
     GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
-    GRANT SELECT ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
+
+    -- 14 se ejecuta después en bases nuevas; conservar sus grants al re-ejecutar 06.
+    DO $$
+    BEGIN
+        IF to_regclass('rutas.carritos') IS NOT NULL THEN
+            GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
+        END IF;
+    END $$;
 
     -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
     -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
@@ -582,9 +595,9 @@ data:
     BEGIN
         FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
             permitted := CASE role_name
-                WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
+                WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios','api.direcciones_usuario']
                 WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
-                WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
+                WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados','rutas.carritos']
                 ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
             FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
                 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -596,12 +609,12 @@ data:
                             AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                         AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                             OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
-                                OR (role_name = 'app_rutas' AND relation.name = 'rutas.listas_compras')))
+                                OR (role_name = 'app_rutas' AND relation.name IN ('rutas.listas_compras', 'rutas.articulos_lista_compras'))
+                                OR (role_name = 'app_identity' AND relation.name = 'api.direcciones_usuario')))
                             OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
                             OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
                                 AND relation.name = 'scraper.cadenas_supermercado'
-                                AND has_table_privilege(role_name, relation.oid, 'UPDATE'))
-                            OR (role_name = 'app_rutas' AND privilege_name <> 'SELECT' AND relation.name = 'rutas.articulos_lista_compras')) THEN
+                                AND has_table_privilege(role_name, relation.oid, 'UPDATE'))) THEN
                         RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                     END IF;
                 END LOOP;
@@ -617,6 +630,8 @@ data:
                                 AND relation.name IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq'))
                             OR (role_name = 'app_identity' AND privilege_name IN ('USAGE','SELECT')
                                 AND relation.name = 'api.auditoria_admin_usuarios_id_seq')
+                            OR (role_name = 'app_rutas' AND privilege_name = 'USAGE'
+                                AND relation.name = 'rutas.articulos_lista_compras_id_seq')
                         ) THEN
                         RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar secuencias', role_name, privilege_name, relation.name;
                     END IF;
@@ -844,6 +859,279 @@ data:
     SET statement_timeout = '0';
 
     ALTER TABLE api.usuarios VALIDATE CONSTRAINT usuarios_rol_check;
+  11_articulos_lista_producto.sql: |
+    -- SUP-327: los artículos de lista identifican el producto por el UUID que publica
+    -- Catálogo (scraper.productos_crudos.id), según docs/Contratos/CONTRATO_ARTICULOS_LISTA.md.
+    -- Aplicar después de 10. Idempotente: se puede re-ejecutar en una base existente.
+    --
+    -- - producto_id no lleva FK: el producto pertenece a Catálogo y Motor no consulta
+    --   sus tablas. La existencia y disponibilidad se validan por HTTP.
+    -- - producto_normalizado_id se elimina con su FK hacia api.productos_normalizados,
+    --   tabla que nunca se llenó.
+    -- - Filas previas: se conservan con producto_id NULL (no resolubles) en vez de
+    --   inventarles un producto. Por eso producto_id no lleva CHECK: un CHECK NOT
+    --   VALID también se evalúa al modificar una fila e impediría marcar como
+    --   comprado un artículo previo. Motor exige producto_id en cada alta.
+    -- - El CHECK de cantidad es NOT VALID para que solo aplique a filas nuevas o
+    --   modificadas.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    ALTER TABLE rutas.articulos_lista_compras ADD COLUMN IF NOT EXISTS producto_id UUID;
+    ALTER TABLE rutas.articulos_lista_compras DROP COLUMN IF EXISTS producto_normalizado_id;
+
+    -- Versiones previas de esta migración agregaban un CHECK de producto_id.
+    ALTER TABLE rutas.articulos_lista_compras DROP CONSTRAINT IF EXISTS articulos_lista_producto_requerido;
+
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint
+                       WHERE conrelid = 'rutas.articulos_lista_compras'::regclass
+                         AND conname = 'articulos_lista_cantidad_positiva') THEN
+            ALTER TABLE rutas.articulos_lista_compras
+                ADD CONSTRAINT articulos_lista_cantidad_positiva CHECK (cantidad >= 1) NOT VALID;
+        END IF;
+    END $$;
+
+    -- "Sumar si ya existe": un producto aparece una sola vez por lista. Los NULL
+    -- previos no chocan entre sí.
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_articulos_lista_producto
+        ON rutas.articulos_lista_compras (lista_id, producto_id);
+
+    -- Motor agrega, cambia y quita artículos. La secuencia la usa el SERIAL de id.
+    GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
+    GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
+
+    COMMIT;
+  11_direcciones_usuario.sql: |
+    -- SUP-239: direcciones guardadas del usuario (CRUD en Identidad).
+    -- Aplicar después de 06 (crea el rol app_identity) y 10. Es idempotente.
+    --
+    -- La tabla api.direcciones_usuario existe desde 01_schema_api.sql pero nunca
+    -- tuvo código ni permisos. Este script la adapta al contrato del CRUD:
+    --   * comuna: columna nueva. Queda NULLABLE en la base porque una fila previa
+    --     no tiene de dónde obtenerla; la API la exige al crear y al actualizar.
+    --   * lat/lon: pasan a ser opcionales (una dirección puede guardarse sin
+    --     geocodificar), pero se exigen ambas o ninguna y dentro de rango.
+    --   * creado_el: columna nueva (NOT NULL DEFAULT now(): sólo metadatos en
+    --     PostgreSQL 11+). Da un orden estable y permite promover la dirección más
+    --     antigua al borrar la principal. Las filas previas quedan con la fecha de
+    --     esta migración y se desempatan por id.
+    --   * es_principal: NOT NULL DEFAULT false e índice único parcial que garantiza
+    --     una sola principal por usuario, incluso ante peticiones concurrentes. Los
+    --     datos previos se normalizan: duplicadas se desmarcan (queda la más antigua)
+    --     y un usuario con direcciones y sin principal recibe la más antigua.
+    --   * Permisos: app_identity recibe exactamente SELECT, INSERT, UPDATE y DELETE
+    --     sobre esta tabla. Ningún otro rol runtime tiene ni necesita acceso: el
+    --     motor de rutas obtendrá el origen por HTTP, no por SQL cruzado.
+    --
+    -- Va en dos pasos, igual que 09 y 10: el DDL con bloqueos breves y la validación
+    -- de los CHECK (que recorre la tabla) en otra transacción, sin retener el
+    -- AccessExclusiveLock durante el escaneo.
+
+    -- Paso 1/2: DDL de metadatos y permisos.
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    ALTER TABLE api.direcciones_usuario
+        ADD COLUMN IF NOT EXISTS comuna VARCHAR(100);
+    ALTER TABLE api.direcciones_usuario
+        ADD COLUMN IF NOT EXISTS creado_el TIMESTAMPTZ NOT NULL DEFAULT now();
+
+    ALTER TABLE api.direcciones_usuario ALTER COLUMN lat DROP NOT NULL;
+    ALTER TABLE api.direcciones_usuario ALTER COLUMN lon DROP NOT NULL;
+
+    -- Una fila previa con es_principal NULL no es principal. Se fija NOT NULL sólo
+    -- después de normalizarla, para que la migración no falle con datos existentes.
+    UPDATE api.direcciones_usuario SET es_principal = false WHERE es_principal IS NULL;
+    ALTER TABLE api.direcciones_usuario ALTER COLUMN es_principal SET DEFAULT false;
+    ALTER TABLE api.direcciones_usuario ALTER COLUMN es_principal SET NOT NULL;
+
+    -- Si un usuario ya tuviera varias principales (el esquema original no lo
+    -- impedía), se conserva la más antigua y se desmarcan las demás; de lo
+    -- contrario el índice único parcial no podría crearse.
+    WITH ordenadas AS (
+        SELECT id,
+               ROW_NUMBER() OVER (PARTITION BY usuario_id ORDER BY creado_el, id) AS posicion
+        FROM api.direcciones_usuario
+        WHERE es_principal
+    )
+    UPDATE api.direcciones_usuario AS direccion
+    SET es_principal = false
+    FROM ordenadas
+    WHERE direccion.id = ordenadas.id AND ordenadas.posicion > 1;
+
+    -- Un usuario con direcciones previas pero ninguna principal (todas NULL/false)
+    -- recibe como principal la más antigua, para cumplir la invariante "si tiene
+    -- direcciones, tiene una principal" que mantiene la API. Idempotente: tras la
+    -- primera pasada ya no hay usuarios sin principal.
+    WITH candidatas AS (
+        SELECT DISTINCT ON (usuario_id) id
+        FROM api.direcciones_usuario AS direccion
+        WHERE NOT EXISTS (
+            SELECT 1 FROM api.direcciones_usuario AS otra
+            WHERE otra.usuario_id = direccion.usuario_id AND otra.es_principal)
+        ORDER BY usuario_id, creado_el, id
+    )
+    UPDATE api.direcciones_usuario AS direccion
+    SET es_principal = true
+    FROM candidatas
+    WHERE direccion.id = candidatas.id;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_direcciones_usuario_principal
+        ON api.direcciones_usuario (usuario_id) WHERE es_principal;
+    CREATE INDEX IF NOT EXISTS idx_direcciones_usuario_usuario
+        ON api.direcciones_usuario (usuario_id);
+
+    -- NOT VALID evita validar toda la tabla bajo AccessExclusiveLock; la validación
+    -- real ocurre en el paso 2.
+    ALTER TABLE api.direcciones_usuario DROP CONSTRAINT IF EXISTS direcciones_usuario_coordenadas_par_check;
+    ALTER TABLE api.direcciones_usuario
+        ADD CONSTRAINT direcciones_usuario_coordenadas_par_check
+        CHECK ((lat IS NULL) = (lon IS NULL)) NOT VALID;
+
+    ALTER TABLE api.direcciones_usuario DROP CONSTRAINT IF EXISTS direcciones_usuario_coordenadas_rango_check;
+    ALTER TABLE api.direcciones_usuario
+        ADD CONSTRAINT direcciones_usuario_coordenadas_rango_check
+        CHECK ((lat IS NULL OR lat BETWEEN -90 AND 90) AND (lon IS NULL OR lon BETWEEN -180 AND 180)) NOT VALID;
+
+    -- Una comuna presente no puede ser sólo espacios. Se permite NULL por las filas previas.
+    ALTER TABLE api.direcciones_usuario DROP CONSTRAINT IF EXISTS direcciones_usuario_comuna_check;
+    ALTER TABLE api.direcciones_usuario
+        ADD CONSTRAINT direcciones_usuario_comuna_check
+        CHECK (comuna IS NULL OR BTRIM(comuna) <> '') NOT VALID;
+
+    -- Permisos mínimos. Se exige el rol creado por 06 en vez de crearlo aquí: este
+    -- script no define roles ni sus atributos.
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_identity') THEN
+            RAISE EXCEPTION 'No existe el rol app_identity; aplicar 06_propiedad_permisos.sql antes de 11';
+        END IF;
+    END $$;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON api.direcciones_usuario TO app_identity;
+
+    COMMIT;
+
+    -- Paso 2/2: validar fuera de la transacción anterior. Sobre restricciones ya
+    -- validadas es un no-op rápido.
+    SET lock_timeout = '5s';
+    SET statement_timeout = '0';
+
+    ALTER TABLE api.direcciones_usuario VALIDATE CONSTRAINT direcciones_usuario_coordenadas_par_check;
+    ALTER TABLE api.direcciones_usuario VALIDATE CONSTRAINT direcciones_usuario_coordenadas_rango_check;
+    ALTER TABLE api.direcciones_usuario VALIDATE CONSTRAINT direcciones_usuario_comuna_check;
+  12_lotes_articulos_idempotencia.sql: |
+    -- SUP-318: claves Idempotency-Key del agregado en lote de artículos
+    -- (POST /api/v1/listas/{lista_id}/articulos/lote, CONTRATO_ARTICULOS_LISTA.md §3.4).
+    -- Aplicar después de 11. Idempotente: se puede re-ejecutar en una base existente.
+    --
+    -- - Una fila por lote aplicado: si el frontend reintenta con la misma clave,
+    --   Motor la encuentra y no vuelve a sumar las cantidades.
+    -- - huella es el SHA-256 (hex) del lote normalizado: la misma clave con otro
+    --   contenido se rechaza en vez de devolver un resultado que no corresponde.
+    -- - Las filas se borran con su lista (FK interna del esquema rutas). La acción
+    --   de la FK corre con permisos del dueño, por eso app_rutas no necesita DELETE.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    CREATE TABLE IF NOT EXISTS rutas.lotes_articulos_aplicados (
+        lista_id UUID NOT NULL REFERENCES rutas.listas_compras(id) ON DELETE CASCADE,
+        clave VARCHAR(128) NOT NULL,
+        huella CHAR(64) NOT NULL,
+        creado_el TIMESTAMP NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (lista_id, clave)
+    );
+
+    -- Motor sólo consulta y registra claves; nunca las modifica ni las borra.
+    GRANT SELECT, INSERT ON rutas.lotes_articulos_aplicados TO app_rutas;
+
+    COMMIT;
+  13_actualizar_sucursales_acuenta_cugat.sql: |
+    -- SUP-317: sucursales físicas reales de A Cuenta y Cugat en Temuco y filtro
+    -- geoespacial para precios comparables por sucursal.
+    --
+    -- Aplicar después de 04 (que crea las filas 5 y 6) y antes de init.sql, que
+    -- respeta las filas existentes con ON CONFLICT DO NOTHING. Idempotente: se
+    -- puede re-ejecutar sobre una base ya migrada.
+    --
+    -- Fuentes de los datos (no inventados):
+    --   A Cuenta: PDF oficial "Locales y horarios SBA 2025", local
+    --     "Manuel Antonio Matta 025, Temuco"; horario lun-sáb 08:00-21:30,
+    --     domingo y feriados 08:30-21:00. Coordenada de OSM way 426693011
+    --     (Supermercado Acuenta), datos © OpenStreetMap contributors, ODbL.
+    --   Cugat: ficha oficial https://cugat.cl/ubicaciones/av-barros-arana-375-temuco
+    --     "Av. Barros Arana 375, Temuco"; horario lun-sáb 08:00-21:00,
+    --     domingo 08:30-17:30. Coordenada de OSM way 426439021 (Cugat),
+    --     datos © OpenStreetMap contributors, ODbL.
+    -- El esquema guarda un solo par de horarios: se consigna el de lunes a sábado
+    -- y el domingo queda documentado aquí para no perderlo.
+
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    -- init.sql corre después en una base nueva; crearla aquí permite aplicar la
+    -- migración sola sobre un volumen existente que ya tenga las extensiones o no.
+    CREATE EXTENSION IF NOT EXISTS postgis;
+
+    UPDATE scraper.sucursales_supermercado
+    SET nombre        = 'SuperBodega aCuenta Temuco Matta',
+        direccion     = 'Manuel Antonio Matta 025',
+        comuna        = 'Temuco',
+        ciudad        = 'Temuco',
+        lat           = -38.7338383,
+        lon           = -72.5806422,
+        hora_apertura = '08:00:00',
+        hora_cierre   = '21:30:00'
+    WHERE codigo_sucursal = 'ACUENTA-CENTRAL';
+
+    UPDATE scraper.sucursales_supermercado
+    SET nombre        = 'Cugat Temuco Barros Arana',
+        direccion     = 'Av. Barros Arana 375',
+        comuna        = 'Temuco',
+        ciudad        = 'Temuco',
+        lat           = -38.7385969,
+        lon           = -72.5813372,
+        hora_apertura = '08:00:00',
+        hora_cierre   = '21:00:00'
+    WHERE codigo_sucursal = 'CUGAT-CENTRAL';
+
+    -- Índice funcional sobre geography: ST_DWithin en metros usa el índice GiST y
+    -- no añade columnas a la tabla compartida con Control. El predicado parcial
+    -- coincide con el WHERE del repositorio de Catálogo.
+    CREATE INDEX IF NOT EXISTS idx_sucursales_supermercado_geo
+        ON scraper.sucursales_supermercado
+        USING GIST ((ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography))
+        WHERE lat IS NOT NULL AND lon IS NOT NULL;
+
+    COMMIT;
+  14_carritos_persistentes.sql: |
+    -- Carrito borrador por cuenta, separado de las listas confirmadas.
+    -- Ejecutar como operador: no modifica listas ni datos de otros dominios.
+    BEGIN;
+    SET LOCAL lock_timeout = '5s';
+    SET LOCAL statement_timeout = '60s';
+
+    CREATE TABLE IF NOT EXISTS rutas.carritos (
+        usuario_id UUID PRIMARY KEY,
+        version BIGINT NOT NULL DEFAULT 0 CHECK (version >= 0),
+        articulos JSONB NOT NULL DEFAULT '[]'::jsonb
+            CHECK (jsonb_typeof(articulos) = 'array' AND jsonb_array_length(articulos) <= 100),
+        envio JSONB CHECK (envio IS NULL OR jsonb_typeof(envio) = 'object'),
+        ultimo_envio JSONB CHECK (ultimo_envio IS NULL OR jsonb_typeof(ultimo_envio) = 'object'),
+        actualizado_el TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    COMMENT ON TABLE rutas.carritos IS 'Borrador por cuenta de Motor/Listas, con versión y envío recuperable; sin precios persistidos';
+    COMMENT ON COLUMN rutas.carritos.usuario_id IS 'UUID externo de Identidad, obtenido sólo del JWT; sin FK entre dominios';
+    -- No se elimina la fila al vaciar: la versión y el último resultado protegen reintentos.
+    GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
+    COMMIT;
   init.sql: |
     -- Inicialización de una base PostgreSQL + PostGIS nueva (SUP-370).
     --

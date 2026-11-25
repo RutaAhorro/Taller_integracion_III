@@ -9,10 +9,11 @@
 //	rutas      → elige el handler según ruta y método (404/405 propios)
 //	conSesion  → valida la cookie jwt (solo rutas de /api/v1/listas)
 //	conID      → valida el {lista_id} de la URL
-//	handler    → listar, crear, obtener, actualizar o eliminar
+//	conArticulo→ valida el {articulo_id} de la URL (sólo rutas de un artículo)
+//	handler    → CRUD de listas o de sus artículos
 //
 // Este archivo contiene el armado, el despacho y los middlewares; los
-// handlers de negocio están en listas.go y los errores en errores.go.
+// handlers de negocio están en listas.go y articulos.go, y los errores en errores.go.
 package httpapi
 
 import (
@@ -36,9 +37,12 @@ import (
 // Opciones reúne las dependencias del servidor.
 type Opciones struct {
 	Repo         listas.Repositorio         // acceso a datos (PostgreSQL o memoria en pruebas)
+	Carritos     listas.RepositorioCarrito  // borrador y envío atómico en el mismo dominio
+	Catalogo     listas.Catalogo            // disponibilidad de productos (HTTP a Catálogo o falso en pruebas)
 	JWTSecret    string                     // secreto para verificar la cookie jwt
 	OrigenesCORS []string                   // orígenes exactos permitidos
 	MaxListas    int                        // tope de listas por usuario
+	Limites      listas.Limites             // topes de artículos por lista y de cantidad por artículo
 	Ping         func(context.Context) bool // salud de la base; nil en pruebas (ready responde ok)
 	Log          *slog.Logger               // logger estructurado; nil usa el por defecto
 }
@@ -76,6 +80,19 @@ func rutas(opciones Opciones) http.Handler {
 		ruta := peticion.URL.Path
 
 		switch {
+		case ruta == prefijoListas+"/carrito":
+			despachar(respuesta, peticion, prefijoListas+"/carrito", metodosPorRuta{
+				http.MethodGet: manejador.conSesionCarrito(manejador.obtenerCarrito),
+				http.MethodPut: manejador.conSesionCarrito(manejador.guardarCarrito),
+			})
+		case ruta == prefijoListas+"/carrito/preparar":
+			despachar(respuesta, peticion, prefijoListas+"/carrito/preparar", metodosPorRuta{
+				http.MethodPost: manejador.conSesionCarrito(manejador.prepararCarrito),
+			})
+		case ruta == prefijoListas+"/carrito/confirmar":
+			despachar(respuesta, peticion, prefijoListas+"/carrito/confirmar", metodosPorRuta{
+				http.MethodPost: manejador.conSesionCarrito(manejador.confirmarCarrito),
+			})
 		// --- Sondas internas (sin sesión) ------------------------------------
 		case ruta == "/_rutas/live":
 			despachar(respuesta, peticion, ruta, metodosPorRuta{
@@ -93,28 +110,59 @@ func rutas(opciones Opciones) http.Handler {
 				http.MethodPost: manejador.conSesion(manejador.crear),
 			})
 
-		// --- /api/v1/listas/{lista_id} (un solo segmento después) -------------
-		case esRutaDeUnaLista(ruta):
-			idLista := ruta[len(prefijoListas)+1:]
-			despachar(respuesta, peticion, prefijoListas+"/{lista_id}", metodosPorRuta{
-				http.MethodGet:    manejador.conSesion(manejador.conID(idLista, manejador.obtener)),
-				http.MethodPut:    manejador.conSesion(manejador.conID(idLista, manejador.actualizar)),
-				http.MethodDelete: manejador.conSesion(manejador.conID(idLista, manejador.eliminar)),
-			})
-
 		default:
-			escribirError(respuesta, http.StatusNotFound, mensajeRutaNoExiste, "")
+			despacharLista(manejador, respuesta, peticion, ruta)
 		}
 	})
 }
 
-// esRutaDeUnaLista reconoce "/api/v1/listas/<algo>" sin más barras después.
-func esRutaDeUnaLista(ruta string) bool {
+// segmentoArticulos es el recurso de artículos bajo una lista.
+const segmentoArticulos = "articulos"
+
+// segmentoLote es el agregado en lote bajo los artículos (SUP-318).
+const segmentoLote = "lote"
+
+// despacharLista atiende lo que cuelga de /api/v1/listas/{lista_id}:
+//
+//	/{lista_id}                          la lista
+//	/{lista_id}/articulos                agregar un artículo
+//	/{lista_id}/articulos/lote           agregar varios, todo o nada (SUP-318)
+//	/{lista_id}/articulos/{articulo_id}  cambiar o quitar un artículo
+//
+// Cualquier otra forma responde 404 con el envoltorio común.
+func despacharLista(manejador *handlerListas, respuesta http.ResponseWriter, peticion *http.Request, ruta string) {
 	if !strings.HasPrefix(ruta, prefijoListas+"/") {
-		return false
+		escribirError(respuesta, http.StatusNotFound, mensajeRutaNoExiste, "")
+		return
 	}
-	resto := ruta[len(prefijoListas)+1:]
-	return !strings.Contains(resto, "/")
+	segmentos := strings.Split(ruta[len(prefijoListas)+1:], "/")
+	idLista := segmentos[0]
+
+	switch {
+	case len(segmentos) == 1:
+		despachar(respuesta, peticion, prefijoListas+"/{lista_id}", metodosPorRuta{
+			http.MethodGet:    manejador.conSesion(manejador.conID(idLista, manejador.obtener)),
+			http.MethodPut:    manejador.conSesion(manejador.conID(idLista, manejador.actualizar)),
+			http.MethodDelete: manejador.conSesion(manejador.conID(idLista, manejador.eliminar)),
+		})
+	case len(segmentos) == 2 && segmentos[1] == segmentoArticulos:
+		despachar(respuesta, peticion, prefijoListas+"/{lista_id}/articulos", metodosPorRuta{
+			http.MethodPost: manejador.conSesion(manejador.conID(idLista, manejador.agregarArticulo)),
+		})
+	// "lote" va antes que {articulo_id}: no es un id válido y daría 404.
+	case len(segmentos) == 3 && segmentos[1] == segmentoArticulos && segmentos[2] == segmentoLote:
+		despachar(respuesta, peticion, prefijoListas+"/{lista_id}/articulos/lote", metodosPorRuta{
+			http.MethodPost: manejador.conSesion(manejador.conID(idLista, manejador.agregarLote)),
+		})
+	case len(segmentos) == 3 && segmentos[1] == segmentoArticulos:
+		idArticulo := segmentos[2]
+		despachar(respuesta, peticion, prefijoListas+"/{lista_id}/articulos/{articulo_id}", metodosPorRuta{
+			http.MethodPut:    manejador.conSesion(manejador.conID(idLista, manejador.conArticulo(idArticulo, manejador.actualizarArticulo))),
+			http.MethodDelete: manejador.conSesion(manejador.conID(idLista, manejador.conArticulo(idArticulo, manejador.eliminarArticulo))),
+		})
+	default:
+		escribirError(respuesta, http.StatusNotFound, mensajeRutaNoExiste, "")
+	}
 }
 
 // despachar ejecuta el handler del método pedido o responde 405 con la
@@ -232,7 +280,7 @@ func cors(origenesPermitidos []string, siguiente http.Handler) http.Handler {
 			cabeceras := respuesta.Header()
 			cabeceras.Set("Access-Control-Allow-Origin", origen)
 			cabeceras.Set("Access-Control-Allow-Credentials", "true")
-			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID")
+			cabeceras.Set("Access-Control-Allow-Headers", "Content-Type, X-Request-ID, Idempotency-Key, X-Carrito-Cuenta")
 			cabeceras.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		}
 		if peticion.Method == http.MethodOptions {

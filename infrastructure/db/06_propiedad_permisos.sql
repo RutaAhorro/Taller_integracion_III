@@ -79,6 +79,10 @@ GRANT USAGE ON SCHEMA api TO app_identity;
 GRANT SELECT, INSERT, UPDATE ON api.usuarios TO app_identity;
 -- SUP-184: requiere 05_tokens_recuperacion.sql. Sin DELETE: la limpieza es del operador.
 GRANT SELECT, INSERT, UPDATE ON api.tokens_recuperacion TO app_identity;
+-- SUP-239: CRUD de direcciones del usuario. DELETE es necesario porque la dirección
+-- es un dato del propio usuario, que puede eliminarla. La tabla viene de 01 y sus
+-- columnas nuevas de 11; este grant no depende de 11, así que sobrevive a re-ejecutar 06.
+GRANT SELECT, INSERT, UPDATE, DELETE ON api.direcciones_usuario TO app_identity;
 -- SUP-242: 08 crea api.auditoria_admin_usuarios después de este script. Si ya
 -- existe (re-ejecución de 06 en una base migrada), se restauran sus grants para
 -- que la auditoría administrativa siga operativa. Sin DELETE ni UPDATE.
@@ -106,12 +110,21 @@ GRANT SELECT, INSERT ON scraper.sucursales_supermercado, scraper.capturas_precio
 GRANT USAGE ON SEQUENCE scraper.cadenas_supermercado_id_seq,
     scraper.sucursales_supermercado_id_seq, scraper.capturas_precios_id_seq TO app_catalogo;
 
--- SUP-240: CRUD de listas. Los artículos sólo se leen para el detalle; agregarlos
--- y quitarlos llega con SUP-241. Borrar una lista elimina sus artículos por la FK
--- interna, que PostgreSQL ejecuta como dueño de la tabla, no como app_rutas.
+-- SUP-240: CRUD de listas. SUP-327: Motor también agrega, cambia y quita
+-- artículos (11_articulos_lista_producto.sql reaplica estos grants en bases
+-- existentes). Borrar una lista elimina sus artículos por la FK interna.
 GRANT USAGE ON SCHEMA rutas TO app_rutas;
 GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
-GRANT SELECT ON rutas.articulos_lista_compras TO app_rutas;
+GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
+GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
+
+-- 14 se ejecuta después en bases nuevas; conservar sus grants al re-ejecutar 06.
+DO $$
+BEGIN
+    IF to_regclass('rutas.carritos') IS NOT NULL THEN
+        GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
+    END IF;
+END $$;
 
 -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
 -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
@@ -120,9 +133,9 @@ DECLARE role_name TEXT; relation RECORD; privilege_name TEXT; permitted TEXT[];
 BEGIN
     FOREACH role_name IN ARRAY ARRAY['app_identity','app_scraping','app_catalogo','app_rutas'] LOOP
         permitted := CASE role_name
-            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios']
+            WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios','api.direcciones_usuario']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
-            WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras']
+            WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados','rutas.carritos']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
         FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -134,12 +147,12 @@ BEGIN
                         AND has_any_column_privilege(role_name, relation.oid, privilege_name)))
                     AND (NOT relation.name = ANY(permitted) OR privilege_name IN ('TRUNCATE','REFERENCES','TRIGGER')
                         OR (privilege_name = 'DELETE' AND NOT ((role_name = 'app_scraping' AND relation.name = 'scraper.entregas_trabajos')
-                            OR (role_name = 'app_rutas' AND relation.name = 'rutas.listas_compras')))
+                            OR (role_name = 'app_rutas' AND relation.name IN ('rutas.listas_compras', 'rutas.articulos_lista_compras'))
+                            OR (role_name = 'app_identity' AND relation.name = 'api.direcciones_usuario')))
                         OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE' AND relation.name NOT IN ('scraper.productos_crudos', 'scraper.cadenas_supermercado'))
                         OR (role_name = 'app_catalogo' AND privilege_name = 'UPDATE'
                             AND relation.name = 'scraper.cadenas_supermercado'
-                            AND has_table_privilege(role_name, relation.oid, 'UPDATE'))
-                        OR (role_name = 'app_rutas' AND privilege_name <> 'SELECT' AND relation.name = 'rutas.articulos_lista_compras')) THEN
+                            AND has_table_privilege(role_name, relation.oid, 'UPDATE'))) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar PUBLIC/defaults', role_name, privilege_name, relation.name;
                 END IF;
             END LOOP;
@@ -155,6 +168,8 @@ BEGIN
                             AND relation.name IN ('scraper.cadenas_supermercado_id_seq','scraper.sucursales_supermercado_id_seq','scraper.capturas_precios_id_seq'))
                         OR (role_name = 'app_identity' AND privilege_name IN ('USAGE','SELECT')
                             AND relation.name = 'api.auditoria_admin_usuarios_id_seq')
+                        OR (role_name = 'app_rutas' AND privilege_name = 'USAGE'
+                            AND relation.name = 'rutas.articulos_lista_compras_id_seq')
                     ) THEN
                     RAISE EXCEPTION 'Privilegio efectivo inesperado: % % %; revisar secuencias', role_name, privilege_name, relation.name;
                 END IF;

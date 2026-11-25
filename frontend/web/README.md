@@ -190,7 +190,7 @@ La fuente de verdad es `src/app/router.tsx`, con constantes en
 | `/dashboard`, `/producto/:id` | Catálogo y detalle; consumen la API |
 | `/login` | Login local y Google según configuración |
 | `/onboarding`, `/profile`, `/planes` | Requieren sesión; no implican preferencias persistidas o pagos integrados |
-| `/listas` | Requiere sesión; CRUD de listas si el motor está disponible. Artículos en solo lectura |
+| `/listas` | Requiere sesión y Motor disponible; CRUD de listas, búsqueda de productos, agregado, cantidades, marcado como comprado y eliminación de artículos |
 | `/admin`, `/admin/metricas` | Solo rol admin; usuarios, fuentes y métricas según endpoints disponibles |
 | `/chat` | Chat básico mediante `POST /api/v1/chat` del Gateway y cookie de sesión. Requiere IA habilitada en el entorno; receta → lista sigue pendiente |
 | `/colaborador` | Colaborador/admin; aviso de misiones no disponibles |
@@ -213,9 +213,9 @@ No envía tokens de servicio ni claves del proveedor desde el navegador. Los
 campos de productos recibidos no se convierten automáticamente en artículos:
 los IDs y las cantidades de envases requieren el
 [contrato de artículos](../../docs/Contratos/CONTRATO_ARTICULOS_LISTA.md).
-La respuesta estructurada de recetas (SUP-325), la confirmación editable
-(SUP-329) y la persistencia de artículos/lotes (SUP-241/SUP-318) siguen pendientes.
-La conexión básica no acredita que receta → lista esté terminada.
+El backend de recetas (SUP-325) y de artículos/lotes (SUP-241/SUP-318) existe;
+la confirmación editable de recetas (SUP-329) y su conexión desde el chat siguen
+pendientes. La conexión básica no acredita que receta → lista esté terminada.
 
 Antes de modificar o retirar `landing.json`, consultar el
 [contrato de la landing informativa](../../docs/Contratos/CONTRATO_LANDING_INFORMATIVA.md):
@@ -237,7 +237,7 @@ src/features/
                          (CartContext, CartSidebar), tarjetas, formatters y tipos.ts
   chat/                  Chatbot, useChatbot y TypingIndicator
   landing/               Home, componentes de portada y landing.json (contenido editorial)
-  listas/                ShoppingLists y listas-api.ts
+  listas/                ShoppingLists, ArticulosLista, clientes y hooks de detalle/búsqueda
   admin/                 Panel, clientes API y hooks administrativos
 src/layouts/             MainLayout, TopNav, Sidebar (filtros) y BottomNav
 src/components/          ErrorBoundary, FeatureUnavailable, Footer, ToastContext y ui/ (primitivas)
@@ -283,6 +283,57 @@ obsoleto: el nombre PascalCase o kebab-case no determina por sí solo si se usa.
   un operador autorizado, sin cambiar validaciones ni falsificar el usuario local.
 
 ## Comprobaciones
+
+### Listas y artículos (SUP-252)
+
+La UI utiliza el contrato vigente de `producto_id` y no accede a PostgreSQL.
+La búsqueda se envía a Catálogo por Gateway, con al menos 3 bytes UTF-8
+(`té` ya cumple); los resultados se paginan en el servidor y se descartan al
+editar la búsqueda o cambiar de lista.
+
+El agregado usa el endpoint de lote (SUP-318), también para un único producto.
+Conserva la misma `Idempotency-Key` al reintentar un envío no confirmado y no
+permite escrituras simultáneas. Las cantidades son enteros de 1 a 99 envases.
+Los productos repetidos suman cantidades según el contrato; una lista admite
+hasta 100 productos distintos. El servidor sigue siendo la autoridad de estos
+límites y del dueño de la lista.
+
+El detalle muestra los datos y la disponibilidad que devuelve Motor. Un precio
+ausente no se sustituye por cero. `sin_stock`, `desconocido` y `no_encontrado`
+se muestran con advertencias, sin borrar artículos automáticamente. PUT de
+cantidad/comprado no vuelve a consultar Catálogo; «Actualizar detalle y
+disponibilidad» permite consultar de nuevo. Si falla una escritura, se
+conservan el artículo y el borrador, sin anunciar éxito. El enlace de inicio
+de sesión aparece solo ante 401, también en errores del detalle.
+
+#### Preparación y validación real
+
+Motor debe estar habilitado con sus credenciales, permisos y consulta a
+Catálogo: seguir el [README de Motor](../../backend/motor_rutas/README.md),
+incluida su revisión de cuota antes del despliegue. Tener la UI compilada
+no prueba que el servicio esté disponible en el clúster.
+
+En un entorno de prueba autorizado, con dos cuentas propias y datos reales:
+
+1. Iniciar sesión, entrar en `/listas` y crear una lista.
+2. Seleccionarla, buscar un producto, elegirlo y agregar 2 envases. Comprobar
+   nombre, supermercado y la advertencia de disponibilidad que corresponda.
+3. Cambiar la cantidad a 3 y marcar como comprado. Recargar el detalle y la
+   página: ambas modificaciones deben conservarse.
+4. Cerrar sesión, volver a entrar y comprobar la misma lista y sus artículos.
+5. Agregar otro producto y quitarlo; recargar y comprobar que no reaparece.
+6. Con la segunda cuenta, comprobar que la lista de la primera no aparece.
+   Consultar su UUID por la API debe responder 404, sin revelar su existencia.
+7. Con DevTools, ralentizar las escrituras: los controles se bloquean y no
+   duplican peticiones. Simular una pérdida de respuesta de agregado y reintentar
+   el mismo producto/cantidad: comprobar la misma clave de operación y que no
+   vuelve a sumar. Un fallo conserva la selección; no se sustituye por éxito.
+8. Probar búsqueda vacía y fallida, cantidades fuera de 1–99, un producto sin
+   stock y un error 401. Solo el 401 debe ofrecer iniciar sesión.
+
+Las pruebas automatizadas de frontend usan HTTP controlado. Este procedimiento
+es una checklist pendiente, no evidencia de ejecución contra la BD del clúster.
+Carrito → lista, receta → lista y optimización quedan fuera de SUP-252.
 
 ### Chat básico por Gateway (SUP-253)
 

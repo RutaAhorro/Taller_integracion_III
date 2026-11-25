@@ -27,28 +27,41 @@ export function MainLayout() {
   // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
   const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
   // El nombre seleccionado no depende de las facetas que se vacían durante una carga.
-  const [supermercadoActivo, setSupermercadoActivo] = useState<UiSupermarket | null>(null);
+  const [supermercadoActivo, setSupermercadoActivo] =
+    useState<UiSupermarket | null>(null);
   const catalogo = useCatalog(consulta, categoria, supermercadoActivo);
-  const cerrarBarraLateral = useCallback(() => setBarraLateralAbierta(false), []);
+  const cerrarBarraLateral = useCallback(
+    () => setBarraLateralAbierta(false),
+    [],
+  );
   const restablecerFiltros = () => {
     setConsulta("");
     setCategoria("");
     setSupermercadoActivo(null);
   };
-  const { totalItems, totalPrice, setIsCartOpen } = useCart();
+  const { totalItems, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { pathname } = useLocation();
-  const pestanaActiva = 
-    pathname.startsWith('/chat') ? 'chat' :
-    pathname.startsWith('/history') ? 'history' :
-    pathname.startsWith('/route') ? 'route' :
-    pathname.startsWith('/colaborador') ? 'colaborador' :
-    pathname.startsWith('/profile') ? 'profile' :
-    'dashboard';
+  const pestanaActiva = pathname.startsWith("/chat")
+    ? "chat"
+    : pathname.startsWith("/history")
+      ? "history"
+      : pathname.startsWith("/route")
+        ? "route"
+        : pathname.startsWith("/colaborador")
+          ? "colaborador"
+          : pathname.startsWith("/profile")
+            ? "profile"
+            : "dashboard";
 
   useEffect(() => {
     // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
-    if (catalogo.marketsReady && supermercadoActivo &&
-        !catalogo.markets.some((supermercado) => supermercado.id === supermercadoActivo.id)) {
+    if (
+      catalogo.marketsReady &&
+      supermercadoActivo &&
+      !catalogo.markets.some(
+        (supermercado) => supermercado.id === supermercadoActivo.id,
+      )
+    ) {
       setSupermercadoActivo(null);
     }
   }, [catalogo.marketsReady, catalogo.markets, supermercadoActivo]);
@@ -71,12 +84,15 @@ export function MainLayout() {
           setCategoria(valor);
         }}
         onSelectMarket={(id) => {
-          setSupermercadoActivo(catalogo.markets.find((supermercado) => supermercado.id === id) ?? null);
+          setSupermercadoActivo(
+            catalogo.markets.find((supermercado) => supermercado.id === id) ??
+              null,
+          );
           setBarraLateralAbierta(false);
         }}
         activeCategory={categoria}
       />
-      
+
       <TopNav
         sidebarOpen={barraLateralAbierta}
         query={consulta}
@@ -89,10 +105,20 @@ export function MainLayout() {
       />
 
       <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
-        <Outlet context={{ query: consulta, activeMarket: supermercadoActivo?.id ?? null, category: categoria, markets: catalogo.markets, catalogo } satisfies TipoContextoDiseno} />
+        <Outlet
+          context={
+            {
+              query: consulta,
+              activeMarket: supermercadoActivo?.id ?? null,
+              category: categoria,
+              markets: catalogo.markets,
+              catalogo,
+            } satisfies TipoContextoDiseno
+          }
+        />
       </div>
 
-      {totalItems > 0 && (
+      {!isCartOpen && (
         <button
           onClick={() => setIsCartOpen(true)}
           className="fixed bottom-[5.5rem] right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6"
@@ -105,12 +131,20 @@ export function MainLayout() {
             </span>
           </div>
           <div className="ml-0.5 flex flex-col text-left">
-            <span className="text-[9px] font-medium leading-none opacity-90">Ver Carrito</span>
-            <span className="mt-0.5 text-xs font-bold leading-tight">${totalPrice.toLocaleString('es-CL')}</span>
+            <span className="text-[9px] font-medium leading-none opacity-90">
+              Ver Carrito
+            </span>
+            <span className="mt-0.5 text-xs font-bold leading-tight">
+              {totalItems === 0
+                ? "Revisar carrito"
+                : totalPrice === null
+                  ? "Sin total vigente"
+                  : `$${totalPrice.toLocaleString("es-CL")}`}
+            </span>
           </div>
         </button>
       )}
-      
+
       <div className="md:hidden">
         <BottomNav active={pestanaActiva} />
       </div>

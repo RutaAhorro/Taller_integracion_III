@@ -205,56 +205,117 @@ devuelve una ruta parcial.
 
 ## 4. Qué le pide Rutas a Catálogo (SUP-317)
 
-Consulta interna con token de servicio, no expuesta por el Gateway. **La forma
-exacta la define Marcelo en SUP-317.** Esta sección fija lo que Rutas necesita
-para calcular. La resolución previa del mismo producto entre sucursales por EAN
-está en el [contrato de equivalencia exacta por EAN](CONTRATO_EQUIVALENCIA_EAN.md)
-(SUP-244).
+Consultas internas con `Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>` (token
+de **sólo lectura**, distinto del de ingesta), no expuestas por el Gateway.
+SUP-317 define la forma exacta de la consulta de precios comparables; la
+resolución previa del mismo producto entre sucursales por EAN está en el
+[contrato de equivalencia exacta por EAN](CONTRATO_EQUIVALENCIA_EAN.md)
+(SUP-244), que este endpoint reutiliza.
 
-**Rutas envía:**
+```http
+POST /internal/v1/productos/precios-comparables
+Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>
+Content-Type: application/json
 
-- Los `producto_id` de la lista, en lote.
-- El origen (`lat`, `lon`), el radio en km y el máximo de sucursales.
+{
+  "producto_ids": ["9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e"],
+  "lat": -38.739,
+  "lon": -72.598,
+  "radio_km": 10,
+  "maximo_sucursales": 5
+}
+```
 
-**Rutas necesita recibir:**
+| Campo | Regla |
+| --- | --- |
+| `producto_ids` | 1 a `CATALOGO_MAX_PRODUCTOS_CONSULTA` UUID válidos; se deduplica conservando el orden |
+| `lat`, `lon` | Obligatorios y en rango; cero es válido |
+| `radio_km` | Positivo y `<= CATALOGO_MAX_RADIO_KM` (50 por defecto) |
+| `maximo_sucursales` | Entero entre 1 y 10 |
 
-- Por cada **sucursal candidata**: `sucursal_id`, `nombre`, `cadena`, `lat` y
-  `lon`. Solo sucursales físicas y activas, con coordenadas reales.
-- Por cada **oferta**: `producto_id` solicitado, `producto_id_oferta`,
-  `sucursal_id`, `precio` (CLP por envase), `en_stock` y fecha de captura.
-- Los `producto_id` **sin ninguna oferta** en el radio, en una lista aparte.
-  Una ausencia debe ser explícita, nunca un silencio.
+**Rutas recibe:**
 
-**Lo que Catálogo no debe hacer:**
+- `sucursales[]`: candidatas físicas, activas y con coordenadas reales dentro
+  del radio, ordenadas por distancia y acotadas por `maximo_sucursales`.
+  Incluye `distancia_km`.
+- `productos[]`: cada producto con al menos una oferta en esas sucursales.
+  Dentro de `ofertas[]` están `producto_id`, `producto_id_oferta`,
+  `sucursal_id`, `precio` (CLP por envase), `en_stock` y `capturado_el`.
+- `sin_ofertas[]`: los UUID solicitados sin oferta en el radio, incluidos los
+  inexistentes. Una ausencia es explícita, nunca un silencio.
+- `sucursales_excluidas[]`: cada sucursal descartada con su `motivo`
+  (`sin_coordenadas`, `sucursal_inactiva` o `sucursal_online`).
+- `resumen`: cobertura de la misma consulta.
 
-- Inventar coordenadas. Una sucursal sin coordenadas reales se excluye y se
-  informa.
-- Incluir tiendas solo en línea. En el `init.sql` actual, A Cuenta y Cugat
-  tienen la dirección "Casa Matriz / Online" con las coordenadas del centro de
-  Temuco. Para el motor no son paradas visitables (ver preguntas abiertas).
-- Equiparar productos por nombre.
+**Lo que Catálogo no hace:**
 
-Ejemplo **ilustrativo** de la respuesta, para que Marcelo lo ajuste:
+- Inventar coordenadas ni calcular la ruta: el filtro `ST_DWithin` corre en
+  Catálogo con PostGIS sobre datos reales; las distancias y decisiones del
+  recorrido son de Motor.
+- Incluir tiendas solo en línea. Las filas 5 y 6 (`ACUENTA-CENTRAL` y
+  `CUGAT-CENTRAL`) se corrigieron con
+  `13_actualizar_sucursales_acuenta_cugat.sql` a tiendas físicas (Manuel
+  Antonio Matta 025 y Av. Barros Arana 375) con coordenadas de OpenStreetMap.
+- Equiparar productos por nombre. Sin EAN, la oferta conserva sólo la identidad
+  exacta del producto solicitado.
+
+Ejemplo **ilustrativo** de la respuesta (los precios son de ejemplo; las
+coordenadas de las filas 5 y 6 son las de la migración `13_`):
 
 ```json
 {
   "sucursales": [
-    { "sucursal_id": 1, "nombre": "Jumbo Los Pablos", "cadena": "Jumbo", "lat": -38.741, "lon": -72.6 },
-    { "sucursal_id": 2, "nombre": "Lider Prieto Norte", "cadena": "Lider", "lat": -38.735, "lon": -72.59 }
+    { "sucursal_id": 5, "nombre": "SuperBodega aCuenta Temuco Matta", "cadena": "A Cuenta", "lat": -38.7338383, "lon": -72.5806422, "distancia_km": 1.61 },
+    { "sucursal_id": 6, "nombre": "Cugat Temuco Barros Arana", "cadena": "Cugat", "lat": -38.7385969, "lon": -72.5813372, "distancia_km": 1.45 }
   ],
-  "ofertas": [
+  "productos": [
     {
       "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
-      "producto_id_oferta": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
-      "sucursal_id": 1,
-      "precio": 990,
-      "en_stock": true,
-      "capturado_el": "2026-11-10T06:12:00Z"
+      "estado": "comparable",
+      "ean": "0036000291452",
+      "presentacion": "1 L",
+      "ofertas": [
+        {
+          "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "producto_id_oferta": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "sucursal_id": 6,
+          "cadena": "Cugat",
+          "sucursal": "Cugat Temuco Barros Arana",
+          "nombre": "Leche entera 1 L",
+          "unidad": "1 L",
+          "precio": 990,
+          "precio_normal": 990,
+          "precio_oferta": null,
+          "en_stock": true,
+          "capturado_el": "2026-11-24T10:00:00Z",
+          "estado_precio": "vigente"
+        }
+      ]
     }
   ],
-  "sin_ofertas": ["5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9"]
+  "sin_ofertas": ["5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9"],
+  "sucursales_excluidas": [],
+  "resumen": {
+    "solicitados": 2,
+    "con_oferta": 1,
+    "sin_oferta": 1,
+    "comparables": 1,
+    "sin_ean": 0,
+    "ean_invalidos": 0,
+    "conflictos_presentacion": 0,
+    "no_encontrados": 1,
+    "ofertas_sin_precio": 0,
+    "sucursales_candidatas": 2,
+    "sucursales_excluidas": 0
+  }
 }
 ```
+
+Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden` (cabecera
+`Origin` en una ruta interna), `400 invalid_payload`, `400 invalid_batch`,
+`400 invalid_product_id`, `400 invalid_consulta`, `413` y `500
+catalogo_internal_error`. La implementación y la operación están documentadas en
+[`backend/catalogo/README.md`](../../backend/catalogo/README.md#consulta-interna-de-precios-comparables-sup-317).
 
 ## 5. Casos de resultado esperado
 
@@ -433,11 +494,15 @@ $990.
   actual) o se rechaza toda la lista con 422?
 - [ ] **Equipo:** valores iniciales de radio (10 km), factor (1,3), rendimiento
   (12 km/L), umbral de ahorro ($500) y combustible de respaldo.
-- [ ] **Marcelo:** ¿Catálogo puede distinguir sucursales físicas de tiendas solo
-  en línea (A Cuenta y Cugat)? Si no, ¿se excluyen por cadena mientras tanto?
-- [ ] **Marcelo:** las coordenadas de sucursales del `init.sql` parecen
-  aproximadas. ¿Hay coordenadas reales para la demo (SUP-326)?
-- [ ] **Marcelo y Renato:** ¿Motor usa `CATALOGO_INTERNAL_TOKEN`? Ese token hoy
-  autoriza la ingesta, así que reutilizarlo le daría a Motor permiso de
-  escritura. Conviene un token de lectura propio, con nombre acordado según la
+- [x] **Marcelo (resuelto en SUP-317):** las tiendas sólo en línea se excluyen
+  por dirección/nombre y se informan en `sucursales_excluidas[]` con motivo
+  `sucursal_online`. A Cuenta y Cugat ya no son tiendas en línea: la migración
+  `13_` las cambia a locales físicos reales.
+- [x] **Marcelo (resuelto en SUP-317):** las coordenadas de A Cuenta y Cugat se
+  tomaron de OpenStreetMap (ways 426693011 y 426439021) y se verificaron contra
+  las direcciones oficiales. SUP-326 es sólo fixture de prueba: no agrega
+  columnas ni esquema.
+- [x] **Marcelo y Renato (resuelto en SUP-317):** Motor usa
+  `CATALOGO_CONSULTA_TOKEN`, token de lectura distinto de
+  `CATALOGO_INTERNAL_TOKEN`. Ver
   [guía de configuración](../Guias/GUIA_CONFIGURACION.md).

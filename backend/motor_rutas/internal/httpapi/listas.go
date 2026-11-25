@@ -232,6 +232,7 @@ func (manejador *handlerListas) obtener(respuesta http.ResponseWriter, peticion 
 		escribirError(respuesta, http.StatusNotFound, mensajeListaNoExiste, "")
 		return
 	}
+	manejador.completarEstados(peticion, detalle)
 	escribirJSON(respuesta, http.StatusOK, detalle)
 }
 

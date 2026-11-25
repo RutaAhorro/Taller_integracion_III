@@ -10,14 +10,21 @@
   No Catálogo/Control por imports o SQL, ni AutoMigrate.
 - Cookie HttpOnly `jwt`, HS256 y expiración obligatoria. Las rutas protegidas
   revalidan estado y rol contra usuarios; no confiar en headers del cliente.
+- Direcciones del usuario (`api.direcciones_usuario`, migración 11): el dueño sale
+  sólo de la sesión; ajenas responden 404; una principal por usuario (índice único
+  parcial + advisory lock); límite 10 por usuario.
 - Roles `registrado`, `colaborador`, `admin`, garantizados por `usuarios_rol_check`
   (migración 10); plan comercial separado del rol.
-- Login/registro/Google usan contadores Redis; no desactivar límites para pruebas.
+- Login/registro/Google/restablecimiento usan contadores Redis; no desactivar
+  límites para pruebas.
 - Conservar validación criptográfica Google, PasswordHash opcional para SSO y
   exigencia de contraseña actual al cambiar correo/contraseña local.
+- El restablecimiento por token consume `api.tokens_recuperacion` de forma
+  atómica (SHA-256 del token, expiración, un solo uso e invalidación de los demás
+  tokens pendientes del usuario) y reutiliza la misma validación de clave que
+  `PUT /auth/me`; no duplicar esa política ni el envío de correos, que sigue
+  fuera de Identidad.
 - Admin: no permitir eliminar al último admin activo; registrar auditoría.
-- No hay recuperación de contraseña ni correo: se podaron por no tener endpoints.
-  Al reimplementarla, guardar tokens aleatorios sólo como hash.
 - Configurar proxies reales, CORS y Secure según entorno; no registrar cookies,
   claves ni tokens.
 - Configuración validada en `internal/config`, inyectada al arrancar. Conservar
@@ -39,9 +46,9 @@
 
 ## Índice breve generado
 
-28 archivos fuente, incluidos los de pruebas. Distribución:
+40 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 14 archivos.
-- `tests`: 13 archivos.
+- `internal`: 21 archivos.
+- `tests`: 18 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

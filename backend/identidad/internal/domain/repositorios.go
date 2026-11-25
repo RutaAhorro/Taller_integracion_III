@@ -6,6 +6,7 @@ package domain
 import (
 	"context"
 	"errors"
+	"time"
 )
 
 // ===== Usuarios =====
@@ -25,6 +26,23 @@ var ErrUltimoAdmin = errors.New("no se puede dejar el sistema sin administradore
 
 // ErrAutoModificacionAdmin impide que un admin se desactive o degrade a sí mismo.
 var ErrAutoModificacionAdmin = errors.New("un administrador no puede desactivar ni degradar su propia cuenta; la acción debe ser ejecutada por otro administrador")
+
+// ===== Recuperación de contraseña =====
+
+// ErrTokenRecuperacionInvalido se devuelve cuando el token no existe, expiró o
+// ya fue consumido. Un solo error evita distinguir esos casos ante quien llama.
+var ErrTokenRecuperacionInvalido = errors.New("el token de restablecimiento no es válido")
+
+// RepositorioRecuperacion persiste el consumo de tokens de api.tokens_recuperacion.
+type RepositorioRecuperacion interface {
+	// Validar comprueba que el token exista, no haya expirado ni esté usado,
+	// sin consumirlo todavía.
+	Validar(contexto context.Context, hashToken []byte) error
+	// Consumir marca el token como usado, inutiliza los demás tokens pendientes
+	// del usuario y guarda el nuevo hash de contraseña en la misma transacción.
+	// Falla si otro intento lo consumió primero.
+	Consumir(contexto context.Context, hashToken []byte, hashContrasena string, actualizadoEl time.Time) error
+}
 
 // ===== Contrato de repositorio =====
 

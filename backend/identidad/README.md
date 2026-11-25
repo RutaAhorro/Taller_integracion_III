@@ -1,7 +1,8 @@
 # Identidad
 
 Servicio Go/Gin/GORM de cuentas, sesión y administración de usuarios. Es dueño
-de `api.usuarios` y de la auditoría administrativa.
+de `api.usuarios`, de la auditoría administrativa y de las direcciones guardadas
+(`api.direcciones_usuario`).
 Usa PostgreSQL con `app_identity` y Redis para limitar intentos de autenticación.
 Gateway enruta las solicitudes; la autorización efectiva pertenece a Identidad.
 No importa otros dominios ni consulta tablas ajenas; tampoco ejecuta migraciones.
@@ -18,9 +19,14 @@ monolito de SUP-272 y su procedimiento de corte quedan en el historial de Git.
 | POST | `/api/v1/auth/register` | Registro local con auto-login y cookie de sesión |
 | POST | `/api/v1/auth/login` | Login local; errores de credenciales no revelan si existe la cuenta |
 | POST | `/api/v1/auth/google` | Valida criptográficamente el token de Google y emite sesión |
+| POST | `/api/v1/auth/restablecer` | Cambia la contraseña con un token de un solo uso; sin sesión previa |
 | POST | `/api/v1/auth/logout` | Expira la cookie `jwt`; responde 204 sin cuerpo |
 | GET | `/api/v1/auth/me` | Identidad de la sesión: `user_id`, rol vigente, provider y mensaje; cuenta revalidada en PostgreSQL |
 | PUT | `/api/v1/auth/me` | Actualiza el perfil de la cuenta de la sesión |
+| GET | `/api/v1/usuarios/me/direcciones` | Direcciones del usuario de la sesión: `{"data":[...]}`, principal primero y luego de la más antigua a la más reciente (desempate por id) |
+| POST | `/api/v1/usuarios/me/direcciones` | Crea una dirección (201). La primera del usuario queda principal; con `es_principal:true` desmarca la anterior en la misma transacción |
+| PUT | `/api/v1/usuarios/me/direcciones/{id}` | Reemplaza los campos editables (200). Ver el contrato de direcciones |
+| DELETE | `/api/v1/usuarios/me/direcciones/{id}` | Elimina la dirección (204) |
 | GET | `/api/v1/admin/usuarios` | Listado paginado; exige rol `admin` vigente |
 | GET | `/api/v1/admin/usuarios/metricas` | Totales de cuentas y cuentas activas; exige `admin` |
 | PUT | `/api/v1/admin/usuarios/{id}` | Modifica `esta_activo`, `rol` o `plan`; exige `admin` |
@@ -41,7 +47,7 @@ no conceden permisos administrativos.
 > | Una fila de `api.usuarios` con rol `administrador` se trataba como `admin` | La migración `10_restringir_rol_usuarios.sql` normaliza esas filas y agrega `usuarios_rol_check`: la base ya no acepta otro rol. Identidad no arranca sin esa restricción, así que no puede quedar una cuenta admin sin acceso |
 > | El registro generaba un UUID en `api.usuarios.token_verificacion` | Las cuentas nuevas lo dejan en `NULL`: no hay flujo que lo consuma. La columna se conserva y ninguna respuesta HTTP lo exponía |
 > | `identidad correo-prueba <destinatario>` enviaba un correo de prueba (SUP-189) | El comando se eliminó; el binario sólo arranca el servidor |
-> | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`, ni verifica `api.tokens_recuperacion`. La tabla y sus grants se conservan; la recuperación se reimplementará completa (SUP-233/185) |
+> | El arranque armaba un servicio interno de recuperación de contraseña (SUP-184) y un transporte SMTP (SUP-189), sin ningún endpoint que los usara | Se eliminaron junto con `internal/mailer`. Identidad ya no lee `IDENTIDAD_CORREO_MODO`, `SMTP_*` ni `IDENTIDAD_URL_RESTABLECER`. La tabla y sus grants se conservan; SUP-185 volvió a usarla para consumir tokens, sin reintroducir el envío de correos. La solicitud pública de token sigue pendiente (SUP-233) |
 >
 > Ningún consumidor del repositorio enviaba `offset` ni escribía `administrador`
 > al momento del cambio (el frontend usa `page` y `limit`).
@@ -54,6 +60,24 @@ esta vía. Los handlers y DTO de [internal/api](internal/api) y
 El envoltorio de errores usa `estado`, `mensaje` y `detalle` cuando corresponde;
 los errores internos no incluyen SQL ni trazas en el JSON.
 
+`POST /auth/restablecer` recibe `{"token":"...","password":"..."}` y aplica la
+misma política de contraseñas que `PUT /auth/me`: complejidad y hash bcrypt se
+validan en un único helper del servicio, sin una segunda implementación. El
+token se recibe como SHA-256 de 32 bytes, se comprueba contra
+`api.tokens_recuperacion` usando el reloj de PostgreSQL y se consume con un
+`UPDATE ... WHERE usado_el IS NULL AND expira_el > now()` en la misma
+transacción que escribe `password_hash` e inutiliza cualquier otro token
+pendiente del mismo usuario. Token inexistente, vencido o ya usado responden 400
+con el mismo mensaje; una clave inválida también es 400 y deja el token vigente.
+La tabla no se limpia desde la aplicación: el operador conserva las filas como
+historial.
+
+**Límite conocido:** el restablecimiento no revoca las sesiones ya abiertas. Un
+JWT emitido antes del cambio sigue siendo válido hasta que expira, igual que tras
+`PUT /auth/me`. Revocar sesiones requeriría un registro de tokens o una versión
+de contraseña en el JWT y queda fuera de este cambio; para el caso "alguien entró
+a mi cuenta", el usuario debe cerrar sesión en sus otros dispositivos.
+
 Gateway conserva ruta, query, cuerpo, cookie y `Set-Cookie`, y elimina headers
 de identidad forjados. Una caída de Identidad responde 502
 `identidad_unavailable`; un timeout, 504 `identidad_timeout`, sin fallback a
@@ -62,6 +86,58 @@ no exista (404 propio); prefijos parecidos como `/api/v1/authentication` no
 se enrutan allí. Sus probes no se publican por Gateway. `/health`,
 `/api/v1/health` y `/swagger/*` pertenecen a Control de scraping; no son rutas
 de salud ni una especificación agregada de Identidad.
+
+## Direcciones del usuario (SUP-239)
+
+CRUD de las direcciones guardadas, cuyas coordenadas usará el motor de rutas como
+origen (por HTTP, nunca por SQL cruzado). Exige la cookie `jwt` y revalida la
+cuenta como el resto de rutas protegidas. **El dueño sale siempre de la sesión**:
+el cuerpo rechaza campos desconocidos (`usuario_id`, `id`...) con 400 y los headers
+de identidad se ignoran.
+
+Cuerpo de POST y PUT (snake_case, JSON estricto de un solo objeto):
+
+| Campo | Regla |
+| --- | --- |
+| `texto_direccion` | Obligatorio; se recorta; no vacío; hasta 255 caracteres |
+| `comuna` | Obligatoria; se recorta; no vacía; hasta 100 caracteres |
+| `etiqueta` | Opcional; hasta 100 caracteres; vacía equivale a `null` |
+| `lat`, `lon` | Opcionales pero **ambas o ninguna**; numéricas; lat en [-90, 90], lon en [-180, 180]; se redondean a 8 decimales (precisión de la columna) |
+| `es_principal` | Opcional. `true` la marca principal; omitido conserva el estado; `false` sobre la principal vigente responde 409 |
+
+Los textos no admiten caracteres de control. Respuesta (`DireccionDTO`): `id`,
+`etiqueta` (null si falta), `texto_direccion`, `comuna`, `lat`, `lon` (null si no
+hay), `es_principal`, `creado_el`.
+
+- **PUT reemplaza** los campos editables: omitir `etiqueta`, `lat` o `lon` los borra.
+  Se eligió PUT (y no PATCH) por coherencia con `PUT /auth/me` y para no tener que
+  distinguir "omitido" de "null" al limpiar coordenadas. No hay `/principal`: `PUT` con
+  `es_principal:true` lo cubre.
+- **Una sola principal por usuario**: la garantiza el índice único parcial
+  `uq_direcciones_usuario_principal` y, además, un advisory lock transaccional por
+  usuario que serializa alta, edición y borrado. Si el índice igualmente detectara
+  una carrera responde 409 ("otra operación cambió la dirección principal"), nunca 500.
+- **Borrar la principal** promueve a la más antigua de las restantes (por `creado_el` e
+  id) en la misma transacción, de modo que un usuario con direcciones siempre tiene una
+  principal. En filas anteriores a la migración 11 `creado_el` es la fecha de la
+  migración y manda el id.
+- **Límite**: 10 direcciones por usuario (`domain.MaximoDireccionesPorUsuario`); la
+  undécima responde 409 con mensaje claro. El conteo está bajo el mismo lock.
+- **Aislamiento**: toda consulta filtra por `usuario_id`. Una dirección ajena y una
+  inexistente responden el mismo 404 (nunca 403) para no revelar su existencia.
+  Un `{id}` que no es UUID responde 400.
+- El `lat`/`lon` ausente es válido (dirección sin geocodificar); el motor de rutas
+  debe tratar `null` como "sin origen utilizable".
+- `comuna` es NULL en la base para filas previas a la migración 11 (no se podía
+  inventar); la API siempre la exige, así que esas filas se devuelven con `comuna` vacía
+  hasta que se editen.
+
+| Estado | Caso |
+| --- | --- |
+| 400 | Campo inválido o desconocido, JSON mal formado, `{id}` no UUID |
+| 401 | Sin cookie, token inválido o cuenta inactiva |
+| 404 | Dirección inexistente o de otra cuenta |
+| 409 | Límite alcanzado, desmarcar la principal, carrera por la principal |
 
 ## Sesión y seguridad
 
@@ -155,12 +231,17 @@ El servicio comprueba tablas y permisos antes de abrir HTTP:
 - `09_plan_y_ultimo_acceso.sql`: columnas de plan comercial y último acceso.
 - `10_restringir_rol_usuarios.sql`: restricción `usuarios_rol_check` (sólo
   `admin`, `colaborador` y `registrado`). Aplicar antes de desplegar esta versión.
+- `11_direcciones_usuario.sql` (SUP-239): columnas `comuna` y `creado_el`, `lat`/`lon`
+  opcionales con CHECK, índice único de la principal y permisos de
+  `api.direcciones_usuario`. El arranque verifica permisos, columnas e índice.
 
 El rol runtime tiene SELECT/INSERT/UPDATE sobre usuarios, sin DELETE, DDL ni
-acceso a tablas de otros servicios. La ausencia de almacenamiento base o
+acceso a tablas de otros servicios. Sobre `api.direcciones_usuario` tiene SELECT,
+INSERT, UPDATE y DELETE (nada más): la dirección es un dato del propio usuario. La ausencia de almacenamiento base o
 permisos impide iniciar. `api.tokens_recuperacion` (`05_tokens_recuperacion.sql`)
-sigue en el esquema, pero hoy ningún código la usa.
-No se ejecuta AutoMigrate ni se amplían grants desde la aplicación.
+se verifica al arrancar: el consumo necesita SELECT y UPDATE, y la aplicación
+nunca hace DELETE sobre esa tabla. No se ejecuta AutoMigrate ni se amplían
+grants desde la aplicación.
 
 Cada réplica tiene su propio pool. Al cambiar su tamaño máximo o el
 número de réplicas, recalcular el presupuesto total de conexiones junto con
@@ -188,14 +269,15 @@ La [NetworkPolicy](../../infrastructure/k8s/identidad/networkpolicy.yaml) actual
 permite entrada a 8080 desde pods Gateway y Catálogo del mismo namespace;
 su aplicación efectiva depende del CNI. No confiar en `0.0.0.0/0` ni `::/0`.
 
-Login cuenta intentos fallidos; registro y Google, todas las solicitudes.
-Los defaults son 5 fallos de login y 30 solicitudes de registro/Google por IP
-en 15 minutos. Las réplicas comparten claves `rate_limit:login:<IP>`,
+Login y restablecimiento cuentan intentos fallidos; registro y Google, todas
+las solicitudes. Los defaults son 5 fallos de login, 10 de restablecimiento y
+30 solicitudes de registro/Google por IP en 15 minutos. Las réplicas comparten
+claves `rate_limit:login:<IP>`, `rate_limit:restablecer:<IP>`,
 `rate_limit:register:<IP>` y `rate_limit:google:<IP>`. Lua incrementa y fija
-expiración atómicamente, repara TTL ausentes y devuelve el intento de un login
-2xx. Redis debe permitir EVAL/EVALSHA, INCR, PTTL, PEXPIRE, EXISTS, GET y DECR.
-Sin Redis, estas rutas fallan cerradas con 500 genérico; no se desactiva el
-límite ni se reintentan sus escrituras.
+expiración atómicamente, repara TTL ausentes y devuelve el intento de una
+respuesta 2xx. Redis debe permitir EVAL/EVALSHA, INCR, PTTL, PEXPIRE, EXISTS,
+GET y DECR. Sin Redis, estas rutas fallan cerradas con 500 genérico; no se
+desactiva el límite ni se reintentan sus escrituras.
 
 ## Salud y operación
 
@@ -233,15 +315,22 @@ go build ./cmd/identidad
 | --- | --- | --- |
 | `cmd/identidad` | `main.go` | Arranque, conexiones y apagado |
 | `internal/config` | `config.go` | Entorno validado al arrancar, plazos y límites fijos |
-| `internal/api` | `rutas.go`, `auth.go`, `admin.go`, `sesion.go`, `limites.go`, `errores.go` | Router y middlewares globales, endpoints, JWT y RBAC, contadores por IP, formato de error |
-| `internal/services` | `auth.go`, `admin.go` | Casos de uso y bcrypt |
-| `internal/repositories` | `conexion.go`, `usuarios.go` | Conexión, verificación de permisos y SQL |
-| `internal/domain` | `usuario.go`, `admin.go`, `repositorios.go` | Entidades, roles, DTO y contratos de repositorio |
+| `internal/api` | `rutas.go`, `auth.go`, `admin.go`, `direcciones.go`, `sesion.go`, `limites.go`, `errores.go` | Router y middlewares globales, endpoints, JWT y RBAC, contadores por IP, formato de error |
+| `internal/services` | `auth.go`, `admin.go`, `direcciones.go` | Casos de uso y bcrypt |
+| `internal/repositories` | `conexion.go`, `usuarios.go`, `direcciones.go` | Conexión, verificación de permisos y SQL |
+| `internal/domain` | `usuario.go`, `admin.go`, `direcciones.go`, `repositorios.go` | Entidades, roles, DTO y contratos de repositorio |
 
 Las pruebas siguen los mismos temas: `tests/unit` cubre configuración, sesión,
 límites, servicios y handlers con dependencias aisladas; `tests/integration`
 cubre el router completo y PostgreSQL y Redis reales opcionales.
 `arquitectura_test.go` falla si Identidad importa otro servicio.
+
+`direcciones_postgres_test.go` cubre el repositorio (CRUD, una principal, promoción al
+borrar, límite, carreras con goroutines), las restricciones de la migración, los
+permisos exactos de `app_identity` y el aislamiento entre dos cuentas a través del router
+completo; usa las mismas variables que el panel y se omite sin ellas. En
+`tests/unit/direcciones_test.go` el repositorio es un doble en memoria: valida
+autenticación, campos, 404 por aislamiento y límite, pero no la concurrencia real.
 
 Las pruebas Google usan el validador real con firmas RSA y una respuesta JWKS
 controlada, sin credenciales ni llamadas al proveedor. Ninguna reemplaza una

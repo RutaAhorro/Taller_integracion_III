@@ -400,7 +400,6 @@ export function SideBar({
 
           <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
             <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
-            Comparando en{' '}
             <span className="font-medium text-foreground">
               {activeCity || 'Tu Ciudad'}
             </span>

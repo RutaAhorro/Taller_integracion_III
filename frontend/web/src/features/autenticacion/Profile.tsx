@@ -51,18 +51,19 @@ export default function Profile() {
                             <div className="bg-card border border-border rounded-3xl p-6 sm:p-10 shadow-sm space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                                 <h2 className="text-2xl font-bold">Información de Cuenta</h2>
                                 
-                                <section className="bg-gradient-to-r from-secondary to-background rounded-2xl p-6 text-primary-foreground shadow-lg flex flex-col sm:flex-row sm:items-center gap-5">
+                                {/* Mantiene fondo y texto del mismo par de colores para conservar el contraste del perfil. */}
+                                <section className="bg-primary rounded-2xl p-6 text-primary-foreground shadow-lg flex flex-col sm:flex-row sm:items-center gap-5">
                                     <div className={`h-16 w-16 bg-white/20 rounded-full flex items-center justify-center shrink-0 border-2 border-white/30 ${esPremium ? 'border-amber-400 bg-amber-500/20' : ''}`}>
                                         {esPremium ? <Zap className="h-8 w-8 text-amber-500" /> : <User className="h-8 w-8 text-primary-foreground" />}
                                     </div>
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2 mb-1">
                                             <h3 className="text-xl font-bold">{user.nombre_completo}</h3>
-                                            <span className={`px-2.5 py-0.5 rounded-full text-[0.65rem] uppercase tracking-wider font-bold ${esPremium ? 'bg-amber-100 text-amber-700' : 'bg-primary/20 text-primary-foreground'}`}>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-[0.65rem] uppercase tracking-wider font-bold ${esPremium ? 'bg-amber-100 text-amber-700' : 'bg-white/20 text-primary-foreground'}`}>
                                                 {esPremium ? 'Premium' : 'Básico'}
                                             </span>
                                         </div>
-                                        <p className="text-primary text-sm flex items-center gap-1.5 mb-2">
+                                        <p className="text-primary-foreground/90 text-sm flex items-center gap-1.5 mb-2">
                                             <ShieldAlert className="h-4 w-4" /> Cuota informada: {user.cuota_tokens_ia} consultas IA
                                         </p>
                                         <p className="text-sm text-primary-foreground/80">{user.correo}</p>
