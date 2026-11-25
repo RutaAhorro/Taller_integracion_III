@@ -4,13 +4,15 @@ on:
   pull_request:
     branches: [main, develop, develop-refactor]
     paths:
-      - 'backend/motor_rutas/**'
-      - '.github/workflows/motor-rutas-checks.yml'
+      - "backend/motor_rutas/**"
+      - "infrastructure/db/**"
+      - ".github/workflows/motor-rutas-checks.yml"
   push:
     branches: [develop-refactor]
     paths:
-      - 'backend/motor_rutas/**'
-      - '.github/workflows/motor-rutas-checks.yml'
+      - "backend/motor_rutas/**"
+      - "infrastructure/db/**"
+      - ".github/workflows/motor-rutas-checks.yml"
   workflow_dispatch:
 
 concurrency:
@@ -24,14 +26,45 @@ jobs:
   motor-rutas:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgis/postgis:15-3.3-alpine
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: pruebas_motor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pruebas_motor"
+          --health-interval 5s --health-timeout 3s --health-retries 12
+    env:
+      # Sólo la BD efímera de este job; nunca apuntar a un clúster compartido.
+      RUTAS_TEST_DB_URL: postgres://app_rutas@localhost:5432/pruebas_motor?sslmode=disable
+      RUTAS_TEST_ADMIN_URL: postgres://postgres@localhost:5432/pruebas_motor?sslmode=disable
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.26.x'
+          go-version: "1.26.x"
           cache: false
+      - name: Inicializar exclusivamente PostgreSQL desechable de pruebas
+        env:
+          CONTENEDOR_PRUEBAS: ${{ job.services.postgres.id }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import subprocess
+          from pathlib import Path
+          comando = ["docker", "exec", "-i", os.environ["CONTENEDOR_PRUEBAS"],
+                     "psql", "-X", "-q", "-v", "ON_ERROR_STOP=1",
+                     "-U", "postgres", "-d", "pruebas_motor"]
+          subprocess.run(comando, input=b"CREATE EXTENSION IF NOT EXISTS postgis; REVOKE CREATE ON SCHEMA public FROM PUBLIC;", check=True)
+          for archivo in sorted(Path("infrastructure/db").glob("*.sql")):
+              subprocess.run(comando, input=archivo.read_bytes(), check=True, stdout=subprocess.DEVNULL)
+          subprocess.run(comando, input=b"ALTER ROLE app_rutas LOGIN;", check=True)
+          PY
       - name: Motor de rutas tests, vet and build
         run: |
           if [ -f backend/motor_rutas/go.mod ]; then

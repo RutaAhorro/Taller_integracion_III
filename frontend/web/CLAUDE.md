@@ -16,7 +16,10 @@
   Admin: `src/features/admin`; listas: `src/features/listas` (`ShoppingLists.tsx`).
 - `VITE_API_URL` incluye `/api/v1`; no duplicar prefijo. Variables VITE públicas:
   jamás incluir contraseñas, claves IA ni tokens internos de scraping.
-- Carrito en Context es temporal, no está sincronizado con listas persistidas.
+- Carrito persistido en Motor/Listas (`/listas/carrito`, migración 14), con copia
+  local por cuenta para cambios pendientes. `CarritoPersistente` reconcilia por
+  versión y conserva envíos preparados. Confirmar aplica lista y vaciado
+  atómicamente. No confundir respaldo local con sincronización ni precio vigente.
 - Las vistas pendientes usan FeatureUnavailable, sin costos, puntos ni resultados
   simulados. Administración no sustituye errores por datos ficticios.
 - La portada es informativa y usa `src/features/landing/landing.json`; sus ejemplos no son resultados de
@@ -37,11 +40,11 @@
 
 ## Índice breve generado
 
-71 archivos fuente, incluidos los de pruebas. Distribución:
+80 archivos fuente, incluidos los de pruebas. Distribución:
 - `(raíz)`: 1 archivos.
 - `app`: 2 archivos.
 - `components`: 11 archivos.
-- `features`: 44 archivos.
+- `features`: 53 archivos.
 - `layouts`: 4 archivos.
 - `lib`: 2 archivos.
 - `pages`: 7 archivos.

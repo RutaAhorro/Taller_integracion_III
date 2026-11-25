@@ -6,7 +6,7 @@
 - `internal/config` (entorno), `internal/auth` (JWT), `internal/db` (pool pgx y
   verificación de grants), `internal/listas` (modelo y SQL),
   `internal/httpapi` (rutas, CORS, `X-Request-ID`, errores y handlers).
-- `RUTAS_DB_URL`/`app_rutas`: CRUD listas y solo lectura de artículos.
+- `RUTAS_DB_URL`/`app_rutas`: CRUD de listas y de sus artículos.
   No leer `api.usuarios` ni tablas de Catálogo. Sin migraciones ni AutoMigrate.
 - Sesión solo cookie HttpOnly `jwt` de Identidad. Filtrar siempre por dueño;
   lista ajena/id inválido devuelve 404 sin revelar existencia.
@@ -15,6 +15,10 @@
 - Artículos (SUP-241) y lote todo o nada con `Idempotency-Key` (SUP-318,
   tabla `rutas.lotes_articulos_aplicados`, migración 12): no conceder
   permisos preventivos. Sin OTP/OSRM.
+- Carrito borrador por cuenta: `internal/listas/carrito*.go`, migración 14 y
+  `/api/v1/listas/carrito`. Edición por versión; preparación durable; confirmación
+  y vaciado en una transacción junto al lote. `X-Carrito-Cuenta` sólo comprueba
+  coherencia con el JWT, nunca determina el dueño. Sin precios persistidos.
 - `internal/optimizacion`: cálculo puro del contrato del motor (SUP-313/328),
   sin HTTP ni SQL; recibe parámetros, no lee el entorno. Endpoint en SUP-316.
 - Pruebas: `go test ./...` y `go vet ./...` desde el servicio (`-race` en
@@ -24,9 +28,9 @@
 
 ## Índice breve generado
 
-25 archivos fuente, incluidos los de pruebas. Distribución:
+30 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 16 archivos.
-- `tests`: 8 archivos.
+- `internal`: 19 archivos.
+- `tests`: 10 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

@@ -329,8 +329,20 @@ func (repositorio *Postgres) AgregarLote(contexto context.Context, usuarioID, li
 	}
 	defer transaccion.Rollback(contexto) // no hace nada si ya se confirmó
 
+	resultado, errorObtenido := agregarLoteTransaccion(contexto, transaccion, usuarioID, listaID, lote, limites, nil)
+	if errorObtenido != nil || !resultado.ListaExiste || len(resultado.Rechazados) > 0 {
+		return resultado, errorObtenido
+	}
+	return resultado, transaccion.Commit(contexto)
+}
+
+// validarLote permite al carrito consultar Catálogo sin salir de su transacción de confirmación.
+type validarLote func(contexto context.Context, articulos []ArticuloLote) ([]Rechazo, error)
+
+// agregarLoteTransaccion comparte bloqueos, límites y ledger con el vaciado atómico del carrito.
+func agregarLoteTransaccion(contexto context.Context, transaccion pgx.Tx, usuarioID, listaID string, lote Lote, limites Limites, validar validarLote) (ResultadoLote, error) {
 	// --- La lista debe ser del usuario ---------------------------------------
-	errorObtenido = transaccion.QueryRow(contexto, `
+	errorObtenido := transaccion.QueryRow(contexto, `
         SELECT 1 FROM rutas.listas_compras
         WHERE id = $1 AND usuario_id = $2
         FOR UPDATE`, listaID, usuarioID).Scan(new(int))
@@ -353,6 +365,16 @@ func (repositorio *Postgres) AgregarLote(contexto context.Context, usuarioID, li
 		return ResultadoLote{}, ErrClaveReutilizada
 	case !errors.Is(errorObtenido, pgx.ErrNoRows):
 		return ResultadoLote{}, errorObtenido
+	}
+
+	if validar != nil {
+		rechazados, errorObtenido := validar(contexto, lote.Articulos)
+		if errorObtenido != nil {
+			return ResultadoLote{}, errorObtenido
+		}
+		if len(rechazados) > 0 {
+			return ResultadoLote{ListaExiste: true, Rechazados: rechazados}, nil
+		}
 	}
 
 	// --- Topes: cantidad por artículo y artículos distintos por lista --------
@@ -422,9 +444,6 @@ func (repositorio *Postgres) AgregarLote(contexto context.Context, usuarioID, li
 	}
 	if _, errorObtenido := transaccion.Exec(contexto,
 		`UPDATE rutas.listas_compras SET actualizada_el = now() WHERE id = $1`, listaID); errorObtenido != nil {
-		return ResultadoLote{}, errorObtenido
-	}
-	if errorObtenido := transaccion.Commit(contexto); errorObtenido != nil {
 		return ResultadoLote{}, errorObtenido
 	}
 	return resultado, nil

@@ -118,6 +118,14 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
 GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
 GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
 
+-- 14 se ejecuta después en bases nuevas; conservar sus grants al re-ejecutar 06.
+DO $$
+BEGIN
+    IF to_regclass('rutas.carritos') IS NOT NULL THEN
+        GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
+    END IF;
+END $$;
+
 -- Fallar si concesiones públicas o defaults de otros operadores abren tablas
 -- fuera de la matriz. No revocar permisos de IA/rutas u otros usuarios existentes.
 DO $$
@@ -127,7 +135,7 @@ BEGIN
         permitted := CASE role_name
             WHEN 'app_identity' THEN ARRAY['api.usuarios','api.tokens_recuperacion','api.auditoria_admin_usuarios','api.direcciones_usuario']
             WHEN 'app_scraping' THEN ARRAY['scraper.trabajos_scraper','scraper.entregas_ingesta','scraper.entregas_trabajos']
-            WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados']
+            WHEN 'app_rutas' THEN ARRAY['rutas.listas_compras','rutas.articulos_lista_compras','rutas.lotes_articulos_aplicados','rutas.carritos']
             ELSE ARRAY['scraper.cadenas_supermercado','scraper.sucursales_supermercado','scraper.productos_crudos','scraper.capturas_precios','scraper.lotes_catalogo'] END;
         FOR relation IN SELECT format('%I.%I', n.nspname, c.relname) AS name, c.oid
             FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace

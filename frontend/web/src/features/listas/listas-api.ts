@@ -101,8 +101,12 @@ export const listasApi = {
     solicitar<{ listas: Lista[] }>("", { signal: senal }),
   obtener: (id: string, senal?: AbortSignal) =>
     solicitar<ListaDetalle>(`/${encodeURIComponent(id)}`, { signal: senal }),
-  crear: (nombre: string) =>
-    solicitar<Lista>("", { method: "POST", body: JSON.stringify({ nombre }) }),
+  crear: (nombre: string, senal?: AbortSignal) =>
+    solicitar<Lista>("", {
+      method: "POST",
+      body: JSON.stringify({ nombre }),
+      signal: senal,
+    }),
   actualizar: (id: string, nombre: string, estado: EstadoLista) =>
     solicitar<Lista>(`/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -114,11 +118,13 @@ export const listasApi = {
     id: string,
     articulos: ArticuloParaAgregar[],
     claveOperacion: string,
+    senal?: AbortSignal,
   ) =>
     solicitar<ListaDetalle>(`/${encodeURIComponent(id)}/articulos/lote`, {
       method: "POST",
       headers: { "Idempotency-Key": claveOperacion },
       body: JSON.stringify({ articulos }),
+      signal: senal,
     }),
   actualizarArticulo: (
     listaID: string,

@@ -246,8 +246,8 @@ type Catalogo interface {
 
 // Disponibilidad es el estado de un producto según Catálogo.
 type Disponibilidad struct {
-	Estado   string
-	Producto *ProductoCatalogo
+	Estado   string            `json:"estado_producto"`
+	Producto *ProductoCatalogo `json:"producto"`
 }
 
 // =============================================================================

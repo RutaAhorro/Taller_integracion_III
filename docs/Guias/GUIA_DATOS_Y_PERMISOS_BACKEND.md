@@ -44,6 +44,7 @@ no comparten entidades ni una biblioteca de dominios. Catálogo sigue separado.
 | Motor de rutas / `app_rutas` | `rutas.listas_compras` | SELECT, INSERT, UPDATE, DELETE |
 | Motor de rutas / `app_rutas` | `rutas.articulos_lista_compras` | SELECT, INSERT, UPDATE, DELETE (SUP-241/327) |
 | Motor de rutas / `app_rutas` | `rutas.lotes_articulos_aplicados` | SELECT, INSERT (claves del lote, SUP-318) |
+| Motor de rutas / `app_rutas` | `rutas.carritos` | SELECT, INSERT, UPDATE (borrador versionado y recibo, migración 14; sin DELETE) |
 | Gateway y worker | Ninguna tabla PostgreSQL | Sin credencial PostgreSQL |
 
 Sólo Catálogo necesita USAGE en las secuencias de cadenas, sucursales y capturas.
