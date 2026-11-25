@@ -10,25 +10,57 @@ export type Lista = {
   creada_el: string;
   actualizada_el: string;
 };
-export type ListaDetalle = Lista & {
-  articulos: {
-    id: number;
-    producto_normalizado_id: string;
-    cantidad: number;
-    esta_comprado: boolean;
-  }[];
+// ===== Contrato de artículos (SUP-241 / SUP-318) =====
+
+export const MAXIMO_ENVASES_ARTICULO = 99;
+export const MAXIMO_ARTICULOS_LISTA = 100;
+
+/** Estado confirmado por Catálogo; desconocido no equivale a disponible. */
+export type EstadoProducto =
+  "disponible" | "sin_stock" | "no_encontrado" | "desconocido";
+
+/** Presentación del producto; el precio puede faltar aunque exista el producto. */
+export type ProductoLista = {
+  nombre: string;
+  marca: string;
+  supermercado: string;
+  unidad: string;
+  precio: number | null;
+  url_imagen: string;
 };
+
+/** Campos persistidos que devuelve PUT, sin volver a consultar a Catálogo. */
+export type Articulo = {
+  id: number;
+  producto_id: string | null;
+  cantidad: number;
+  esta_comprado: boolean;
+};
+
+/** Artículo con disponibilidad consultada por Motor; admite referencias históricas sin producto. */
+export type ArticuloDetalle = Articulo & {
+  estado_producto: EstadoProducto;
+  producto: ProductoLista | null;
+};
+
+/** Detalle completo del usuario; nunca se completa con datos inventados del catálogo. */
+export type ListaDetalle = Lista & { articulos: ArticuloDetalle[] };
+
+/** Un envío en envases; el backend confirma existencia, límites y disponibilidad. */
+export type ArticuloParaAgregar = { producto_id: string; cantidad: number };
 
 // ===== Errores HTTP =====
 
 /** Conserva el estado HTTP para no confundir un servicio caído con una sesión expirada. */
 export class ErrorSolicitudListas extends Error {
   readonly estado: number;
+  readonly detalle: unknown;
 
-  constructor(estado: number, mensaje: string) {
+  constructor(estado: number, mensaje: string, detalle?: unknown) {
     super(mensaje);
     this.name = "ErrorSolicitudListas";
     this.estado = estado;
+    this.detalle = detalle;
   }
 }
 
@@ -43,8 +75,8 @@ async function solicitar<Respuesta>(
     ...opciones,
     credentials: "include",
     headers: opciones?.body
-      ? { "Content-Type": "application/json" }
-      : undefined,
+      ? { "Content-Type": "application/json", ...opciones.headers }
+      : opciones?.headers,
   });
   if (!respuesta.ok) {
     const datos = await respuesta.json().catch(() => null);
@@ -57,6 +89,7 @@ async function solicitar<Respuesta>(
       respuesta.status,
       datos?.mensaje ||
         "No se pudo completar la solicitud de listas. Intenta nuevamente.",
+      datos?.detalle,
     );
   }
   if (respuesta.status === 204) return undefined as Respuesta;
@@ -77,4 +110,30 @@ export const listasApi = {
     }),
   eliminar: (id: string) =>
     solicitar<void>(`/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  agregarArticulos: (
+    id: string,
+    articulos: ArticuloParaAgregar[],
+    claveOperacion: string,
+  ) =>
+    solicitar<ListaDetalle>(`/${encodeURIComponent(id)}/articulos/lote`, {
+      method: "POST",
+      headers: { "Idempotency-Key": claveOperacion },
+      body: JSON.stringify({ articulos }),
+    }),
+  actualizarArticulo: (
+    listaID: string,
+    articuloID: number,
+    cambios: { cantidad?: number; esta_comprado?: boolean },
+  ) =>
+    solicitar<Articulo>(
+      `/${encodeURIComponent(listaID)}/articulos/${articuloID}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(cambios),
+      },
+    ),
+  eliminarArticulo: (listaID: string, articuloID: number) =>
+    solicitar<void>(`/${encodeURIComponent(listaID)}/articulos/${articuloID}`, {
+      method: "DELETE",
+    }),
 };

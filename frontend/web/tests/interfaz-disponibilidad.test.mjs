@@ -68,6 +68,7 @@ const INDICE_ERROR_LISTAS = 6;
 const urlReactListas = crearModulo(`
   export const escenario = { indice: 0, error: null };
   export const useEffect = () => {};
+  export const useRef = inicial => ({ current: inicial });
   export function useState(inicial) {
     const indice = escenario.indice++;
     const valor = indice === ${INDICE_CARGA_LISTAS} ? false :
@@ -78,8 +79,9 @@ const urlReactListas = crearModulo(`
 const { escenario } = await import(urlReactListas);
 const urlApiListas = crearModulo(`
   export const listasApi = {};
+  export const MAXIMO_ENVASES_ARTICULO = 99;
   export class ErrorSolicitudListas extends Error {
-    constructor(estado, mensaje) { super(mensaje); this.estado = estado; }
+    constructor(estado, mensaje, detalle) { super(mensaje); this.estado = estado; this.detalle = detalle; }
   }
 `);
 const { ErrorSolicitudListas } = await import(urlApiListas);
@@ -89,6 +91,12 @@ const { default: ShoppingLists } = await cargarComponente(
     ...dependenciasComunes,
     react: urlReactListas,
     "@/features/listas/listas-api": urlApiListas,
+    "@/features/listas/ArticulosLista": crearModulo(
+      "export const ArticulosLista = () => null;",
+    ),
+    "@/features/listas/useDetalleLista": crearModulo(
+      "export const useDetalleLista = () => ({});",
+    ),
     "@/features/autenticacion/useAuth": crearModulo(
       'export const useAuth = () => ({ user: { id: "cuenta-activa" } });',
     ),
@@ -194,4 +202,17 @@ test("el resumen de perfil mantiene un fondo primario y textos contrastantes en 
       /bg-gradient-to-r from-secondary to-background/,
     );
   }
+});
+
+test("listas explica los rechazos de productos y cantidades sin pedir iniciar sesión", () => {
+  escenario.indice = 0;
+  escenario.error = new ErrorSolicitudListas(
+    409,
+    "No se pudo agregar el lote.",
+    [{ motivo: "no_encontrado" }, { motivo: "cantidad_maxima" }],
+  );
+  const contenido = renderizar(ShoppingLists);
+  assert.match(contenido, /ya no existe en Catálogo/);
+  assert.match(contenido, /supera el máximo de 99/);
+  assert.doesNotMatch(contenido, /Ir a iniciar sesión/);
 });

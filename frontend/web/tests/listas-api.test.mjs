@@ -129,3 +129,67 @@ test("un fallo de red no se transforma en un error de sesión", async (prueba) =
       !(errorObtenido instanceof ErrorSolicitudListas),
   );
 });
+
+test("artículos usa el contrato actual, cookie y clave de operación sin enviar el dueño", async (prueba) => {
+  const llamadas = [];
+  const articulo = {
+    id: 41,
+    producto_id: "producto-real",
+    cantidad: 2,
+    esta_comprado: false,
+  };
+  prueba.mock.method(globalThis, "fetch", async (url, opciones) => {
+    llamadas.push({ url, ...opciones });
+    return opciones.method === "DELETE"
+      ? new Response(null, { status: 204 })
+      : Response.json(articulo);
+  });
+  await listasApi.agregarArticulos(
+    "lista/1",
+    [{ producto_id: articulo.producto_id, cantidad: 2 }],
+    "operacion-1",
+  );
+  assert.deepEqual(
+    await listasApi.actualizarArticulo("lista/1", 41, { cantidad: 3 }),
+    articulo,
+  );
+  await listasApi.actualizarArticulo("lista/1", 41, { esta_comprado: true });
+  assert.equal(await listasApi.eliminarArticulo("lista/1", 41), undefined);
+  assert.equal(llamadas[0].url, "/api/v1/listas/lista%2F1/articulos/lote");
+  assert.equal(llamadas[0].headers["Idempotency-Key"], "operacion-1");
+  assert.deepEqual(JSON.parse(llamadas[0].body), {
+    articulos: [{ producto_id: articulo.producto_id, cantidad: 2 }],
+  });
+  assert.equal(llamadas[1].method, "PUT");
+  assert.deepEqual(JSON.parse(llamadas[1].body), { cantidad: 3 });
+  assert.deepEqual(JSON.parse(llamadas[2].body), { esta_comprado: true });
+  assert.equal(llamadas[3].method, "DELETE");
+  assert.ok(llamadas.every((llamada) => llamada.credentials === "include"));
+  assert.ok(
+    llamadas.every(
+      (llamada) => !llamada.body || !llamada.body.includes("usuario_id"),
+    ),
+  );
+});
+
+test("conserva el detalle del rechazo de un lote para explicar el conflicto", async (prueba) => {
+  const detalle = [{ producto_id: "producto-real", motivo: "cantidad_maxima" }];
+  prueba.mock.method(globalThis, "fetch", async () =>
+    Response.json(
+      { mensaje: "No se pudo agregar el lote.", detalle },
+      { status: 409 },
+    ),
+  );
+  await assert.rejects(
+    listasApi.agregarArticulos(
+      "lista-1",
+      [{ producto_id: "producto-real", cantidad: 99 }],
+      "operacion-1",
+    ),
+    (errorObtenido) => {
+      assert.equal(errorObtenido.estado, 409);
+      assert.deepEqual(errorObtenido.detalle, detalle);
+      return true;
+    },
+  );
+});
