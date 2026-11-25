@@ -111,12 +111,68 @@ abre HTTP. No ejecuta migraciones.
    existe `RUTAS_DB_PASSWORD`; en la base existente, `\password app_rutas` en psql.
 3. Kubernetes: Secret `rutas-db-secret` con `DB_URL` y `DB_PASSWORD`, y la clave
    `consulta-token` en `catalogo-internal-secret` (la misma que usa Catálogo).
-   Luego `kubectl apply -f infrastructure/k8s/motor-rutas/` y el Deployment del
-   Gateway con `RUTAS_URL=http://motor-rutas:8001`.
+   Antes de aplicar, revisar la cuota, imagen y HPA según la preparación de abajo.
+   Gateway debe tener `RUTAS_URL=http://motor-rutas:8001`.
 4. Compose: definir `RUTAS_DB_PASSWORD`, `CATALOGO_CONSULTA_TOKEN` y
    `RUTAS_URL=http://motor-rutas:8001` en `.env`, y levantar
    `docker compose --profile rutas up -d motor_rutas gateway`.
    Sin `RUTAS_URL`, el Gateway no enruta `/api/v1/listas` (404).
+
+### Preparación de habilitación del entorno (SUP-252 / SUP-357)
+
+**Consulta de solo lectura del 24-11-2026, namespace `student-vmatus`. No es
+un despliegue ni una garantía del estado futuro: repetir las comprobaciones
+antes de actuar y coordinar con quien mantiene el clúster.**
+
+- No había Deployment ni Service `motor-rutas`, aunque Gateway ya apuntaba a él.
+- El rol `app_rutas` existía con `NOLOGIN`. Las tablas de listas/artículos tenían
+  CRUD; faltaban `SELECT` e `INSERT` sobre `rutas.lotes_articulos_aplicados`.
+  La columna `producto_id` y la tabla de lotes existían. La verificación completa
+  de esquema, secuencia e índice sigue siendo obligatoria al arrancar.
+- Faltaba `rutas-db-secret`; `catalogo-internal-secret` tenía la clave de ingesta
+  `token`, pero no `consulta-token`. Catálogo no recibía
+  `CATALOGO_CONSULTA_TOKEN`.
+- La cuota permitía 2000m CPU de límites y estaban asignados 1800m. El Deployment
+  versionado de Motor pide otros 500m: **no cabe tal cual**, aunque el uso real
+  de CPU sea bajo. Había 9/12 pods, 8/10 services y 1382Mi/2Gi de límites de
+  memoria. El HPA de Motor admite dos réplicas y tampoco debe activarse sin
+  presupuesto para ambas.
+- La imagen del manifiesto usa el propietario `danirc2024`, mientras los
+  servicios activos usaban `RutaAhorro`. Verificar la imagen real publicada y
+  fijar su versión/digest antes de aplicar; no asumir que ambas son equivalentes.
+
+Orden propuesto para el operador, **pendiente de autorización de ejecución**:
+
+1. Acordar responsable y ventana, registrar imágenes actuales y revisar otra vez
+   `kubectl get resourcequota -n student-vmatus`. Elegir un presupuesto para una
+   réplica. Un límite de 200m cabe aritméticamente en la captura, pero consume
+   todo el margen y no acredita rendimiento; ampliar/reasignar cuota o adoptar
+   otro presupuesto requiere acuerdo. No aplicar la carpeta completa ni el HPA
+   automáticamente.
+2. Respaldar la BD y revisar la matriz de permisos. Con autorización, reconciliar
+   los grants exactos de la migración 12, idempotente. No reconstruir el volumen
+   ni ejecutar migraciones por tener la tabla presente. Confirmar todos los
+   requisitos de `internal/db/db.go`, no solo la existencia de tablas.
+3. Provisionar LOGIN y una contraseña exclusiva de `app_rutas` de forma segura,
+   sin ampliarle permisos ni usar `postgres` en el servicio. Crear
+   `rutas-db-secret` sin imprimir su DSN ni versionar credenciales.
+4. Provisionar `consulta-token` conservando la clave de ingesta `token`. Debe ser
+   distinto de JWT e ingesta. Configurarlo en Catálogo y Motor, y coordinar el
+   reinicio de Catálogo para habilitar su endpoint de consulta. No enviarlo al
+   navegador ni publicarlo a través de Gateway.
+5. Preparar los manifiestos con la imagen verificada, cuota acordada y una
+   réplica; comprobar con `kubectl diff` solo los recursos sin secretos y luego
+   con validación de servidor antes de aplicar. Revisar conectividad y políticas
+   de red sin abrir PostgreSQL al exterior. Aplicar únicamente los recursos
+   acordados: ConfigMap, Service y Deployment de Motor; no cambiar el Gateway
+   si ya tiene el destino correcto.
+6. Verificar rollout, `/_rutas/live`, `/_rutas/ready` y la respuesta 401 de listas
+   sin sesión a través de Gateway. Esa comprobación no prueba persistencia.
+7. Con una cuenta de prueba autorizada, ejecutar la checklist de
+   [listas del frontend](../../frontend/web/README.md#listas-y-artículos-sup-252).
+   Registrar versión, entorno y resultados. Ante un fallo, retirar el servicio
+   nuevo o volver a su imagen anterior; no borrar listas ni revertir migraciones
+   automáticamente.
 
 ## Estructura
 

@@ -73,6 +73,12 @@ test('el lateral presenta las cadenas recibidas sin anunciar la muestra de produ
   assert.doesNotMatch(contenido, /No hay supermercados disponibles|No se pudieron cargar los supermercados/);
 });
 
+test('la ubicación muestra solo el nombre de la ciudad', () => {
+  const contenido = renderizar({ activeCity: 'Temuco' });
+  assert.match(contenido, /Temuco/);
+  assert.doesNotMatch(contenido, /Comparando en/);
+});
+
 test('el lateral distingue la carga de supermercados del resultado vacío', () => {
   const contenido = renderizar({ cargandoSupermercados: true });
   assert.match(contenido, /Cargando supermercados/);

@@ -35,7 +35,7 @@ export function MainLayout() {
     setCategoria("");
     setSupermercadoActivo(null);
   };
-  const { totalItems, totalPrice, setIsCartOpen } = useCart();
+  const { totalItems, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { pathname } = useLocation();
   const pestanaActiva = 
     pathname.startsWith('/chat') ? 'chat' :
@@ -92,7 +92,7 @@ export function MainLayout() {
         <Outlet context={{ query: consulta, activeMarket: supermercadoActivo?.id ?? null, category: categoria, markets: catalogo.markets, catalogo } satisfies TipoContextoDiseno} />
       </div>
 
-      {totalItems > 0 && (
+      {totalItems > 0 && !isCartOpen && (
         <button
           onClick={() => setIsCartOpen(true)}
           className="fixed bottom-[5.5rem] right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6"
