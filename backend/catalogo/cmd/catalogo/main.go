@@ -57,6 +57,11 @@ func ejecutar(registrador *slog.Logger) error {
 		return errors.New("Catálogo requiere tablas y permisos runtime antes de iniciar")
 	}
 
+	servicioEquivalencias := services.NuevoServicioEquivalencias(repositories.NuevoRepositorioEquivalencias(baseDatos), services.LimitesEquivalencia{
+		MaximoProductos:  configuracion.MaximoProductosConsulta,
+		AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
+	}, time.Now)
+
 	enrutador := api.NuevoEnrutador(api.Dependencias{
 		Productos: services.NuevoServicioProductos(repositories.NuevoRepositorioProductos(baseDatos), services.LimitesProductos{
 			TamanoPagina:        configuracion.TamanoPagina,
@@ -68,10 +73,13 @@ func ejecutar(registrador *slog.Logger) error {
 			MaximoProductos:  configuracion.MaximoProductosConsulta,
 			AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
 		}, time.Now),
-		Equivalencias: services.NuevoServicioEquivalencias(repositories.NuevoRepositorioEquivalencias(baseDatos), services.LimitesEquivalencia{
-			MaximoProductos:  configuracion.MaximoProductosConsulta,
-			AntiguedadMaxima: configuracion.AntiguedadMaximaDisponibilidad,
-		}, time.Now),
+		Equivalencias: servicioEquivalencias,
+		PreciosComparables: services.NuevoServicioPreciosComparables(
+			repositories.NuevoRepositorioPreciosComparables(baseDatos), servicioEquivalencias,
+			services.LimitesPreciosComparables{
+				MaximoProductos: configuracion.MaximoProductosConsulta,
+				RadioMaximoKm:   float64(configuracion.RadioMaximoKm),
+			}),
 		Ingesta:                repositories.NuevoRepositorioIngesta(baseDatos),
 		ClaveJWT:               configuracion.ClaveJWT,
 		TokenIngesta:           configuracion.TokenIngesta,

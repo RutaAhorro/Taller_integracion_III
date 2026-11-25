@@ -181,6 +181,9 @@ func registrarDisponibilidad(grupo *gin.RouterGroup, dependencias Dependencias) 
 	if dependencias.Equivalencias != nil {
 		registrarConsultaEquivalencia(grupo, dependencias)
 	}
+	if dependencias.PreciosComparables != nil {
+		registrarConsultaPreciosComparables(grupo, dependencias)
+	}
 }
 
 // registrarConsultaDisponibilidad atiende la verificación de stock y precio de
@@ -226,6 +229,33 @@ func registrarConsultaEquivalencia(grupo *gin.RouterGroup, dependencias Dependen
 			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_product_id"})
 		default:
 			registrador.Error("catalogo_equivalencia_error", "request_id", contexto.Writer.Header().Get("X-Request-ID"), "error", errorConsulta)
+			contexto.JSON(http.StatusInternalServerError, gin.H{"error": "catalogo_internal_error"})
+		}
+	})
+}
+
+// registrarConsultaPreciosComparables atiende la consulta geoespacial que usa
+// el motor de rutas para elegir sucursales y comparar precios (SUP-317).
+func registrarConsultaPreciosComparables(grupo *gin.RouterGroup, dependencias Dependencias) {
+	servicio, registrador := dependencias.PreciosComparables, dependencias.Registrador
+	grupo.POST("/productos/precios-comparables", func(contexto *gin.Context) {
+		var solicitud domain.ConsultaPreciosComparablesDTO
+		if !decodificarCuerpo(contexto, &solicitud, dependencias.MaximoBytesCuerpo) {
+			return
+		}
+		respuesta, errorConsulta := servicio.Consultar(contexto.Request.Context(), solicitud)
+		switch {
+		case errorConsulta == nil:
+			contexto.JSON(http.StatusOK, respuesta)
+		case errors.Is(errorConsulta, services.ErrLotePreciosVacio), errors.Is(errorConsulta, services.ErrLotePreciosExcesivo):
+			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_batch"})
+		case errors.Is(errorConsulta, services.ErrIDProductoPrecios):
+			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_product_id"})
+		case errors.Is(errorConsulta, services.ErrCoordenadasPrecios), errors.Is(errorConsulta, services.ErrRadioPrecios),
+			errors.Is(errorConsulta, services.ErrMaximoSucursalesPrecios):
+			contexto.JSON(http.StatusBadRequest, gin.H{"error": "invalid_consulta"})
+		default:
+			registrador.Error("catalogo_precios_comparables_error", "request_id", contexto.Writer.Header().Get("X-Request-ID"), "error", errorConsulta)
 			contexto.JSON(http.StatusInternalServerError, gin.H{"error": "catalogo_internal_error"})
 		}
 	})

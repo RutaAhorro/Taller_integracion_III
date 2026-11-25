@@ -199,17 +199,31 @@ detalle SQL.
 
 ## 7. Lo que agrega SUP-317
 
-Este contrato termina en la oferta actual por sucursal. SUP-317 añade:
+Este contrato termina en la oferta actual por sucursal. SUP-317 lo reutiliza
+sin duplicar sus reglas y añade una capa de geografía:
 
-- Coordenadas reales de sucursales físicas y activas.
-- Filtro por origen y radio.
-- Exclusión explícita de tiendas sólo en línea y de sucursales sin
-  coordenadas.
-- La lista de `producto_id` sin oferta en el radio.
+- `POST /internal/v1/productos/precios-comparables` recibe, además del lote de
+  IDs, `lat`, `lon`, `radio_km` y `maximo_sucursales` (1..10). Usa el mismo
+  `CATALOGO_CONSULTA_TOKEN`, el mismo lote y el mismo cuerpo JSON estricto.
+- Las candidatas se calculan en Catálogo con `ST_DWithin` sobre `geography`, con
+  un índice GiST funcional creado por la migración `13_`. Se ordering por
+  distancia y se cortan en `maximo_sucursales`. El orden es por
+  `distancia_km` y, en caso de empate, por `sucursal_id`.
+- Los estados de equivalencia (`comparable`, `sin_ean`, `ean_invalidos`,
+  `conflictos_presentacion`, `no_encontrados`) se conservan dentro de
+  `productos[]`. Las ofertas que caen fuera del radio simplemente no se
+  publican: no se rebaja el estado del producto.
+- `sin_ofertas[]` nombra los UUID del lote que no tienen oferta en el radio, y
+  `sucursales_excluidas[]` informa `sin_coordenadas`, `sucursal_inactiva` o
+  `sucursal_online`. El `resumen` cuantifica ambas cosas junto con
+  `con_oferta`, `sin_oferta` y `ofertas_sin_precio`.
 
-Rutas no debe inventar coordenadas ni equiparar productos por nombre. Si
-Catálogo no puede resolver un producto, debe informarlo con su estado y su
-`resumen`, nunca omitirlo en silencio.
+La forma exacta del request y de la respuesta está en el
+[contrato de Rutas](CONTRATO_MOTOR_RUTAS.md#4-qué-le-pide-rutas-a-catálogo-sup-317)
+y en el [README de Catálogo](../../backend/catalogo/README.md#consulta-interna-de-precios-comparables-sup-317).
+Rutas no debe inventar coordenadas ni equiparar productos por nombre. Un
+producto sin EAN válido conserva sólo su identidad exacta; Catálogo informa su
+estado y su `resumen`, nunca lo omite en silencio ni rellena precios ficticios.
 
 ## 8. Límites conocidos
 

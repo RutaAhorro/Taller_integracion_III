@@ -26,15 +26,16 @@ go run ./cmd/catalogo
 | `DB_URL` | Obligatoria | Conexión PostgreSQL con usuario `app_catalogo` |
 | `JWT_SECRET` | Obligatoria | Clave HMAC HS256 compartida con Identidad para validar tokens de administración |
 | `CATALOGO_INTERNAL_TOKEN` | Opcional | Clave Bearer de escritura para la ingesta interna. Vacía deshabilita `/internal/v1/ingestas` y las rutas de resolución |
-| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad` y `/internal/v1/productos/equivalencias`. Vacía deshabilita ambas consultas |
+| `CATALOGO_CONSULTA_TOKEN` | Opcional | Clave Bearer de sólo lectura para `/internal/v1/productos/disponibilidad`, `/equivalencias` y `/precios-comparables`. Vacía deshabilita las tres consultas |
 | `PORT` | `8080` | Puerto de escucha HTTP |
 | `CATALOGO_CORS_ALLOWED_ORIGINS` | Vacía | Orígenes HTTP(S) exactos separados por comas; tiene prioridad sobre `CORS_ALLOWED_ORIGINS`. Ambas vacías, se rechazan las peticiones con `Origin` |
 | `CORS_ALLOWED_ORIGINS` | Vacía | Respaldo genérico. Compose la define a partir de `CATALOGO_CORS_ALLOWED_ORIGINS` del `.env` raíz |
 | `DB_MAX_OPEN_CONNS` | `10` | Límite de conexiones abiertas al pool de PostgreSQL |
 | `DB_MAX_IDLE_CONNS` | `5` | Conexiones inactivas máximas (no puede superar `DB_MAX_OPEN_CONNS`) |
 | `DB_CONN_MAX_LIFETIME` | `30m` | Tiempo máximo de vida por conexión |
-| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en las consultas internas de disponibilidad y equivalencia |
+| `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en las consultas internas de disponibilidad, equivalencia y precios comparables |
 | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
+| `CATALOGO_MAX_RADIO_KM` | `50` | Radio máximo aceptado por `/internal/v1/productos/precios-comparables` |
 | `CATALOGO_TEST_DB_URL` | Sólo pruebas | Base PostgreSQL aislada con rol `app_catalogo` para `tests/integration/postgres_test.go`; vacía omite la prueba |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;
@@ -103,7 +104,7 @@ en cabeceras arbitrarias.
 | GET | `/_catalogo/ready` | Público | Sonda de preparación (readiness); verifica PostgreSQL con timeout de 2 s (503 si falla) |
 | GET | `/health` | Público | Alias de preparación equivalente a `/_catalogo/ready` |
 
-### API interna de ingesta, disponibilidad y equivalencia
+### API interna de ingesta, disponibilidad, equivalencia y precios comparables
 
 Rutas privadas bajo el prefijo `/internal/v1` destinadas a la coordinación de
 scraping y a las consultas de Listas, IA y Rutas. No se exponen a través del
@@ -116,6 +117,7 @@ Gateway ni en Ingress público:
 | POST | `/internal/v1/ingestas` | `{"sucursal_id": int, "lote_id": string, "productos": [...]}` | Persistencia atómica de 1 a 1000 productos y capturas de precio |
 | POST | `/internal/v1/productos/disponibilidad` | `{"producto_ids": ["uuid", ...]}` | Consulta en lote de existencia, stock, precio, sucursal y captura más reciente |
 | POST | `/internal/v1/productos/equivalencias` | `{"producto_ids": ["uuid", ...]}` | Agrupa por EAN exacto los productos equivalentes y su oferta actual por sucursal |
+| POST | `/internal/v1/productos/precios-comparables` | `{"producto_ids": [...], "lat": number, "lon": number, "radio_km": number, "maximo_sucursales": int}` | Precios comparables por sucursales físicas dentro de un radio (SUP-317) |
 
 ## Ingesta interna y token privado
 
@@ -123,9 +125,9 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
 
 1. **Autenticación en tiempo constante:** la ingesta exige
    `Authorization: Bearer <CATALOGO_INTERNAL_TOKEN>` y las consultas de
-   disponibilidad y equivalencia exigen `Authorization: Bearer
-   <CATALOGO_CONSULTA_TOKEN>`. La comparación es segura frente a ataques de
-   temporización (`subtle.ConstantTimeCompare`).
+   disponibilidad, equivalencia y precios comparables exigen
+   `Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>`. La comparación es segura
+   frente a ataques de temporización (`subtle.ConstantTimeCompare`).
 2. **Rechazo estricto de CORS:** cualquier petición a rutas internas que incluya
    cabecera `Origin` se rechaza con HTTP 403 (`internal_origin_forbidden`),
    incluso si presenta un token válido.
@@ -134,7 +136,8 @@ Las operaciones de `/internal/v1` aplican las siguientes reglas:
    y lote acotado de 1 a 1000 productos.
 4. **Modo sólo lectura:** si `CATALOGO_INTERNAL_TOKEN` está vacío no se registra
    la ingesta; si `CATALOGO_CONSULTA_TOKEN` está vacío no se registran la
-   disponibilidad ni la equivalencia. Cada ruta depende sólo de su propio token.
+   disponibilidad, la equivalencia ni los precios comparables. Cada ruta
+   depende sólo de su propio token.
 5. **Seguridad de los tokens:** ambos deben ser cadenas aleatorias de al menos
    32 caracteres (generables con `openssl rand -hex 32`), privadas,
    estrictamente distintas de `JWT_SECRET` y distintas entre sí. En Kubernetes
@@ -440,6 +443,149 @@ Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
 `413` para cuerpos mayores a 8 MiB y `500 catalogo_internal_error` sin detalle
 SQL.
 
+## Consulta interna de precios comparables (SUP-317)
+
+El motor de rutas usa esta consulta para elegir paradas dentro de un radio.
+Combina las equivalencias exactas por EAN de SUP-244 con un filtro geoespacial
+en Catálogo: Motor no recibe todas las ofertas del país ni calcula distancias
+sobre coordenadas inventadas. El token es `CATALOGO_CONSULTA_TOKEN` (sólo
+lectura), el mismo de disponibilidad y equivalencias; no se publica en el
+Gateway. No crea tablas, columnas ni permisos nuevos en el esquema.
+
+```http
+POST /internal/v1/productos/precios-comparables
+Authorization: Bearer <CATALOGO_CONSULTA_TOKEN>
+Content-Type: application/json
+
+{
+  "producto_ids": [
+    "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+    "1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"
+  ],
+  "lat": -38.739,
+  "lon": -72.598,
+  "radio_km": 10,
+  "maximo_sucursales": 5
+}
+```
+
+### Reglas del request
+
+| Campo | Regla |
+| --- | --- |
+| `producto_ids` | 1 a `CATALOGO_MAX_PRODUCTOS_CONSULTA` UUID válidos (1000 por defecto). Se deduplica conservando el orden de la primera aparición. Un UUID inválido rechaza el lote. |
+| `lat`, `lon` | Obligatorios, numéricos y en rango (-90..90 y -180..180). Se rechaza `NaN`, infinito y valor ausente; cero es válido. |
+| `radio_km` | Obligatorio, positivo y `<= CATALOGO_MAX_RADIO_KM` (50 por defecto). Se convierte a metros en SQL. |
+| `maximo_sucursales` | Obligatorio, entero entre 1 y 10. Es el tope de paradas que Motor puede considerar. |
+
+El cuerpo es JSON estricto: sin campos desconocidos ni contenido extra, con un
+límite de 8 MiB. Cualquier parámetro inválido se rechaza antes de consultar la
+base.
+
+### Cómo se calcula
+
+1. `ST_DWithin` sobre `geography` filtra sucursales **físicas, activas y con
+   coordenadas reales** dentro del radio. El índice GiST funcional de la
+   migración `13_` acota la consulta; la distancia se calcula en metros y se
+   devuelve en kilómetros. Las candidatas se ordenan por distancia y se cortan
+   en `maximo_sucursales`.
+2. Se reutiliza el servicio de equivalencias de SUP-244 sin duplicar su lógica:
+   la coincidencia es exacta por EAN canónico (GTIN de 8/12/13/14 dígitos con
+   dígito verificador válido), con la misma vigencia de 48 h para el precio.
+   Un producto sin EAN conserva **sólo su identidad exacta**: nunca se
+   equipara por nombre ni se adivina un código.
+3. Sólo se publican las ofertas de sucursales que quedaron dentro del radio y
+   del tope. Una oferta con captura vencida se devuelve con `precio: null` y
+   `estado_precio: "vencido"`, nunca como precio actual.
+4. Toda ausencia es explícita: `sin_ofertas[]` lista los UUID del lote sin
+   ofertas en el radio (incluye inexistentes y sin EAN sin captura), y
+   `sucursales_excluidas[]` informa `sin_coordenadas`, `sucursal_inactiva` o
+   `sucursal_online`. Una sucursal física activa fuera del radio no aparece en
+   ninguna de las dos listas: simplemente no es candidata.
+
+### Respuesta
+
+```json
+{
+  "sucursales": [
+    {
+      "sucursal_id": 5,
+      "nombre": "SuperBodega aCuenta Temuco Matta",
+      "cadena": "A Cuenta",
+      "lat": -38.7338383,
+      "lon": -72.5806422,
+      "distancia_km": 1.61
+    },
+    {
+      "sucursal_id": 6,
+      "nombre": "Cugat Temuco Barros Arana",
+      "cadena": "Cugat",
+      "lat": -38.7385969,
+      "lon": -72.5813372,
+      "distancia_km": 1.45
+    }
+  ],
+  "productos": [
+    {
+      "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+      "estado": "comparable",
+      "ean": "0036000291452",
+      "presentacion": "1 L",
+      "ofertas": [
+        {
+          "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "producto_id_oferta": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+          "sucursal_id": 6,
+          "cadena": "Cugat",
+          "sucursal": "Cugat Temuco Barros Arana",
+          "nombre": "Leche entera 1 L",
+          "unidad": "1 L",
+          "precio": 1190,
+          "precio_normal": 1190,
+          "precio_oferta": null,
+          "en_stock": true,
+          "capturado_el": "2026-11-24T10:00:00Z",
+          "estado_precio": "vigente"
+        }
+      ]
+    }
+  ],
+  "sin_ofertas": ["1c2d3e4f-5a6b-4c7d-8e9f-0a1b2c3d4e5f"],
+  "sucursales_excluidas": [
+    {
+      "sucursal_id": 3,
+      "nombre": "Jumbo Cerrado",
+      "cadena": "Jumbo",
+      "motivo": "sucursal_inactiva"
+    }
+  ],
+  "resumen": {
+    "solicitados": 2,
+    "con_oferta": 1,
+    "sin_oferta": 1,
+    "comparables": 1,
+    "sin_ean": 0,
+    "ean_invalidos": 0,
+    "conflictos_presentacion": 0,
+    "no_encontrados": 1,
+    "ofertas_sin_precio": 0,
+    "sucursales_candidatas": 2,
+    "sucursales_excluidas": 1
+  }
+}
+```
+
+Los datos del ejemplo son ilustrativos: las coordenadas de las filas 5 y 6 son
+las que siembra la migración `13_`, pero los precios y capturas dependen de lo
+que haya ingerido el scraper. `resumen` mide la cobertura de esa misma consulta,
+no una medición histórica.
+
+Errores: `401 internal_unauthorized`, `403 internal_origin_forbidden`,
+`400 invalid_payload` (JSON), `400 invalid_batch` (lote),
+`400 invalid_product_id` (UUID), `400 invalid_consulta` (origen, radio o tope
+de sucursales), `413` para cuerpos mayores a 8 MiB y `500
+catalogo_internal_error` sin detalle SQL.
+
 ## Base de datos y permisos (rol `app_catalogo`)
 
 Catálogo opera con el rol PostgreSQL `app_catalogo`, definido en
@@ -550,10 +696,11 @@ No se requieren migraciones SQL de reversión; el esquema y los permisos del rol
 - `internal/config`: lectura única del entorno y plazos/límites fijos.
 - `internal/api`: router, sondas, CORS, correlación, sesión JWT, rutas internas,
   handlers de productos y fuentes y formato de errores.
-- `internal/services`: normalización de filtros, fuentes, vigencia y equivalencia
-  exacta por EAN.
+- `internal/services`: normalización de filtros, fuentes, vigencia, equivalencia
+  exacta por EAN y filtro de precios comparables por radio.
 - `internal/repositories`: SQL de productos, fuentes, disponibilidad,
-  equivalencia e ingesta, conexión y verificación de permisos.
+  equivalencia, precios comparables e ingesta, conexión y verificación de
+  permisos.
 - `internal/domain`: DTO e interfaces de persistencia.
 
 ## Categorías del lateral
@@ -644,10 +791,13 @@ Rutas, campos JSON, tablas, columnas y variables de entorno no cambian. Sí camb
   de `app_catalogo` sobre `scraper.sucursales_supermercado` (y su secuencia
   `USAGE`); el arranque aún lo exige para esa tabla en `VerificarAlmacenamiento`.
   Retirarlo es cambio de `infrastructure/db` y del código, a coordinar.
-- Las sucursales sembradas 5 y 6 (A Cuenta y Cugat, `ACUENTA-CENTRAL` y
-  `CUGAT-CENTRAL`) en `infrastructure/db/init.sql`, `04_migracion_nuevas_cadenas.sql`
-  y `infrastructure/k8s/db/configmap.yaml` tienen los mismos datos inventados
-  ("Casa Matriz / Online", coordenadas del centro de Temuco). Sin corregir.
+- Las sucursales sembradas 5 y 6 se corrigieron con
+  `13_actualizar_sucursales_acuenta_cugat.sql` (SUP-317): ahora son tiendas
+  físicas reales con coordenadas verificadas. `init.sql` y
+  `04_migracion_nuevas_cadenas.sql` se dejan intactos para no reescribir la
+  historia de las migraciones; el ConfigMap se regenera con
+  `scripts/sync_db_init_configmap.py`. Sigue pendiente resolver el horario de
+  domingo/feriados en el esquema, que sólo guarda un par de horarios.
 - `cadenas_supermercado.nombre` no tiene unicidad sin distinguir mayúsculas: la
   resolución usa `ILIKE` bajo lock. Candidato a índice único `LOWER(BTRIM(nombre))`
   (sección 8.4, coordinar con `infrastructure/db`).
@@ -673,8 +823,8 @@ go build -o /tmp/catalogo ./cmd/catalogo
 ```
 
 Con un PostgreSQL desechable inicializado con `infrastructure/db` (nunca una base
-compartida), la prueba de ingesta, precios, disponibilidad, equivalencia y
-fuentes corre con el rol de runtime:
+compartida), la prueba de ingesta, precios, disponibilidad, equivalencia,
+precios comparables y fuentes corre con el rol de runtime:
 
 ```bash
 CATALOGO_TEST_DB_URL='postgres://app_catalogo:<clave>@127.0.0.1:55432/<base>?sslmode=disable' \

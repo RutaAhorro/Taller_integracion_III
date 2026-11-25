@@ -37,8 +37,13 @@ Al trabajar con microservicios independientes, las variables compartidas constit
 | Nombre | Servicio Dueño | Servicios Consumidores | Propósito y formato requerido | Valor por defecto en Compose / local |
 | --- | --- | --- | --- | --- |
 | `CATALOGO_INTERNAL_TOKEN` | Catálogo (`/internal/v1/*`) | Control de scraping | Autoriza únicamente la ingesta durable de lotes de productos y precios (incluidas las rutas de resolución de cadenas y sucursales). Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET`, de `SCRAPING_SERVICE_TOKEN` y de `CATALOGO_CONSULTA_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${CATALOGO_INTERNAL_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
-| `CATALOGO_CONSULTA_TOKEN` | Catálogo (`/internal/v1/productos/disponibilidad`) | Motor de rutas (Listas, SUP-241, obligatorio para arrancar); previsto: IA conversacional | Autoriza **sólo lectura** de la disponibilidad de productos. No permite ingestar ni modificar datos. Opcional: vacío deshabilita esta ruta; si se configura, debe tener al menos 32 caracteres sin espacios y ser estrictamente distinto de `JWT_SECRET` y `CATALOGO_INTERNAL_TOKEN`. Se envía como `Authorization` con esquema Bearer. Opcional, vacío por defecto (`${CATALOGO_CONSULTA_TOKEN:-}`). Generar con `openssl rand -hex 32` cuando se habilite un consumidor. |
+| `CATALOGO_CONSULTA_TOKEN` | Catálogo (`/internal/v1/productos/disponibilidad`, `/equivalencias` y `/precios-comparables`) | Motor de rutas (Listas, SUP-241, SUP-317, obligatorio para arrancar); previsto: IA conversacional | Autoriza **sólo lectura** de disponibilidad, equivalencias por EAN y precios comparables por sucursal. No permite ingestar ni modificar datos. Opcional: vacío deshabilita esas tres rutas; si se configura, debe tener al menos 32 caracteres sin espacios y ser estrictamente distinto de `JWT_SECRET` y `CATALOGO_INTERNAL_TOKEN`. Se envía como `Authorization` con esquema Bearer. Opcional, vacío por defecto (`${CATALOGO_CONSULTA_TOKEN:-}`). Generar con `openssl rand -hex 32` cuando se habilite un consumidor. |
 | `SCRAPING_SERVICE_TOKEN` | Control de scraping (`/api/v1/scraper/*`) | Scraper Go (`scraper_worker`), Bot de Discord (`bot_discord`) | Autoriza la ejecución de trabajos de scraping y el envío de resultados hacia Control. Al menos 32 caracteres sin espacios. **Debe ser estrictamente distinto de `JWT_SECRET` y de `CATALOGO_INTERNAL_TOKEN`**. Se envía como `Authorization: Bearer <token>`. | Obligatorio sin valor por defecto (`${SCRAPING_SERVICE_TOKEN:?}`). Generar con `openssl rand -hex 32`. |
+
+> [!NOTE]
+> El radio aceptado por `POST /internal/v1/productos/precios-comparables` se
+> acota con `CATALOGO_MAX_RADIO_KM` (entero positivo, `50` por defecto). Fuera
+> de ese rango Catálogo responde `400 invalid_consulta`.
 
 ### 3. Broker y colas
 
