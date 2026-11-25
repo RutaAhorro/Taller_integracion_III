@@ -105,20 +105,14 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                 </Link>
 
                 <div className="flex items-center gap-2 shrink-0">
-                    <Button
-                        variant="outline"
-                        className="hidden h-12 gap-2 rounded-full px-4 md:flex pointer-events-none"
+                    <div
+                        className="hidden h-12 items-center gap-2 rounded-full border border-border px-4 md:flex"
                     >
                         <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
-                        <div className="flex flex-col text-left">
-                            <span className="text-[10px] font-medium leading-none text-muted-foreground">
-                                Comparando en
-                            </span>
-                            <span className="text-xs font-semibold leading-tight text-foreground">
-                                {ciudadActiva}
-                            </span>
-                        </div>
-                    </Button>
+                        <span className="text-xs font-semibold leading-tight text-foreground">
+                            {ciudadActiva}
+                        </span>
+                    </div>
                     <div className="relative">
                         <Button
                             variant="ghost"

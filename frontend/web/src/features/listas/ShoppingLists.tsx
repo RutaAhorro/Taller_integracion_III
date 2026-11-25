@@ -6,10 +6,15 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/autenticacion/useAuth';
 import { useToast } from '@/components/ToastContext';
 import { ROUTES } from '@/app/routes';
-import { listasApi, type Lista, type ListaDetalle, type EstadoLista } from '@/features/listas/listas-api';
+import { listasApi, ErrorSolicitudListas, type Lista, type ListaDetalle, type EstadoLista } from '@/features/listas/listas-api';
 
 const estados: Record<EstadoLista, string> = { activa: 'Activa', completada: 'Completada', archivada: 'Archivada' };
 const mensajeError = (errorObtenido: unknown) => errorObtenido instanceof Error ? errorObtenido.message : 'No se pudo conectar con el servicio de listas.';
+
+/** Preserva los errores HTTP; los fallos sin estado no deben solicitar un nuevo ingreso. */
+function normalizarError(errorObtenido: unknown): Error {
+  return errorObtenido instanceof Error ? errorObtenido : new Error(mensajeError(errorObtenido));
+}
 
 export default function ShoppingLists() {
   const { user } = useAuth();
@@ -25,17 +30,17 @@ function ContenidoListas() {
   const [cargando, setCargando] = useState(true);
   const [guardando, setGuardando] = useState(false);
   const [detalleOcupado, setDetalleOcupado] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Error | null>(null);
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     const controlador = new AbortController();
     setCargando(true);
-    setError('');
+    setError(null);
     listasApi.listar(controlador.signal).then(({ listas: datos }) => {
       if (!controlador.signal.aborted) setListas(datos);
     }).catch((errorObtenido: unknown) => {
-      if (!controlador.signal.aborted) setError(mensajeError(errorObtenido));
+      if (!controlador.signal.aborted) setError(normalizarError(errorObtenido));
     }).finally(() => {
       if (!controlador.signal.aborted) setCargando(false);
     });
@@ -46,14 +51,14 @@ function ContenidoListas() {
     evento.preventDefault();
     if (guardando || !nombre.trim()) return;
     setGuardando(true);
-    setError('');
+    setError(null);
     try {
       const lista = await listasApi.crear(nombre.trim());
       setListas(actuales => [lista, ...actuales]);
       setIdSeleccionada(lista.id);
       setNombre('');
       toast('Lista creada y guardada', 'success');
-    } catch (errorObtenido) { setError(mensajeError(errorObtenido)); }
+    } catch (errorObtenido) { setError(normalizarError(errorObtenido)); }
     finally { setGuardando(false); }
   }
 
@@ -64,7 +69,8 @@ function ContenidoListas() {
         <p className="mt-2 text-muted-foreground">Gestiona tus listas guardadas en tu cuenta y consúltalas entre sesiones.</p>
       </header>
       <p className="rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        Disponible: crear, consultar, editar y eliminar listas. Agregar o quitar productos y validar stock estará disponible en una próxima entrega (SUP-241). El carrito temporal del catálogo aún no se sincroniza con estas listas.
+        Crear, consultar, editar y eliminar listas requiere que el servicio de listas esté habilitado en este entorno.
+        Esta pantalla todavía no permite agregar o quitar productos. El carrito temporal del catálogo no se guarda automáticamente en estas listas.
       </p>
       <form onSubmit={crear} className="space-y-2">
         <label htmlFor="new-list-name" className="text-sm font-medium">Nombre de la nueva lista</label>
@@ -73,7 +79,12 @@ function ContenidoListas() {
           <Button type="submit" disabled={guardando || cargando || detalleOcupado || !nombre.trim()}>{guardando ? 'Creando…' : 'Crear lista'}</Button>
         </div>
       </form>
-      {error && <div role="alert" className="space-y-2 text-destructive"><p>{error}</p><Link to={ROUTES.LOGIN} className="underline">Ir a iniciar sesión</Link></div>}
+      {error && <div role="alert" className="space-y-2 text-destructive">
+        <p>{error.message}</p>
+        {error instanceof ErrorSolicitudListas && error.estado === 401 && (
+          <Link to={ROUTES.LOGIN} className="underline">Ir a iniciar sesión</Link>
+        )}
+      </div>}
       <Button variant="outline" disabled={cargando || guardando || detalleOcupado} onClick={() => setRevision(valor => valor + 1)}>Actualizar listas</Button>
       {cargando ? <p role="status">Cargando listas…</p> : (
         <div className="grid gap-6 md:grid-cols-2">

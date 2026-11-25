@@ -58,8 +58,8 @@ export default function Chatbot() {
       </header>
 
       <div role="note" className="border-b border-border bg-muted px-4 py-3 text-sm text-foreground">
-        Puedes consultar al asistente con tu sesión. La selección de productos de recetas
-        y su guardado en listas siguen pendientes de integración (SUP-325, SUP-329 y SUP-241/SUP-318).
+        Las consultas requieren una sesión válida y que el asistente esté habilitado en este entorno.
+        Esta pantalla todavía no permite seleccionar productos de recetas, guardarlos en listas ni calcular rutas.
       </div>
 
       <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
