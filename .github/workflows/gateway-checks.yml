@@ -154,9 +154,13 @@ jobs:
           cache: false
       - name: Install schema validator
         run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.7.0
+      - name: Install manifest renderer
+        run: go install sigs.k8s.io/kustomize/kustomize/v5@v5.8.1
       - name: Validate Gateway Kubernetes manifests
         run: |
+          # Kustomization configura el renderizado; no es un recurso del API de Kubernetes.
           kubeconform -strict -summary -kubernetes-version 1.32.0 \
+            -ignore-filename-pattern '(^|/)kustomization\.ya?ml$' \
             infrastructure/k8s/gateway/ \
             infrastructure/k8s/identidad/ \
             infrastructure/k8s/motor-rutas/ \
@@ -165,3 +169,11 @@ jobs:
             infrastructure/k8s/scraper-go/ \
             infrastructure/k8s/redis/ \
             infrastructure/k8s/db/
+      - name: Validate rendered Motor/Listas manifests
+        shell: bash
+        run: |
+          # Validar también lo generado evita omitir los errores de la base y del overlay.
+          kustomize build infrastructure/k8s/motor-rutas/ \
+            | kubeconform -strict -summary -kubernetes-version 1.32.0
+          kustomize build infrastructure/k8s/overlays/motor-listas-ajustado/ \
+            | kubeconform -strict -summary -kubernetes-version 1.32.0
