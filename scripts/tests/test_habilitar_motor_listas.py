@@ -119,6 +119,58 @@ class PruebasHabilitacion(unittest.TestCase):
         }
         self.assertIn("estricta", MODULO.comprobar_cuotas(cuotas)[0])
 
+    def test_limite_por_contenedor_exige_64mi_y_respeta_maximos(self):
+        """La cuota total libre no evita que un LimitRange rechace el pod."""
+        rangos = {
+            "items": [
+                {
+                    "metadata": {"name": "prueba"},
+                    "spec": {
+                        "limits": [
+                            {
+                                "type": "Container",
+                                "min": {"cpu": "25m", "memory": "64Mi"},
+                                "max": {"cpu": "500m", "memory": "512Mi"},
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+        self.assertEqual(MODULO.comprobar_limites(rangos), [])
+        rangos["items"][0]["spec"]["limits"][0]["min"]["memory"] = "128Mi"
+        self.assertTrue(
+            any(
+                "request de memory" in mensaje
+                for mensaje in MODULO.comprobar_limites(rangos)
+            )
+        )
+        rangos["items"][0]["spec"]["limits"][0]["max"]["cpu"] = "50m"
+        self.assertTrue(
+            any(
+                "limit de cpu" in mensaje
+                for mensaje in MODULO.comprobar_limites(rangos)
+            )
+        )
+
+    def test_limite_detecta_proporcion_excesiva(self):
+        """Una relación limit/request restringida también puede impedir admisión."""
+        rangos = {
+            "items": [
+                {
+                    "metadata": {"name": "proporcion"},
+                    "spec": {
+                        "limits": [
+                            {"type": "Container", "maxLimitRequestRatio": {"cpu": "1"}}
+                        ]
+                    },
+                }
+            ]
+        }
+        self.assertTrue(
+            any("proporción" in mensaje for mensaje in MODULO.comprobar_limites(rangos))
+        )
+
     def test_salida_de_subproceso_fallido_no_revela_payload(self):
         """Ni stdout ni stderr del cliente se incluyen en un error operativo."""
         resultado = subprocess.CompletedProcess(
@@ -317,6 +369,7 @@ class PruebasHabilitacion(unittest.TestCase):
             self.assertNotIn("HorizontalPodAutoscaler", contenido)
             self.assertNotIn("kind: Secret", contenido)
             self.assertIn("cpu: 100m", contenido)
+            self.assertIn("memory: 64Mi", contenido)
             self.assertIn(IMAGEN_PRUEBA, contenido)
             self.assertEqual(contenido.count("namespace: aislado"), 3)
             parche = json.loads(

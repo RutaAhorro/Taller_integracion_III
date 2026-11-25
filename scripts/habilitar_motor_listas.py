@@ -27,7 +27,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 OVERLAY = RAIZ / "infrastructure/k8s/overlays/motor-listas-ajustado"
 CPU_SOLICITADA = Decimal("0.05")
 CPU_LIMITE = Decimal("0.1")
-MEMORIA_SOLICITADA = Decimal(32 * 1024**2)
+MEMORIA_SOLICITADA = Decimal(64 * 1024**2)
 MEMORIA_LIMITE = Decimal(128 * 1024**2)
 PLAZO_COMANDO = 45
 PATRON_IMAGEN = re.compile(
@@ -203,6 +203,39 @@ def comprobar_cuotas(cuotas: dict) -> list[str]:
     return bloqueos
 
 
+def comprobar_limites(rangos: dict) -> list[str]:
+    """Valida min, max y proporciones de LimitRange para el único contenedor de Motor."""
+    solicitudes = {"cpu": CPU_SOLICITADA, "memory": MEMORIA_SOLICITADA}
+    limites = {"cpu": CPU_LIMITE, "memory": MEMORIA_LIMITE}
+    bloqueos = []
+    for rango in rangos.get("items", []):
+        nombre = rango["metadata"]["name"]
+        for regla in rango.get("spec", {}).get("limits", []):
+            if regla.get("type") not in ("Container", "Pod"):
+                continue
+            for recurso, solicitud in solicitudes.items():
+                minimo = regla.get("min", {}).get(recurso)
+                maximo = regla.get("max", {}).get(recurso)
+                proporcion = regla.get("maxLimitRequestRatio", {}).get(recurso)
+                for clase, valor in (
+                    ("request", solicitud),
+                    ("limit", limites[recurso]),
+                ):
+                    if minimo and valor < cantidad(minimo):
+                        bloqueos.append(
+                            f"LimitRange {nombre}: {clase} de {recurso} menor al mínimo {minimo}."
+                        )
+                    if maximo and valor > cantidad(maximo):
+                        bloqueos.append(
+                            f"LimitRange {nombre}: {clase} de {recurso} supera el máximo {maximo}."
+                        )
+                if proporcion and limites[recurso] / solicitud > cantidad(proporcion):
+                    bloqueos.append(
+                        f"LimitRange {nombre}: proporción limit/request de {recurso} excesiva."
+                    )
+    return bloqueos
+
+
 def revisar(cluster: Cluster) -> dict:
     """Recoge solo el estado necesario y devuelve un informe sin valores de Secrets."""
     actual = ejecutar(["kubectl", "config", "current-context"]).strip()
@@ -212,6 +245,7 @@ def revisar(cluster: Cluster) -> dict:
         )
     datos_bd = json.loads(cluster.sql(SQL_REVISION))
     cuotas = cluster.objeto("resourcequota")
+    rangos = cluster.objeto("limitrange")
     # Solo se recibe la salida filtrada de kubectl, no valores de Secrets en Python.
     resumen_secretos = cluster.comando(
         "get",
@@ -226,7 +260,7 @@ def revisar(cluster: Cluster) -> dict:
             claves[nombre] = sorted(filter(None, entradas.split(",")))
     deployment_motor = cluster.objeto("deployment", "motor-rutas")
     servicio_motor = cluster.objeto("service", "motor-rutas")
-    bloqueos = comprobar_cuotas(cuotas)
+    bloqueos = comprobar_cuotas(cuotas) + comprobar_limites(rangos)
     if deployment_motor or servicio_motor:
         bloqueos.append(
             "Motor/Listas ya tiene recursos: este asistente es solo para su primera habilitación."
@@ -308,7 +342,7 @@ def revisar(cluster: Cluster) -> dict:
             "replicas": 1,
             "cpu_request": "50m",
             "cpu_limit": "100m",
-            "memoria_request": "32Mi",
+            "memoria_request": "64Mi",
             "memoria_limit": "128Mi",
             "hpa": False,
         },
@@ -317,6 +351,20 @@ def revisar(cluster: Cluster) -> dict:
         "cuotas": [
             {"nombre": cuota["metadata"]["name"], "estado": cuota.get("status", {})}
             for cuota in cuotas.get("items", [])
+        ],
+        "limitranges": [
+            {
+                "nombre": rango["metadata"]["name"],
+                "reglas": rango.get("spec", {}).get("limits", []),
+            }
+            for rango in rangos.get("items", [])
+        ],
+        "advertencias": [
+            (
+                "Solo se comprueban cuotas y LimitRanges visibles desde este contexto. "
+                "El clúster anfitrión puede imponer otras restricciones."
+            ),
+            "Un dry-run de Deployment no crea sus pods ni garantiza su admisión posterior.",
         ],
         "catalogo_resource_version": catalogo.get("metadata", {}).get(
             "resourceVersion"
