@@ -406,7 +406,7 @@ func TestEntradasInvalidas(prueba *testing.T) {
 		{"cantidad cero", func(entrada *optimizacion.Entrada) { entrada.Articulos[0].Cantidad = 0 }, optimizacion.ErrParametros},
 		{"rendimiento cero", func(entrada *optimizacion.Entrada) { entrada.Parametros.RendimientoKmL = 0 }, optimizacion.ErrParametros},
 		{"factor negativo", func(entrada *optimizacion.Entrada) { entrada.Parametros.FactorDistancia = -1 }, optimizacion.ErrParametros},
-		{"combustible cero", func(entrada *optimizacion.Entrada) { entrada.Parametros.PrecioCombustibleL = 0 }, optimizacion.ErrParametros},
+		{"combustible negativo", func(entrada *optimizacion.Entrada) { entrada.Parametros.PrecioCombustibleL = -1 }, optimizacion.ErrParametros},
 		{"sin paradas", func(entrada *optimizacion.Entrada) { entrada.Parametros.MaxParadas = 0 }, optimizacion.ErrParametros},
 		{"umbral negativo", func(entrada *optimizacion.Entrada) { entrada.Parametros.UmbralAhorro = -1 }, optimizacion.ErrParametros},
 		{"origen fuera de rango", func(entrada *optimizacion.Entrada) { entrada.Origen.Lat = 91 }, optimizacion.ErrParametros},
@@ -424,4 +424,97 @@ func TestEntradasInvalidas(prueba *testing.T) {
 			}
 		})
 	}
+}
+
+// =============================================================================
+// Modo MVP sin costo de combustible (PrecioCombustibleL == 0)
+// =============================================================================
+
+// parametrosSinCombustible arma los parámetros del MVP sin costo de traslado.
+func parametrosSinCombustible(umbralAhorro int) optimizacion.Parametros {
+	return optimizacion.Parametros{
+		MaxParadas:         3,
+		FactorDistancia:    1.3,
+		RendimientoKmL:     0,
+		PrecioCombustibleL: 0,
+		UmbralAhorro:       umbralAhorro,
+	}
+}
+
+// TestSinCombustibleUnaCadenaGana comprueba que sin combustible gana la tienda
+// más barata, con costo_traslado = 0 y total = costo_productos.
+func TestSinCombustibleUnaCadenaGana(prueba *testing.T) {
+	articulos := []optimizacion.Articulo{
+		{ProductoID: "leche", Cantidad: 2},
+		{ProductoID: "arroz", Cantidad: 1},
+	}
+	// Jumbo = 2*1100 + 1500 = 3700; Lider = 2*1200 + 1400 = 3800; Unimarc sin precios.
+	// Combinar Jumbo + Lider ahorraría $100 (<= umbral $500), así que gana Jumbo sola.
+	precios := map[string]preciosPorSucursal{
+		"leche": {sucursalJumbo: 1100, sucursalLider: 1200},
+		"arroz": {sucursalJumbo: 1500, sucursalLider: 1400},
+	}
+	resultado := calcularSinError(prueba, armarEntrada(articulos, precios, parametrosSinCombustible(umbralContrato)))
+
+	verificarRuta(prueba, resultado.Ruta, []int{sucursalJumbo}, 3700, 0, 3700, 0.73)
+	if resultado.BaseUnaTienda == nil || resultado.BaseUnaTienda.SucursalID != sucursalJumbo ||
+		resultado.BaseUnaTienda.Cadena != "Jumbo" || resultado.BaseUnaTienda.Total != 3700 {
+		prueba.Fatalf("base = %+v, se esperaba Jumbo con $3.700", resultado.BaseUnaTienda)
+	}
+	if resultado.Ahorro == nil || *resultado.Ahorro != 0 {
+		prueba.Fatalf("ahorro = %v, se esperaba 0", resultado.Ahorro)
+	}
+}
+
+// TestSinCombustibleCombinaDosCadenasYOrdenaPorHaversine verifica que cuando
+// combinar dos cadenas supera el umbral sin combustible, se eligen ambas, se
+// ordenan por Haversine (más cercana al origen primero) y se ignora Unimarc sin
+// precios.
+func TestSinCombustibleCombinaDosCadenasYOrdenaPorHaversine(prueba *testing.T) {
+	articulos := []optimizacion.Articulo{
+		{ProductoID: "leche", Cantidad: 2},
+		{ProductoID: "detergente", Cantidad: 1},
+		{ProductoID: "quinoa", Cantidad: 1},
+	}
+	// Jumbo: leche 700, detergente 9900 (sola = 11300)
+	// Lider: leche 1200, detergente 6900 (sola = 9300)
+	// Combinación Jumbo + Lider = 1400 + 6900 = 8300 (ahorro = 1000 > 500).
+	// Unimarc no tiene precios para ningún producto y debe ignorarse sin error.
+	precios := map[string]preciosPorSucursal{
+		"leche":      {sucursalJumbo: 700, sucursalLider: 1200},
+		"detergente": {sucursalJumbo: 9900, sucursalLider: 6900},
+	}
+	entrada := armarEntrada(articulos, precios, parametrosSinCombustible(umbralContrato))
+	for indice := range entrada.Ofertas {
+		entrada.Ofertas[indice].Nombre = "Nombre " + entrada.Ofertas[indice].ProductoID
+	}
+
+	resultado := calcularSinError(prueba, entrada)
+
+	verificarRuta(prueba, resultado.Ruta, []int{sucursalJumbo, sucursalLider}, 8300, 0, 8300, 2.86)
+	if resultado.BaseUnaTienda == nil || resultado.BaseUnaTienda.SucursalID != sucursalLider || resultado.BaseUnaTienda.Total != 9300 {
+		prueba.Fatalf("base = %+v, se esperaba Lider con $9.300", resultado.BaseUnaTienda)
+	}
+	if resultado.Ahorro == nil || *resultado.Ahorro != 1000 {
+		prueba.Fatalf("ahorro = %v, se esperaba 1000", resultado.Ahorro)
+	}
+	if len(resultado.NoCubiertos) != 1 || resultado.NoCubiertos[0].ProductoID != "quinoa" {
+		prueba.Fatalf("no_cubiertos = %v, se esperaba quinoa", resultado.NoCubiertos)
+	}
+	if resultado.Ruta.Paradas[0].Articulos[0].Nombre != "Nombre leche" {
+		prueba.Fatalf("nombre artículo = %q, se esperaba %q", resultado.Ruta.Paradas[0].Articulos[0].Nombre, "Nombre leche")
+	}
+}
+
+// TestSinCombustibleEmpateDesempataPorDistancia verifica que ante el mismo
+// costo de productos sin combustible, gana la tienda más cercana al origen.
+func TestSinCombustibleEmpateDesempataPorDistancia(prueba *testing.T) {
+	articulos := []optimizacion.Articulo{{ProductoID: "arroz", Cantidad: 1}}
+	precios := map[string]preciosPorSucursal{
+		"arroz": {sucursalJumbo: 1500, sucursalLider: 1500, sucursalUnimarc: 1500},
+	}
+	resultado := calcularSinError(prueba, armarEntrada(articulos, precios, parametrosSinCombustible(umbralContrato)))
+
+	// Jumbo está a 0.28 km del origen, Lider a 0.82 km y Unimarc a 1.24 km.
+	verificarRuta(prueba, resultado.Ruta, []int{sucursalJumbo}, 1500, 0, 1500, 0.73)
 }

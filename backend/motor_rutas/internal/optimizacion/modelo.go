@@ -44,6 +44,7 @@ type Sucursal struct {
 type Oferta struct {
 	ProductoID       string // producto_id guardado en la lista
 	ProductoIDOferta string // producto que efectivamente se compra en la sucursal
+	Nombre           string // nombre visible del producto en Catálogo (opcional)
 	SucursalID       int    // sucursal donde está la oferta
 	Precio           int    // CLP por envase
 	EnStock          bool   // solo las ofertas con stock se consideran
@@ -86,6 +87,7 @@ const MotivoSinOfertaEnRadio = "sin_oferta_en_radio"
 type ArticuloAsignado struct {
 	ProductoID       string `json:"producto_id"`
 	ProductoIDOferta string `json:"producto_id_oferta"`
+	Nombre           string `json:"nombre,omitempty"`
 	Cantidad         int    `json:"cantidad"`
 	PrecioUnitario   int    `json:"precio_unitario"`
 	Subtotal         int    `json:"subtotal"`
@@ -141,6 +143,7 @@ type Ruta struct {
 type BaseUnaTienda struct {
 	SucursalID int    `json:"sucursal_id"`
 	Nombre     string `json:"nombre"`
+	Cadena     string `json:"cadena,omitempty"`
 	Total      int    `json:"total"`
 }
 

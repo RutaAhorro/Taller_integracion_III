@@ -83,7 +83,12 @@ func Calcular(entrada Entrada) (Resultado, error) {
 	}
 	if base != nil {
 		sucursalBase := base.alternativa.Sucursales[0]
-		resultado.BaseUnaTienda = &BaseUnaTienda{SucursalID: sucursalBase.ID, Nombre: sucursalBase.Nombre, Total: pesos(base.total)}
+		resultado.BaseUnaTienda = &BaseUnaTienda{
+			SucursalID: sucursalBase.ID,
+			Nombre:     sucursalBase.Nombre,
+			Cadena:     sucursalBase.Cadena,
+			Total:      pesos(base.total),
+		}
 		ahorro := pesos(base.total) - resultado.Ruta.Total // 0 si la elegida es la base
 		resultado.Ahorro = &ahorro
 	}
@@ -161,10 +166,12 @@ func validarParametros(entrada Entrada) error {
 		return fmt.Errorf("%w: MaxParadas debe ser al menos 1", ErrParametros)
 	case !(parametros.FactorDistancia > 0), math.IsInf(parametros.FactorDistancia, 0):
 		return fmt.Errorf("%w: FactorDistancia debe ser positivo", ErrParametros)
-	case !(parametros.RendimientoKmL > 0), math.IsInf(parametros.RendimientoKmL, 0):
-		return fmt.Errorf("%w: RendimientoKmL debe ser positivo", ErrParametros)
-	case !(parametros.PrecioCombustibleL > 0), math.IsInf(parametros.PrecioCombustibleL, 0):
-		return fmt.Errorf("%w: PrecioCombustibleL debe ser positivo", ErrParametros)
+	case math.IsNaN(parametros.PrecioCombustibleL), math.IsInf(parametros.PrecioCombustibleL, 0), parametros.PrecioCombustibleL < 0:
+		return fmt.Errorf("%w: PrecioCombustibleL no puede ser negativo", ErrParametros)
+	case math.IsNaN(parametros.RendimientoKmL), math.IsInf(parametros.RendimientoKmL, 0),
+		(parametros.PrecioCombustibleL > 0 && !(parametros.RendimientoKmL > 0)),
+		(parametros.PrecioCombustibleL == 0 && parametros.RendimientoKmL < 0):
+		return fmt.Errorf("%w: RendimientoKmL debe ser positivo cuando hay costo de combustible", ErrParametros)
 	case parametros.UmbralAhorro < 0:
 		return fmt.Errorf("%w: UmbralAhorro no puede ser negativo", ErrParametros)
 	}
