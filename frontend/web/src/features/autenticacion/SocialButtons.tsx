@@ -13,17 +13,19 @@ export function SocialButtons() {
         </div>
       )}
       <div className="flex justify-center w-full">
-        <GoogleLogin
-          onSuccess={handleGoogleSuccess}
-          onError={handleGoogleError}
-          useOneTap={false}
-          theme="outline"
-          shape="pill"
-          text="signin_with"
-          size="large"
-          // GSI solo acepta un ancho en píxeles (200-400); "100%" lo invalida.
-          width={320}
-        />
+        <div className="inline-flex rounded-xl border-2 border-border bg-white p-1.5 shadow-[4px_4px_0px_var(--color-border)]">
+          <GoogleLogin
+            onSuccess={handleGoogleSuccess}
+            onError={handleGoogleError}
+            useOneTap={false}
+            theme="outline"
+            shape="rectangular"
+            text="signin_with"
+            size="large"
+            // GSI solo acepta un ancho en píxeles (200-400); "100%" lo invalida.
+            width={280}
+          />
+        </div>
       </div>
     </div>
   )
