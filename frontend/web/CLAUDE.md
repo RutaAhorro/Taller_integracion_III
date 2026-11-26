@@ -43,11 +43,11 @@
 
 ## Índice breve generado
 
-72 archivos fuente, incluidos los de pruebas. Distribución:
+81 archivos fuente, incluidos los de pruebas. Distribución:
 - `(raíz)`: 1 archivos.
 - `app`: 2 archivos.
 - `components`: 11 archivos.
-- `features`: 45 archivos.
+- `features`: 54 archivos.
 - `layouts`: 4 archivos.
 - `lib`: 2 archivos.
 - `pages`: 7 archivos.

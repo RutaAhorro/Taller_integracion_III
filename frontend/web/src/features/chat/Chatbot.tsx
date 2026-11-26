@@ -183,12 +183,6 @@ export default function Chatbot() {
                 >
                   Iniciar Sesión
                 </button>
-                <button 
-                  onClick={() => navegar('/login', { state: { tab: 'signup' } })}
-                  className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
-                >
-                  Crear Cuenta Gratuita
-                </button>
               </div>
             </div>
             <button 

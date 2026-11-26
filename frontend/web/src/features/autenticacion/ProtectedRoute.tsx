@@ -46,7 +46,7 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
             <p className="text-sm text-muted-foreground leading-relaxed">
               {soloPrivilegiados
                 ? 'Esta sección requiere una cuenta con rol de administrador o colaborador. Inicia sesión con una cuenta autorizada.'
-                : 'Esta sección requiere una cuenta activa. Inicia sesión o crea una cuenta gratuita para continuar.'}
+                : 'Esta sección requiere una cuenta activa. Inicia sesión con tu cuenta de Google para continuar.'}
             </p>
 
             <div className="pt-4 space-y-3">
@@ -56,14 +56,6 @@ export function ProtectedRoute({ roles }: { roles?: string[] }) {
               >
                 Iniciar Sesión
               </button>
-              {!soloPrivilegiados && (
-                <button
-                  onClick={() => navegar(ROUTES.LOGIN, { state: { tab: 'signup' } })}
-                  className="w-full bg-background border border-border hover:bg-accent text-foreground font-medium py-2.5 rounded-xl transition-colors cursor-pointer"
-                >
-                  Crear Cuenta Gratuita
-                </button>
-              )}
             </div>
             <div className="pt-2">
               <button
