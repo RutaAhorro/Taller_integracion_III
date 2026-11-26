@@ -9,6 +9,8 @@ Vite se utiliza para desarrollo y compilación.
 
 - Leer el [README principal](../../README.md) para preparar `.env`, PostgreSQL y
   los servicios del backend.
+- En el MVP el inicio de sesión de usuarios se realiza exclusivamente con Google
+  (además de la navegación como invitado).
 - Usar Node.js 22 actualizado (el Dockerfile utiliza `node:22-alpine`) y npm si
   se desarrolla fuera de Docker. Instalar las versiones del lockfile con `npm ci`.
 - No confundir una ruta disponible con un flujo integrado: misiones, rutas,

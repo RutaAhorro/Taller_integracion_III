@@ -48,8 +48,7 @@ export function LandingNavbar() {
 
         <div className="flex gap-3 items-center">
           <div className="hidden md:flex gap-3">
-            <Link className={buttonVariants({ variant: "outline", size: "sm" })} to="/login">Iniciar sesión</Link>
-            <Link className={buttonVariants({ size: "sm" })} to="/login" state={{ tab: "signup" }}>Crear cuenta</Link>
+            <Link className={buttonVariants({ size: "sm" })} to="/login">Iniciar sesión</Link>
           </div>
           <button
             type="button"
@@ -88,18 +87,10 @@ export function LandingNavbar() {
           ))}
           <Link
             to="/login"
-            className="text-foreground font-bold no-underline min-h-[44px] flex items-center px-2 rounded-[var(--radius)] hover:bg-muted transition-colors"
-            onClick={() => setMenuAbierto(false)}
-          >
-            Iniciar sesión
-          </Link>
-          <Link
-            to="/login"
-            state={{ tab: "signup" }}
             className={buttonVariants({ size: "lg" }) + " w-full mt-2 justify-center"}
             onClick={() => setMenuAbierto(false)}
           >
-            Crear cuenta
+            Iniciar sesión
           </Link>
         </div>
       )}
