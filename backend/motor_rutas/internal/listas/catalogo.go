@@ -15,8 +15,12 @@ import (
 // Cliente de la consulta interna de disponibilidad (SUP-312)
 // =============================================================================
 
-// rutaDisponibilidad es la ruta interna de Catálogo. No pasa por el Gateway.
-const rutaDisponibilidad = "/internal/v1/productos/disponibilidad"
+// rutaDisponibilidad y rutaPreciosComparables son las rutas internas de
+// Catálogo. No pasan por el Gateway.
+const (
+	rutaDisponibilidad     = "/internal/v1/productos/disponibilidad"
+	rutaPreciosComparables = "/internal/v1/productos/precios-comparables"
+)
 
 // largoMaximoRespuesta acota lo que se lee de Catálogo: 1000 productos con sus
 // datos caben de sobra en 4 MiB, y así una respuesta anómala no agota memoria.
@@ -27,12 +31,13 @@ const largoMaximoRespuesta = 4 << 20
 // (503); al mostrar la lista, los artículos quedan como "desconocido".
 var ErrCatalogoNoDisponible = errors.New("catálogo no disponible")
 
-// ClienteCatalogo consulta la disponibilidad por HTTP con token de servicio.
-// Motor nunca lee tablas de Catálogo (regla del contrato de artículos).
+// ClienteCatalogo consulta disponibilidad y precios comparables por HTTP con
+// token de servicio. Motor nunca lee tablas de Catálogo.
 type ClienteCatalogo struct {
-	urlDisponibilidad string
-	token             string
-	clienteHTTP       *http.Client
+	urlDisponibilidad     string
+	urlPreciosComparables string
+	token                 string
+	clienteHTTP           *http.Client
 }
 
 // NuevoClienteCatalogo arma el cliente con el origen interno de Catálogo
@@ -40,9 +45,10 @@ type ClienteCatalogo struct {
 // el plazo máximo por llamada (RUTAS_CATALOGO_TIMEOUT).
 func NuevoClienteCatalogo(origen, token string, plazo time.Duration) *ClienteCatalogo {
 	return &ClienteCatalogo{
-		urlDisponibilidad: origen + rutaDisponibilidad,
-		token:             token,
-		clienteHTTP:       &http.Client{Timeout: plazo},
+		urlDisponibilidad:     origen + rutaDisponibilidad,
+		urlPreciosComparables: origen + rutaPreciosComparables,
+		token:                 token,
+		clienteHTTP:           &http.Client{Timeout: plazo},
 	}
 }
 
@@ -98,5 +104,39 @@ func (cliente *ClienteCatalogo) Consultar(contexto context.Context, productoIDs 
 	return resultado, nil
 }
 
-// El compilador comprueba que ClienteCatalogo cumple la interfaz Catalogo.
-var _ Catalogo = (*ClienteCatalogo)(nil)
+// ConsultarPreciosComparables obtiene de Catálogo las sucursales físicas dentro
+// del radio y las ofertas comparables por EAN de los productos solicitados.
+// Nunca expone el token ni la URL en los errores devueltos.
+func (cliente *ClienteCatalogo) ConsultarPreciosComparables(contexto context.Context, consulta ConsultaPreciosComparables) (RespuestaPreciosComparables, error) {
+	cuerpo, errorObtenido := json.Marshal(consulta)
+	if errorObtenido != nil {
+		return RespuestaPreciosComparables{}, errorObtenido
+	}
+	peticion, errorObtenido := http.NewRequestWithContext(contexto, http.MethodPost, cliente.urlPreciosComparables, bytes.NewReader(cuerpo))
+	if errorObtenido != nil {
+		return RespuestaPreciosComparables{}, errorObtenido
+	}
+	peticion.Header.Set("Content-Type", "application/json")
+	peticion.Header.Set("Authorization", "Bearer "+cliente.token)
+
+	respuesta, errorObtenido := cliente.clienteHTTP.Do(peticion)
+	if errorObtenido != nil {
+		return RespuestaPreciosComparables{}, fmt.Errorf("%w (%T)", ErrCatalogoNoDisponible, errorObtenido)
+	}
+	defer respuesta.Body.Close()
+	if respuesta.StatusCode != http.StatusOK {
+		return RespuestaPreciosComparables{}, fmt.Errorf("%w (estado %d)", ErrCatalogoNoDisponible, respuesta.StatusCode)
+	}
+
+	var datos RespuestaPreciosComparables
+	if errorObtenido := json.NewDecoder(io.LimitReader(respuesta.Body, largoMaximoRespuesta)).Decode(&datos); errorObtenido != nil {
+		return RespuestaPreciosComparables{}, fmt.Errorf("%w (respuesta inválida)", ErrCatalogoNoDisponible)
+	}
+	return datos, nil
+}
+
+// El compilador comprueba que ClienteCatalogo cumple ambas interfaces.
+var (
+	_ Catalogo        = (*ClienteCatalogo)(nil)
+	_ CatalogoPrecios = (*ClienteCatalogo)(nil)
+)
