@@ -8,5 +8,5 @@ data:
   # Prefijos por dominio (mismos defaults que internal/config/config.go).
   GATEWAY_IDENTIDAD_PREFIXES: "/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones"
   GATEWAY_CATALOGO_PREFIXES: "/api/v1/productos,/api/v1/admin/productos"
-  GATEWAY_RUTAS_PREFIXES: "/api/v1/listas"
+  GATEWAY_RUTAS_PREFIXES: "/api/v1/listas,/api/v1/rutas"
   GATEWAY_SCRAPING_PREFIXES: "/api/v1/scraper,/swagger"

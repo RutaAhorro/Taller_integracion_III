@@ -11,7 +11,7 @@ flowchart LR
     Clientes[Frontend / bot / worker] --> Gateway
     Gateway -->|/api/v1/productos/*| Catalogo[Catálogo]
     Gateway -->|/api/v1/auth/*, /api/v1/admin/usuarios/*, /api/v1/usuarios/me/direcciones/*| Identidad[Identidad]
-    Gateway -->|/api/v1/listas/*| Rutas[Motor de rutas]
+    Gateway -->|/api/v1/listas/*, /api/v1/rutas/*| Rutas[Motor de rutas]
     Gateway -->|/api/v1/chat/*| IA[IA conversacional]
     Gateway -->|/api/v1/scraper/*, /swagger/*, health| Control[Control de scraping]
 ```
@@ -24,6 +24,7 @@ flowchart LR
 | `/api/v1/admin/usuarios` y subrutas | Identidad (`IDENTIDAD_URL`) | Métricas y administración de cuentas |
 | `/api/v1/usuarios/me/direcciones` y subrutas | Identidad (`IDENTIDAD_URL`) | CRUD de direcciones guardadas del usuario autenticado (SUP-239). El prefijo es la ruta completa: `/api/v1/usuarios`, `/api/v1/usuarios/me` y `/api/v1/usuarios/me/direccionesX` no se enrutan y responden 404 del Gateway |
 | `/api/v1/listas` y subrutas | Motor de rutas (`RUTAS_URL`) | CRUD de listas de compras (SUP-240) |
+| `/api/v1/rutas` y subrutas | Motor de rutas (`RUTAS_URL`) | Optimización de ruta de compras (`POST /api/v1/rutas/optimizar`) |
 | `/api/v1/chat` y subrutas | IA conversacional (`IA_URL`) | Interacción con asistente de IA conversacional (SUP-278) |
 | `/api/v1/scraper/*`, `/swagger/*` | Control (`SCRAPING_URL`) | Coordinación de scraping y documentación |
 | `/`, `/health`, `/api/v1/health` | Control (`SCRAPING_URL`) | Salud pública de Control |
@@ -90,7 +91,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `SCRAPING_URL` | **Obligatoria** | Origen HTTP/HTTPS de Control de scraping; sin ella el Gateway no arranca |
 | `CATALOGO_URL` | Vacío | Origen HTTP/HTTPS de Catálogo; sin él `/api/v1/productos` responde 404 |
 | `IDENTIDAD_URL` | Vacío | Origen HTTP/HTTPS de Identidad; sin él `/api/v1/auth` responde 404 |
-| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él `/api/v1/listas` responde 404 |
+| `RUTAS_URL` | Vacío | Origen HTTP/HTTPS del motor de rutas; sin él `/api/v1/listas` y `/api/v1/rutas` responden 404 |
 | `IA_URL` | Vacío | Origen HTTP/HTTPS de IA conversacional; sin ella `/api/v1/chat` responde 404 |
 | `GATEWAY_LISTEN_ADDR` | `:8082` | Dirección y puerto de escucha |
 | `GATEWAY_REQUEST_TIMEOUT` | `30s` | Tiempo límite total de la solicitud proxificada |
@@ -104,7 +105,7 @@ Ver `.env.example` para una plantilla lista para usar.
 | `GATEWAY_TRUSTED_PROXIES` | Vacío | IPs o CIDRs de proxies reversos de entrada confiables |
 | `GATEWAY_CATALOGO_PREFIXES` | `/api/v1/productos,/api/v1/admin/productos` | Prefijos enrutados a Catálogo |
 | `GATEWAY_IDENTIDAD_PREFIXES` | `/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones` | Prefijos enrutados a Identidad |
-| `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas` | Prefijos enrutados a Motor de rutas |
+| `GATEWAY_RUTAS_PREFIXES` | `/api/v1/listas,/api/v1/rutas` | Prefijos enrutados a Motor de rutas |
 | `GATEWAY_SCRAPING_PREFIXES` | `/api/v1/scraper,/swagger` | Prefijos enrutados a Control de scraping |
 | `GATEWAY_IA_PREFIXES` | `/api/v1/chat` | Prefijos enrutados a IA conversacional |
 
