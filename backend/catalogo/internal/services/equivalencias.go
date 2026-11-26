@@ -252,14 +252,16 @@ func rellenarGTIN14(digitos string) string {
 
 // ===== Reglas de presentación =====
 
-// hayConflictoPresentacion compara sólo formatos explícitos. Un formato vacío
-// no prueba una presentación distinta; dos textos no vacíos que difieren tras
-// normalizar mayúsculas y espacios sí bloquean la equivalencia.
+// hayConflictoPresentacion compara sólo formatos explícitos de peso, volumen o
+// empaque. Un formato vacío o un marcador genérico de unidad de venta ("1 un",
+// "1 unidad", "format") no prueba una presentación distinta; dos formatos
+// específicos que difieren tras normalizar mayúsculas y espacios sí bloquean la
+// equivalencia.
 func hayConflictoPresentacion(grupo []domain.ProductoEquivalenciaRegistro) bool {
 	presentaciones := make(map[string]bool, 2)
 	for _, registro := range grupo {
 		presentacion := normalizarPresentacion(registro.Formato)
-		if presentacion == "" {
+		if esPresentacionGenerica(presentacion) {
 			continue
 		}
 		presentaciones[presentacion] = true
@@ -268,6 +270,19 @@ func hayConflictoPresentacion(grupo []domain.ProductoEquivalenciaRegistro) bool 
 		}
 	}
 	return false
+}
+
+// esPresentacionGenerica reconoce textos vacíos o marcadores genéricos de
+// unidad de venta que algunos scrapers registran cuando no separan peso/volumen
+// del título (p. ej. "1 un" en Santa Isabel). No contradicen un formato
+// específico si el GTIN canónico es idéntico.
+func esPresentacionGenerica(presentacion string) bool {
+	switch presentacion {
+	case "", "1 un", "1 un.", "1 unidad", "un", "un.", "unidad", "format":
+		return true
+	default:
+		return false
+	}
 }
 
 // normalizarPresentacion unifica mayúsculas y espacios sin interpretar unidades
