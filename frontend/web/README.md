@@ -11,6 +11,8 @@ Vite se utiliza para desarrollo y compilación.
   los servicios del backend.
 - En el MVP el inicio de sesión de usuarios se realiza exclusivamente con Google
   (además de la navegación como invitado).
+- En `/chat`, las respuestas con `productos_recomendados` muestran tarjetas con
+  precio, cadena, acceso a `/producto/:id` y agregado directo al carrito.
 - Usar Node.js 22 actualizado (el Dockerfile utiliza `node:22-alpine`) y npm si
   se desarrolla fuera de Docker. Instalar las versiones del lockfile con `npm ci`.
 - No confundir una ruta disponible con un flujo integrado: misiones, rutas,

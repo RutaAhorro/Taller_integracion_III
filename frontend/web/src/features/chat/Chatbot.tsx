@@ -1,13 +1,20 @@
 // Vista del asistente: presenta mensajes de la API y delega las solicitudes en useChatbot.
+import { useState } from 'react';
 import { 
   Trash2,
-  User, Bot, X, ShieldAlert, Info, Send
+  User, Bot, X, ShieldAlert, Info, Send, ShoppingCart, Package
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import { useCart } from '@/features/catalogo/CartContext';
+import { formatPrice } from '@/features/catalogo/formatters';
+import { slugifyMarket } from '@/features/catalogo/products-api';
+import { type UiProduct } from '@/features/catalogo/tipos';
+import { useChatbot, type ProductoRecomendadoChat } from '@/features/chat/useChatbot';
 import { TypingIndicator } from '@/features/chat/TypingIndicator';
 import ReactMarkdown from 'react-markdown';
-import { useChatbot } from '@/features/chat/useChatbot';
+
+const MAXIMO_PRODUCTOS_VISIBLES = 6;
 
 const SUGERENCIAS = [
   'Busco leche por menos de $2.000',
@@ -15,9 +22,29 @@ const SUGERENCIAS = [
   'Busco harina de almendras',
 ];
 
+// Convierte una recomendación del asistente al producto del catálogo para el carrito.
+function aProductoCarrito(producto: ProductoRecomendadoChat): UiProduct {
+  return {
+    id: producto.id,
+    name: producto.nombre,
+    brand: producto.marca,
+    image: producto.urlImagen,
+    category: producto.categoria,
+    unit: producto.unidad,
+    price: producto.precio,
+    originalPrice: producto.precioNormal,
+    supermarketId: slugifyMarket(producto.supermercado),
+    supermarketName: producto.supermercado || undefined,
+    inStock: producto.enStock,
+  };
+}
+
 export default function Chatbot() {
   const navegar = useNavigate();
-  
+  const { addToCart } = useCart();
+  const [mensajesExpandidos, setMensajesExpandidos] = useState<Record<string, boolean>>({});
+  const [imagenesRotas, setImagenesRotas] = useState<Record<string, boolean>>({});
+
   const {
     messages,
     inputValue,
@@ -32,63 +59,141 @@ export default function Chatbot() {
 
   return (
     <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden relative">
-      <header className="flex-none flex items-center justify-between px-4 py-3 bg-card border-b border-border shadow-sm z-10">
-        <div className="flex items-center gap-3">
-          <div className="relative flex h-10 w-10 shrink-0 overflow-hidden rounded-full bg-primary items-center justify-center">
-            <Bot className="h-6 w-6 text-primary-foreground"/>
+      <header className="flex-none flex items-center justify-between px-4 py-2 bg-card border-b border-border shadow-sm z-10">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="relative flex h-8 w-8 shrink-0 overflow-hidden rounded-full bg-primary items-center justify-center">
+            <Bot className="h-5 w-5 text-primary-foreground"/>
           </div>
-          <div>
-            <h1 className="font-semibold text-base leading-tight">Chef & Shopper IA</h1>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] sm:text-xs font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)] whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
-                Consultas vía Gateway
-              </span>
-            </div>
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <h1 className="font-semibold text-sm sm:text-base leading-tight">Chef & Shopper IA</h1>
+            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
+              Consultas vía Gateway
+            </span>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1 border-l border-border pl-2 ml-2">
-            <button onClick={handleClear} className="p-2 rounded-md hover:bg-accent text-muted-foreground transition-colors" title="Vaciar chat">
+            <button onClick={handleClear} className="p-1.5 rounded-md hover:bg-accent text-muted-foreground transition-colors cursor-pointer" title="Vaciar chat">
               <Trash2 className="h-4 w-4"/>
             </button>
           </div>
         </div>
       </header>
 
-      <div role="note" className="border-b border-border bg-muted px-4 py-3 text-sm text-foreground">
-        Las consultas requieren una sesión válida y que el asistente esté habilitado en este entorno.
-        Esta pantalla todavía no permite seleccionar productos de recetas, guardarlos en listas ni calcular rutas.
-      </div>
-
-      <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide p-4 sm:p-6 space-y-6 bg-background scroll-smooth">
-        <div className="max-w-3xl mx-auto space-y-6">
+      <main ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide px-3 py-4 sm:px-6 sm:py-5 bg-background scroll-smooth">
+        <div className="max-w-5xl mx-auto space-y-4">
           {messages.map((mensaje) => (
-            <div key={mensaje.id} className={cn("flex gap-3 sm:gap-4", mensaje.role === 'user' ? "justify-end" : "justify-start")}>
+            <div key={mensaje.id} className={cn("flex gap-2.5 sm:gap-3", mensaje.role === 'user' ? "justify-end" : "justify-start")}>
               
               {mensaje.role === 'assistant' && (
-                <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] mt-1">
+                <div className="flex h-8 w-8 shrink-0 select-none items-center justify-center rounded-full bg-primary text-primary-foreground border-2 border-border shadow-[3px_3px_0px_var(--color-border)] mt-1">
                   <Bot className="h-5 w-5"/>
                 </div>
               )}
 
               <div className={cn(
-                "relative max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 text-sm",
+                "relative rounded-2xl px-4 py-3 text-sm",
                 mensaje.role === 'user' 
-                  ? "bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] rounded-br-none"
-                  : "bg-card border border-border text-foreground rounded-bl-none shadow-sm"
+                  ? "max-w-[85%] sm:max-w-[70%] bg-primary text-primary-foreground border-2 border-border shadow-[4px_4px_0px_var(--color-border)] rounded-br-none"
+                  : "max-w-[90%] sm:max-w-[85%] bg-card border border-border text-foreground rounded-bl-none shadow-sm"
               )}>
                 {(mensaje.type === 'text' || mensaje.type === 'error') && (
-                  <div role={mensaje.type === 'error' ? 'alert' : undefined} className="leading-relaxed text-[clamp(0.875rem,2vw,1.125rem)] [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
+                  <div role={mensaje.type === 'error' ? 'alert' : undefined} className="leading-relaxed text-sm [&>p]:mb-2 last:[&>p]:mb-0 [&>ul]:list-disc [&>ul]:pl-5 [&>ol]:list-decimal [&>ol]:pl-5 [&>h3]:font-bold [&>h3]:mt-3 [&_strong]:font-bold [&_strong]:text-foreground">
                     <ReactMarkdown>{mensaje.content || ''}</ReactMarkdown>
                   </div>
                 )}
+                
+                {mensaje.type === 'text' && mensaje.products && mensaje.products.length > 0 && (() => {
+                  const estaExpandido = Boolean(mensajesExpandidos[mensaje.id]);
+                  const productosVisibles = estaExpandido
+                    ? mensaje.products
+                    : mensaje.products.slice(0, MAXIMO_PRODUCTOS_VISIBLES);
+                  const cantidadOculta = mensaje.products.length - MAXIMO_PRODUCTOS_VISIBLES;
+                  return (
+                    <div className="mt-3 space-y-2.5">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                        {productosVisibles.map((producto) => (
+                          <div key={producto.id} className="flex flex-col justify-between rounded-xl border-2 border-border bg-background p-3 shadow-[3px_3px_0px_var(--color-border)]">
+                            <div className="flex items-start gap-2">
+                              {producto.urlImagen && !imagenesRotas[producto.id] ? (
+                                <img
+                                  src={producto.urlImagen}
+                                  alt={producto.nombre}
+                                  className="h-12 w-12 shrink-0 object-contain"
+                                  onError={() =>
+                                    setImagenesRotas((anteriores) => ({
+                                      ...anteriores,
+                                      [producto.id]: true,
+                                    }))
+                                  }
+                                />
+                              ) : (
+                                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted">
+                                  <Package className="h-6 w-6 text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">{producto.nombre}</p>
+                                <p className="truncate text-xs text-muted-foreground">{[producto.marca, producto.unidad].filter((detalle) => detalle).join(' · ')}</p>
+                                {producto.supermercado && (
+                                  <span className="mt-1 inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-foreground shadow-[2px_2px_0px_var(--color-border)]">
+                                    {producto.supermercado}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-2 flex items-baseline gap-2">
+                              <span className="text-base font-extrabold text-foreground">{formatPrice(producto.precio)}</span>
+                              {producto.enOferta && producto.precioNormal > producto.precio && (
+                                <span className="text-xs font-medium text-muted-foreground line-through">{formatPrice(producto.precioNormal)}</span>
+                              )}
+                            </div>
+                            <div className="mt-3 flex items-center justify-between gap-2">
+                              <Link
+                                to={`/producto/${producto.id}`}
+                                className="rounded-lg border-2 border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground shadow-[2px_2px_0px_var(--color-border)] transition-all duration-200 hover:bg-primary hover:text-primary-foreground"
+                              >
+                                Ver
+                              </Link>
+                              <button
+                                type="button"
+                                onClick={() => addToCart(aProductoCarrito(producto))}
+                                className="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-bold text-primary-foreground border-2 border-border shadow-[2px_2px_0px_var(--color-border)] transition-colors hover:bg-primary cursor-pointer"
+                              >
+                                <ShoppingCart className="h-3.5 w-3.5" />
+                                Agregar
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      {cantidadOculta > 0 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setMensajesExpandidos((anteriores) => ({
+                              ...anteriores,
+                              [mensaje.id]: !estaExpandido,
+                            }))
+                          }
+                          className="w-full rounded-xl border-2 border-border bg-background px-3 py-2 text-xs font-bold text-foreground shadow-[2px_2px_0px_var(--color-border)] transition-colors hover:bg-accent cursor-pointer"
+                        >
+                          {estaExpandido
+                            ? 'Mostrar menos'
+                            : `Ver ${cantidadOculta} ${cantidadOculta === 1 ? 'producto más' : 'productos más'}`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
                 
                 {mensaje.type === 'welcome' && (
                   <div className="space-y-4">
                     <p className="leading-relaxed">
                       ¡Hola! Puedes consultar productos del catálogo y pedir recomendaciones de compra.
+                      Cuando el asistente recomienda productos, verás tarjetas con acceso a la ficha y al carrito.
                       El chat todavía no guarda ingredientes ni calcula rutas.
                     </p>
                     <div className="flex flex-col gap-2 mt-4">
@@ -97,7 +202,7 @@ export default function Chatbot() {
                           key={sugerencia}
                           disabled={isProcessing}
                           onClick={() => handleSend(sugerencia)}
-                          className="text-left px-3 py-2 text-[clamp(0.875rem,2vw,1rem)] bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          className="text-left px-3 py-2 text-sm bg-background hover:bg-primary border border-border hover:border-border rounded-xl transition-all duration-200 text-foreground hover:text-primary-foreground font-medium disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
                         >
                           "{sugerencia}"
                         </button>
@@ -125,11 +230,11 @@ export default function Chatbot() {
         </div>
       </main>
 
-      <div className="flex-none bg-card border-t border-border p-4">
+      <div className="flex-none bg-card border-t border-border px-3 py-2.5 sm:px-4">
         <div className="max-w-3xl mx-auto">
           <form 
             onSubmit={(evento) => { evento.preventDefault(); handleSend(inputValue); }}
-            className="relative flex items-end gap-2 bg-background border border-border rounded-2xl p-2 shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-border transition-all"
+            className="relative flex items-end gap-2 bg-background border border-border rounded-2xl p-1.5 shadow-sm focus-within:ring-2 focus-within:ring-ring focus-within:border-border transition-all"
           >
             <textarea 
               value={inputValue}
@@ -143,7 +248,7 @@ export default function Chatbot() {
               }}
               aria-label="Mensaje para el asistente"
               placeholder="Consulta un producto o pide una recomendación..."
-              className="w-full max-h-32 min-h-[44px] bg-transparent resize-none outline-none py-2.5 px-3 text-[clamp(0.875rem,2vw,1.125rem)] text-foreground placeholder:text-muted-foreground"
+              className="w-full max-h-28 min-h-[40px] bg-transparent resize-none outline-none py-2 px-3 text-sm text-foreground placeholder:text-muted-foreground"
               rows={1}
             />
             <button 

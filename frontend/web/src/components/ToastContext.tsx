@@ -36,7 +36,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ContextoAviso.Provider value={{ toast }}>
       {children}
-      <div className="fixed top-4 right-0 left-0 sm:left-auto sm:right-4 z-[10000] flex flex-col gap-2 w-full sm:w-80 pointer-events-none px-4 sm:px-0">
+      <div className="fixed top-20 right-0 left-0 sm:left-auto sm:right-4 z-[10000] flex flex-col gap-2 w-full sm:w-80 pointer-events-none px-4 sm:px-0">
         {avisos.map((aviso) => (
           <ElementoAviso key={aviso.id} aviso={aviso} alCerrar={() => eliminarAviso(aviso.id)} />
         ))}
@@ -54,31 +54,33 @@ export const useToast = () => {
 // Renderiza un aviso individual y permite descartarlo manualmente.
 function ElementoAviso({ aviso, alCerrar }: { aviso: Toast; alCerrar: () => void }) {
   const iconos = {
-    success: <CheckCircle2 className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />,
-    error: <XCircle className="h-5 w-5 text-destructive dark:text-red-400" />,
-    info: <Info className="h-5 w-5 text-blue-600 dark:text-blue-400" />,
-    warning: <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400" />,
+    success: <CheckCircle2 className="h-5 w-5 text-primary" />,
+    error: <XCircle className="h-5 w-5 text-destructive" />,
+    info: <Info className="h-5 w-5 text-primary" />,
+    warning: <AlertCircle className="h-5 w-5 text-amber-600" />,
   };
 
-  const estilosFondo = {
-    success: "bg-emerald-50 border-emerald-200 dark:bg-emerald-950/30 dark:border-emerald-900",
-    error: "bg-red-50 border-red-200 dark:bg-red-950/30 dark:border-red-900",
-    info: "bg-blue-50 border-blue-200 dark:bg-blue-950/30 dark:border-blue-900",
-    warning: "bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-900",
+  const estilosBorde = {
+    success: "border-l-4 border-l-primary",
+    error: "border-l-4 border-l-destructive",
+    info: "border-l-4 border-l-primary",
+    warning: "border-l-4 border-l-amber-600",
   };
 
   return (
     <div className={cn(
-      "pointer-events-auto flex items-start gap-3 p-4 rounded-xl border shadow-lg backdrop-blur-md animate-in slide-in-from-top-5 fade-in duration-300",
-      estilosFondo[aviso.type] || estilosFondo.info
+      "pointer-events-auto flex items-start gap-3 p-3 rounded-xl border-2 border-border bg-card shadow-[4px_4px_0px_var(--color-border)] animate-in slide-in-from-top-5 fade-in duration-300",
+      estilosBorde[aviso.type] || estilosBorde.info
     )}>
       <div className="shrink-0 mt-0.5">{iconos[aviso.type]}</div>
       <div className="flex-1">
-        <p className="text-sm font-bold text-foreground leading-snug">{aviso.message}</p>
+        <p className="text-xs sm:text-sm font-semibold text-foreground leading-snug">{aviso.message}</p>
       </div>
       <button 
+        type="button"
         onClick={alCerrar}
-        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10"
+        aria-label="Cerrar aviso"
+        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded-md hover:bg-black/5 dark:hover:bg-white/10 cursor-pointer"
       >
         <X className="h-4 w-4" />
       </button>
