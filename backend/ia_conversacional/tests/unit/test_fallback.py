@@ -201,3 +201,38 @@ async def test_fallback_extraer_filtros_sin_clave_api_conmuta_sin_reintentos(mon
     # Error no recuperable (clave ausente): conmuta sin reintentos ni espera.
     assert mock_dormir.await_count == 0
     assert proveedor_groq.llamadas_extraccion == 1
+
+
+@pytest.mark.anyio
+async def test_fallback_log_incluye_tipo_excepcion_y_oculta_key_en_url(caplog):
+    """Verifica que el log de fallo incluya el tipo de excepción aunque el mensaje esté vacío y oculte key=."""
+    proveedor_timeout = ProveedorFalso("gemini")
+
+    async def falla_timeout_vacio(*args, **kwargs):
+        raise httpx.ReadTimeout("")
+
+    proveedor_timeout.generar_explicacion = falla_timeout_vacio
+
+    proveedor_url_secreta = ProveedorFalso("groq")
+
+    async def falla_con_key(*args, **kwargs):
+        raise httpx.RequestError(
+            "Fallo llamando a https://generativelanguage.googleapis.com/v1beta?key=secreto123&alt=json"
+        )
+
+    proveedor_url_secreta.generar_explicacion = falla_con_key
+
+    orquestador = FallbackProveedor(
+        proveedores=[proveedor_timeout, proveedor_url_secreta],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError, match="key=\\*\\*\\*"):
+            await orquestador.generar_explicacion(mensaje_usuario="hola", productos_filtrados=[])
+
+    assert "gemini falló tras 1 intentos: ReadTimeout" in caplog.text
+    assert "groq falló tras 1 intentos: RequestError:" in caplog.text
+    assert "secreto123" not in caplog.text
+    assert "key=***" in caplog.text
