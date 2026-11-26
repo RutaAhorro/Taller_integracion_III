@@ -13,11 +13,12 @@ import (
 // ===== Expresiones PostGIS =====
 
 // puntoSucursal reusa la columna geography funcional que indexa la migración
-// 13_ sin agregar columnas a la tabla compartida con Control.
-const puntoSucursal = `ST_SetSRID(ST_MakePoint(ss.lon, ss.lat), 4326)::geography`
+// 13_ sin agregar columnas a la tabla compartida con Control. Se califica con
+// public. porque app_catalogo opera con search_path = pg_catalog.
+const puntoSucursal = `public.ST_SetSRID(public.ST_MakePoint(ss.lon, ss.lat), 4326)::public.geography`
 
 // puntoOrigen recibe latitud y longitud en ese orden desde el servicio.
-const puntoOrigen = `ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography`
+const puntoOrigen = `public.ST_SetSRID(public.ST_MakePoint(?, ?), 4326)::public.geography`
 
 // ===== Repositorio =====
 
@@ -47,7 +48,7 @@ func (repositorio *RepositorioPreciosComparables) ConsultarCercanas(contexto con
 			AND ss.lat IS NOT NULL AND ss.lon IS NOT NULL
 			AND COALESCE(ss.direccion, '') <> 'Casa Matriz / Online'
 			AND ss.nombre NOT ILIKE '%online%'
-			AND ST_DWithin(`+puntoSucursal+`, `+puntoOrigen+`, ?)`,
+			AND public.ST_DWithin(`+puntoSucursal+`, `+puntoOrigen+`, ?)`,
 			longitud, latitud, radioKm*1000).
 		Select(`
 			ss.id,
@@ -55,7 +56,7 @@ func (repositorio *RepositorioPreciosComparables) ConsultarCercanas(contexto con
 			ss.nombre,
 			ss.lat,
 			ss.lon,
-			ST_Distance(`+puntoSucursal+`, `+puntoOrigen+`) / 1000.0 AS distancia_km`,
+			public.ST_Distance(`+puntoSucursal+`, `+puntoOrigen+`) / 1000.0 AS distancia_km`,
 			longitud, latitud).
 		Order("distancia_km ASC, ss.id ASC").
 		Limit(maximo)
