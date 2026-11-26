@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # ===== Constantes =====
 
-# Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=
+# Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=[&q=&precio_max=]
 RUTA_PRODUCTOS_CATALOGO = "/api/v1/productos"
 # Contrato de Catálogo: POST /internal/v1/productos/disponibilidad (SUP-312).
 RUTA_DISPONIBILIDAD_CATALOGO = "/internal/v1/productos/disponibilidad"
@@ -188,6 +188,45 @@ class ProductoRepositorio:
                 items, _ = self._pedir_pagina(cliente_http, pagina)
                 productos.extend(self._productos_en_stock(items))
             return productos
+        finally:
+            if self._cliente is None:
+                cliente_http.close()
+
+    def buscar_productos(
+        self,
+        termino: str,
+        precio_max: float | None = None,
+        limite: int = config.CATALOGO_BUSQUEDA_LIMITE,
+    ) -> list[dict[str, Any]] | None:
+        """
+        Busca en todo Catálogo los productos en stock cuyo nombre, marca o categoría contienen `termino`.
+
+        La caché solo guarda las primeras páginas (las más baratas), así que una
+        palabra clave como "harina de almendras" puede no estar en ella aunque exista.
+        Esta búsqueda usa `?q=` sobre el catálogo completo; el filtrado determinista
+        de la etapa 2 sigue aplicándose después. Devuelve `None` si Catálogo falla,
+        para que el chat use la caché en lugar de responder que no hay productos.
+        """
+        termino_limpio = termino.strip()
+        if not termino_limpio:
+            return []
+        parametros: dict[str, Any] = {"en_stock": "true", "q": termino_limpio, "page": PRIMERA_PAGINA, "limit": limite}
+        if precio_max is not None and math.isfinite(precio_max) and precio_max > 0:
+            parametros["precio_max"] = precio_max
+
+        cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        try:
+            respuesta = cliente_http.get(f"{self._url_base}{RUTA_PRODUCTOS_CATALOGO}", params=parametros)
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            # Misma forma que el listado paginado (`data` + `paginacion`) o una lista simple.
+            items = cuerpo.get("data", []) if isinstance(cuerpo, dict) else cuerpo
+            if not isinstance(items, list):
+                items = []
+            return self._productos_en_stock(items)
+        except (httpx.HTTPError, ValueError) as error_busqueda:
+            logger.warning("No fue posible buscar '%s' en Catálogo (%s).", termino_limpio, error_busqueda)
+            return None
         finally:
             if self._cliente is None:
                 cliente_http.close()

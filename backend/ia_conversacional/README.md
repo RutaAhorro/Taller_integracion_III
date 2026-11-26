@@ -144,6 +144,22 @@ consultan en Catálogo).
 - `ingredientes_faltantes` lista los ingredientes sin candidato disponible.
 - Sin receta, ambas listas son `[]`.
 
+### Búsqueda dirigida en Catálogo
+
+La caché en memoria solo guarda las primeras `IA_CATALOGO_MAX_PAGINAS` páginas
+del catálogo, ordenadas por precio ascendente, así que no cubre productos como
+"harina de almendras". Cuando la etapa 1 extrae `palabras_clave` o
+`ingredientes`, la etapa 2 consulta `GET /api/v1/productos?en_stock=true&q=<término>`
+(con `precio_max` si existe) sobre el catálogo completo, en paralelo y con un
+máximo de `IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS` consultas. Como Catálogo busca la
+subcadena literal, cada frase se envía completa, por su término más largo y sin
+tildes; el filtrado determinista exige después que calcen todos los términos.
+
+Si alguna búsqueda falla o se recorta, los resultados se completan con la caché
+y `estado_datos` refleja su estado. Una búsqueda exitosa sin resultados responde
+que no hay coincidencias, no que el catálogo esté caído. Los mensajes con solo
+categoría o precio siguen usando la caché.
+
 ### Estado de los datos (SUP-315)
 
 Cada respuesta 200 incluye `estado_datos`, que indica la frescura de la
@@ -200,6 +216,8 @@ Sin ninguna clave el servicio arranca con una advertencia, y el chat responde 50
 | `IA_CATALOGO_CACHE_TTL` | `60.0` | Vida (s) de la caché de productos; `0` consulta siempre. |
 | `IA_CATALOGO_PAGE_LIMIT` | `100` | Productos por página pedidos a Catálogo. |
 | `IA_CATALOGO_MAX_PAGINAS` | `10` | Páginas máximas; si hay más, se registra el truncado. |
+| `IA_CATALOGO_BUSQUEDA_LIMITE` | `100` | Productos por búsqueda dirigida (`?q=`) de palabra clave o ingrediente. |
+| `IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS` | `12` | Búsquedas dirigidas máximas por mensaje. |
 | `GROQ_ENDPOINT` | `https://api.groq.com/openai/v1/chat/completions` | Endpoint de Groq. |
 | `GROQ_MODEL_EXTRACCION` | `openai/gpt-oss-20b` | Modelo Groq de la etapa 1. |
 | `GROQ_MODEL_EXPLICACION` | `openai/gpt-oss-120b` | Modelo Groq de la etapa 3. |

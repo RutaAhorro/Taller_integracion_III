@@ -4,17 +4,23 @@ Servicio de chat: orquesta el pipeline de tres etapas.
 Extracción por LLM → filtrado determinista sobre el catálogo real →
 explicación por LLM solo con los productos validados. No conoce HTTP: el
 router traduce `AsistenteNoDisponible` a 503.
+
+Los candidatos de la etapa 2 salen de una búsqueda dirigida en Catálogo cuando
+hay palabras clave o ingredientes: la caché en memoria solo cubre las primeras
+páginas del catálogo (las más baratas) y no encontraba, por ejemplo, harina de
+almendras. Si la búsqueda falla, se usa la caché como antes.
 """
 
 import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from itertools import zip_longest
 
 import anyio
 
 from app import config
-from app.domain.filtros import filtrar_productos, vincular_ingredientes_catalogo
+from app.domain.filtros import filtrar_productos, terminos_busqueda_catalogo, vincular_ingredientes_catalogo
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
 from app.repositories.catalogo import FUENTE_MEMORIA, FUENTE_SIN_DATOS, ProductoRepositorio
 
@@ -146,6 +152,108 @@ async def generar_explicacion_con_tiempo(
     return explicacion or TEXTO_EXPLICACION_RESPALDO, tiempo_ms
 
 
+# ===== Candidatos de la etapa 2 =====
+
+
+def _frases_a_buscar(filtros: dict) -> list[str]:
+    """Devuelve los ingredientes de la receta o, si no hay receta, las palabras clave extraídas."""
+    if "ingredientes" in filtros:
+        return [ingrediente["nombre"] for ingrediente in filtros["ingredientes"]]
+    return list(filtros.get("palabras_clave", []))
+
+
+def _precio_maximo(filtros: dict) -> float | None:
+    """Devuelve el precio máximo extraído si es un número positivo; si no, None."""
+    precio_max = filtros.get("precio_max")
+    if isinstance(precio_max, (int, float)) and not isinstance(precio_max, bool) and precio_max > 0:
+        return float(precio_max)
+    return None
+
+
+def _planificar_consultas(frases: list[str]) -> tuple[list[str], bool]:
+    """
+    Ordena las consultas a Catálogo y las recorta al máximo configurado.
+
+    Se intercalan por prioridad (primero la frase completa de cada palabra clave
+    o ingrediente, luego sus variantes) para que el recorte afecte a las variantes
+    y no deje un ingrediente entero sin buscar. Devuelve también si hubo recorte.
+    """
+    terminos_por_frase = [terminos_busqueda_catalogo(frase) for frase in frases]
+    consultas = list(
+        dict.fromkeys(
+            termino
+            for terminos_de_un_nivel in zip_longest(*terminos_por_frase)
+            for termino in terminos_de_un_nivel
+            if termino
+        )
+    )
+    maximo = config.CATALOGO_BUSQUEDA_MAX_CONSULTAS
+    if len(consultas) > maximo:
+        logger.warning("Búsqueda en Catálogo recortada a %d de %d consultas.", maximo, len(consultas))
+        return consultas[:maximo], True
+    return consultas, False
+
+
+def _unir_sin_duplicados(*listas_productos: list) -> list:
+    """Une listas de productos conservando la primera aparición de cada id."""
+    productos_por_id: dict = {}
+    for productos in listas_productos:
+        for producto in productos:
+            identificador = producto.get("id")
+            if identificador is not None:
+                productos_por_id.setdefault(str(identificador), producto)
+    return list(productos_por_id.values())
+
+
+async def _buscar_en_catalogo(
+    repositorio: ProductoRepositorio, frases: list[str], precio_max: float | None
+) -> tuple[list, bool]:
+    """
+    Busca en paralelo cada término en Catálogo y une los resultados sin duplicados.
+
+    Devuelve `(productos, completa)`: `completa` es falso si alguna consulta falló
+    o se recortó, para que el llamador complete con la caché en memoria.
+    """
+    consultas, recortada = _planificar_consultas(frases)
+    resultados: dict[str, list | None] = {}
+
+    async def _buscar(termino: str) -> None:
+        """Ejecuta una búsqueda bloqueante en un hilo para no detener el bucle de eventos."""
+        resultados[termino] = await anyio.to_thread.run_sync(repositorio.buscar_productos, termino, precio_max)
+
+    async with anyio.create_task_group() as grupo_busquedas:
+        for termino in consultas:
+            grupo_busquedas.start_soon(_buscar, termino)
+
+    exitosos = [resultados[termino] for termino in consultas if resultados.get(termino) is not None]
+    completa = not recortada and len(exitosos) == len(consultas)
+    return _unir_sin_duplicados(*exitosos), completa
+
+
+async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -> tuple[list, str, bool]:
+    """
+    Obtiene los productos sobre los que se aplica el filtrado determinista.
+
+    Devuelve `(productos, estado_datos, busqueda_completa)`. Con palabras clave o
+    ingredientes se busca en Catálogo completo; si esa búsqueda queda incompleta
+    se agregan los productos de la caché y el estado lo informa el repositorio.
+    Una búsqueda completa sin resultados significa que no hay coincidencias, no
+    que el catálogo esté caído.
+    """
+    frases = _frases_a_buscar(filtros)
+    if frases:
+        encontrados, busqueda_completa = await _buscar_en_catalogo(repositorio, frases, _precio_maximo(filtros))
+        if busqueda_completa:
+            return encontrados, ESTADO_VIGENTE, True
+        logger.warning("Búsqueda dirigida en Catálogo incompleta: se completa con la caché en memoria.")
+        en_cache = await anyio.to_thread.run_sync(repositorio.obtener_todos)
+        return _unir_sin_duplicados(encontrados, en_cache), _determinar_estado_datos(repositorio), False
+
+    # Sin términos (solo categoría o precio) se mantiene la caché precargada.
+    productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)
+    return productos, _determinar_estado_datos(repositorio), False
+
+
 # ===== Pipeline =====
 
 
@@ -185,10 +293,9 @@ async def _ejecutar_etapas_1_y_2(
             logger.debug("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
             return _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0), None
 
-        # Etapa 2: filtrado determinista. La carga de Catálogo es bloqueante y va en un hilo.
-        productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)
-        estado_datos = _determinar_estado_datos(repositorio)
-        if not productos:
+        # Etapa 2: filtrado determinista sobre los candidatos de Catálogo.
+        productos, estado_datos, busqueda_completa = await _obtener_candidatos(repositorio, resultado.filtros)
+        if not productos and not busqueda_completa:
             return _respuesta_chat(
                 TEXTO_CATALOGO_NO_DISPONIBLE,
                 resultado.filtros,
