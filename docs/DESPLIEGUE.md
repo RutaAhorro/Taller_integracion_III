@@ -9,7 +9,7 @@ Esta guía describe cómo desplegar el MVP completo de RutaAhorro en el clúster
 
 ## 1. Prerrequisitos y publicación de imágenes
 
-Antes de aplicar los manifiestos, asegúrate de que el workflow `.github/workflows/docker-publish.yml` haya publicado la etiqueta `:develop` (o el tag que vayas a desplegar) de todas las imágenes en `ghcr.io/danirc2024/`:
+Antes de aplicar los manifiestos, asegúrate de que el workflow `.github/workflows/docker-publish.yml` haya publicado la etiqueta `:develop` (o el tag que vayas a desplegar) de todas las imágenes en `ghcr.io/rutaahorro/`:
 
 - `taller_integracion_iii-gateway:develop`
 - `taller_integracion_iii-identidad:develop`
@@ -183,10 +183,10 @@ kubectl rollout status deployment/catalogo -n "$NS"
 kubectl rollout status deployment/control-scraping -n "$NS"
 
 # 5. Motor de rutas e IA conversacional (dependen de Catálogo y BD)
-# Ambos usan strategy: type: Recreate para actualizarse sin requerir un pod extra bajo la cuota.
-kubectl apply -n "$NS" -f infrastructure/k8s/motor-rutas/configmap.yaml \
-  -f infrastructure/k8s/motor-rutas/service.yaml \
-  -f infrastructure/k8s/motor-rutas/deployment.yaml
+# Motor de rutas se aplica con su overlay (limits.cpu 100m, strategy Recreate e imagePullSecrets ghcr-secret).
+# Nota: hoy en el clúster su imagen está fijada por un digest anterior a la ruta nueva (#195);
+# tras aplicar el overlay, reinícialo con la imagen :develop reconstruida o fija un digest nuevo.
+kubectl apply -n "$NS" -k infrastructure/k8s/overlays/motor-listas-ajustado/
 
 kubectl apply -n "$NS" -f infrastructure/k8s/ia-conversacional/configmap.yaml \
   -f infrastructure/k8s/ia-conversacional/service.yaml \
@@ -217,6 +217,57 @@ kubectl apply -n "$NS" -f infrastructure/k8s/scraper-go/pvc.yaml \
 # kubectl apply -n "$NS" -f infrastructure/k8s/control-scraping/cronjob-configmap.yaml \
 #   -f infrastructure/k8s/control-scraping/cronjob.yaml
 ```
+
+### Orden recomendado (actualización del clúster en marcha)
+
+Para actualizar el clúster `student-vmatus` ya desplegado sin chocar con la cuota de `2000m` CPU ni perder los datos recolectados:
+
+1. **Terminar el scraping y respaldar la base de datos:** espera a que finalice la corrida activa del worker y exporta un dump de PostgreSQL antes de tocar los pods:
+
+   ```bash
+   export DB_POD=$(kubectl get pod -n "$NS" -l app=db -o jsonpath='{.items[0].metadata.name}')
+   kubectl exec -n "$NS" "$DB_POD" -- sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"' > respaldo_cluster.sql
+   ```
+
+2. **Escalar `bot` y `scraper-go` a 0 réplicas:** libera `600m` de CPU, `256Mi` de memoria y `2` pods para operar con margen:
+
+   ```bash
+   kubectl scale deployment/bot deployment/scraper-go --replicas=0 -n "$NS"
+   ```
+
+3. **Esperar el CI de `docker-publish.yml` sobre `develop`:** confirma en GitHub Actions que terminaron todos los builds y quedaron publicadas las imágenes `:develop` en `ghcr.io/rutaahorro/taller_integracion_iii-<servicio>`.
+
+4. **Reiniciar uno por uno `api-gateway`, `identidad`, `catalogo` y `frontend`:** todos usan `:develop` con `imagePullPolicy: Always`, por lo que `rollout restart` descarga la imagen recién publicada. Hazlo **de a uno** y espera `rollout status` en cada paso: si algún Deployment en el clúster aún usa `RollingUpdate`, Kubernetes necesita CPU libre de cuota para levantar el pod extra antes de terminar el antiguo (`strategy: type: Recreate` evita ese pod extra):
+
+   ```bash
+   # Aplicar antes los ConfigMaps/Deployments actualizados de gateway e identidad si hubo cambios
+   for dep in api-gateway identidad catalogo frontend; do
+     kubectl rollout restart deployment/"$dep" -n "$NS"
+     kubectl rollout status deployment/"$dep" -n "$NS"
+   done
+   ```
+
+5. **Aplicar Motor de rutas con su overlay:**
+
+   ```bash
+   kubectl apply -n "$NS" -k infrastructure/k8s/overlays/motor-listas-ajustado/
+   kubectl rollout restart deployment/motor-rutas -n "$NS"
+   kubectl rollout status deployment/motor-rutas -n "$NS"
+   ```
+
+   > [!NOTE]
+   > Hoy el Deployment `motor-rutas` en el clúster tiene su imagen fijada por un digest anterior a la ruta nueva (`#195`). Al aplicar el overlay con la imagen `:develop` reconstruida (o al fijar un digest nuevo) y reiniciar, queda activo el endpoint `POST /api/v1/rutas/optimizar`.
+
+6. **Aplicar IA conversacional:** antes de aplicar, verifica en GitHub Packages que `ghcr.io/rutaahorro/taller_integracion_iii-ia-conversacional` sea **público**; si sigue privado, asegúrate de crear el Secret `ghcr-secret` y agregar `imagePullSecrets: [{name: ghcr-secret}]` en el Deployment:
+
+   ```bash
+   kubectl apply -n "$NS" -f infrastructure/k8s/ia-conversacional/configmap.yaml \
+     -f infrastructure/k8s/ia-conversacional/service.yaml \
+     -f infrastructure/k8s/ia-conversacional/deployment.yaml
+   kubectl rollout status deployment/ia-conversacional -n "$NS"
+   ```
+
+7. **Verificación posterior:** comprobar los endpoints de salud (`health` / `ready`) y ejecutar el recorrido MVP (`scripts/recorrido_mvp.sh`) según la sección 7.
 
 ---
 
