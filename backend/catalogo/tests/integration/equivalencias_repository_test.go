@@ -72,4 +72,7 @@ func TestEquivalenciasRepositorioNormalizaEANYLeeLaUltimaCaptura(prueba *testing
 	if strings.Contains(consultaSQL, "TRIM(LEADING '0'") {
 		prueba.Errorf("el EAN no debe recortar ceros iniciales: %s", consultaSQL)
 	}
+	if !strings.Contains(consultaSQL, "precio_normal >= 100") {
+		prueba.Errorf("la consulta debe ignorar capturas bajo PrecioMinimoValido (100): %s", consultaSQL)
+	}
 }

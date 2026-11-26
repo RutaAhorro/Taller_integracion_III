@@ -103,7 +103,19 @@ func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, 
 		Joins("JOIN scraper.sucursales_supermercado ss ON pc.sucursal_id = ss.id").
 		Joins("JOIN scraper.cadenas_supermercado cs ON ss.cadena_id = cs.id")
 	if !opciones.sinCapturas || filtroUsaPrecios(filtro) {
-		consulta = consulta.Joins("LEFT JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id ORDER BY capturado_el DESC LIMIT 1) cp ON true")
+		// JOIN LATERAL descarta productos sin ninguna captura válida (>= PrecioMinimoValido)
+		// y toma la captura válida más reciente ignorando precios basura.
+		consulta = consulta.Joins(
+			"JOIN LATERAL (SELECT precio_normal, precio_oferta, esta_disponible FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id AND precio_normal >= ? ORDER BY capturado_el DESC LIMIT 1) cp ON true",
+			domain.PrecioMinimoValido,
+		)
+	} else {
+		// Cuando sólo se agregan supermercados se evita el LATERAL, pero se exige
+		// al menos una captura válida para coincidir con el listado publicado.
+		consulta = consulta.Where(
+			"EXISTS (SELECT 1 FROM scraper.capturas_precios WHERE producto_crudo_id = pc.id AND precio_normal >= ?)",
+			domain.PrecioMinimoValido,
+		)
 	}
 
 	if filtro.Query != "" {
@@ -362,6 +374,7 @@ func (repositorio *RepositorioProductos) ObtenerPorID(contexto context.Context, 
 	errorHistorial := repositorio.baseDatos.WithContext(contexto).
 		Table("scraper.capturas_precios").
 		Where("producto_crudo_id = ?::uuid", idCanonico).
+		Where("precio_normal >= ?", domain.PrecioMinimoValido).
 		Order("capturado_el DESC").
 		Select("precio_normal, precio_oferta, capturado_el").
 		Scan(&historial).Error

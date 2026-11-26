@@ -8,6 +8,13 @@ import (
 	"time"
 )
 
+// ===== Reglas de precios =====
+
+// PrecioMinimoValido es el umbral mínimo en CLP para considerar válida una
+// captura de precio_normal. Evita publicar precios basura dejados por el
+// scraper (por ejemplo 1 o 2 pesos) o productos sin una captura válida.
+const PrecioMinimoValido = 100
+
 // ===== Filtro de productos =====
 
 // FiltroProductosDTO reúne los criterios de búsqueda, paginación y orden que el
