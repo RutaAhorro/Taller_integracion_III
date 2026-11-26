@@ -71,7 +71,58 @@ El Gateway no valida JWT: los servicios aplican autenticación y autorización.
 Scraping exige un token de servicio que **nunca debe enviarse al navegador**.
 Los endpoints internos de Catálogo no se publican mediante el Gateway.
 
-## Ejecución local
+## Arranque local
+
+Flujo rápido para levantar todo el entorno desde cero y llegar a `recorrido_mvp.sh` **5 de 5**.
+
+> **Nota para Windows:** ejecuta los scripts `.sh` desde **Git Bash** o **WSL2** (con Docker Desktop integrado). Los scripts usan `#!/usr/bin/env bash` y funcionan igual desde `bash`, `zsh` o `fish`.
+
+### 1. Preparar `.env` con secretos locales
+
+```bash
+bash scripts/preparar_entorno.sh
+```
+
+El script verifica que tengas `docker compose`, `git`, `bash`, `curl`, `openssl` y `jq`, crea `.env` desde `.env.example` con secretos aleatorios (sin sobrescribir si ya existe) y asegura que `.env` esté en `.gitignore`.
+
+### 2. Completar a mano las claves en `.env`
+
+Abre `.env` y completa al menos:
+- `GEMINI_API_KEY`: clave de Google AI Studio para que el chat IA funcione (`GROQ_API_KEY` es respaldo opcional).
+- `GOOGLE_CLIENT_ID`: Client ID OAuth de Google (Compose lo inyecta en Identidad y en el frontend).
+- `ADMIN_EMAILS`: correos de administradores separados por coma.
+
+> **Frontend (`VITE_*`):** `VITE_API_URL` y `VITE_GOOGLE_CLIENT_ID` se incrustan al compilar el frontend. Si modificas cualquiera de los dos (o `GOOGLE_CLIENT_ID`), debes reconstruir con `--build`.
+
+### 3. Levantar el stack completo
+
+```bash
+docker compose up -d --build
+```
+
+Esto levanta `db`, `redis`, `identidad`, `catalogo`, `control_scraping`, `scraper_worker`, `motor_rutas`, `ia_conversacional`, `gateway` y `frontend` con `RUTAS_URL` e `IA_URL` configurados por defecto, y con PostgreSQL (`5432`) y Redis (`6379`) publicados solo en `127.0.0.1`. *(El bot de Discord es opcional: `--profile bot`.)*
+
+### 4. Cargar el catálogo de datos de prueba
+
+El archivo `catalogo_demo.sql.gz` se entrega por privado y **nunca se sube al repositorio**. Cárgalo con:
+
+```bash
+bash scripts/demo/cargar_catalogo.sh /ruta/al/catalogo_demo.sql.gz
+```
+
+El script valida el archivo antes de tocar la base, cierra el último bloque `COPY` si viniera truncado, reemplaza `scraper.*` en una sola transacción y limpia precios menores a `100` y productos sin captura. Se puede re-ejecutar sin error.
+
+### 5. Verificar el recorrido completo (5 de 5)
+
+```bash
+bash scripts/recorrido_mvp.sh
+```
+
+Si todo está arriba y el catálogo cargado, los 5 pasos (registro local, búsqueda de producto, creación de lista, agregado de artículo y chat IA) deben marcar `OK`.
+
+---
+
+## Ejecución local (referencia técnica)
 
 ### Requisitos
 
