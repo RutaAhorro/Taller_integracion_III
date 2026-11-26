@@ -11,16 +11,12 @@ import {
   X,
   Bot,
   Map,
-  Users,
   Home,
-  Zap,
   ChefHat,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useRole } from '@/features/autenticacion/useRole'
 import type { UiSupermarket } from '@/features/catalogo/tipos'
-import { PLAN_PREMIUM, type PlanUsuario } from '@/features/autenticacion/tipos'
 import { obtenerCategorias, PREFIJO_CATEGORIA } from '@/features/catalogo/products-api'
 
 // Mantiene la selección en el layout para compartirla con el listado paginado.
@@ -37,7 +33,6 @@ type PropiedadesBarraLateral = {
   onSelectCategory: (categoria: string) => void
   onSelectMarket: (id: string | null) => void
   activeCategory: string
-  userPlan?: PlanUsuario
   activeCity?: string
 }
 
@@ -52,7 +47,6 @@ const enlacesHerramientas = [
   { to: '/chat', label: 'Chat Inteligente', icon: Bot },
   { to: '/history', label: 'Listas y Rutas', icon: Map },
   { to: '/recetas', label: 'Recetas IA', icon: ChefHat },
-  { to: '/colaborador', label: 'Misiones', icon: Users },
 ]
 
 // Comparte los estilos de navegación sin duplicar la indicación de selección.
@@ -102,7 +96,6 @@ export function SideBar({
   onSelectCategory,
   onSelectMarket,
   activeCategory,
-  userPlan,
   activeCity
 }: PropiedadesBarraLateral) {
   const [categorias, setCategorias] = useState<string[]>([])
@@ -113,8 +106,6 @@ export function SideBar({
   const referenciaBotonCerrar = useRef<HTMLButtonElement>(null)
   const navegar = useNavigate()
   const { pathname } = useLocation()
-  // SUP-256: Misiones solo colaborador o admin.
-  const { canAccessColaborador } = useRole()
 
   // Carga una lista completa por montaje/reintento, sin repetirla al paginar
   // o abrir el panel. Cancela al salir para no aplicar respuestas tardías.
@@ -347,57 +338,19 @@ export function SideBar({
           <nav aria-label="Asistente IA">
             <TituloSeccion>Herramientas IA</TituloSeccion>
             <ul className="flex flex-col gap-1">
-              {enlacesHerramientas
-                // SUP-256: Misiones solo colaborador o admin.
-                .filter((enlace) => enlace.to !== '/colaborador' || canAccessColaborador)
-                .map((enlace) => (
-                  <li key={enlace.to}>
-                    <Link to={enlace.to} onClick={onClose} className={claseEnlaceNavegacion(pathname.startsWith(enlace.to), 'font-medium')}>
-                      <enlace.icon className="h-4.5 w-4.5" aria-hidden="true" />
-                      {enlace.label}
-                    </Link>
-                  </li>
-                ))}
+              {enlacesHerramientas.map((enlace) => (
+                <li key={enlace.to}>
+                  <Link to={enlace.to} onClick={onClose} className={claseEnlaceNavegacion(pathname.startsWith(enlace.to), 'font-medium')}>
+                    <enlace.icon className="h-4.5 w-4.5" aria-hidden="true" />
+                    {enlace.label}
+                  </Link>
+                </li>
+              ))}
             </ul>
           </nav>
         </div>
 
         <div className="border-t border-border px-4 py-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] space-y-3">
-          <Link
-            to="/planes"
-            onClick={onClose}
-            className="flex items-center justify-between rounded-xl border-2 border-border bg-card p-3 shadow-sm transition-all hover:-translate-y-1 hover:shadow-[4px_4px_0px_var(--color-border)] group"
-          >
-            <div className="flex items-center gap-3">
-              <div
-                className={`flex h-8 w-8 items-center justify-center rounded-lg ${
-                  userPlan === PLAN_PREMIUM
-                    ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400'
-                    : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                <Zap className="h-4 w-4" aria-hidden="true" />
-              </div>
-              <div className="flex flex-col text-left">
-                <span className="text-[0.65rem] font-bold uppercase tracking-wider text-muted-foreground">
-                  Tu Plan
-                </span>
-                <span
-                  className={`text-sm font-bold ${
-                    userPlan === PLAN_PREMIUM
-                      ? 'text-amber-600 dark:text-amber-400'
-                      : 'text-foreground'
-                  }`}
-                >
-                  {userPlan === PLAN_PREMIUM ? 'Suscripción Premium' : 'Plan Básico'}
-                </span>
-              </div>
-            </div>
-            <span className="text-xs font-bold text-primary opacity-0 transition-opacity group-hover:opacity-100">
-              Mejorar
-            </span>
-          </Link>
-
           <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2.5 text-sm text-muted-foreground">
             <MapPin className="h-4 w-4 text-primary" aria-hidden="true" />
             <span className="font-medium text-foreground">

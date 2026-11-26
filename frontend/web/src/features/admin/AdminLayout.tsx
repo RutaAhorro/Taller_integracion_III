@@ -11,24 +11,18 @@ type PropiedadesDisenoAdmin = {
 };
 
 const navegacion: { id: AdminSection; label: string; description: string }[] = [
-  { id: 'overview', label: 'Resumen', description: 'Vista general' },
   { id: 'users', label: 'Usuarios', description: 'Cuentas y permisos' },
   { id: 'sources', label: 'Fuentes', description: 'Cadenas y conexiones' },
-  { id: 'metrics', label: 'Métricas', description: 'Conteos y tasas' },
 ];
 
 export function AdminLayout({ children }: PropiedadesDisenoAdmin) {
   const [barraLateralAbierta, setBarraLateralAbierta] = useState(false);
   const [barraLateralContraida, setBarraLateralContraida] = useState(false);
-  const { search: busquedaUrl, pathname: rutaActual } = useLocation();
+  const { search: busquedaUrl } = useLocation();
   const navegar = useNavigate();
   const { logout: cerrarSesion, isLoggingOut: cerrandoSesion } = useAuth();
   const seccionCruda = new URLSearchParams(busquedaUrl).get('section');
-  // Acepta 'metricas' (es) como alias de 'metrics' (SUP-280: ruta /admin/metricas).
-  const seccionActiva: AdminSection =
-    rutaActual.endsWith('/metricas') || seccionCruda === 'metricas' || seccionCruda === 'metrics' ? 'metrics'
-    : seccionCruda === 'users' || seccionCruda === 'sources' ? seccionCruda
-    : 'overview';
+  const seccionActiva: AdminSection = seccionCruda === 'sources' ? 'sources' : 'users';
   const referenciaBotonCerrar = useRef<HTMLButtonElement>(null);
 
   // Auditoría (a11y): Escape cierra el drawer móvil y se devuelve el foco.
@@ -85,12 +79,7 @@ export function AdminLayout({ children }: PropiedadesDisenoAdmin) {
             <nav className="space-y-2">
               {navegacion.map((elemento) => {
                 const estaActiva = seccionActiva === elemento.id;
-                // SUP-280: Métricas vive en /admin/metricas; el resto usa ?section=.
-                const enlace = elemento.id === 'overview'
-                  ? ROUTES.ADMIN
-                  : elemento.id === 'metrics'
-                    ? ROUTES.ADMIN_METRICAS
-                    : `${ROUTES.ADMIN}?section=${elemento.id}`;
+                const enlace = elemento.id === 'users' ? ROUTES.ADMIN : `${ROUTES.ADMIN}?section=${elemento.id}`;
                 return (
                   <Link
                     key={elemento.id}
