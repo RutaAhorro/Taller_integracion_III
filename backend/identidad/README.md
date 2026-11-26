@@ -191,6 +191,7 @@ requiere reiniciar el proceso.
 | `JWT_SECRET` | Clave compartida con los validadores de sesión; al menos 32 bytes y sin espacios externos |
 | `REDIS_URL` | Obligatoria y válida; se conserva el namespace de contadores |
 | `GOOGLE_CLIENT_ID` | Audience de Google; vacía deshabilita SSO y conserva login local |
+| `ADMIN_EMAILS` | Lista opcional de correos separados por coma que reciben rol `admin` tras validar `email_verified=true` en `POST /api/v1/auth/google` (promueve `registrado` a `admin`, nunca degrada ni altera `colaborador`); `POST /api/v1/auth/register` rechaza esos correos con 409 |
 | `CORS_ALLOWED_ORIGINS` | Orígenes HTTP(S) exactos separados por comas, sin path ni comodines |
 | `IDENTIDAD_COOKIE_SECURE` | `true` por defecto; `false` sólo para HTTP local |
 | `IDENTIDAD_TRUSTED_PROXIES` | IP/CIDR de los proxies reales; obligatorio, sin redes universales |
