@@ -286,3 +286,47 @@ func TestPostgresSucursalNoSeInventa(prueba *testing.T) {
 		}
 	})
 }
+
+// TestPostgresGuardaPrecioMinimo comprueba contra PostgreSQL real que las
+// capturas con precio_normal < PrecioMinimoValido se ignoran y que los
+// productos sin captura válida no se publican en el catálogo ni en detalle.
+func TestPostgresGuardaPrecioMinimo(prueba *testing.T) {
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
+	sufijo := strings.ToUpper(uuid.NewString()[:8])
+	termino := "Guarda" + sufijo
+
+	cadena := sembrarCadena(prueba, baseDatos, enrutador, "Cadena Guarda "+sufijo)
+	sembrarProducto(prueba, enrutador, cadena, termino+" Valido", "Despensa", 1290, true)
+	sembrarProducto(prueba, enrutador, cadena, termino+" Basura", "Despensa", 2, true)
+	sembrarProducto(prueba, enrutador, cadena, termino+" Umbral", "Despensa", domain.PrecioMinimoValido, true)
+
+	// Producto sembrado directamente sin ninguna fila en scraper.capturas_precios.
+	sinCapturaID := uuid.NewString()
+	errorInsert := baseDatos.Exec(
+		`INSERT INTO scraper.productos_crudos (id, sucursal_id, sku, titulo_crudo, categoria_cruda, en_stock)
+		 VALUES (?::uuid, ?, ?, ?, 'Despensa', true)`,
+		sinCapturaID, cadena.SucursalID, "SINCAP-"+sufijo, termino+" SinCaptura",
+	).Error
+	if errorInsert != nil {
+		prueba.Fatalf("insert producto sin captura: %v", errorInsert)
+	}
+
+	var pagina domain.PaginaProductosDTO
+	if estado := pedir(prueba, enrutador, http.MethodGet, "/api/v1/productos?q="+termino, "", nil, nil, &pagina); estado != http.StatusOK {
+		prueba.Fatalf("listado=%d", estado)
+	}
+	if pagina.TotalRegistros != 2 || len(pagina.Data) != 2 {
+		prueba.Fatalf("sólo deben aparecer el producto válido y el del umbral (>= %d), llegaron %+v", domain.PrecioMinimoValido, pagina.Data)
+	}
+	for _, producto := range pagina.Data {
+		if producto.PrecioNormal < domain.PrecioMinimoValido {
+			prueba.Fatalf("se publicó un precio bajo el mínimo: %+v", producto)
+		}
+	}
+
+	// Un producto sin captura válida tampoco debe publicarse en el detalle.
+	if estado := pedir(prueba, enrutador, http.MethodGet, "/api/v1/productos/"+sinCapturaID, "", nil, nil, nil); estado != http.StatusNotFound {
+		prueba.Fatalf("detalle de producto sin captura=%d; se esperaba 404", estado)
+	}
+}

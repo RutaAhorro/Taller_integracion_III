@@ -223,6 +223,42 @@ func TestPreciosComparablesSinEANNoEquiparaPorNombre(prueba *testing.T) {
 	}
 }
 
+// TestPreciosComparablesIgnoraPrecioBajoMinimo comprueba que precios-comparables
+// nunca publique una oferta con precio_normal < PrecioMinimoValido y la cuente
+// en ofertas_sin_precio.
+func TestPreciosComparablesIgnoraPrecioBajoMinimo(prueba *testing.T) {
+	momento := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	productoID := "00000000-0000-4000-8000-000000000031"
+
+	registro := registroEquivalenciaBase(productoID, 1, "Jumbo")
+	registro.CodigoEAN = referenciaCadena("0036000291452")
+	registro.PrecioNormal = punteroDecimal(1)
+	registro.EnStock = punteroBooleano(true)
+	registro.CapturadoEl = punteroFecha(momento.Add(-time.Hour))
+
+	repositorioPrecios := &repositorioPreciosDoble{
+		candidatas: []domain.SucursalCercanaRegistro{{ID: 1, Cadena: "Jumbo", DistanciaKm: 0.3}},
+		sucursales: []domain.SucursalRegistro{{ID: 1, Cadena: "Jumbo", Activa: true, Lat: punteroDecimal(-38.741), Lon: punteroDecimal(-72.6)}},
+	}
+	repositorioEquivalencias := &repositorioEquivalenciasDoble{registros: []domain.ProductoEquivalenciaRegistro{registro}}
+	servicio := nuevoServicioPrecios(repositorioPrecios, repositorioEquivalencias, momento)
+
+	respuesta, errorObtenido := servicio.Consultar(context.Background(), solicitudPrecios(productoID))
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	if len(respuesta.Productos) != 1 || len(respuesta.Productos[0].Ofertas) != 1 {
+		prueba.Fatalf("se esperaba 1 oferta: %+v", respuesta.Productos)
+	}
+	oferta := respuesta.Productos[0].Ofertas[0]
+	if oferta.Precio != nil || oferta.PrecioNormal != nil || oferta.EstadoPrecio != domain.EstadoPrecioSinCaptura {
+		prueba.Fatalf("un precio menor al mínimo (%d) no debe publicarse en precios-comparables: %+v", domain.PrecioMinimoValido, oferta)
+	}
+	if respuesta.Resumen.OfertasSinPrecio != 1 {
+		prueba.Fatalf("se esperaba ofertas_sin_precio=1, se obtuvo %+v", respuesta.Resumen)
+	}
+}
+
 // TestPreciosComparablesValidaSolicitud evita consultas sin lote, con UUID
 // inválido, coordenadas fuera de rango o parámetros sin límite.
 func TestPreciosComparablesValidaSolicitud(prueba *testing.T) {

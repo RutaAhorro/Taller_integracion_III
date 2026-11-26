@@ -66,4 +66,7 @@ func TestDisponibilidadRepositorioUsaLaCapturaMasReciente(prueba *testing.T) {
 	if strings.Contains(consultaSQL, "pc.en_stock") {
 		prueba.Errorf("el stock debe venir de la captura validada, no de pc.en_stock: %s", consultaSQL)
 	}
+	if !strings.Contains(consultaSQL, "precio_normal >= 100") {
+		prueba.Errorf("la consulta debe ignorar capturas bajo PrecioMinimoValido (100): %s", consultaSQL)
+	}
 }

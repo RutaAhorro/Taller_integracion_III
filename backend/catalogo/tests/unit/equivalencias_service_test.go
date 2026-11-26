@@ -225,6 +225,53 @@ func TestEquivalenciasServiceValidaLote(prueba *testing.T) {
 	}
 }
 
+// TestEquivalenciasServiceIgnoraPrecioBajoMinimo comprueba que una oferta con
+// precio_normal < PrecioMinimoValido no publique precio ni stock, mientras que
+// el umbral exacto sí se publica como vigente.
+func TestEquivalenciasServiceIgnoraPrecioBajoMinimo(prueba *testing.T) {
+	momento := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	fresco := momento.Add(-1 * time.Hour)
+
+	productoBasuraID := "00000000-0000-4000-8000-000000000021"
+	productoValidoID := "00000000-0000-4000-8000-000000000022"
+
+	basura := registroEquivalenciaBase(productoBasuraID, 1, "Jumbo")
+	basura.CodigoEAN = referenciaCadena("0036000291452")
+	basura.PrecioNormal = punteroDecimal(2)
+	basura.EnStock = punteroBooleano(true)
+	basura.CapturadoEl = punteroFecha(fresco)
+
+	valido := registroEquivalenciaBase(productoValidoID, 2, "Lider")
+	valido.CodigoEAN = referenciaCadena("0036000291452")
+	valido.PrecioNormal = punteroDecimal(domain.PrecioMinimoValido)
+	valido.EnStock = punteroBooleano(true)
+	valido.CapturadoEl = punteroFecha(fresco)
+
+	repositorio := &repositorioEquivalenciasDoble{registros: []domain.ProductoEquivalenciaRegistro{basura, valido}}
+	servicio := services.NuevoServicioEquivalencias(repositorio,
+		services.LimitesEquivalencia{MaximoProductos: 10, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
+
+	respuesta, errorObtenido := servicio.Consultar(context.Background(), []string{productoBasuraID})
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	if len(respuesta.Productos) != 1 || len(respuesta.Productos[0].Ofertas) != 2 {
+		prueba.Fatalf("se esperaban 2 ofertas en el grupo: %+v", respuesta.Productos)
+	}
+
+	ofertaBasura := respuesta.Productos[0].Ofertas[0]
+	if ofertaBasura.EstadoPrecio != domain.EstadoPrecioSinCaptura || ofertaBasura.Precio != nil ||
+		ofertaBasura.PrecioNormal != nil || ofertaBasura.EnStock != nil || ofertaBasura.CapturadoEl != nil {
+		prueba.Fatalf("la oferta con precio < %d no debe publicar precio ni stock: %+v", domain.PrecioMinimoValido, ofertaBasura)
+	}
+
+	ofertaValida := respuesta.Productos[0].Ofertas[1]
+	if ofertaValida.EstadoPrecio != domain.EstadoPrecioVigente || ofertaValida.Precio == nil ||
+		*ofertaValida.Precio != domain.PrecioMinimoValido {
+		prueba.Fatalf("la oferta en el umbral (%d) debe publicarse vigente: %+v", domain.PrecioMinimoValido, ofertaValida)
+	}
+}
+
 // TestEquivalenciasServicePropagaError verifica que un fallo de persistencia no
 // se transforme en una respuesta válida.
 func TestEquivalenciasServicePropagaError(prueba *testing.T) {

@@ -228,3 +228,53 @@ func TestListar_FiltroSoloMarcasBlancas(prueba *testing.T) {
 		prueba.Errorf("Listar no incluye términos esperados de marcas blancas. SQL: %s", consultaSQL)
 	}
 }
+
+// TestListar_ExigeCapturaConPrecioMinimoValido verifica que las consultas de
+// productos descarten capturas bajo PrecioMinimoValido y no publiquen productos
+// sin ninguna captura válida.
+func TestListar_ExigeCapturaConPrecioMinimoValido(prueba *testing.T) {
+	prueba.Run("Listar usa JOIN LATERAL con precio_normal >= 100", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, _, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{Page: 1, Limit: 10})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		if strings.Contains(consultaSQL, "LEFT JOIN LATERAL") {
+			subprueba.Errorf("Listar no debe usar LEFT JOIN LATERAL para evitar publicar productos sin captura válida. SQL: %s", consultaSQL)
+		}
+		if !strings.Contains(consultaSQL, "JOIN LATERAL") || !strings.Contains(consultaSQL, "precio_normal >= 100") {
+			subprueba.Errorf("Listar debe exigir captura con precio_normal >= 100 en JOIN LATERAL. SQL: %s", consultaSQL)
+		}
+	})
+
+	prueba.Run("ListarSupermercados exige EXISTS con precio_normal >= 100 sin LATERAL", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, errorObtenido := repositorio.ListarSupermercados(context.Background(), domain.FiltroProductosDTO{Query: "arroz"})
+		if errorObtenido != nil {
+			subprueba.Fatalf("ListarSupermercados generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		if strings.Contains(consultaSQL, "LATERAL") {
+			subprueba.Errorf("ListarSupermercados sin filtro de precio no debe usar LATERAL. SQL: %s", consultaSQL)
+		}
+		if !strings.Contains(consultaSQL, "EXISTS") || !strings.Contains(consultaSQL, "precio_normal >= 100") {
+			subprueba.Errorf("ListarSupermercados debe exigir EXISTS con precio_normal >= 100. SQL: %s", consultaSQL)
+		}
+	})
+
+	prueba.Run("ObtenerPorID exige captura válida en el producto", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, errorObtenido := repositorio.ObtenerPorID(context.Background(), "00000000-0000-4000-8000-000000000002")
+		if errorObtenido != nil {
+			subprueba.Fatalf("ObtenerPorID generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		if strings.Contains(consultaSQL, "LEFT JOIN LATERAL") {
+			subprueba.Errorf("ObtenerPorID no debe publicar productos sin captura válida. SQL: %s", consultaSQL)
+		}
+		if !strings.Contains(consultaSQL, "JOIN LATERAL") || !strings.Contains(consultaSQL, "precio_normal >= 100") {
+			subprueba.Errorf("ObtenerPorID debe filtrar precio_normal >= 100. SQL: %s", consultaSQL)
+		}
+	})
+}

@@ -215,6 +215,72 @@ func TestDisponibilidadServiceAplicaVigencia(prueba *testing.T) {
 	}
 }
 
+// TestDisponibilidadServiceIgnoraPrecioBajoMinimo comprueba que las capturas
+// con precio_normal menor a PrecioMinimoValido (o nulo) se traten como sin
+// captura y nunca publiquen precios basura, mientras que el umbral exacto sí se
+// publica como vigente.
+func TestDisponibilidadServiceIgnoraPrecioBajoMinimo(prueba *testing.T) {
+	momento := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	fresco := momento.Add(-1 * time.Hour)
+
+	precioUnoID := "00000000-0000-4000-8000-000000000011"
+	precioNoventaYNueveID := "00000000-0000-4000-8000-000000000012"
+	precioNuloID := "00000000-0000-4000-8000-000000000013"
+	precioUmbralID := "00000000-0000-4000-8000-000000000014"
+
+	repositorio := &repositorioDisponibilidadDoble{registros: []domain.ProductoDisponibilidadRegistro{
+		{
+			ProductoID: precioUnoID, Nombre: "Arroz basura", Supermercado: "Lider", SucursalID: 1,
+			EnStock: punteroBooleano(true), PrecioNormal: punteroDecimal(1), CapturadoEl: punteroFecha(fresco),
+		},
+		{
+			ProductoID: precioNoventaYNueveID, Nombre: "Leche borde inferior", Supermercado: "Jumbo", SucursalID: 2,
+			EnStock: punteroBooleano(true), PrecioNormal: punteroDecimal(99), CapturadoEl: punteroFecha(fresco),
+		},
+		{
+			ProductoID: precioNuloID, Nombre: "Aceite sin precio", Supermercado: "Tottus", SucursalID: 3,
+			EnStock: punteroBooleano(true), PrecioNormal: nil, CapturadoEl: punteroFecha(fresco),
+		},
+		{
+			ProductoID: precioUmbralID, Nombre: "Sal umbral exacto", Supermercado: "Lider", SucursalID: 1,
+			EnStock: punteroBooleano(true), PrecioNormal: punteroDecimal(domain.PrecioMinimoValido), CapturadoEl: punteroFecha(fresco),
+		},
+	}}
+	servicio := services.NuevoServicioDisponibilidad(repositorio,
+		services.LimitesDisponibilidad{MaximoProductos: 10, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
+
+	respuesta, errorObtenido := servicio.Consultar(context.Background(), []string{
+		precioUnoID, precioNoventaYNueveID, precioNuloID, precioUmbralID,
+	})
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+
+	productos := make(map[string]domain.DisponibilidadItemDTO, len(respuesta.Productos))
+	for _, item := range respuesta.Productos {
+		productos[item.ProductoID] = item
+	}
+
+	for _, identificadorInvalido := range []string{precioUnoID, precioNoventaYNueveID, precioNuloID} {
+		item := productos[identificadorInvalido]
+		if item.EstadoPrecio != domain.EstadoPrecioSinCaptura || item.EstadoProducto != domain.EstadoProductoDesconocido {
+			prueba.Errorf("%s no debe publicarse como vigente: %+v", identificadorInvalido, item)
+		}
+		if item.Producto == nil || item.Producto.Precio != nil || item.Producto.PrecioNormal != nil || item.Producto.PrecioOferta != nil {
+			prueba.Errorf("%s no debe exponer precios: %+v", identificadorInvalido, item.Producto)
+		}
+		if item.EnStock != nil || item.CapturadoEl != nil {
+			prueba.Errorf("%s no debe exponer stock ni fecha de captura inválida: %+v", identificadorInvalido, item)
+		}
+	}
+
+	valido := productos[precioUmbralID]
+	if valido.EstadoPrecio != domain.EstadoPrecioVigente || valido.EstadoProducto != domain.EstadoProductoDisponible ||
+		valido.Producto == nil || valido.Producto.Precio == nil || *valido.Producto.Precio != domain.PrecioMinimoValido {
+		prueba.Fatalf("el precio exacto en el umbral (%d) debe publicarse: %+v", domain.PrecioMinimoValido, valido)
+	}
+}
+
 // TestDisponibilidadServicePropagaError verifica que un fallo de persistencia
 // no se transforme en una respuesta válida.
 func TestDisponibilidadServicePropagaError(prueba *testing.T) {
