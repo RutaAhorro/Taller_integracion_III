@@ -29,6 +29,25 @@ const AVISOS_PRODUCTO: Record<EstadoProducto, string> = {
     "Producto no encontrado en Catálogo. Puedes quitarlo de la lista.",
 };
 
+/** Calcula el subtotal sin atribuir precios a referencias sin precio vigente confirmado. */
+function calcularTotalArticulos(articulos: ArticuloDetalle[]) {
+  let totalPesos = 0;
+  let conPrecio = 0;
+  let sinPrecio = 0;
+
+  for (const articulo of articulos) {
+    const precio = articulo.producto?.precio;
+    if (typeof precio === "number" && Number.isFinite(precio)) {
+      totalPesos += precio * articulo.cantidad;
+      conPrecio += 1;
+    } else {
+      sinPrecio += 1;
+    }
+  }
+
+  return { totalPesos, conPrecio, sinPrecio };
+}
+
 /** Contrato de los controles; los callbacks devuelven si el backend confirmó la operación. */
 type PropiedadesArticulos = {
   articulos: ArticuloDetalle[];
@@ -49,6 +68,9 @@ export function ArticulosLista({
   alActualizar,
   alEliminar,
 }: PropiedadesArticulos) {
+  const { totalPesos, conPrecio, sinPrecio } =
+    calcularTotalArticulos(articulos);
+
   return (
     <div className="space-y-5">
       <h3 className="font-semibold">
@@ -64,18 +86,42 @@ export function ArticulosLista({
           Esta lista aún no tiene artículos.
         </p>
       ) : (
-        <ul className="space-y-3">
-          {articulos.map((articulo) => (
-            <li key={`${articulo.id}:${articulo.cantidad}`}>
-              <ArticuloGuardado
-                articulo={articulo}
-                ocupado={ocupado}
-                alActualizar={alActualizar}
-                alEliminar={alEliminar}
-              />
-            </li>
-          ))}
-        </ul>
+        <>
+          <div className="rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm">
+            {sinPrecio === 0 ? (
+              <p className="font-semibold">
+                Total estimado: {formatPrice(totalPesos)}
+              </p>
+            ) : conPrecio > 0 ? (
+              <>
+                <p className="font-semibold">
+                  Subtotal con precio vigente: {formatPrice(totalPesos)}
+                </p>
+                <p className="text-muted-foreground">
+                  {sinPrecio} {sinPrecio === 1 ? "artículo no tiene" : "artículos no tienen"}{" "}
+                  precio vigente.
+                </p>
+              </>
+            ) : (
+              <p>
+                Total no disponible: los artículos no tienen precio vigente
+                confirmado.
+              </p>
+            )}
+          </div>
+          <ul className="space-y-3">
+            {articulos.map((articulo) => (
+              <li key={`${articulo.id}:${articulo.cantidad}`}>
+                <ArticuloGuardado
+                  articulo={articulo}
+                  ocupado={ocupado}
+                  alActualizar={alActualizar}
+                  alEliminar={alEliminar}
+                />
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </div>
   );
