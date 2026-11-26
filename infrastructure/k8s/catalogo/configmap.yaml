@@ -9,4 +9,5 @@ data:
   DB_MAX_IDLE_CONNS: "5"
   DB_CONN_MAX_LIFETIME: "30m"
   CATALOGO_MAX_PRODUCTOS_CONSULTA: "1000"
-  CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA: "48h"
+  # Recorte MVP: 2160h (90 días) para la instantánea de precios de demo; con scraping fresco volver a 48h.
+  CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA: "2160h"

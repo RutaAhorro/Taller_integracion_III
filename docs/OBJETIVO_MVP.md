@@ -12,11 +12,14 @@
 - Login solo con Google: la identidad se delega a un proveedor externo; los microservicios propios siguen siendo el núcleo.
 - Misiones, historial, planes y onboarding: ocultos, sin backend completo.
 - Métricas de Catálogo y Control: fuera del MVP.
+- Vigencia de precios (`CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA=2160h`): los datos de demo son una instantánea de precios y la ventana de 48h los marca como vencidos (la ruta responde 422); en producción con scraping fresco periódico se puede volver a 48h.
 
 ## Terminado significa (los 5 puntos)
 Backend con tests, enrutado en Gateway y compose por defecto, pantalla que lo usa, paso en
 `scripts/recorrido_mvp.sh` que pasa, y una línea en la documentación.
 Lo que no llegue a pantalla antes del viernes 28 se reduce o se oculta; nunca queda visible a medias.
+
+- Validación multi-tienda con datos reales: `bash scripts/demo/probar_ruta.sh` (consulta de solo lectura en `bd_supermercados`, crea lista de prueba y llama a `POST /api/v1/rutas/optimizar`).
 
 ## Prioridad (si falta tiempo, se cae lo de abajo)
 P0 Entorno reproducible y datos · P1 Catálogo sano y login con Google · P2 Listas con artículos y chat con tarjetas ·
