@@ -14,7 +14,7 @@ import (
 // valid fija un entorno mínimo válido; cada prueba cambia sólo lo que evalúa.
 func valid(prueba *testing.T) {
 	prueba.Helper()
-	for clave, valor := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": ""} {
+	for clave, valor := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": "", "ADMIN_EMAILS": ""} {
 		prueba.Setenv(clave, valor)
 	}
 }
@@ -63,5 +63,70 @@ func TestClienteGoogleSeCargaDelEntorno(prueba *testing.T) {
 	configuracion, errorCarga := config.Cargar()
 	if errorCarga != nil || configuracion.ClienteGoogle != "cliente-de-prueba" {
 		prueba.Fatalf("client ID de Google no cargado: %q %v", configuracion.ClienteGoogle, errorCarga)
+	}
+}
+
+// ===== Correos de administradores =====
+
+// TestCorreosAdminValidos verifica vacío, un correo y múltiples correos con
+// espacios, mayúsculas y entradas vacías.
+func TestCorreosAdminValidos(prueba *testing.T) {
+	casos := []struct {
+		nombre    string
+		valor     string
+		esperados []string
+	}{
+		{"vacio", "", nil},
+		{"solo espacios y comas", " ,  , ", nil},
+		{"un correo", "admin@ejemplo.cl", []string{"admin@ejemplo.cl"}},
+		{"varios con espacios y mayusculas", " Admin@Ejemplo.CL , , segundo@uct.cl , admin@ejemplo.cl ", []string{"admin@ejemplo.cl", "segundo@uct.cl"}},
+	}
+
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			valid(prueba)
+			prueba.Setenv("ADMIN_EMAILS", caso.valor)
+			configuracion, errorCarga := config.Cargar()
+			if errorCarga != nil {
+				prueba.Fatalf("error inesperado cargando ADMIN_EMAILS=%q: %v", caso.valor, errorCarga)
+			}
+			if len(configuracion.CorreosAdmin) != len(caso.esperados) {
+				prueba.Fatalf("esperaba %d correos, obtuve %d (%v)", len(caso.esperados), len(configuracion.CorreosAdmin), configuracion.CorreosAdmin)
+			}
+			for _, correoEsperado := range caso.esperados {
+				if _, existe := configuracion.CorreosAdmin[correoEsperado]; !existe {
+					prueba.Fatalf("faltó el correo normalizado %q en %v", correoEsperado, configuracion.CorreosAdmin)
+				}
+			}
+		})
+	}
+}
+
+// TestCorreosAdminInvalidosFallaSinExponerCorreos comprueba que cualquier
+// dirección inválida impide arrancar con un mensaje genérico sin imprimir correos.
+func TestCorreosAdminInvalidosFallaSinExponerCorreos(prueba *testing.T) {
+	casos := []struct {
+		nombre        string
+		valor         string
+		textoSensible string
+	}{
+		{"sin arroba", "no-es-correo", "no-es-correo"},
+		{"segundo invalido", "valido@ejemplo.cl,invalido@", "invalido@"},
+		{"con nombre visible", "Admin <admin@ejemplo.cl>", "admin@ejemplo.cl"},
+		{"sin dominio con punto", "admin@sinpunto", "admin@sinpunto"},
+	}
+
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			valid(prueba)
+			prueba.Setenv("ADMIN_EMAILS", caso.valor)
+			_, errorCarga := config.Cargar()
+			if errorCarga == nil {
+				prueba.Fatalf("esperaba error para ADMIN_EMAILS=%q", caso.valor)
+			}
+			if strings.Contains(errorCarga.Error(), caso.textoSensible) {
+				prueba.Fatalf("el error expuso el correo: %v", errorCarga)
+			}
+		})
 	}
 }

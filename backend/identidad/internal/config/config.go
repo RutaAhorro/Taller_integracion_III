@@ -5,6 +5,7 @@ package config
 
 import (
 	"errors"
+	"net/mail"
 	"net/netip"
 	"net/url"
 	"os"
@@ -23,6 +24,7 @@ import (
 type Configuracion struct {
 	DireccionEscucha, URLBaseDatos, URLRedis, ClaveJWT string
 	ClienteGoogle                                      string
+	CorreosAdmin                                       map[string]struct{}
 	Ajustes                                            Ajustes
 	CookieSegura                                       bool
 	OrigenesPermitidos                                 []string
@@ -89,8 +91,35 @@ func Cargar() (Configuracion, error) {
 		return Configuracion{}, errors.New("IDENTIDAD_TRUSTED_PROXIES requiere los proxies Gateway reales antes del corte")
 	}
 	configuracion.ClienteGoogle = os.Getenv("GOOGLE_CLIENT_ID")
+	correosAdmin, errorCorreosAdmin := parsearCorreosAdmin(os.Getenv("ADMIN_EMAILS"))
+	if errorCorreosAdmin != nil {
+		return Configuracion{}, errorCorreosAdmin
+	}
+	configuracion.CorreosAdmin = correosAdmin
 	configuracion.Ajustes = AjustesPredeterminados()
 	return configuracion, nil
+}
+
+// parsearCorreosAdmin interpreta ADMIN_EMAILS (lista separada por comas),
+// normaliza a minúsculas sin espacios, ignora entradas vacías y valida cada
+// correo sin reproducir direcciones en el mensaje de error.
+func parsearCorreosAdmin(entrada string) (map[string]struct{}, error) {
+	correos := make(map[string]struct{})
+	if strings.TrimSpace(entrada) == "" {
+		return correos, nil
+	}
+	for _, elemento := range strings.Split(entrada, ",") {
+		correo := strings.ToLower(strings.TrimSpace(elemento))
+		if correo == "" {
+			continue
+		}
+		direccionAnalizada, errorObtenido := mail.ParseAddress(correo)
+		if errorObtenido != nil || direccionAnalizada.Address != correo || !strings.Contains(correo, "@") || !strings.Contains(correo, ".") {
+			return nil, errors.New("ADMIN_EMAILS contiene un correo electrónico inválido")
+		}
+		correos[correo] = struct{}{}
+	}
+	return correos, nil
 }
 
 // ===== Plazos y límites fijos =====
