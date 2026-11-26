@@ -20,7 +20,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: identidad
-          image: ghcr.io/danirc2024/taller_integracion_iii-identidad:develop
+          image: ghcr.io/rutaahorro/taller_integracion_iii-identidad:develop
           imagePullPolicy: Always
           ports:
             - {name: http, containerPort: 8080}

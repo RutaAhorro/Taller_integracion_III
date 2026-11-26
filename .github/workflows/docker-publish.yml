@@ -21,7 +21,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # GitHub convierte automáticamente esto al formato: ghcr.io/danirc2024/taller_integracion_iii
+  # GitHub convierte automáticamente esto al formato: ghcr.io/rutaahorro/taller_integracion_iii-<servicio>
   IMAGE_NAME_CONTROL_SCRAPING: ${{ github.repository }}-control-scraping
   IMAGE_NAME_IDENTIDAD: ${{ github.repository }}-identidad
   IMAGE_NAME_CATALOGO: ${{ github.repository }}-catalogo

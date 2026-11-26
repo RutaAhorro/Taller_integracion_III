@@ -49,7 +49,7 @@ spec:
           value: 105MiB
         - name: LOG_LEVEL
           value: INFO
-        image: ghcr.io/danirc2024/taller_integracion_iii-scraper-go:develop
+        image: ghcr.io/rutaahorro/taller_integracion_iii-scraper-go:develop
         imagePullPolicy: Always
         name: scraper-go
         securityContext:
