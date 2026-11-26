@@ -15,8 +15,9 @@ Vite se utiliza para desarrollo y compilación.
   precio, cadena, acceso a `/producto/:id` y agregado directo al carrito.
 - Usar Node.js 22 actualizado (el Dockerfile utiliza `node:22-alpine`) y npm si
   se desarrolla fuera de Docker. Instalar las versiones del lockfile con `npm ci`.
-- No confundir una ruta disponible con un flujo integrado: misiones,
-  historial, planes y configuración inicial muestran avisos de no disponibilidad.
+- No confundir una ruta disponible con un flujo integrado: en el MVP las secciones
+  Misiones, Historial, Planes, Onboarding y Métricas de administración están
+  ocultas o redirigidas a las vistas disponibles.
 
 ## Recomendación de compra por lista
 

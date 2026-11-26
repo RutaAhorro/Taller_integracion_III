@@ -1,22 +1,18 @@
 // Navegación móvil: resalta la sección actual y respeta los permisos del usuario.
 import { Link } from 'react-router-dom';
-import { MessageSquare, Clock, Map, User, Users, Home } from 'lucide-react';
+import { MessageSquare, Clock, Map, User, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useRole } from '@/features/autenticacion/useRole';
 
 interface PropiedadesNavegacionInferior {
   active: 'dashboard' | 'chat' | 'history' | 'route' | 'profile' | 'colaborador';
 }
 
 export default function BottomNav({ active }: PropiedadesNavegacionInferior) {
-  // SUP-256: Misiones solo colaborador o admin.
-  const { canAccessColaborador } = useRole();
   const elementosNavegacion = [
     { id: 'dashboard', label: 'Inicio', icon: Home, to: '/dashboard' },
     { id: 'chat', label: 'Chat IA', icon: MessageSquare, to: '/chat' },
-    { id: 'history', label: 'Listas', icon: Clock, to: '/history' },
+    { id: 'history', label: 'Listas', icon: Clock, to: '/listas' },
     { id: 'route', label: 'Ruta', icon: Map, to: '/route' },
-    ...(canAccessColaborador ? [{ id: 'colaborador', label: 'Misiones', icon: Users, to: '/colaborador' }] : []),
     { id: 'profile', label: 'Perfil', icon: User, to: '/profile' }
   ];
 

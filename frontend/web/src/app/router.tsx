@@ -1,5 +1,5 @@
 // Define las rutas públicas y protegidas y reúne los proveedores de la aplicación.
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Navigate } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { ROUTES } from '@/app/routes';
 
@@ -10,7 +10,7 @@ import { ToastProvider } from '@/components/ToastContext';
 import { AuthProvider } from '@/features/autenticacion/AuthContext';
 import { ProtectedRoute } from '@/features/autenticacion/ProtectedRoute';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ROLE_ADMIN, ROLE_COLABORADOR } from '@/features/autenticacion/roles';
+import { ROLE_ADMIN } from '@/features/autenticacion/roles';
 
 // Sprint 1 — vistas funcionales
 import Home from '@/features/landing/Home';
@@ -18,7 +18,6 @@ import Dashboard from '@/features/catalogo/Dashboard';
 import ProductDetail from '@/features/catalogo/ProductDetail';
 import Login from '@/features/autenticacion/Login';
 import VerificarEmail from '@/features/autenticacion/VerificarEmail';
-import Onboarding from '@/pages/Onboarding';
 import Profile from '@/features/autenticacion/Profile';
 import ShoppingLists from '@/features/listas/ShoppingLists';
 import NotFound from '@/pages/NotFound';
@@ -30,6 +29,7 @@ import Crowdsourcing from '@/pages/Crowdsourcing';
 import RutaLista from '@/features/rutas/RutaLista';
 import History from '@/pages/History';
 import Planes from '@/pages/Planes';
+import RouteViewer from '@/pages/RouteViewer';
 import AdminDashboard from '@/features/admin/AdminDashboard';
 
 
@@ -66,24 +66,15 @@ const enrutador = createBrowserRouter([
         children: [
           { path: ROUTES.PERFIL, element: <Profile /> },
           { path: ROUTES.LISTAS, element: <ShoppingLists /> },
-          { path: ROUTES.PLANES, element: <Planes /> },
-          {
-            // SUP-256: /colaborador solo colaborador o admin.
-            element: <ProtectedRoute roles={[ROLE_COLABORADOR, ROLE_ADMIN]} />,
-            children: [
-              {
-                path: ROUTES.COLABORADOR,
-                element: <Crowdsourcing />,
-              },
-            ],
-          },
+          { path: ROUTES.PLANES, element: <Navigate to={ROUTES.CATALOGO} replace /> },
+          { path: ROUTES.COLABORADOR, element: <Navigate to={ROUTES.CATALOGO} replace /> },
           {
             path: ROUTES.RUTA,
             element: <RutaLista />,
           },
           {
             path: ROUTES.HISTORIAL,
-            element: <History />,
+            element: <Navigate to={ROUTES.CATALOGO} replace />,
           },
         ]
       }
@@ -104,16 +95,10 @@ const enrutador = createBrowserRouter([
     errorElement: <ErrorBoundary />,
     children: [
       { path: ROUTES.ADMIN, element: <AdminDashboard /> },
-      // SUP-280: alias /admin/metricas que abre el panel en la sección Métricas.
-      { path: ROUTES.ADMIN_METRICAS, element: <AdminDashboard /> },
+      { path: ROUTES.ADMIN_METRICAS, element: <Navigate to={ROUTES.ADMIN} replace /> },
     ],
   },
-  { 
-    element: <ProtectedRoute />, 
-    children: [
-      { path: ROUTES.ONBOARDING, element: <Onboarding /> },
-    ]
-  },
+  { path: ROUTES.ONBOARDING, element: <Navigate to={ROUTES.CATALOGO} replace /> },
 
   // Destino de las rutas no reconocidas.
   { path: '*', element: <NotFound /> },
