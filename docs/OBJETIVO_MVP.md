@@ -18,6 +18,8 @@ Backend con tests, enrutado en Gateway y compose por defecto, pantalla que lo us
 `scripts/recorrido_mvp.sh` que pasa, y una línea en la documentación.
 Lo que no llegue a pantalla antes del viernes 28 se reduce o se oculta; nunca queda visible a medias.
 
+- Validación multi-tienda con datos reales: `bash scripts/demo/probar_ruta.sh` (consulta de solo lectura en `bd_supermercados`, crea lista de prueba y llama a `POST /api/v1/rutas/optimizar`; con dumps históricos, levantar `catalogo` con `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA=2160h`).
+
 ## Prioridad (si falta tiempo, se cae lo de abajo)
 P0 Entorno reproducible y datos · P1 Catálogo sano y login con Google · P2 Listas con artículos y chat con tarjetas ·
 P3 Ruta mínima (primero "cadena más barata", luego orden de visita) · P4 Ocultar secciones, docs y limpieza.
