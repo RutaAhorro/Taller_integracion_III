@@ -3,8 +3,9 @@
 # scripts/recorrido_mvp.sh
 #
 # Recorrido de diagnóstico del flujo MVP a través del Gateway (http://127.0.0.1:8082
-# por defecto). Ejecuta los 5 pasos principales usando curl y un cookie jar temporal:
-#   1. Registro local (POST /api/v1/auth/register)
+# por defecto). Ejecuta los 5 pasos principales usando curl:
+#   1. Sesión de prueba con cookie jwt HS256 (modo por defecto) o registro local
+#      (--registro-local / RECORRIDO_MODO_AUTH=registro)
 #   2. Búsqueda de producto (GET /api/v1/productos?limit=5)
 #   3. Creación de lista (POST /api/v1/listas)
 #   4. Agregado de artículo (POST /api/v1/listas/{lista_id}/articulos)
@@ -18,13 +19,24 @@ set -uo pipefail
 
 # ===== Constantes de configuración =====
 
+readonly DIRECTORIO_RAIZ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly URL_BASE_GATEWAY="${GATEWAY_URL:-http://127.0.0.1:8082}"
 readonly TIEMPO_ESPERA_SEGUNDOS=25
 readonly UUID_RESPALDO="00000000-0000-0000-0000-000000000000"
+readonly LONGITUD_MINIMA_JWT_SECRET=32
+readonly ROL_PRUEBA="registrado"
+readonly PROVEEDOR_PRUEBA="google"
 readonly CONTRASENA_PRUEBA="PruebaMvp2026!"
 readonly NOMBRE_USUARIO_PRUEBA="Usuario Recorrido MVP"
 readonly NOMBRE_LISTA_PRUEBA="Lista recorrido MVP"
 readonly MENSAJE_CHAT_PRUEBA="Busco arroz barato"
+
+MODO_AUTH="${RECORRIDO_MODO_AUTH:-jwt}"
+if [[ "${1:-}" == "--registro-local" ]]; then
+  MODO_AUTH="registro"
+elif [[ "${1:-}" == "--jwt" ]]; then
+  MODO_AUTH="jwt"
+fi
 
 # ===== Archivos temporales y limpieza =====
 
@@ -83,6 +95,72 @@ imprimir_resultado() {
   printf "[%s] %s -> %s\n" "${estado_paso}" "${nombre_paso}" "${detalle_paso}"
 }
 
+# generar_cookie_jwt_prueba obtiene JWT_SECRET del entorno o del archivo .env
+# raíz y firma un JWT HS256 válido para Identidad, Motor de rutas e IA.
+# Imprime "<user_id>|<token>" por stdout o devuelve 1 si falta/es inválido.
+generar_cookie_jwt_prueba() {
+  local secreto_jwt="${JWT_SECRET:-}"
+  local archivo_env="${DIRECTORIO_RAIZ}/.env"
+
+  python3 - "${secreto_jwt}" "${archivo_env}" "${LONGITUD_MINIMA_JWT_SECRET}" "${ROL_PRUEBA}" "${PROVEEDOR_PRUEBA}" <<'PY'
+import base64
+import hashlib
+import hmac
+import json
+import sys
+import time
+import uuid
+
+secreto = sys.argv[1].strip()
+ruta_env = sys.argv[2]
+longitud_minima = int(sys.argv[3])
+rol = sys.argv[4]
+proveedor = sys.argv[5]
+
+if not secreto:
+    try:
+        with open(ruta_env, "r", encoding="utf-8") as archivo:
+            for linea in archivo:
+                linea_limpia = linea.strip()
+                if not linea_limpia or linea_limpia.startswith("#"):
+                    continue
+                if linea_limpia.startswith("JWT_SECRET="):
+                    valor = linea_limpia.split("=", 1)[1].strip()
+                    if (valor.startswith('"') and valor.endswith('"')) or (valor.startswith("'") and valor.endswith("'")):
+                        valor = valor[1:-1]
+                    secreto = valor
+                    break
+    except OSError:
+        pass
+
+if not secreto or len(secreto.encode("utf-8")) < longitud_minima:
+    sys.exit(1)
+
+def codificar_b64url(datos: bytes) -> str:
+    return base64.urlsafe_b64encode(datos).rstrip(b"=").decode("ascii")
+
+ahora = int(time.time())
+usuario_id = str(uuid.uuid4())
+encabezado = {"alg": "HS256", "typ": "JWT"}
+carga = {
+    "user_id": usuario_id,
+    "rol": rol,
+    "provider": proveedor,
+    "iat": ahora,
+    "nbf": ahora,
+    "exp": ahora + 3600,
+}
+
+segmento_encabezado = codificar_b64url(json.dumps(encabezado, separators=(",", ":")).encode("utf-8"))
+segmento_carga = codificar_b64url(json.dumps(carga, separators=(",", ":")).encode("utf-8"))
+mensaje = f"{segmento_encabezado}.{segmento_carga}".encode("ascii")
+firma = hmac.new(secreto.encode("utf-8"), mensaje, hashlib.sha256).digest()
+token = f"{segmento_encabezado}.{segmento_carga}.{codificar_b64url(firma)}"
+
+print(f"{usuario_id}|{token}")
+PY
+}
+
 # ejecutar_peticion realiza una llamada HTTP con curl y devuelve el código de estado
 # (o "000" si no hubo conexión). Nunca imprime cabeceras Set-Cookie ni el cookie jar.
 ejecutar_peticion() {
@@ -107,7 +185,11 @@ ejecutar_peticion() {
   if [[ "${modo_cookies}" == "guardar" ]]; then
     argumentos_curl+=(--cookie-jar "${ARCHIVO_COOKIES}")
   elif [[ "${modo_cookies}" == "enviar" ]]; then
-    argumentos_curl+=(--cookie "${ARCHIVO_COOKIES}")
+    if [[ -n "${TOKEN_JWT_PRUEBA:-}" ]]; then
+      argumentos_curl+=(--cookie "jwt=${TOKEN_JWT_PRUEBA}")
+    else
+      argumentos_curl+=(--cookie "${ARCHIVO_COOKIES}")
+    fi
   fi
 
   if [[ -n "${cuerpo_json}" ]]; then
@@ -125,18 +207,33 @@ ejecutar_peticion() {
 
 printf "=== Recorrido MVP por Gateway: %s ===\n" "${URL_BASE_GATEWAY}"
 
-MARCA_TIEMPO="$(date +%s)"
-CORREO_UNICO="recorrido_${MARCA_TIEMPO}_$$@ejemplo.local"
+TOKEN_JWT_PRUEBA=""
+USUARIO_ID_PRUEBA=""
 
-# ----- Paso 1: Registro local -----
-CUERPO_REGISTRO="$(printf '{"correo":"%s","password":"%s","nombre_completo":"%s"}' \
-  "${CORREO_UNICO}" "${CONTRASENA_PRUEBA}" "${NOMBRE_USUARIO_PRUEBA}")"
-CODIGO_REGISTRO="$(ejecutar_peticion "POST" "/api/v1/auth/register" "${CUERPO_REGISTRO}" "guardar")"
+# ----- Paso 1: Sesión de prueba (cookie jwt por defecto o registro local) -----
+if [[ "${MODO_AUTH}" == "registro" ]]; then
+  MARCA_TIEMPO="$(date +%s)"
+  CORREO_UNICO="recorrido_${MARCA_TIEMPO}_$$@ejemplo.local"
+  CUERPO_REGISTRO="$(printf '{"correo":"%s","password":"%s","nombre_completo":"%s"}' \
+    "${CORREO_UNICO}" "${CONTRASENA_PRUEBA}" "${NOMBRE_USUARIO_PRUEBA}")"
+  CODIGO_REGISTRO="$(ejecutar_peticion "POST" "/api/v1/auth/register" "${CUERPO_REGISTRO}" "guardar")"
 
-if [[ "${CODIGO_REGISTRO}" == "201" ]]; then
-  imprimir_resultado "1. Registro local" "OK" "HTTP 201 (usuario ${CORREO_UNICO} creado y sesión guardada en cookie jar)"
+  if [[ "${CODIGO_REGISTRO}" == "201" ]]; then
+    imprimir_resultado "1. Registro local" "OK" "HTTP 201 (usuario ${CORREO_UNICO} creado y sesión guardada en cookie jar)"
+  else
+    imprimir_resultado "1. Registro local" "FALLO" "HTTP ${CODIGO_REGISTRO} - $(resumir_cuerpo)"
+  fi
 else
-  imprimir_resultado "1. Registro local" "FALLO" "HTTP ${CODIGO_REGISTRO} - $(resumir_cuerpo)"
+  RESULTADO_JWT="$(generar_cookie_jwt_prueba 2>/dev/null || true)"
+  if [[ -n "${RESULTADO_JWT}" && "${RESULTADO_JWT}" == *"|"* ]]; then
+    USUARIO_ID_PRUEBA="${RESULTADO_JWT%%|*}"
+    TOKEN_JWT_PRUEBA="${RESULTADO_JWT#*|}"
+    imprimir_resultado "1. Cookie JWT de prueba" "OK" \
+      "cookie jwt HS256 generada (user_id=${USUARIO_ID_PRUEBA}, rol=${ROL_PRUEBA}, provider=${PROVEEDOR_PRUEBA})"
+  else
+    imprimir_resultado "1. Cookie JWT de prueba" "FALLO" \
+      "falta JWT_SECRET (>= ${LONGITUD_MINIMA_JWT_SECRET} bytes) en entorno o .env"
+  fi
 fi
 
 # ----- Paso 2: Buscar un producto -----
