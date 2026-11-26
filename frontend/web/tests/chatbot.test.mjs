@@ -181,3 +181,85 @@ test('vaciar cancela la espera y descarta respuestas antiguas sin pisar una cons
   assert.equal(ultimaRespuesta(leerChat()).content, 'Resultado nuevo');
   assert.equal(leerChat().messages.some(mensaje => mensaje.content === 'No debe reaparecer'), false);
 });
+
+test('normaliza productos_recomendados válidos, soporta producto_id y deduplica por id', async prueba => {
+  const leerChat = montarChat();
+  prueba.mock.method(globalThis, 'fetch', async () => Response.json({
+    respuesta: 'Recomiendo tomates y ajo.',
+    productos_recomendados: [
+      {
+        id: 'prod-tomate-1', nombre: 'Tomate', marca: 'Lider', categoria: 'Verduras',
+        supermercado: 'Lider', precio: 2000, precio_normal: 2500, en_oferta: true,
+        url_imagen: 'https://img.super.cl/tomate.png', unidad: '500 g', en_stock: true,
+      },
+      {
+        id: 'prod-tomate-1', nombre: 'Tomate duplicado', marca: 'Lider', categoria: 'Verduras',
+        supermercado: 'Lider', precio: 999, precio_normal: 2500, en_oferta: true,
+        url_imagen: 'https://img.super.cl/tomate.png', unidad: '500 g', en_stock: true,
+      },
+      {
+        producto_id: 'prod-ajo-2', nombre: 'Ajo', marca: 'Lider', categoria: 'Verduras',
+        supermercado: 'Jumbo', precio: 1500, en_oferta: false,
+        url_imagen: '', unidad: '3 dientes', en_stock: false,
+      },
+    ],
+  }));
+  await leerChat().handleSend('Busco tomate');
+  const respuesta = ultimaRespuesta(leerChat());
+  assert.equal(respuesta.type, 'text');
+  assert.equal(respuesta.content, 'Recomiendo tomates y ajo.');
+  assert.ok(Array.isArray(respuesta.products));
+  assert.equal(respuesta.products.length, 2);
+  const productoRecomendado = respuesta.products[0];
+  assert.equal(productoRecomendado.id, 'prod-tomate-1');
+  assert.equal(productoRecomendado.nombre, 'Tomate');
+  assert.equal(productoRecomendado.marca, 'Lider');
+  assert.equal(productoRecomendado.categoria, 'Verduras');
+  assert.equal(productoRecomendado.supermercado, 'Lider');
+  assert.equal(productoRecomendado.precio, 2000);
+  assert.equal(productoRecomendado.precioNormal, 2500);
+  assert.equal(productoRecomendado.enOferta, true);
+  assert.equal(productoRecomendado.urlImagen, 'https://img.super.cl/tomate.png');
+  assert.equal(productoRecomendado.unidad, '500 g');
+  assert.equal(productoRecomendado.enStock, true);
+  const segundoProducto = respuesta.products[1];
+  assert.equal(segundoProducto.id, 'prod-ajo-2');
+  assert.equal(segundoProducto.precio, 1500);
+  assert.equal(segundoProducto.precioNormal, 1500);
+  assert.equal(segundoProducto.enOferta, false);
+  assert.equal(segundoProducto.enStock, false);
+});
+
+test('descarta ítems inválidos de productos_recomendados o ausentes sin romper la respuesta', async prueba => {
+  let llamadas = 0;
+  const leerChat = montarChat();
+  prueba.mock.method(globalThis, 'fetch', async () => {
+    llamadas += 1;
+    if (llamadas === 1) {
+      return Response.json({
+        respuesta: 'No encontré una recomendación válida.',
+        productos_recomendados: [
+          { id: '', nombre: 'Sin identificador', precio: 100 },
+          { id: 'prod-invalido', nombre: '   ', precio: 100 },
+          { id: 'prod-invalido2', nombre: 'Sin precio', precio: 0 },
+          { id: 'prod-invalido3', nombre: 'Precio no numérico', precio: 'muchos' },
+          'no soy un producto',
+          null,
+          { id: 'prod-valido', nombre: 'Aceite', precio: 3000, en_oferta: false, url_imagen: '', unidad: '', en_stock: true },
+        ],
+      });
+    }
+    return Response.json({ respuesta: 'El asistente no tiene recomendaciones ahora.' });
+  });
+  await leerChat().handleSend('Busco aceite');
+  const respuesta = ultimaRespuesta(leerChat());
+  assert.equal(respuesta.content, 'No encontré una recomendación válida.');
+  assert.ok(Array.isArray(respuesta.products));
+  assert.equal(respuesta.products.length, 1);
+  assert.equal(respuesta.products[0].id, 'prod-valido');
+
+  await leerChat().handleSend('Busco otra cosa');
+  const respuestaSinProductos = ultimaRespuesta(leerChat());
+  assert.equal(respuestaSinProductos.content, 'El asistente no tiene recomendaciones ahora.');
+  assert.equal(respuestaSinProductos.products, undefined);
+});
