@@ -11,10 +11,14 @@ Verifica:
    filtrado determinista y degrada a la caché si la búsqueda falla.
 """
 
+import logging
+import threading
+import time
 from unittest.mock import MagicMock
 
 import anyio
 import httpx
+import pytest
 
 from app import config
 from app.domain.filtros import terminos_busqueda_catalogo
@@ -123,6 +127,7 @@ def test_buscar_productos_termino_vacio_no_llama_a_catalogo():
 def test_buscar_productos_error_http_devuelve_none():
     """Ante un 5xx la búsqueda devuelve None (degradación), nunca productos inventados."""
     respuesta = MagicMock(spec=httpx.Response)
+    respuesta.status_code = 503
     respuesta.raise_for_status.side_effect = httpx.HTTPStatusError(
         "503 Service Unavailable", request=MagicMock(), response=respuesta
     )
@@ -131,6 +136,44 @@ def test_buscar_productos_error_http_devuelve_none():
     repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
 
     assert repositorio.buscar_productos("leche") is None
+
+
+def test_buscar_productos_termino_corto_no_llama_a_catalogo():
+    """Catálogo responde 400 con menos de 3 bytes: no se consulta y se trata como sin coincidencias."""
+    cliente_http = MagicMock(spec=httpx.Client)
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
+
+    assert repositorio.buscar_productos("te") == []
+    assert repositorio.buscar_productos("a%") == []
+    cliente_http.get.assert_not_called()
+
+
+def test_buscar_productos_error_no_registra_la_url_interna(caplog: pytest.LogCaptureFixture):
+    """El log de un fallo informa tipo y código HTTP, sin la URL interna de Catálogo."""
+    peticion = httpx.Request("GET", f"{URL_CATALOGO}/api/v1/productos?q=leche")
+    respuesta = httpx.Response(503, request=peticion)
+    cliente_http = MagicMock(spec=httpx.Client)
+    cliente_http.get.return_value = respuesta
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
+
+    with caplog.at_level(logging.WARNING):
+        assert repositorio.buscar_productos("leche") is None
+
+    assert "HTTPStatusError 503" in caplog.text
+    assert "catalogo:8080" not in caplog.text
+
+
+def test_buscar_productos_reutiliza_un_cliente_compartido():
+    """Sin cliente inyectado se crea un único cliente para todas las búsquedas y `cerrar` lo libera."""
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO)
+
+    primero = repositorio._obtener_cliente_busqueda()
+    assert repositorio._obtener_cliente_busqueda() is primero
+
+    repositorio.cerrar()
+    assert primero.is_closed
+    assert repositorio._obtener_cliente_busqueda() is not primero
+    repositorio.cerrar()
 
 
 def test_buscar_productos_error_de_red_devuelve_none():
@@ -158,6 +201,12 @@ def test_terminos_busqueda_frase_compuesta_agrega_termino_mas_largo():
 def test_terminos_busqueda_agrega_variante_sin_tildes():
     """Con tildes se agrega la variante sin ellas, porque Catálogo distingue tildes."""
     assert terminos_busqueda_catalogo("Azúcar flor") == ["azúcar flor", "azúcar", "azucar flor", "azucar"]
+
+
+def test_terminos_busqueda_descarta_lo_que_catalogo_rechaza():
+    """Se omiten los términos con menos de 3 bytes tras sanear ("te"); "té" sí tiene 3 bytes."""
+    assert terminos_busqueda_catalogo("te") == []
+    assert terminos_busqueda_catalogo("té") == ["té"]
 
 
 def test_terminos_busqueda_vacia():
@@ -196,9 +245,15 @@ class RepositorioDoble:
         self.fuente = fuente
         self.datos_antiguos = False
         self.terminos_buscados: list[tuple[str, float | None]] = []
+        self.recargas = 0
+
+    def productos_en_memoria(self) -> list:
+        """Devuelve la caché fija sin red."""
+        return self._cache
 
     def obtener_todos(self) -> list:
-        """Devuelve la caché fija."""
+        """Devuelve la caché fija y cuenta las recargas pedidas."""
+        self.recargas += 1
         return self._cache
 
     def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
@@ -280,6 +335,79 @@ def test_chat_busqueda_caida_degrada_a_la_cache():
 
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
     assert datos["estado_datos"] == ESTADO_MEMORIA
+
+
+def test_chat_busqueda_caida_usa_la_cache_sin_recargarla():
+    """Con caché disponible no se pide otra recarga completa: Catálogo ya no respondió."""
+    repositorio = RepositorioDoble(cache=[_normalizar(LECHE_ENTERA)], busquedas=None, fuente=FUENTE_MEMORIA)
+
+    _procesar(repositorio, {"palabras_clave": ["leche"]})
+
+    assert repositorio.recargas == 0
+
+
+def test_chat_frase_sin_terminos_admitidos_usa_la_cache():
+    """Una palabra clave que Catálogo rechazaría ("te") se resuelve con la caché, sin consultar."""
+    te_negro = _normalizar(_producto("prod-te", "Te Negro 100 bolsitas", 1990.0))
+    repositorio = RepositorioDoble(cache=[te_negro], busquedas={})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["te"]})
+
+    assert repositorio.terminos_buscados == []
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-te"]
+
+
+def test_chat_limita_las_busquedas_simultaneas(monkeypatch):
+    """Nunca hay más consultas en vuelo que `CATALOGO_BUSQUEDA_CONCURRENCIA`."""
+    monkeypatch.setattr(config, "CATALOGO_BUSQUEDA_CONCURRENCIA", 2)
+
+    class RepositorioConcurrencia(RepositorioDoble):
+        """Mide el máximo de búsquedas simultáneas."""
+
+        def __init__(self) -> None:
+            super().__init__(cache=[], busquedas={})
+            self._candado_conteo = threading.Lock()
+            self.en_vuelo = 0
+            self.maximo_en_vuelo = 0
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list:
+            with self._candado_conteo:
+                self.en_vuelo += 1
+                self.maximo_en_vuelo = max(self.maximo_en_vuelo, self.en_vuelo)
+            time.sleep(0.05)
+            with self._candado_conteo:
+                self.en_vuelo -= 1
+            return []
+
+    repositorio = RepositorioConcurrencia()
+
+    _procesar(repositorio, {"palabras_clave": ["leche", "harina", "arroz", "aceite", "azucar", "fideos"]})
+
+    assert repositorio.maximo_en_vuelo == 2
+
+
+def test_chat_busqueda_lenta_no_alarga_la_etapa_2(monkeypatch):
+    """Una consulta que excede el plazo común se abandona y se completa con la caché."""
+    monkeypatch.setattr(config, "CATALOGO_TIMEOUT", 0.2)
+
+    class RepositorioLento(RepositorioDoble):
+        """La búsqueda de "harina" tarda más que el plazo."""
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
+            if termino == "harina":
+                time.sleep(1.0)
+            return super().buscar_productos(termino, precio_max)
+
+    repositorio = RepositorioLento(
+        cache=[_normalizar(HARINA_TRIGO)],
+        busquedas={"leche": [_normalizar(LECHE_ENTERA)]},
+    )
+
+    inicio = time.monotonic()
+    datos = _procesar(repositorio, {"palabras_clave": ["leche", "harina"]})
+
+    assert time.monotonic() - inicio < 0.9
+    assert sorted(producto["id"] for producto in datos["productos_recomendados"]) == ["prod-harina-trigo", "prod-leche"]
 
 
 def test_chat_busqueda_caida_y_cache_vacia_informa_catalogo_no_disponible():

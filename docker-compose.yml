@@ -351,6 +351,10 @@ services:
       IA_CORS_ALLOWED_ORIGINS: ${IA_CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       CATALOGO_INTERNAL_URL: http://catalogo:8080
       CATALOGO_CONSULTA_TOKEN: ${CATALOGO_CONSULTA_TOKEN:-}
+      # Búsqueda dirigida en Catálogo (`?q=`) por palabra clave o ingrediente.
+      IA_CATALOGO_BUSQUEDA_LIMITE: ${IA_CATALOGO_BUSQUEDA_LIMITE:-100}
+      IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS: ${IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS:-12}
+      IA_CATALOGO_BUSQUEDA_CONCURRENCIA: ${IA_CATALOGO_BUSQUEDA_CONCURRENCIA:-4}
     depends_on:
       catalogo:
         condition: service_healthy

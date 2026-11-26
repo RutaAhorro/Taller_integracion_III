@@ -100,6 +100,8 @@ CATALOGO_MAX_PAGINAS = _leer_env_int("IA_CATALOGO_MAX_PAGINAS", 10)
 CATALOGO_BUSQUEDA_LIMITE = _leer_env_int("IA_CATALOGO_BUSQUEDA_LIMITE", 100)
 # Tope de consultas por mensaje, para que una receta larga no agote el plazo del chat.
 CATALOGO_BUSQUEDA_MAX_CONSULTAS = _leer_env_int("IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS", 12)
+# Búsquedas simultáneas contra Catálogo: acota hilos, conexiones y carga SQL por mensaje.
+CATALOGO_BUSQUEDA_CONCURRENCIA = _leer_env_int("IA_CATALOGO_BUSQUEDA_CONCURRENCIA", 4)
 CATALOGO_CONSULTA_TOKEN = os.getenv("CATALOGO_CONSULTA_TOKEN", "").strip() or None
 
 # ===== Proveedor Groq (secundario) =====
@@ -223,6 +225,7 @@ def _validar_limites_numericos() -> None:
         ("CATALOGO_MAX_PAGINAS", CATALOGO_MAX_PAGINAS),
         ("CATALOGO_BUSQUEDA_LIMITE", CATALOGO_BUSQUEDA_LIMITE),
         ("CATALOGO_BUSQUEDA_MAX_CONSULTAS", CATALOGO_BUSQUEDA_MAX_CONSULTAS),
+        ("CATALOGO_BUSQUEDA_CONCURRENCIA", CATALOGO_BUSQUEDA_CONCURRENCIA),
         ("GROQ_TIMEOUT", GROQ_TIMEOUT),
         ("GROQ_MAX_TOKENS_EXTRACCION", GROQ_MAX_TOKENS_EXTRACCION),
         ("GROQ_MAX_TOKENS_EXPLICACION", GROQ_MAX_TOKENS_EXPLICACION),

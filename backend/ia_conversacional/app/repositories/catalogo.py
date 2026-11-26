@@ -19,6 +19,7 @@ from typing import Any
 import httpx
 
 from app import config
+from app.domain.filtros import admitido_por_catalogo
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +65,12 @@ class ProductoRepositorio:
         self._limite_pagina = limite_pagina
         self._max_paginas = max_paginas
         self._cliente = cliente
+        # Cliente compartido por las búsquedas dirigidas: reutiliza conexiones en vez de
+        # abrir uno por consulta. Se crea al primer uso y se cierra con `cerrar()`.
+        self._cliente_busqueda: httpx.Client | None = None
         self._token_consulta = token_consulta
         self._candado = threading.Lock()
+        self._candado_cliente_busqueda = threading.Lock()
         self._productos: list[dict[str, Any]] = []
         self._antiguedad_maxima: float = antiguedad_maxima
         self._ultima_actualizacion: float = 0.0
@@ -208,13 +213,14 @@ class ProductoRepositorio:
         para que el chat use la caché en lugar de responder que no hay productos.
         """
         termino_limpio = termino.strip()
-        if not termino_limpio:
+        if not admitido_por_catalogo(termino_limpio):
+            # Catálogo respondería 400 (`q` corto); no es una caída, así que no hay coincidencias.
             return []
         parametros: dict[str, Any] = {"en_stock": "true", "q": termino_limpio, "page": PRIMERA_PAGINA, "limit": limite}
         if precio_max is not None and math.isfinite(precio_max) and precio_max > 0:
             parametros["precio_max"] = precio_max
 
-        cliente_http = self._cliente or httpx.Client(timeout=self._tiempo_espera)
+        cliente_http = self._obtener_cliente_busqueda()
         try:
             respuesta = cliente_http.get(f"{self._url_base}{RUTA_PRODUCTOS_CATALOGO}", params=parametros)
             respuesta.raise_for_status()
@@ -225,11 +231,29 @@ class ProductoRepositorio:
                 items = []
             return self._productos_en_stock(items)
         except (httpx.HTTPError, ValueError) as error_busqueda:
-            logger.warning("No fue posible buscar '%s' en Catálogo (%s).", termino_limpio, error_busqueda)
+            logger.warning(
+                "No fue posible buscar '%s' en Catálogo (%s).", termino_limpio, _describir_error(error_busqueda)
+            )
             return None
-        finally:
-            if self._cliente is None:
-                cliente_http.close()
+
+    def _obtener_cliente_busqueda(self) -> httpx.Client:
+        """Devuelve el cliente inyectado o el compartido de búsquedas, creándolo una sola vez entre hilos."""
+        if self._cliente is not None:
+            return self._cliente
+        with self._candado_cliente_busqueda:
+            if self._cliente_busqueda is None:
+                self._cliente_busqueda = httpx.Client(
+                    timeout=self._tiempo_espera,
+                    limits=httpx.Limits(max_connections=config.CATALOGO_BUSQUEDA_CONCURRENCIA),
+                )
+            return self._cliente_busqueda
+
+    def cerrar(self) -> None:
+        """Cierra el cliente compartido de búsquedas al apagar la aplicación."""
+        with self._candado_cliente_busqueda:
+            if self._cliente_busqueda is not None:
+                self._cliente_busqueda.close()
+                self._cliente_busqueda = None
 
     def consultar_disponibilidad(self, producto_ids: list[str]) -> dict[str, dict[str, Any]] | None:
         """Consulta en lote la disponibilidad de candidatos ante Catálogo (SUP-312)."""
@@ -310,6 +334,10 @@ class ProductoRepositorio:
         with self._candado:
             return self._cargar_sin_candado()
 
+    def productos_en_memoria(self) -> list[dict[str, Any]]:
+        """Devuelve la caché actual sin ir a la red, aunque el TTL haya vencido."""
+        return self._productos
+
     def obtener_todos(self) -> list[dict[str, Any]]:
         """
         Devuelve los productos en caché y los refresca si el TTL venció.
@@ -326,6 +354,14 @@ class ProductoRepositorio:
 
 
 # ===== Utilidades =====
+
+
+def _describir_error(error: Exception) -> str:
+    """Resume un error HTTP con su tipo y código, sin la URL interna que incluye su texto."""
+    if isinstance(error, httpx.HTTPStatusError):
+        # getattr: describir el error nunca debe lanzar otra excepción dentro del manejo del fallo.
+        return f"{type(error).__name__} {getattr(error.response, 'status_code', 'desconocido')}"
+    return type(error).__name__
 
 
 def _a_decimal(valor: Any, valor_defecto: float) -> float:

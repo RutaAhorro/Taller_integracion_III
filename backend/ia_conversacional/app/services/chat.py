@@ -176,9 +176,12 @@ def _planificar_consultas(frases: list[str]) -> tuple[list[str], bool]:
 
     Se intercalan por prioridad (primero la frase completa de cada palabra clave
     o ingrediente, luego sus variantes) para que el recorte afecte a las variantes
-    y no deje un ingrediente entero sin buscar. Devuelve también si hubo recorte.
+    y no deje un ingrediente entero sin buscar. Devuelve también si la búsqueda
+    queda incompleta: por recorte o porque una frase no tiene ningún término que
+    Catálogo acepte (p. ej. "te"), caso en que solo la caché puede resolverla.
     """
     terminos_por_frase = [terminos_busqueda_catalogo(frase) for frase in frases]
+    frase_sin_terminos = any(not terminos for terminos in terminos_por_frase)
     consultas = list(
         dict.fromkeys(
             termino
@@ -191,7 +194,7 @@ def _planificar_consultas(frases: list[str]) -> tuple[list[str], bool]:
     if len(consultas) > maximo:
         logger.warning("Búsqueda en Catálogo recortada a %d de %d consultas.", maximo, len(consultas))
         return consultas[:maximo], True
-    return consultas, False
+    return consultas, frase_sin_terminos
 
 
 def _unir_sin_duplicados(*listas_productos: list) -> list:
@@ -211,22 +214,33 @@ async def _buscar_en_catalogo(
     """
     Busca en paralelo cada término en Catálogo y une los resultados sin duplicados.
 
-    Devuelve `(productos, completa)`: `completa` es falso si alguna consulta falló
-    o se recortó, para que el llamador complete con la caché en memoria.
+    A lo más `CATALOGO_BUSQUEDA_CONCURRENCIA` consultas van en vuelo a la vez, y
+    todas comparten un plazo de `CATALOGO_TIMEOUT`: una consulta lenta no alarga la
+    etapa 2, solo queda como fallida. Devuelve `(productos, completa)`; `completa`
+    es falso si alguna consulta falló, venció o se recortó, para que el llamador
+    complete con la caché en memoria.
     """
-    consultas, recortada = _planificar_consultas(frases)
+    consultas, incompleta = _planificar_consultas(frases)
     resultados: dict[str, list | None] = {}
+    limitador = anyio.CapacityLimiter(config.CATALOGO_BUSQUEDA_CONCURRENCIA)
 
     async def _buscar(termino: str) -> None:
         """Ejecuta una búsqueda bloqueante en un hilo para no detener el bucle de eventos."""
-        resultados[termino] = await anyio.to_thread.run_sync(repositorio.buscar_productos, termino, precio_max)
+        resultados[termino] = await anyio.to_thread.run_sync(
+            repositorio.buscar_productos, termino, precio_max, limiter=limitador, abandon_on_cancel=True
+        )
 
-    async with anyio.create_task_group() as grupo_busquedas:
-        for termino in consultas:
-            grupo_busquedas.start_soon(_buscar, termino)
+    with anyio.move_on_after(config.CATALOGO_TIMEOUT) as plazo_busquedas:
+        async with anyio.create_task_group() as grupo_busquedas:
+            for termino in consultas:
+                grupo_busquedas.start_soon(_buscar, termino)
+    if plazo_busquedas.cancelled_caught:
+        logger.warning(
+            "Plazo de búsqueda en Catálogo agotado: %d de %d consultas respondieron.", len(resultados), len(consultas)
+        )
 
     exitosos = [resultados[termino] for termino in consultas if resultados.get(termino) is not None]
-    completa = not recortada and len(exitosos) == len(consultas)
+    completa = not incompleta and len(exitosos) == len(consultas)
     return _unir_sin_duplicados(*exitosos), completa
 
 
@@ -237,6 +251,8 @@ async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -
     Devuelve `(productos, estado_datos, busqueda_completa)`. Con palabras clave o
     ingredientes se busca en Catálogo completo; si esa búsqueda queda incompleta
     se agregan los productos de la caché y el estado lo informa el repositorio.
+    La caché se usa tal como está (sin refrescar) si tiene productos: si Catálogo
+    no respondió a la búsqueda, una recarga completa solo sumaría otro plazo.
     Una búsqueda completa sin resultados significa que no hay coincidencias, no
     que el catálogo esté caído.
     """
@@ -246,7 +262,7 @@ async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -
         if busqueda_completa:
             return encontrados, ESTADO_VIGENTE, True
         logger.warning("Búsqueda dirigida en Catálogo incompleta: se completa con la caché en memoria.")
-        en_cache = await anyio.to_thread.run_sync(repositorio.obtener_todos)
+        en_cache = repositorio.productos_en_memoria() or await anyio.to_thread.run_sync(repositorio.obtener_todos)
         return _unir_sin_duplicados(encontrados, en_cache), _determinar_estado_datos(repositorio), False
 
     # Sin términos (solo categoría o precio) se mantiene la caché precargada.
