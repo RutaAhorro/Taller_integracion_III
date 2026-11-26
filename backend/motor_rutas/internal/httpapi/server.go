@@ -39,6 +39,8 @@ type Opciones struct {
 	Repo         listas.Repositorio         // acceso a datos (PostgreSQL o memoria en pruebas)
 	Carritos     listas.RepositorioCarrito  // borrador y envío atómico en el mismo dominio
 	Catalogo     listas.Catalogo            // disponibilidad de productos (HTTP a Catálogo o falso en pruebas)
+	Precios      listas.CatalogoPrecios     // precios comparables por sucursal para optimizar rutas
+	Optimizacion OpcionesOptimizacion       // límites y parámetros del algoritmo de rutas
 	JWTSecret    string                     // secreto para verificar la cookie jwt
 	OrigenesCORS []string                   // orígenes exactos permitidos
 	MaxListas    int                        // tope de listas por usuario
@@ -47,8 +49,11 @@ type Opciones struct {
 	Log          *slog.Logger               // logger estructurado; nil usa el por defecto
 }
 
-// prefijoListas es la ruta base de la API pública.
-const prefijoListas = "/api/v1/listas"
+// prefijoListas y prefijoRutas son las rutas base de la API pública.
+const (
+	prefijoListas = "/api/v1/listas"
+	prefijoRutas  = "/api/v1/rutas"
+)
 
 // requestIDValido limita el X-Request-ID recibido a caracteres seguros para logs.
 var requestIDValido = regexp.MustCompile(`^[a-zA-Z0-9._-]{1,128}$`)
@@ -101,6 +106,12 @@ func rutas(opciones Opciones) http.Handler {
 		case ruta == "/_rutas/ready" || ruta == "/health":
 			despachar(respuesta, peticion, ruta, metodosPorRuta{
 				http.MethodGet: manejador.ready,
+			})
+
+		// --- /api/v1/rutas ---------------------------------------------------
+		case ruta == prefijoRutas+"/optimizar":
+			despachar(respuesta, peticion, prefijoRutas+"/optimizar", metodosPorRuta{
+				http.MethodPost: manejador.conSesion(manejador.optimizarRuta),
 			})
 
 		// --- /api/v1/listas --------------------------------------------------

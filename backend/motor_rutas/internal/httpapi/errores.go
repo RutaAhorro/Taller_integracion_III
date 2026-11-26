@@ -51,6 +51,13 @@ const (
 	mensajeClaveReutilizada    = "La clave de idempotencia ya se usó con otro lote."
 	codigoConflictoIdempotente = "idempotency_conflict"
 
+	// Optimización de rutas (MVP / SUP-316).
+	mensajeListaSinArticulos     = "La lista no tiene artículos por comprar."
+	mensajeDemasiadosArticulos   = "La lista supera el máximo de artículos para calcular una ruta."
+	mensajeSinSucursalesCercanas = "No hay supermercados cercanos para calcular una ruta."
+	mensajeSinCoberturaRuta      = "No se encontró una forma de comprar la lista en las tiendas cercanas."
+	mensajePreciosNoDisponibles  = "No se pudo consultar precios. Intenta de nuevo."
+
 	largoMaximoDetalle = 500 // recorta "detalle" para no devolver textos enormes
 )
 
