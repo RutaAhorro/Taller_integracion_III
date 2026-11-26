@@ -16,7 +16,7 @@ compose() {
   env -u DB_USER -u DB_PASSWORD -u DB_NAME -u JWT_SECRET -u GOOGLE_CLIENT_ID \
     -u CATALOGO_CORS_ALLOWED_ORIGINS -u GATEWAY_TRUSTED_PROXIES -u SUP268_READER_PASSWORD \
     -u CATALOGO_INTERNAL_TOKEN -u CATALOGO_CONSULTA_TOKEN -u SCRAPING_SERVICE_TOKEN -u SUP269_COORDINATOR_PASSWORD \
-    -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD \
+    -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD -u RUTAS_DB_PASSWORD \
     -u IDENTIDAD_EDGE_SUBNET -u IDENTIDAD_EDGE_RANGE -u IDENTIDAD_GATEWAY_IP -u IDENTIDAD_CORS_ALLOWED_ORIGINS -u IDENTIDAD_COOKIE_SECURE \
     docker compose --project-name "$test_project" --env-file "$test_env" \
     -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.catalogo-routing-test.yml" "$@"
@@ -67,13 +67,14 @@ cp "$repo_root/backend/catalogo/tests/fixtures.sql" "$SUP268_INIT_DIR/zz_sup268_
 python3 - "$test_env" <<'PY'
 from pathlib import Path
 import secrets, sys
-password, reader, jwt, internal, consulta, coordinator, identity, service = (secrets.token_hex(24) for _ in range(8))
+password, reader, jwt, internal, consulta, coordinator, identity, service, rutas = (secrets.token_hex(24) for _ in range(9))
 p = Path(sys.argv[1])
 p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_SECRET=' + jwt +
     '\nCATALOGO_DB_PASSWORD=' + reader + '\nCATALOGO_INTERNAL_TOKEN=' + internal +
     '\nCATALOGO_CONSULTA_TOKEN=' + consulta +
     '\nSCRAPING_SERVICE_TOKEN=' + service +
     '\nSCRAPING_DB_PASSWORD=' + coordinator + '\nIDENTITY_DB_PASSWORD=' + identity +
+    '\nRUTAS_DB_PASSWORD=' + rutas +
     '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
     'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
     'IDENTIDAD_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +

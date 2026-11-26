@@ -39,6 +39,9 @@ services:
       interval: 2s
   gateway:
     image: sup273-gateway:local
+    environment:
+      RUTAS_URL: ''
+      IA_URL: ''
     ports: !override ["127.0.0.1:${SUP268_GATEWAY_PORT:-18082}:8080"]
     healthcheck:
       interval: 2s
