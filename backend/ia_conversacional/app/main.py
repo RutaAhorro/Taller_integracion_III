@@ -62,10 +62,11 @@ proveedor_respaldo = FallbackProveedor(
 
 @asynccontextmanager
 async def ciclo_de_vida(aplicacion: FastAPI):
-    """Valida la configuración y precarga el catálogo antes de aceptar peticiones."""
+    """Valida la configuración y precarga el catálogo antes de aceptar peticiones; al apagar cierra conexiones."""
     config.validar_configuracion()
     repositorio_productos.cargar_productos()
     yield
+    repositorio_productos.cerrar()
 
 
 app = FastAPI(title="IA Conversacional", default_response_class=RespuestaUTF8, lifespan=ciclo_de_vida)

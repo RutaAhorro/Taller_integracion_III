@@ -162,6 +162,45 @@ def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -
     )
 
 
+# ===== Términos para la búsqueda en Catálogo =====
+
+# Contrato de Catálogo (services/productos.go): sanea `q` con esta lista de caracteres
+# y responde 400 si quedan menos de 3 bytes. Se replica para no enviar consultas
+# que fallarían y degradarían todo el mensaje a la caché.
+LARGO_MINIMO_BUSQUEDA_CATALOGO = 3
+PATRON_CARACTERES_NO_ADMITIDOS_CATALOGO = re.compile(r"[^a-zA-Z0-9\sñÑáéíóúÁÉÍÓÚ\-]")
+
+
+def admitido_por_catalogo(termino: str) -> bool:
+    """Indica si Catálogo acepta el término como `q` (al menos 3 bytes tras sanearlo como él)."""
+    saneado = PATRON_CARACTERES_NO_ADMITIDOS_CATALOGO.sub("", termino.strip())
+    return len(saneado.encode("utf-8")) >= LARGO_MINIMO_BUSQUEDA_CATALOGO
+
+
+def terminos_busqueda_catalogo(frase: str) -> list[str]:
+    """
+    Devuelve los textos que se envían como `?q=` a Catálogo para una palabra clave o ingrediente.
+
+    Catálogo busca la subcadena literal (ILIKE, sensible a tildes): "harina almendras"
+    no encontraría "Harina de Almendras". Por eso se envía la frase completa y, si
+    tiene varias palabras, también su término más largo; el filtrado determinista
+    exige después que calcen todos los términos. Se agregan las variantes sin
+    tildes porque los títulos de las cadenas no siempre las llevan.
+    """
+    frase_minuscula = " ".join(frase.lower().split())
+    if not frase_minuscula:
+        return []
+
+    candidatos = [frase_minuscula]
+    terminos = [termino for termino in _separar_terminos(frase_minuscula) if len(termino) >= LONGITUD_MINIMA_SUBCADENA]
+    if len(terminos) > 1 or (terminos and terminos[0] != frase_minuscula):
+        candidatos.append(max(terminos, key=len))
+    candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
+
+    # Conserva el orden (la frase completa primero), quita repetidos y lo que Catálogo rechazaría.
+    return list(dict.fromkeys(candidato for candidato in candidatos if candidato and admitido_por_catalogo(candidato)))
+
+
 # ===== Filtrado del catálogo =====
 
 

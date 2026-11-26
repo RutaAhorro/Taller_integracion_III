@@ -135,6 +135,13 @@ def catalogo_fijo(monkeypatch):
         "obtener_todos",
         lambda: productos_normalizados,
     )
+    # Estas pruebas ejercitan el pipeline con catálogo fijo: la búsqueda dirigida
+    # devuelve los mismos productos de prueba y el filtrado determinista decide.
+    monkeypatch.setattr(
+        main.repositorio_productos,
+        "buscar_productos",
+        lambda *_argumentos, **_opciones: productos_normalizados,
+    )
     # Asegurar que la fuente sea "catalogo" para que las pruebas de pipeline
     # funcionen con estado vigente, tal como el test original esperaba.
     main.repositorio_productos._fuente = "catalogo"

@@ -5,3 +5,7 @@ metadata:
 data:
   IA_CORS_ALLOWED_ORIGINS: "http://miweb-vmatus.dev.censei.cl,https://miweb-vmatus.dev.censei.cl"
   CATALOGO_INTERNAL_URL: "http://catalogo:8080"
+  # Búsqueda dirigida en Catálogo (`?q=`) por palabra clave o ingrediente.
+  IA_CATALOGO_BUSQUEDA_LIMITE: "100"
+  IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS: "12"
+  IA_CATALOGO_BUSQUEDA_CONCURRENCIA: "4"

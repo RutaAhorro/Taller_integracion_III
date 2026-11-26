@@ -19,12 +19,13 @@ from typing import Any
 import httpx
 
 from app import config
+from app.domain.filtros import admitido_por_catalogo
 
 logger = logging.getLogger(__name__)
 
 # ===== Constantes =====
 
-# Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=
+# Contrato de Catálogo: GET /api/v1/productos?en_stock=true&page=&limit=[&q=&precio_max=]
 RUTA_PRODUCTOS_CATALOGO = "/api/v1/productos"
 # Contrato de Catálogo: POST /internal/v1/productos/disponibilidad (SUP-312).
 RUTA_DISPONIBILIDAD_CATALOGO = "/internal/v1/productos/disponibilidad"
@@ -64,8 +65,12 @@ class ProductoRepositorio:
         self._limite_pagina = limite_pagina
         self._max_paginas = max_paginas
         self._cliente = cliente
+        # Cliente compartido por las búsquedas dirigidas: reutiliza conexiones en vez de
+        # abrir uno por consulta. Se crea al primer uso y se cierra con `cerrar()`.
+        self._cliente_busqueda: httpx.Client | None = None
         self._token_consulta = token_consulta
         self._candado = threading.Lock()
+        self._candado_cliente_busqueda = threading.Lock()
         self._productos: list[dict[str, Any]] = []
         self._antiguedad_maxima: float = antiguedad_maxima
         self._ultima_actualizacion: float = 0.0
@@ -77,6 +82,10 @@ class ProductoRepositorio:
         """Origen de los productos en memoria: 'catalogo', 'memoria' o 'sin_datos'."""
         return self._fuente
 
+    def cache_antigua(self) -> bool:
+        """Indica si la caché en memoria superó `antiguedad_maxima` según su última carga exitosa."""
+        return self._ultima_carga_exitosa > 0 and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
+
     @property
     def datos_antiguos(self) -> bool:
         """Indica si los datos en caché superaron el límite de antigüedad máxima.
@@ -84,11 +93,7 @@ class ProductoRepositorio:
         Retorna True solo cuando la fuente es 'memoria' (catálogo inalcanzable)
         y la última carga exitosa desde Catálogo superó antigüedad_maxima.
         """
-        return (
-            self._fuente == FUENTE_MEMORIA
-            and self._ultima_carga_exitosa > 0
-            and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
-        )
+        return self._fuente == FUENTE_MEMORIA and self.cache_antigua()
 
     def __len__(self) -> int:
         """Cantidad en memoria, sin red, para que /health no dependa de Catálogo."""
@@ -192,6 +197,64 @@ class ProductoRepositorio:
             if self._cliente is None:
                 cliente_http.close()
 
+    def buscar_productos(
+        self,
+        termino: str,
+        precio_max: float | None = None,
+        limite: int = config.CATALOGO_BUSQUEDA_LIMITE,
+    ) -> list[dict[str, Any]] | None:
+        """
+        Busca en todo Catálogo los productos en stock cuyo nombre, marca o categoría contienen `termino`.
+
+        La caché solo guarda las primeras páginas (las más baratas), así que una
+        palabra clave como "harina de almendras" puede no estar en ella aunque exista.
+        Esta búsqueda usa `?q=` sobre el catálogo completo; el filtrado determinista
+        de la etapa 2 sigue aplicándose después. Devuelve `None` si Catálogo falla,
+        para que el chat use la caché en lugar de responder que no hay productos.
+        """
+        termino_limpio = termino.strip()
+        if not admitido_por_catalogo(termino_limpio):
+            # Catálogo respondería 400 (`q` corto); no es una caída, así que no hay coincidencias.
+            return []
+        parametros: dict[str, Any] = {"en_stock": "true", "q": termino_limpio, "page": PRIMERA_PAGINA, "limit": limite}
+        if precio_max is not None and math.isfinite(precio_max) and precio_max > 0:
+            parametros["precio_max"] = precio_max
+
+        cliente_http = self._obtener_cliente_busqueda()
+        try:
+            respuesta = cliente_http.get(f"{self._url_base}{RUTA_PRODUCTOS_CATALOGO}", params=parametros)
+            respuesta.raise_for_status()
+            cuerpo = respuesta.json()
+            # Misma forma que el listado paginado (`data` + `paginacion`) o una lista simple.
+            items = cuerpo.get("data", []) if isinstance(cuerpo, dict) else cuerpo
+            if not isinstance(items, list):
+                items = []
+            return self._productos_en_stock(items)
+        except (httpx.HTTPError, ValueError) as error_busqueda:
+            logger.warning(
+                "No fue posible buscar '%s' en Catálogo (%s).", termino_limpio, _describir_error(error_busqueda)
+            )
+            return None
+
+    def _obtener_cliente_busqueda(self) -> httpx.Client:
+        """Devuelve el cliente inyectado o el compartido de búsquedas, creándolo una sola vez entre hilos."""
+        if self._cliente is not None:
+            return self._cliente
+        with self._candado_cliente_busqueda:
+            if self._cliente_busqueda is None:
+                self._cliente_busqueda = httpx.Client(
+                    timeout=self._tiempo_espera,
+                    limits=httpx.Limits(max_connections=config.CATALOGO_BUSQUEDA_CONCURRENCIA),
+                )
+            return self._cliente_busqueda
+
+    def cerrar(self) -> None:
+        """Cierra el cliente compartido de búsquedas al apagar la aplicación."""
+        with self._candado_cliente_busqueda:
+            if self._cliente_busqueda is not None:
+                self._cliente_busqueda.close()
+                self._cliente_busqueda = None
+
     def consultar_disponibilidad(self, producto_ids: list[str]) -> dict[str, dict[str, Any]] | None:
         """Consulta en lote la disponibilidad de candidatos ante Catálogo (SUP-312)."""
         if not self._token_consulta or not producto_ids:
@@ -271,6 +334,19 @@ class ProductoRepositorio:
         with self._candado:
             return self._cargar_sin_candado()
 
+    def productos_en_memoria(self) -> list[dict[str, Any]]:
+        """Devuelve la caché actual sin ir a la red, aunque el TTL haya vencido."""
+        return self._productos
+
+    def obtener_cache_degradada(self) -> tuple[list[dict[str, Any]], bool]:
+        """
+        Devuelve los productos en memoria sin ir a la red y si superaron la antigüedad máxima.
+
+        Se usa al degradar una búsqueda dirigida: clasifica por la edad real de la
+        caché (`_ultima_carga_exitosa`), sin depender de que `fuente` sea `memoria`.
+        """
+        return self._productos, self.cache_antigua()
+
     def obtener_todos(self) -> list[dict[str, Any]]:
         """
         Devuelve los productos en caché y los refresca si el TTL venció.
@@ -287,6 +363,14 @@ class ProductoRepositorio:
 
 
 # ===== Utilidades =====
+
+
+def _describir_error(error: Exception) -> str:
+    """Resume un error HTTP con su tipo y código, sin la URL interna que incluye su texto."""
+    if isinstance(error, httpx.HTTPStatusError):
+        # getattr: describir el error nunca debe lanzar otra excepción dentro del manejo del fallo.
+        return f"{type(error).__name__} {getattr(error.response, 'status_code', 'desconocido')}"
+    return type(error).__name__
 
 
 def _a_decimal(valor: Any, valor_defecto: float) -> float:
