@@ -3,10 +3,14 @@ kind: ConfigMap
 metadata:
   name: gateway-config
 data:
+  IA_URL: "http://ia-conversacional:8002"
   GATEWAY_TRUSTED_PROXIES: "10.42.0.0/16,10.43.0.0/16,127.0.0.1"
   GATEWAY_KEEPALIVE_TIMEOUT: "30s"
+  # 20s para tolerar la latencia de inferencia LLM de IA conversacional (18s).
+  GATEWAY_RESPONSE_HEADER_TIMEOUT: "20s"
   # Prefijos por dominio (mismos defaults que internal/config/config.go).
   GATEWAY_IDENTIDAD_PREFIXES: "/api/v1/auth,/api/v1/admin/usuarios,/api/v1/usuarios/me/direcciones"
   GATEWAY_CATALOGO_PREFIXES: "/api/v1/productos,/api/v1/admin/productos"
   GATEWAY_RUTAS_PREFIXES: "/api/v1/listas,/api/v1/rutas"
   GATEWAY_SCRAPING_PREFIXES: "/api/v1/scraper,/swagger"
+  GATEWAY_IA_PREFIXES: "/api/v1/chat"
