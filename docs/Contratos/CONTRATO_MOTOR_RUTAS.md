@@ -1,19 +1,141 @@
 # Contrato del motor de rutas
 
-> **Estado:** propuesta en revisión · SUP-323 · Responsable: Vicho
-> **Revisan:** Marcelo (Catálogo, SUP-317), Daniela (frontend, SUP-330 y SUP-261) y Esban (Listas y migración a Go, SUP-241 y SUP-348)
+> **Estado:** **MVP vigente implementado** (`POST /api/v1/rutas/optimizar`) · Basado en SUP-323
+> **Revisan:** Marcelo (Catálogo, SUP-317), Daniela (frontend, SUP-330 y SUP-261) y Esban (Listas y Motor en Go)
 
-Esta es una **propuesta inicial** para ratificar en la revisión del PR. No es
-una decisión ya tomada en una reunión. Una vez fusionada en `develop`, cambiarla
-sigue la misma regla que el [contrato de artículos](CONTRATO_ARTICULOS_LISTA.md):
-se avisa antes en el canal del equipo y el PR lo aprueba quien consume la parte
-afectada.
+> **Distancias estimadas y recortes del MVP.**
+> - El motor **no calcula rutas por calles reales**: usa Haversine × `RUTAS_FACTOR_DISTANCIA` (`1.3`). Toda respuesta lleva `"estimado": true` y el frontend debe mostrarlo.
+> - **Sin costo de combustible en el MVP:** `costo_traslado` es `0`, `total == costo_productos`, no se pide `rendimiento_km_l` y no se consulta CNE.
+> - **Entrada mínima:** solo `lista_id` (sin lista ad-hoc de artículos) y **`origen` opcional**. Si `origen` se omite o es `null`, se usa el **centro de Temuco** (`lat: -38.7359`, `lon: -72.5904`) y la respuesta informa `origen.por_defecto: true`.
+> - **`ruta` es siempre la opción recomendada:** si por el umbral de ahorro (`RUTAS_UMBRAL_AHORRO`, `500` CLP por defecto) gana comprar todo en una sola tienda, `ruta` tiene una sola parada y `ahorro` es `0`.
+> - **Cadenas sin precios (ej. Unimarc) u ofertas sin stock:** se ignoran sin error; los productos sin ninguna oferta vigente salen en `no_cubiertos[]`.
 
-> **Distancias y costos estimados.** El motor no calcula rutas por calles reales.
-> La distancia es una línea recta (Haversine) multiplicada por un factor de
-> corrección declarado, y el costo de traslado se estima con un precio de
-> combustible regional. Toda respuesta del motor lo indica y el frontend debe
-> mostrarlo.
+## 0. Contrato vigente MVP (fuente para Frontend)
+
+### Solicitud
+
+```http
+POST /api/v1/rutas/optimizar
+Content-Type: application/json
+Cookie: jwt=<cookie HttpOnly>
+```
+
+```json
+{
+  "lista_id": "3f6c2a10-8b1e-4d2f-9a3c-7e5d4c3b2a10",
+  "origen": { "lat": -38.7359, "lon": -72.5904 }
+}
+```
+
+| Campo | Obligatorio | Regla |
+| --- | --- | --- |
+| `lista_id` | Sí | UUID de una lista perteneciente al usuario de la sesión |
+| `origen` | No | Objeto `{"lat", "lon"}` (`lat` en `[-90, 90]`, `lon` en `[-180, 180]`). Si falta o es `null`, se usa centro de Temuco (`-38.7359, -72.5904`) |
+
+Cualquier campo extra en el JSON se rechaza con `400`.
+
+### Respuesta `200 OK` (ejemplo completo para mocks de frontend)
+
+```json
+{
+  "estimado": true,
+  "origen": {
+    "lat": -38.7359,
+    "lon": -72.5904,
+    "por_defecto": true
+  },
+  "parametros": {
+    "factor_distancia": 1.3,
+    "max_paradas": 3,
+    "umbral_ahorro": 500,
+    "radio_km": 10
+  },
+  "ruta": {
+    "paradas": [
+      {
+        "orden": 1,
+        "sucursal_id": 5,
+        "nombre": "SuperBodega aCuenta Temuco Matta",
+        "cadena": "A Cuenta",
+        "lat": -38.7338383,
+        "lon": -72.5806422,
+        "subtotal": 2180,
+        "articulos": [
+          {
+            "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+            "producto_id_oferta": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+            "nombre": "Arroz grado 1 1 kg",
+            "cantidad": 2,
+            "precio_unitario": 1090,
+            "subtotal": 2180
+          }
+        ]
+      },
+      {
+        "orden": 2,
+        "sucursal_id": 6,
+        "nombre": "Cugat Temuco Barros Arana",
+        "cadena": "Cugat",
+        "lat": -38.7385969,
+        "lon": -72.5813372,
+        "subtotal": 6490,
+        "articulos": [
+          {
+            "producto_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "producto_id_oferta": "7f8e9d0c-1b2a-4c3d-8e9f-0a1b2c3d4e5f",
+            "nombre": "Detergente líquido 3 L",
+            "cantidad": 1,
+            "precio_unitario": 6490,
+            "subtotal": 6490
+          }
+        ]
+      }
+    ],
+    "tramos": [
+      { "desde": "origen", "hasta": 5, "distancia_km": 1.14 },
+      { "desde": 5, "hasta": 6, "distancia_km": 0.69 },
+      { "desde": 6, "hasta": "origen", "distancia_km": 1.09 }
+    ],
+    "distancia_km": 2.92,
+    "costo_productos": 8670,
+    "costo_traslado": 0,
+    "total": 8670
+  },
+  "base_una_tienda": {
+    "sucursal_id": 6,
+    "nombre": "Cugat Temuco Barros Arana",
+    "cadena": "Cugat",
+    "total": 9590
+  },
+  "ahorro": 920,
+  "no_cubiertos": [
+    {
+      "producto_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9",
+      "motivo": "sin_oferta_en_radio"
+    }
+  ],
+  "candidatas_evaluadas": 6
+}
+```
+
+### Errores del endpoint MVP
+
+Envoltorio común: `{"estado": <int>, "mensaje": <string>, "detalle"?: <string>}`.
+
+| Situación | HTTP | `mensaje` |
+| --- | --- | --- |
+| Sin cookie `jwt` o token inválido/expirado | `401` | `Cookie de autenticación requerida.` / `Token inválido o expirado.` |
+| JSON inválido, `lista_id` no UUID, campos extra u `origen` fuera de rango | `400` | `Solicitud inválida.` |
+| Lista inexistente o de otro usuario | `404` | `La lista no existe.` |
+| Lista sin artículos pendientes (`esta_comprado = false`) | `422` | `La lista no tiene artículos por comprar.` |
+| Más artículos pendientes que `RUTAS_MAX_ARTICULOS` (30) | `422` | `La lista supera el máximo de artículos para calcular una ruta.` |
+| Sin sucursales físicas en el radio | `422` | `No hay supermercados cercanos para calcular una ruta.` |
+| Ningún artículo con oferta vigente, o ningún conjunto de hasta `RUTAS_MAX_PARADAS` cubre los cubribles | `422` | `No se encontró una forma de comprar la lista en las tiendas cercanas.` |
+| Catálogo no responde o falla | `503` | `No se pudo consultar precios. Intenta de nuevo.` |
+
+---
+
+*A continuación se conserva la especificación completa original (Sprint 3, incluye diseño futuro con costo de combustible):*
 
 ## Para qué existe
 

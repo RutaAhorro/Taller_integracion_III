@@ -79,7 +79,11 @@ func medirRecorrido(origen Coordenada, orden []Sucursal, factorDistancia float64
 
 // CostoTraslado aplica la regla de negocio del contrato:
 // (distancia_km ÷ rendimiento_km_l) × precio_combustible_l. Sin redondear.
+// Cuando PrecioCombustibleL es 0 (modo MVP sin combustible) devuelve 0.
 func CostoTraslado(distanciaKm float64, parametros Parametros) float64 {
+	if parametros.PrecioCombustibleL == 0 {
+		return 0
+	}
 	return distanciaKm / parametros.RendimientoKmL * parametros.PrecioCombustibleL
 }
 

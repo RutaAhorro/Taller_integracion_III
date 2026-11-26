@@ -3,13 +3,14 @@
 # scripts/recorrido_mvp.sh
 #
 # Recorrido de diagnóstico del flujo MVP a través del Gateway (http://127.0.0.1:8082
-# por defecto). Ejecuta los 5 pasos principales usando curl:
+# por defecto). Ejecuta los 6 pasos principales usando curl:
 #   1. Sesión de prueba con cookie jwt HS256 (modo por defecto) o registro local
 #      (--registro-local / RECORRIDO_MODO_AUTH=registro)
 #   2. Búsqueda de producto (GET /api/v1/productos?limit=5)
 #   3. Creación de lista (POST /api/v1/listas)
 #   4. Agregado de artículo (POST /api/v1/listas/{lista_id}/articulos)
 #   5. Consulta al chat IA (POST /api/v1/chat)
+#   6. Optimización de ruta de la lista (POST /api/v1/rutas/optimizar)
 #
 # No detiene la ejecución ante el primer fallo, no imprime cookies ni secretos,
 # no toca la base de datos directamente ni modifica contenedores o volúmenes.
@@ -80,10 +81,27 @@ if clave == "primer_producto_id":
     elementos = datos.get("data") or []
     if elementos and isinstance(elementos[0], dict):
         print(elementos[0].get("id", ""))
+elif clave == "productos_ids":
+    elementos = datos.get("data") or []
+    for elemento in elementos:
+        if isinstance(elemento, dict) and elemento.get("id"):
+            print(elemento["id"])
+elif clave == "articulo_vigente":
+    producto = datos.get("producto") or {}
+    if datos.get("estado_producto") == "disponible" and producto.get("precio") is not None:
+        print("si")
+elif clave == "articulo_id":
+    print(datos.get("id", ""))
 elif clave == "total_productos":
     print(datos.get("total_registros", 0))
 elif clave == "lista_id":
     print(datos.get("id", ""))
+elif clave == "resumen_ruta":
+    ruta = datos.get("ruta") or {}
+    paradas = ruta.get("paradas") or []
+    cadenas = ", ".join(p.get("cadena") or p.get("nombre") or "?" for p in paradas if isinstance(p, dict))
+    total = ruta.get("total", 0)
+    print(f"paradas={len(paradas)} ({cadenas}), total=${total}")
 PY
 }
 
@@ -238,10 +256,14 @@ fi
 
 # ----- Paso 2: Buscar un producto -----
 PRODUCTO_ID_ENCONTRADO=""
-CODIGO_PRODUCTOS="$(ejecutar_peticion "GET" "/api/v1/productos?limit=5" "" "ninguno")"
+PRODUCTOS_CANDIDATOS=()
+CODIGO_PRODUCTOS="$(ejecutar_peticion "GET" "/api/v1/productos?q=arroz&limit=10" "" "ninguno")"
 
 if [[ "${CODIGO_PRODUCTOS}" == "200" ]]; then
-  PRODUCTO_ID_ENCONTRADO="$(extraer_campo_json "primer_producto_id")"
+  while IFS= read -r id_candidato; do
+    [[ -n "${id_candidato}" ]] && PRODUCTOS_CANDIDATOS+=("${id_candidato}")
+  done < <(extraer_campo_json "productos_ids")
+  PRODUCTO_ID_ENCONTRADO="${PRODUCTOS_CANDIDATOS[0]:-}"
   TOTAL_PRODUCTOS="$(extraer_campo_json "total_productos")"
   if [[ -n "${PRODUCTO_ID_ENCONTRADO}" ]]; then
     imprimir_resultado "2. Buscar producto" "OK" "HTTP 200 (total=${TOTAL_PRODUCTOS}, primer producto_id=${PRODUCTO_ID_ENCONTRADO})"
@@ -286,16 +308,40 @@ if [[ -z "${PRODUCTO_ID_DESTINO}" ]]; then
   fi
 fi
 
-CUERPO_ARTICULO="$(printf '{"producto_id":"%s","cantidad":1}' "${PRODUCTO_ID_DESTINO}")"
-CODIGO_ARTICULO="$(ejecutar_peticion "POST" "/api/v1/listas/${LISTA_ID_DESTINO}/articulos" "${CUERPO_ARTICULO}" "enviar")"
-
 if [[ "${USA_UUID_RESPALDO}" -eq 1 ]]; then
+  CUERPO_ARTICULO="$(printf '{"producto_id":"%s","cantidad":1}' "${PRODUCTO_ID_DESTINO}")"
+  CODIGO_ARTICULO="$(ejecutar_peticion "POST" "/api/v1/listas/${LISTA_ID_DESTINO}/articulos" "${CUERPO_ARTICULO}" "enviar")"
   imprimir_resultado "4. Agregar artículo" "NO CONCLUYENTE (UUID de respaldo)" \
     "HTTP ${CODIGO_ARTICULO} (${MOTIVO_RESPALDO}) - $(resumir_cuerpo)"
-elif [[ "${CODIGO_ARTICULO}" == "201" || "${CODIGO_ARTICULO}" == "200" ]]; then
-  imprimir_resultado "4. Agregar artículo" "OK" "HTTP ${CODIGO_ARTICULO} (artículo agregado a lista ${LISTA_ID_DESTINO})"
 else
-  imprimir_resultado "4. Agregar artículo" "FALLO" "HTTP ${CODIGO_ARTICULO} - $(resumir_cuerpo)"
+  # Prueba los candidatos del paso 2 hasta encontrar uno con precio vigente
+  # para que el paso 6 (optimizar ruta) pueda calcular una ruta real.
+  CODIGO_ARTICULO="000"
+  ARTICULO_VIGENTE=""
+  for candidato_id in "${PRODUCTOS_CANDIDATOS[@]}"; do
+    CUERPO_ARTICULO="$(printf '{"producto_id":"%s","cantidad":1}' "${candidato_id}")"
+    CODIGO_ARTICULO="$(ejecutar_peticion "POST" "/api/v1/listas/${LISTA_ID_DESTINO}/articulos" "${CUERPO_ARTICULO}" "enviar")"
+    if [[ "${CODIGO_ARTICULO}" == "201" || "${CODIGO_ARTICULO}" == "200" ]]; then
+      PRODUCTO_ID_DESTINO="${candidato_id}"
+      ARTICULO_VIGENTE="$(extraer_campo_json "articulo_vigente")"
+      if [[ "${ARTICULO_VIGENTE}" == "si" ]]; then
+        break
+      fi
+      # Quita el artículo con precio vencido antes de probar el siguiente candidato.
+      ARTICULO_ID_TEMP="$(extraer_campo_json "articulo_id")"
+      if [[ -n "${ARTICULO_ID_TEMP}" ]]; then
+        ejecutar_peticion "DELETE" "/api/v1/listas/${LISTA_ID_DESTINO}/articulos/${ARTICULO_ID_TEMP}" "" "enviar" >/dev/null
+      fi
+    else
+      break
+    fi
+  done
+
+  if [[ "${CODIGO_ARTICULO}" == "201" || "${CODIGO_ARTICULO}" == "200" ]]; then
+    imprimir_resultado "4. Agregar artículo" "OK" "HTTP ${CODIGO_ARTICULO} (producto ${PRODUCTO_ID_DESTINO} agregado a lista ${LISTA_ID_DESTINO})"
+  else
+    imprimir_resultado "4. Agregar artículo" "FALLO" "HTTP ${CODIGO_ARTICULO} - $(resumir_cuerpo)"
+  fi
 fi
 
 # ----- Paso 5: Consultar el chat -----
@@ -306,6 +352,20 @@ if [[ "${CODIGO_CHAT}" == "200" ]]; then
   imprimir_resultado "5. Consultar chat" "OK" "HTTP 200 (respuesta recibida del asistente)"
 else
   imprimir_resultado "5. Consultar chat" "FALLO" "HTTP ${CODIGO_CHAT} - $(resumir_cuerpo)"
+fi
+
+# ----- Paso 6: Optimizar ruta de la lista -----
+CUERPO_RUTA="$(printf '{"lista_id":"%s"}' "${LISTA_ID_DESTINO}")"
+CODIGO_RUTA="$(ejecutar_peticion "POST" "/api/v1/rutas/optimizar" "${CUERPO_RUTA}" "enviar")"
+
+if [[ "${USA_UUID_RESPALDO}" -eq 1 ]]; then
+  imprimir_resultado "6. Optimizar ruta" "NO CONCLUYENTE (UUID de respaldo)" \
+    "HTTP ${CODIGO_RUTA} (${MOTIVO_RESPALDO}) - $(resumir_cuerpo)"
+elif [[ "${CODIGO_RUTA}" == "200" ]]; then
+  RESUMEN_RUTA="$(extraer_campo_json "resumen_ruta")"
+  imprimir_resultado "6. Optimizar ruta" "OK" "HTTP 200 (${RESUMEN_RUTA})"
+else
+  imprimir_resultado "6. Optimizar ruta" "FALLO" "HTTP ${CODIGO_RUTA} - $(resumir_cuerpo)"
 fi
 
 printf "=== Fin del recorrido MVP ===\n"

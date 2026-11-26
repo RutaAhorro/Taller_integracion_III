@@ -251,6 +251,68 @@ type Disponibilidad struct {
 }
 
 // =============================================================================
+// Contrato de precios comparables con Catálogo (SUP-317 / optimización)
+// =============================================================================
+
+// ConsultaPreciosComparables es el cuerpo que Motor envía a Catálogo para
+// obtener sucursales candidatas y ofertas equivalentes por EAN dentro del radio.
+type ConsultaPreciosComparables struct {
+	ProductoIDs      []string `json:"producto_ids"`
+	Lat              float64  `json:"lat"`
+	Lon              float64  `json:"lon"`
+	RadioKm          float64  `json:"radio_km"`
+	MaximoSucursales int      `json:"maximo_sucursales"`
+}
+
+// SucursalCandidata es una tienda física y activa dentro del radio informado
+// por Catálogo.
+type SucursalCandidata struct {
+	SucursalID  int     `json:"sucursal_id"`
+	Nombre      string  `json:"nombre"`
+	Cadena      string  `json:"cadena"`
+	Lat         float64 `json:"lat"`
+	Lon         float64 `json:"lon"`
+	DistanciaKm float64 `json:"distancia_km"`
+}
+
+// OfertaComparable es una oferta concreta devuelta por Catálogo para un
+// producto de la lista en una sucursal candidata. Precio y EnStock pueden ser
+// nil cuando la captura no es vigente o no trae dato.
+type OfertaComparable struct {
+	ProductoIDOferta string   `json:"producto_id_oferta"`
+	SucursalID       int      `json:"sucursal_id"`
+	Cadena           string   `json:"cadena"`
+	Sucursal         string   `json:"sucursal"`
+	Nombre           string   `json:"nombre"`
+	Unidad           string   `json:"unidad"`
+	Precio           *float64 `json:"precio"`
+	EnStock          *bool    `json:"en_stock"`
+	EstadoPrecio     string   `json:"estado_precio"`
+}
+
+// ProductoPreciosComparable agrupa las ofertas vigentes de un producto pedido.
+type ProductoPreciosComparable struct {
+	ProductoID string             `json:"producto_id"`
+	Estado     string             `json:"estado"`
+	Ofertas    []OfertaComparable `json:"ofertas"`
+}
+
+// RespuestaPreciosComparables reúne sucursales candidatas, ofertas por producto
+// y productos sin ofertas en el radio.
+type RespuestaPreciosComparables struct {
+	Sucursales []SucursalCandidata         `json:"sucursales"`
+	Productos  []ProductoPreciosComparable `json:"productos"`
+	SinOfertas []string                    `json:"sin_ofertas"`
+}
+
+// CatalogoPrecios consulta precios comparables por sucursal en Catálogo.
+// Se declara separada de Catalogo para que los tests de listas/artículos no
+// necesiten implementar esta consulta.
+type CatalogoPrecios interface {
+	ConsultarPreciosComparables(contexto context.Context, consulta ConsultaPreciosComparables) (RespuestaPreciosComparables, error)
+}
+
+// =============================================================================
 // Normalización
 // =============================================================================
 

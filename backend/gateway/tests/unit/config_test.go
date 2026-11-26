@@ -41,7 +41,7 @@ func TestCargarValoresPorDefecto(prueba *testing.T) {
 		len(configuracion.ProxiesFiables) != 0 {
 		prueba.Fatalf("valores por defecto inesperados: %+v", configuracion)
 	}
-	if len(configuracion.PrefijosCatalogo) != 2 || len(configuracion.PrefijosIdentidad) != 3 || len(configuracion.PrefijosRutas) != 1 ||
+	if len(configuracion.PrefijosCatalogo) != 2 || len(configuracion.PrefijosIdentidad) != 3 || len(configuracion.PrefijosRutas) != 2 ||
 		len(configuracion.PrefijosScraping) != 2 || len(configuracion.PrefijosIA) != 1 {
 		prueba.Fatalf("prefijos por defecto inesperados: %+v", configuracion)
 	}

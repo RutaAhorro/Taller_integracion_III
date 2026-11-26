@@ -14,14 +14,21 @@
 //	RUTAS_MAX_LISTAS      listas máximas por usuario, 1–1000 (por defecto 100)
 //	CATALOGO_INTERNAL_URL origen interno de Catálogo, sin ruta (obligatoria)
 //	CATALOGO_CONSULTA_TOKEN token de la consulta de disponibilidad (obligatorio, ≥ 32 bytes)
-//	RUTAS_CATALOGO_TIMEOUT plazo por consulta a Catálogo (por defecto 2s, máximo 30s)
+//	RUTAS_CATALOGO_TIMEOUT plazo por consulta a Catálogo (por defecto 5s, máximo 30s)
+//	RUTAS_RADIO_KM        radio de búsqueda de sucursales en km, (0, 50] (por defecto 10)
+//	RUTAS_MAX_SUCURSALES  máximo de sucursales candidatas, 1–10 (por defecto 10)
+//	RUTAS_MAX_PARADAS     máximo de paradas en una ruta, 1–3 (por defecto 3)
+//	RUTAS_MAX_ARTICULOS   máximo de artículos pendientes por cálculo, 1–100 (por defecto 30)
+//	RUTAS_FACTOR_DISTANCIA factor de corrección sobre Haversine, (0, 5] (por defecto 1.3)
+//	RUTAS_UMBRAL_AHORRO   ahorro mínimo en CLP para recomendar varias tiendas (por defecto 500)
 //
-// Los topes de artículos no son variables: son constantes de internal/listas
+// Los topes de artículos de listas no son variables: son constantes de internal/listas
 // (ver MaxArticulosPorLista y MaxEnvasesPorArticulo).
 package config
 
 import (
 	"errors"
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -33,9 +40,15 @@ import (
 // =============================================================================
 
 const (
-	largoMinimoSecreto  = 32               // bytes mínimos de JWT_SECRET y CATALOGO_CONSULTA_TOKEN
-	plazoMaximoCatalogo = 30 * time.Second // RUTAS_CATALOGO_TIMEOUT más largo aceptado
-	maximoTopes         = 1000             // RUTAS_MAX_LISTAS más alto aceptado
+	largoMinimoSecreto    = 32               // bytes mínimos de JWT_SECRET y CATALOGO_CONSULTA_TOKEN
+	plazoMaximoCatalogo   = 30 * time.Second // RUTAS_CATALOGO_TIMEOUT más largo aceptado
+	maximoTopes           = 1000             // RUTAS_MAX_LISTAS más alto aceptado
+	radioMaximoKm         = 50.0             // tope alineado con CATALOGO_MAX_RADIO_KM por defecto
+	maximoSucursalesTope  = 10               // tope de Catálogo precios-comparables
+	maximoParadasTope     = 3                // límite práctico del algoritmo de fuerza bruta
+	maximoArticulosRuta   = 100              // alineado con MaxArticulosPorLista
+	factorDistanciaMaximo = 5.0              // factor máximo razonable sobre línea recta
+	umbralAhorroMaximo    = 1000000          // cota defensiva en CLP
 )
 
 // =============================================================================
@@ -54,6 +67,13 @@ type Config struct {
 	CatalogoURL   string        // origen interno de Catálogo ("http://catalogo:8080")
 	CatalogoToken string        // Bearer de la consulta de disponibilidad (no registrar)
 	CatalogoPlazo time.Duration // timeout de cada consulta a Catálogo
+
+	RadioKm         float64 // RUTAS_RADIO_KM: radio de búsqueda en km
+	MaxSucursales   int     // RUTAS_MAX_SUCURSALES: sucursales candidatas pedidas a Catálogo
+	MaxParadas      int     // RUTAS_MAX_PARADAS: paradas máximas en la ruta
+	MaxArticulos    int     // RUTAS_MAX_ARTICULOS: artículos pendientes máximos por cálculo
+	FactorDistancia float64 // RUTAS_FACTOR_DISTANCIA: corrección sobre Haversine
+	UmbralAhorro    int     // RUTAS_UMBRAL_AHORRO: ahorro mínimo en CLP (RN-08)
 }
 
 // =============================================================================
@@ -132,9 +152,35 @@ func Cargar(buscarVariable func(string) (string, bool)) (Config, error) {
 	if configuracion.CatalogoToken == configuracion.JWTSecret {
 		return Config{}, errors.New("CATALOGO_CONSULTA_TOKEN debe ser distinto de JWT_SECRET")
 	}
-	configuracion.CatalogoPlazo, errorObtenido = time.ParseDuration(leerVariable("RUTAS_CATALOGO_TIMEOUT", "2s"))
+	configuracion.CatalogoPlazo, errorObtenido = time.ParseDuration(leerVariable("RUTAS_CATALOGO_TIMEOUT", "5s"))
 	if errorObtenido != nil || configuracion.CatalogoPlazo <= 0 || configuracion.CatalogoPlazo > plazoMaximoCatalogo {
 		return Config{}, errors.New("RUTAS_CATALOGO_TIMEOUT debe ser una duración positiva de hasta 30s")
+	}
+
+	// --- Optimización de rutas (MVP) -----------------------------------------
+	configuracion.RadioKm, errorObtenido = decimalPositivo(leerVariable("RUTAS_RADIO_KM", "10"), radioMaximoKm)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_RADIO_KM debe ser un número positivo de hasta 50")
+	}
+	configuracion.MaxSucursales, errorObtenido = entero(leerVariable("RUTAS_MAX_SUCURSALES", "10"), 1, maximoSucursalesTope)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_MAX_SUCURSALES debe estar entre 1 y 10")
+	}
+	configuracion.MaxParadas, errorObtenido = entero(leerVariable("RUTAS_MAX_PARADAS", "3"), 1, maximoParadasTope)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_MAX_PARADAS debe estar entre 1 y 3")
+	}
+	configuracion.MaxArticulos, errorObtenido = entero(leerVariable("RUTAS_MAX_ARTICULOS", "30"), 1, maximoArticulosRuta)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_MAX_ARTICULOS debe estar entre 1 y 100")
+	}
+	configuracion.FactorDistancia, errorObtenido = decimalPositivo(leerVariable("RUTAS_FACTOR_DISTANCIA", "1.3"), factorDistanciaMaximo)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_FACTOR_DISTANCIA debe ser un número positivo de hasta 5")
+	}
+	configuracion.UmbralAhorro, errorObtenido = entero(leerVariable("RUTAS_UMBRAL_AHORRO", "500"), 0, umbralAhorroMaximo)
+	if errorObtenido != nil {
+		return Config{}, errors.New("RUTAS_UMBRAL_AHORRO debe estar entre 0 y 1000000")
 	}
 
 	return configuracion, nil
@@ -143,6 +189,19 @@ func Cargar(buscarVariable func(string) (string, bool)) (Config, error) {
 // =============================================================================
 // Validaciones auxiliares
 // =============================================================================
+
+// decimalPositivo convierte texto a número real estricto (sin espacios) y exige
+// que sea finito, mayor que 0 y menor o igual a maximo.
+func decimalPositivo(crudo string, maximo float64) (float64, error) {
+	if crudo == "" || strings.TrimSpace(crudo) != crudo {
+		return 0, errors.New("formato decimal inválido")
+	}
+	numero, errorObtenido := strconv.ParseFloat(crudo, 64)
+	if errorObtenido != nil || math.IsNaN(numero) || math.IsInf(numero, 0) || numero <= 0 || numero > maximo {
+		return 0, errors.New("fuera de rango")
+	}
+	return numero, nil
+}
 
 // entero convierte texto a número exigiendo solo dígitos (rechaza "+5", "-1",
 // " 5") y que el resultado esté entre minimo y maximo, ambos incluidos.

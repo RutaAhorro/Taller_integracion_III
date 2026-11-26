@@ -73,10 +73,20 @@ func ejecutar(log *slog.Logger) error {
 	defer pool.Close()
 
 	// --- 3. Servidor HTTP --------------------------------------------------------
+	clienteCatalogo := listas.NuevoClienteCatalogo(configuracion.CatalogoURL, configuracion.CatalogoToken, configuracion.CatalogoPlazo)
 	manejadorHTTP := httpapi.Nuevo(httpapi.Opciones{
-		Repo:         listas.NuevoPostgres(pool),
-		Carritos:     listas.NuevoPostgres(pool),
-		Catalogo:     listas.NuevoClienteCatalogo(configuracion.CatalogoURL, configuracion.CatalogoToken, configuracion.CatalogoPlazo),
+		Repo:     listas.NuevoPostgres(pool),
+		Carritos: listas.NuevoPostgres(pool),
+		Catalogo: clienteCatalogo,
+		Precios:  clienteCatalogo,
+		Optimizacion: httpapi.OpcionesOptimizacion{
+			RadioKm:         configuracion.RadioKm,
+			MaxSucursales:   configuracion.MaxSucursales,
+			MaxParadas:      configuracion.MaxParadas,
+			MaxArticulos:    configuracion.MaxArticulos,
+			FactorDistancia: configuracion.FactorDistancia,
+			UmbralAhorro:    configuracion.UmbralAhorro,
+		},
 		JWTSecret:    configuracion.JWTSecret,
 		OrigenesCORS: configuracion.OrigenesCORS,
 		MaxListas:    configuracion.MaxListas,

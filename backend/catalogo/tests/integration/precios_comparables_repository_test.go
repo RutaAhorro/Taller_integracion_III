@@ -49,7 +49,7 @@ func TestPreciosComparablesRepositorioUsaIndiceGeoespacial(prueba *testing.T) {
 		"Casa Matriz / Online",
 		"ST_DWithin(",
 		"ST_MakePoint(ss.lon, ss.lat)",
-		"4326)::geography",
+		"4326)::public.geography",
 		"ST_Distance(",
 		"distancia_km",
 		"ORDER BY distancia_km ASC",

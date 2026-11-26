@@ -32,6 +32,7 @@ type Asignacion struct {
 // mejorOferta es la oferta más barata de un artículo en una sucursal.
 type mejorOferta struct {
 	productoIDOferta string
+	nombre           string
 	precio           int
 }
 
@@ -125,6 +126,7 @@ func asignarEnConjunto(conjunto []Sucursal, cubribles []Articulo, ofertas map[st
 		alternativa.Compras[elegidaID] = append(alternativa.Compras[elegidaID], ArticuloAsignado{
 			ProductoID:       articulo.ProductoID,
 			ProductoIDOferta: elegida.productoIDOferta,
+			Nombre:           elegida.nombre,
 			Cantidad:         articulo.Cantidad,
 			PrecioUnitario:   elegida.precio,
 			Subtotal:         subtotal,
@@ -204,7 +206,7 @@ func mejoresOfertas(ofertas []Oferta, articulos []Articulo, sucursales map[int]S
 		actual, existe := porSucursal[oferta.SucursalID]
 		if !existe || oferta.Precio < actual.precio ||
 			(oferta.Precio == actual.precio && oferta.ProductoIDOferta < actual.productoIDOferta) {
-			porSucursal[oferta.SucursalID] = mejorOferta{productoIDOferta: oferta.ProductoIDOferta, precio: oferta.Precio}
+			porSucursal[oferta.SucursalID] = mejorOferta{productoIDOferta: oferta.ProductoIDOferta, nombre: oferta.Nombre, precio: oferta.Precio}
 		}
 	}
 	return resultado, nil

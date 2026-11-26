@@ -37,8 +37,12 @@ func TestConfigValida(prueba *testing.T) {
 		prueba.Fatalf("%+v", configuracion)
 	}
 	// La barra final del origen se quita para no duplicarla al armar la URL.
-	if configuracion.CatalogoURL != "http://catalogo:8080" || configuracion.CatalogoPlazo != 2*time.Second {
+	if configuracion.CatalogoURL != "http://catalogo:8080" || configuracion.CatalogoPlazo != 5*time.Second {
 		prueba.Fatalf("catálogo por defecto: %q %v", configuracion.CatalogoURL, configuracion.CatalogoPlazo)
+	}
+	if configuracion.RadioKm != 10 || configuracion.MaxSucursales != 10 || configuracion.MaxParadas != 3 ||
+		configuracion.MaxArticulos != 30 || configuracion.FactorDistancia != 1.3 || configuracion.UmbralAhorro != 500 {
+		prueba.Fatalf("parámetros de rutas por defecto: %+v", configuracion)
 	}
 }
 
@@ -73,6 +77,18 @@ func TestConfigRechazaSinExponerSecretos(prueba *testing.T) {
 		{"RUTAS_CATALOGO_TIMEOUT", "0s"},
 		{"RUTAS_CATALOGO_TIMEOUT", "31s"},
 		{"RUTAS_CATALOGO_TIMEOUT", "dos"},
+		{"RUTAS_RADIO_KM", "0"},
+		{"RUTAS_RADIO_KM", "51"},
+		{"RUTAS_RADIO_KM", "NaN"},
+		{"RUTAS_MAX_SUCURSALES", "0"},
+		{"RUTAS_MAX_SUCURSALES", "11"},
+		{"RUTAS_MAX_PARADAS", "0"},
+		{"RUTAS_MAX_PARADAS", "4"},
+		{"RUTAS_MAX_ARTICULOS", "0"},
+		{"RUTAS_MAX_ARTICULOS", "101"},
+		{"RUTAS_FACTOR_DISTANCIA", "0"},
+		{"RUTAS_FACTOR_DISTANCIA", "5.5"},
+		{"RUTAS_UMBRAL_AHORRO", "-1"},
 	}
 	for _, caso := range casos {
 		_, errorObtenido := config.Cargar(entorno(map[string]string{caso[0]: caso[1]}))

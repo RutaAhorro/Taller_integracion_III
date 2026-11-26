@@ -40,6 +40,7 @@ func TestEnrutamientoPorDominio(prueba *testing.T) {
 		{"/api/v1/admin/productos", "catalogo"}, {"/api/v1/admin/productos/", "catalogo"},
 		// Motor de rutas.
 		{"/api/v1/listas", "rutas"}, {"/api/v1/listas/", "rutas"}, {"/api/v1/listas/0b9d0c1e-1111-4111-8111-111111111111", "rutas"},
+		{"/api/v1/rutas", "rutas"}, {"/api/v1/rutas/optimizar", "rutas"},
 		// IA conversacional.
 		{"/api/v1/chat", "ia"}, {"/api/v1/chat/", "ia"},
 		// Control de scraping, incluida su salud.
@@ -50,7 +51,7 @@ func TestEnrutamientoPorDominio(prueba *testing.T) {
 		{"/api/v1/authentication", ""}, {"/api/v1/auth-falso", ""}, {"/api/v1/admin/usuarios-falso", ""},
 		{"/api/v1/usuarios/me/direccionesx", ""}, {"/api/v1/usuarios/me", ""}, {"/api/v1/usuarios", ""}, {"/api/v1/usuarios/me/direcciones-falsas", ""},
 		{"/api/v1/productos-falso", ""}, {"/api/v1/admin/productos-falso", ""},
-		{"/api/v1/listas-falsas", ""}, {"/api/v1/listasx", ""},
+		{"/api/v1/listas-falsas", ""}, {"/api/v1/listasx", ""}, {"/api/v1/rutas-falsas", ""}, {"/api/v1/rutasx", ""},
 		{"/api/v1/chat-falso", ""}, {"/api/v1/chatx", ""}, {"/api/v1/scrapertools", ""},
 		{"/_identidad/ready", ""}, {"/_catalogo/ready", ""}, {"/_rutas/ready", ""},
 		{"/_scraping/ready", ""}, {"/_scraping/live", ""}, {"/api/v1/inexistente", ""},
@@ -69,6 +70,7 @@ func TestDominiosOpcionalesSinOrigenResponden404(prueba *testing.T) {
 		{ruta: "/api/v1/auth/me", estado: http.StatusNotFound},
 		{ruta: "/api/v1/productos", estado: http.StatusNotFound},
 		{ruta: "/api/v1/listas", estado: http.StatusNotFound},
+		{ruta: "/api/v1/rutas/optimizar", estado: http.StatusNotFound},
 		{ruta: "/api/v1/chat", estado: http.StatusNotFound},
 	})
 	respuesta, errorPeticion := http.Head(pasarela.URL + "/api/v1/inexistente")
