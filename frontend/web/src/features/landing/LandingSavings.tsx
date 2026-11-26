@@ -24,7 +24,7 @@ export function LandingSavings() {
                 </li>
               ))}
             </ul>
-            <Link className={buttonVariants({ size: 'lg' }) + ' w-full sm:w-auto'} to="/login" state={{ tab: 'signup' }}>
+            <Link className={buttonVariants({ size: 'lg' }) + ' w-full sm:w-auto'} to="/login">
               Quiero ver mi ahorro <ArrowRight className="ml-2 w-4 h-4" />
             </Link>
           </div>

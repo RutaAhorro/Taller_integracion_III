@@ -469,6 +469,8 @@ test("la página conserva lista al volver y la ruta sigue bajo ProtectedRoute", 
     router,
     /element: <ProtectedRoute \/>[\s\S]*path: ROUTES\.RUTA,[\s\S]*element: <RutaLista \/>/,
   );
+  // Un merge con la antigua pantalla no debe reintroducir el archivo retirado y romper Vite.
+  assert.doesNotMatch(router, /@\/pages\/RouteViewer/);
   const listasFuente = await readFile(
     new URL("../src/features/listas/ShoppingLists.tsx", import.meta.url),
     "utf8",

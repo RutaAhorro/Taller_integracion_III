@@ -11,15 +11,13 @@ export function LandingCTA() {
           
           <h2 className="font-['Fraunces'] text-[1.75rem] md:text-[clamp(1.75rem,3vw,2.4rem)] mb-[0.875rem] relative text-primary-foreground font-bold">Tu hogar merece compras más inteligentes</h2>
           <p className="text-[1rem] opacity-85 mb-[2rem] max-w-[560px] mx-auto relative leading-[1.6]">
-            Crea tu cuenta gratis y descubre cuánto puedes ahorrar esta semana.
-            Sin tarjetas, sin compromisos.
+            Inicia sesión con Google y descubre cuánto puedes ahorrar esta semana. Sin tarjetas, sin compromisos.
           </p>
           <div className="relative flex flex-col md:flex-row gap-[0.875rem] justify-center flex-wrap">
             <Link
               className={buttonVariants({ size: "lg" }) + " w-full md:w-auto bg-secondary text-secondary-foreground hover:bg-secondary/90"}
               to="/login"
-              state={{ tab: "signup" }}
-            >Crear cuenta gratis</Link>
+            >Iniciar sesión con Google</Link>
             <Link
               className={buttonVariants({ variant: "outline", size: "lg" }) + " w-full md:w-auto !bg-transparent !text-white !border-white/40 hover:!bg-white/10"}
               to="/dashboard"

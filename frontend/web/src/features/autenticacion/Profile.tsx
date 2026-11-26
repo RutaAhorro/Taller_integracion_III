@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { User, ShieldAlert, Zap, Settings, Key } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Link, Navigate } from 'react-router-dom';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/features/autenticacion/useAuth';
 import { PLAN_PREMIUM } from '@/features/autenticacion/tipos';
 
@@ -67,9 +67,6 @@ export default function Profile() {
                                             <ShieldAlert className="h-4 w-4" /> Cuota informada: {user.cuota_tokens_ia} consultas IA
                                         </p>
                                         <p className="text-sm text-primary-foreground/80">{user.correo}</p>
-                                        <Link to="/planes" className="mt-4 inline-block bg-white text-primary px-4 py-2 rounded-full text-xs font-bold hover:bg-primary transition-colors hover:text-primary-foreground border-2 border-transparent hover:border-white shadow-sm">
-                                            {esPremium ? 'Administrar Suscripción' : 'Ver Planes y Mejorar'}
-                                        </Link>
                                     </div>
                                 </section>
 
