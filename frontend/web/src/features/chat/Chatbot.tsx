@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '@/features/catalogo/CartContext';
 import { formatPrice } from '@/features/catalogo/formatters';
+import { slugifyMarket } from '@/features/catalogo/products-api';
 import { type UiProduct } from '@/features/catalogo/tipos';
 import { useChatbot, type ProductoRecomendadoChat } from '@/features/chat/useChatbot';
 import { TypingIndicator } from '@/features/chat/TypingIndicator';
@@ -32,7 +33,7 @@ function aProductoCarrito(producto: ProductoRecomendadoChat): UiProduct {
     unit: producto.unidad,
     price: producto.precio,
     originalPrice: producto.precioNormal,
-    supermarketId: producto.supermercado.toLowerCase(),
+    supermarketId: slugifyMarket(producto.supermercado),
     supermarketName: producto.supermercado || undefined,
     inStock: producto.enStock,
   };
@@ -42,6 +43,7 @@ export default function Chatbot() {
   const navegar = useNavigate();
   const { addToCart } = useCart();
   const [mensajesExpandidos, setMensajesExpandidos] = useState<Record<string, boolean>>({});
+  const [imagenesRotas, setImagenesRotas] = useState<Record<string, boolean>>({});
 
   const {
     messages,
@@ -115,8 +117,18 @@ export default function Chatbot() {
                         {productosVisibles.map((producto) => (
                           <div key={producto.id} className="flex flex-col justify-between rounded-xl border-2 border-border bg-background p-3 shadow-[3px_3px_0px_var(--color-border)]">
                             <div className="flex items-start gap-2">
-                              {producto.urlImagen ? (
-                                <img src={producto.urlImagen} alt={producto.nombre} className="h-12 w-12 shrink-0 object-contain" />
+                              {producto.urlImagen && !imagenesRotas[producto.id] ? (
+                                <img
+                                  src={producto.urlImagen}
+                                  alt={producto.nombre}
+                                  className="h-12 w-12 shrink-0 object-contain"
+                                  onError={() =>
+                                    setImagenesRotas((anteriores) => ({
+                                      ...anteriores,
+                                      [producto.id]: true,
+                                    }))
+                                  }
+                                />
                               ) : (
                                 <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-muted">
                                   <Package className="h-6 w-6 text-muted-foreground" />
