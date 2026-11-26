@@ -12,6 +12,7 @@ on:
       - 'backend/catalogo/**'
       - 'backend/gateway/**'
       - 'backend/motor_rutas/**'
+      - 'backend/ia_conversacional/**'
       - 'backend/bot_discord/**'
       - 'backend/scraper_go/**'
       - 'docker-compose.scraper-go.yml'
@@ -29,6 +30,7 @@ env:
   IMAGE_NAME_SCRAPER_GO: ${{ github.repository }}-scraper-go
   IMAGE_NAME_GATEWAY: ${{ github.repository }}-gateway
   IMAGE_NAME_MOTOR_RUTAS: ${{ github.repository }}-motor-rutas
+  IMAGE_NAME_IA_CONVERSACIONAL: ${{ github.repository }}-ia-conversacional
 
 jobs:
   build-and-push:
@@ -235,3 +237,22 @@ jobs:
           push: true
           tags: ${{ steps.meta-bot.outputs.tags }}
           labels: ${{ steps.meta-bot.outputs.labels }}
+
+      # ==== BUILD IA CONVERSACIONAL ====
+      - name: Extract metadata for IA Conversacional
+        id: meta-ia-conversacional
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_IA_CONVERSACIONAL }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=sha
+
+      - name: Build and push IA Conversacional image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/ia_conversacional
+          push: true
+          tags: ${{ steps.meta-ia-conversacional.outputs.tags }}
+          labels: ${{ steps.meta-ia-conversacional.outputs.labels }}
