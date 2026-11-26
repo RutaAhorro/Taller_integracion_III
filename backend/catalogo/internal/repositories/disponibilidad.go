@@ -37,10 +37,10 @@ func (repositorio *RepositorioDisponibilidad) ConsultarPorIDs(contexto context.C
 		Joins(`LEFT JOIN LATERAL (
 			SELECT precio_normal, precio_oferta, esta_disponible, capturado_el
 			FROM scraper.capturas_precios
-			WHERE producto_crudo_id = pc.id
+			WHERE producto_crudo_id = pc.id AND precio_normal >= ?
 			ORDER BY capturado_el DESC
 			LIMIT 1
-		) cp ON true`).
+		) cp ON true`, domain.PrecioMinimoValido).
 		Where("pc.id = ANY(?::uuid[])", pq.Array(productoIDs)).
 		Select(`
 			pc.id::text AS producto_id,

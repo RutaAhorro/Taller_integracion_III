@@ -131,9 +131,10 @@ func (servicio *ServicioDisponibilidad) construirItem(productoID string, registr
 		},
 	}
 
-	if registro.CapturadoEl == nil {
+	if registro.CapturadoEl == nil || !precioNormalValido(registro.PrecioNormal) {
 		item.EstadoProducto = domain.EstadoProductoDesconocido
 		item.EstadoPrecio = domain.EstadoPrecioSinCaptura
+		item.CapturadoEl = nil
 		return item
 	}
 
@@ -165,6 +166,12 @@ func (servicio *ServicioDisponibilidad) construirItem(productoID string, registr
 }
 
 // ===== Reglas =====
+
+// precioNormalValido comprueba que la captura tenga un precio_normal presente
+// y al menos igual a PrecioMinimoValido para no publicar precios basura.
+func precioNormalValido(precioNormal *float64) bool {
+	return precioNormal != nil && *precioNormal >= domain.PrecioMinimoValido
+}
 
 // precioEfectivo replica la regla del catálogo público: se muestra la oferta
 // cuando existe y, si no, el precio normal.

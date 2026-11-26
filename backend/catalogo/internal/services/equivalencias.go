@@ -169,8 +169,9 @@ func (servicio *ServicioEquivalencias) construirOferta(registro domain.ProductoE
 		Unidad:           strings.TrimSpace(registro.Formato),
 		CapturadoEl:      registro.CapturadoEl,
 	}
-	if registro.CapturadoEl == nil {
+	if registro.CapturadoEl == nil || !precioNormalValido(registro.PrecioNormal) {
 		oferta.EstadoPrecio = domain.EstadoPrecioSinCaptura
+		oferta.CapturadoEl = nil
 		return oferta
 	}
 

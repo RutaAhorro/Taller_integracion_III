@@ -51,10 +51,10 @@ func (repositorio *RepositorioEquivalencias) ConsultarPorIDs(contexto context.Co
 		Joins(`LEFT JOIN LATERAL (
 			SELECT precio_normal, precio_oferta, esta_disponible, capturado_el
 			FROM scraper.capturas_precios
-			WHERE producto_crudo_id = pc.id
+			WHERE producto_crudo_id = pc.id AND precio_normal >= ?
 			ORDER BY capturado_el DESC
 			LIMIT 1
-		) cp ON true`).
+		) cp ON true`, domain.PrecioMinimoValido).
 		Where(`pc.id = ANY(?::uuid[]) OR (`+eanCanonicoProducto+` <> '00000000000000' AND `+eanCanonicoProducto+` IN (
 			SELECT `+eanCanonicoSolicitado+`
 			FROM scraper.productos_crudos solicitado
