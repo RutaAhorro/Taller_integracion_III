@@ -10,6 +10,7 @@ reintentar.
 import asyncio
 import logging
 import random
+import re
 from collections.abc import Awaitable, Callable
 from typing import TypeVar
 
@@ -25,8 +26,23 @@ logger = logging.getLogger(__name__)
 # 429 = cuota, 5xx = servidor caído o sobrecargado (a veces transitorio).
 CODIGOS_HTTP_RECUPERABLES = {429, 500, 502, 503, 504}
 FACTOR_BACKOFF = 2
+PATRON_PARAMETRO_CLAVE = re.compile(r"([?&]key=)[^&\s'\"]+")
 
 Resultado = TypeVar("Resultado")
+
+
+# ===== Utilidades de registro =====
+
+
+def _formatear_error_seguro(error: Exception | None) -> str:
+    """Devuelve tipo y detalle del error sin exponer parámetros `key=` en URLs."""
+    if error is None:
+        return "ErrorDesconocido"
+    tipo_error = type(error).__name__
+    detalle_sanitizado = PATRON_PARAMETRO_CLAVE.sub(r"\1***", str(error)).strip()
+    if not detalle_sanitizado:
+        return tipo_error
+    return f"{tipo_error}: {detalle_sanitizado}"
 
 
 # ===== Proveedor de respaldo =====
@@ -78,11 +94,12 @@ class FallbackProveedor(ProveedorIA):
             try:
                 return await operacion()
             except Exception as error:
+                detalle_error = _formatear_error_seguro(error)
                 if not self._es_error_recuperable(error):
-                    logger.warning("Error no recuperable en %s: %s", proveedor.nombre, error)
+                    logger.warning("Error no recuperable en %s: %s", proveedor.nombre, detalle_error)
                     raise
                 if intento == reintentos:
-                    logger.error("%s falló tras %d intentos: %s", proveedor.nombre, reintentos + 1, error)
+                    logger.error("%s falló tras %d intentos: %s", proveedor.nombre, reintentos + 1, detalle_error)
                     raise
                 espera = self.espera_base * (FACTOR_BACKOFF**intento) + random.uniform(0, self.variacion_maxima)
                 logger.info(
@@ -90,7 +107,7 @@ class FallbackProveedor(ProveedorIA):
                     proveedor.nombre,
                     intento + 1,
                     reintentos + 1,
-                    error,
+                    detalle_error,
                     espera,
                 )
                 await asyncio.sleep(espera)
@@ -112,7 +129,9 @@ class FallbackProveedor(ProveedorIA):
                 ultimo_error = error
                 logger.warning("%s falló definitivamente, pasando al siguiente...", proveedor.nombre)
 
-        return ResultadoExtraccion(error=f"Todos los proveedores fallaron. Último error: {ultimo_error}")
+        return ResultadoExtraccion(
+            error=f"Todos los proveedores fallaron. Último error: {_formatear_error_seguro(ultimo_error)}"
+        )
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
         """Devuelve la primera explicación no vacía; lanza RuntimeError si ningún proveedor la logra."""
@@ -132,4 +151,6 @@ class FallbackProveedor(ProveedorIA):
                 ultimo_error = error
                 logger.warning("%s falló generando explicación, pasando al siguiente...", proveedor.nombre)
 
-        raise RuntimeError(f"Todos los proveedores fallaron al generar explicación. Último error: {ultimo_error}")
+        raise RuntimeError(
+            f"Todos los proveedores fallaron al generar explicación. Último error: {_formatear_error_seguro(ultimo_error)}"
+        )

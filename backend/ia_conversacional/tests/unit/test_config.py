@@ -236,3 +236,9 @@ def test_validar_configuracion_advertencia_gemini_endpoint_vs_modelo(monkeypatch
     with caplog.at_level("WARNING"):
         config.validar_configuracion()
     assert "esta configurado explicitamente y anula a GEMINI_MODEL" in caplog.text
+
+
+def test_defaults_modelos_groq_actualizados():
+    """Verifica que los modelos por defecto de Groq usen los vigentes de OpenAI OSS."""
+    assert config.GROQ_MODEL_EXTRACCION == "openai/gpt-oss-20b"
+    assert config.GROQ_MODEL_EXPLICACION == "openai/gpt-oss-120b"

@@ -100,8 +100,9 @@ CATALOGO_CONSULTA_TOKEN = os.getenv("CATALOGO_CONSULTA_TOKEN", "").strip() or No
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_ENDPOINT = _leer_env_str("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
-GROQ_MODEL_EXTRACCION = _leer_env_str("GROQ_MODEL_EXTRACCION", "llama-3.1-8b-instant")
-GROQ_MODEL_EXPLICACION = _leer_env_str("GROQ_MODEL_EXPLICACION", "llama-3.3-70b-versatile")
+# Groq retiró llama-3.1-8b-instant y llama-3.3-70b-versatile el 16-ago-2026.
+GROQ_MODEL_EXTRACCION = _leer_env_str("GROQ_MODEL_EXTRACCION", "openai/gpt-oss-20b")
+GROQ_MODEL_EXPLICACION = _leer_env_str("GROQ_MODEL_EXPLICACION", "openai/gpt-oss-120b")
 GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 6.0)
 GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 512)
 GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 200)

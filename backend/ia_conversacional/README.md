@@ -201,8 +201,8 @@ Sin ninguna clave el servicio arranca con una advertencia, y el chat responde 50
 | `IA_CATALOGO_PAGE_LIMIT` | `100` | Productos por página pedidos a Catálogo. |
 | `IA_CATALOGO_MAX_PAGINAS` | `10` | Páginas máximas; si hay más, se registra el truncado. |
 | `GROQ_ENDPOINT` | `https://api.groq.com/openai/v1/chat/completions` | Endpoint de Groq. |
-| `GROQ_MODEL_EXTRACCION` | `llama-3.1-8b-instant` | Modelo Groq de la etapa 1. |
-| `GROQ_MODEL_EXPLICACION` | `llama-3.3-70b-versatile` | Modelo Groq de la etapa 3. |
+| `GROQ_MODEL_EXTRACCION` | `openai/gpt-oss-20b` | Modelo Groq de la etapa 1. |
+| `GROQ_MODEL_EXPLICACION` | `openai/gpt-oss-120b` | Modelo Groq de la etapa 3. |
 | `IA_GROQ_TIMEOUT` | `15.0` | Timeout (s) hacia Groq. |
 | `IA_GROQ_MAX_TOKENS_EXTRACCION` | `512` | Tokens de salida, etapa 1. |
 | `IA_GROQ_MAX_TOKENS_EXPLICACION` | `200` | Tokens de salida, etapa 3. |
