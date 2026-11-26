@@ -12,7 +12,6 @@ import {
   Bot,
   Map,
   Home,
-  ChefHat,
   type LucideIcon,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -43,11 +42,23 @@ const destacados = [
   { id: 'marcas', label: 'Marcas blancas', icon: Tag },
 ]
 
+const CATEGORIA_OCULTA = 'scraped category'
+
 const enlacesHerramientas = [
   { to: '/chat', label: 'Chat Inteligente', icon: Bot },
-  { to: '/history', label: 'Listas y Rutas', icon: Map },
-  { to: '/recetas', label: 'Recetas IA', icon: ChefHat },
+  { to: '/listas', label: 'Listas y Rutas', icon: Map },
 ]
+
+// Oculta la categoría técnica sin alterar su valor original para el filtro.
+function esCategoriaVisible(categoria: string): boolean {
+  return categoria.trim().toLowerCase() !== CATEGORIA_OCULTA
+}
+
+// Mejora únicamente la etiqueta visible de una categoría del backend.
+function formatearEtiquetaCategoria(categoria: string): string {
+  const etiqueta = categoria.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1)
+}
 
 // Comparte los estilos de navegación sin duplicar la indicación de selección.
 const claseEnlaceNavegacion = (activo: boolean, pesoFuente: string) =>
@@ -106,6 +117,7 @@ export function SideBar({
   const referenciaBotonCerrar = useRef<HTMLButtonElement>(null)
   const navegar = useNavigate()
   const { pathname } = useLocation()
+  const categoriasVisibles = categorias.filter(esCategoriaVisible)
 
   // Carga una lista completa por montaje/reintento, sin repetirla al paginar
   // o abrir el panel. Cancela al salir para no aplicar respuestas tardías.
@@ -264,11 +276,11 @@ export function SideBar({
                 <button type="button" className="underline" onClick={() => setIntentoCategorias((anterior) => anterior + 1)}>Reintentar</button>
               </div>
             )}
-            {!cargandoCategorias && !errorCategorias && categorias.length === 0 && (
+            {!cargandoCategorias && !errorCategorias && categoriasVisibles.length === 0 && (
               <p className="px-2 text-sm text-muted-foreground">No hay categorías disponibles.</p>
             )}
             <ul className="flex flex-col gap-0.5">
-              {categorias.map((categoria) => {
+              {categoriasVisibles.map((categoria) => {
                 const seleccion = `${PREFIJO_CATEGORIA}${categoria}`
                 const activa = activeCategory === seleccion
                 return (
@@ -281,7 +293,7 @@ export function SideBar({
                         activa ? 'bg-accent text-primary font-bold' : 'text-muted-foreground hover:bg-accent hover:text-primary'
                       }`}
                     >
-                      {categoria}
+                      {formatearEtiquetaCategoria(categoria)}
                     </button>
                   </li>
                 )
