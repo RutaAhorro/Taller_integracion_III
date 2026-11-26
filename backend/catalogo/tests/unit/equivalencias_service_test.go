@@ -272,6 +272,61 @@ func TestEquivalenciasServiceIgnoraPrecioBajoMinimo(prueba *testing.T) {
 	}
 }
 
+// TestEquivalenciasServiceIgnoraFormatoGenericoUnidad comprueba que un marcador
+// genérico de unidad de venta ("1 un", "1 unidad", "Format") no bloquee la
+// equivalencia por EAN frente a un formato específico ("1 Kg"), mientras dos
+// formatos específicos distintos siguen reportando conflicto.
+func TestEquivalenciasServiceIgnoraFormatoGenericoUnidad(prueba *testing.T) {
+	momento := time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)
+	fresco := momento.Add(-1 * time.Hour)
+
+	arrozACuentaID := "00000000-0000-4000-8000-000000000031"
+	arrozCugatID := "00000000-0000-4000-8000-000000000032"
+	arrozSantaIsabelID := "00000000-0000-4000-8000-000000000033"
+
+	arrozACuenta := registroEquivalenciaBase(arrozACuentaID, 5, "A Cuenta")
+	arrozACuenta.CodigoEAN = referenciaCadena("7801420140139")
+	arrozACuenta.Formato = "1 Kg"
+	arrozACuenta.PrecioNormal = punteroDecimal(1690)
+	arrozACuenta.EnStock = punteroBooleano(true)
+	arrozACuenta.CapturadoEl = punteroFecha(fresco)
+
+	arrozCugat := registroEquivalenciaBase(arrozCugatID, 6, "Cugat")
+	arrozCugat.CodigoEAN = referenciaCadena("7801420140139")
+	arrozCugat.Formato = ""
+	arrozCugat.PrecioNormal = punteroDecimal(2390)
+	arrozCugat.EnStock = punteroBooleano(true)
+	arrozCugat.CapturadoEl = punteroFecha(fresco)
+
+	arrozSantaIsabel := registroEquivalenciaBase(arrozSantaIsabelID, 4, "Santa Isabel")
+	arrozSantaIsabel.CodigoEAN = referenciaCadena("7801420140139")
+	arrozSantaIsabel.Formato = "1 un"
+	arrozSantaIsabel.PrecioNormal = punteroDecimal(2570)
+	arrozSantaIsabel.EnStock = punteroBooleano(true)
+	arrozSantaIsabel.CapturadoEl = punteroFecha(fresco)
+
+	repositorio := &repositorioEquivalenciasDoble{registros: []domain.ProductoEquivalenciaRegistro{
+		arrozACuenta, arrozCugat, arrozSantaIsabel,
+	}}
+	servicio := services.NuevoServicioEquivalencias(repositorio,
+		services.LimitesEquivalencia{MaximoProductos: 10, AntiguedadMaxima: 48 * time.Hour}, relojFijo(momento))
+
+	respuesta, errorObtenido := servicio.Consultar(context.Background(), []string{arrozCugatID})
+	if errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	if len(respuesta.Productos) != 1 {
+		prueba.Fatalf("se esperaba 1 producto, se obtuvieron %d", len(respuesta.Productos))
+	}
+	item := respuesta.Productos[0]
+	if item.Estado != domain.EstadoEquivalenciaComparable {
+		prueba.Fatalf("estado = %q; esperado %q", item.Estado, domain.EstadoEquivalenciaComparable)
+	}
+	if len(item.Ofertas) != 3 {
+		prueba.Fatalf("se esperaban 3 ofertas comparables entre cadenas, se obtuvieron %d: %+v", len(item.Ofertas), item.Ofertas)
+	}
+}
+
 // TestEquivalenciasServicePropagaError verifica que un fallo de persistencia no
 // se transforme en una respuesta válida.
 func TestEquivalenciasServicePropagaError(prueba *testing.T) {
