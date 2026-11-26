@@ -40,6 +40,8 @@ corrige el documento.
 
 ## Operación
 
+- [Guía de despliegue del MVP en Kubernetes](DESPLIEGUE.md): orden de despliegue,
+  Secrets, migraciones en el clúster, OAuth de Google y presupuesto de cuota.
 - [Datos y permisos del backend](Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md): roles,
   propiedad de tablas y migraciones.
 - [Migraciones y orden de los scripts SQL](../infrastructure/db/README.md): no
