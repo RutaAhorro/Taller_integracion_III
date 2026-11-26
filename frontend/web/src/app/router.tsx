@@ -27,7 +27,7 @@ import Terms from '@/pages/Terms';
 // Vistas integradas o con estado explícito de no disponibilidad.
 import Chatbot from '@/features/chat/Chatbot';
 import Crowdsourcing from '@/pages/Crowdsourcing';
-import RouteViewer from '@/pages/RouteViewer';
+import RutaLista from '@/features/rutas/RutaLista';
 import History from '@/pages/History';
 import Planes from '@/pages/Planes';
 import AdminDashboard from '@/features/admin/AdminDashboard';
@@ -79,7 +79,7 @@ const enrutador = createBrowserRouter([
           },
           {
             path: ROUTES.RUTA,
-            element: <RouteViewer />,
+            element: <RutaLista />,
           },
           {
             path: ROUTES.HISTORIAL,

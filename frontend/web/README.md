@@ -15,8 +15,69 @@ Vite se utiliza para desarrollo y compilación.
   precio, cadena, acceso a `/producto/:id` y agregado directo al carrito.
 - Usar Node.js 22 actualizado (el Dockerfile utiliza `node:22-alpine`) y npm si
   se desarrolla fuera de Docker. Instalar las versiones del lockfile con `npm ci`.
-- No confundir una ruta disponible con un flujo integrado: misiones, rutas,
+- No confundir una ruta disponible con un flujo integrado: misiones,
   historial, planes y configuración inicial muestran avisos de no disponibilidad.
+
+## Recomendación de compra por lista
+
+En **Mis listas**, seleccionar una lista y pulsar **Calcular ruta** abre
+`/route?lista=<UUID>`, protegida por sesión. La pantalla consulta
+`POST /api/v1/rutas/optimizar` por Gateway, enviando solo `lista_id` y la cookie
+HttpOnly. Motor aplica el origen por defecto (centro de Temuco); no se pide
+geolocalización ni se envían claves o tokens internos desde el navegador.
+
+La recomendación muestra total de los artículos incluidos, ahorro frente a una
+sola tienda (o ausencia de comparación), distancia estimada con retorno al
+origen, paradas ordenadas y compra por sucursal. **No es un mapa ni un recorrido
+por calles y no incluye combustible.** Cada parada permite abrir su ubicación
+en Google Maps sin API key. Los artículos `no_cubiertos` se advierten como
+excluidos del total; sus nombres se consultan como complemento en el detalle de
+la lista y, si no se pueden recuperar, se conserva su identificador.
+
+Una sola parada puede tener ahorro cero; ahorro `null` significa que no hay
+base de una tienda, no que el ahorro sea cero. La pantalla distingue sesión
+vencida (401), lista ausente (404), restricciones o falta de cobertura (422),
+precios no disponibles (503) y errores de conexión. Recalcular no modifica la
+lista. El resultado es una instantánea: se debe recalcular si cambia la compra.
+
+### Desarrollo y pruebas sin backend
+
+`tests/fixtures/ruta-dos-paradas.json` reproduce el ejemplo de la sección 0 del
+[contrato vigente](../../docs/Contratos/CONTRATO_MOTOR_RUTAS.md). Las pruebas
+`tests/rutas.test.mjs` ejecutan el cliente, el hook y la presentación reales con
+HTTP controlado, incluyendo una parada, ahorro nulo, cobertura parcial y errores.
+
+```bash
+node --test tests/rutas.test.mjs
+npm run lint
+npx tsc -b --noEmit
+npm test
+```
+
+Los datos de ejemplo viven solo en pruebas: **no existe modo mock ni fallback
+ficticio en la aplicación**. Para pasar a datos reales, abrir la pantalla normal
+con una sesión y una lista guardada en el stack local. No se debe simular una
+sesión en el router para mostrar ejemplos.
+
+### Comprobación manual del recorrido
+
+1. Entrar con Google, agregar productos al carrito, confirmar el guardado y
+   abrir la lista de destino.
+2. Pulsar **Calcular ruta** y comprobar en Red un POST con `{ "lista_id": "…" }`
+   a `/api/v1/rutas/optimizar`; comparar importes, paradas y cobertura con su JSON.
+3. Volver a la lista, cambiar cantidades y recalcular: no debe reutilizar el
+   resultado anterior. Probar también recarga directa de la URL.
+4. Comprobar móvil, teclado y enlaces Google Maps. Probar una sola parada,
+   ausencia de base y artículos no cubiertos con respuestas controladas.
+5. Probar lista sin pendientes, lista inexistente, cookie expirada y servicio
+   caído: no deben aparecer paradas o ahorros de ejemplo.
+6. Con red lenta, cambiar de lista, salir o cambiar de cuenta: la respuesta
+   abandonada no debe reaparecer en la nueva vista.
+
+`scripts/demo/probar_ruta.sh` es una validación complementaria del endpoint local:
+crea una lista de prueba y muestra el JSON real; no contiene un fixture fijo.
+No ejecutarlo contra entornos compartidos. Estas instrucciones y las pruebas
+sin backend no acreditan una validación manual ni un despliegue.
 
 ## Verificación de correo: preparación visual (SUP-249, draft)
 

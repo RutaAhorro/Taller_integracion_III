@@ -1,6 +1,6 @@
 // Gestiona listas y artículos persistidos de la cuenta actual mediante Motor y Catálogo.
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/autenticacion/useAuth";
@@ -251,6 +251,7 @@ function ContenidoListas() {
 
 /** Consulta y edita una lista; comunica cambios al padre solo después de confirmarlos en la API. */
 function DetalleLista(propiedades: OpcionesDetalleLista) {
+  const navegar = useNavigate();
   const detalle = useDetalleLista(propiedades);
   const { lista, nombre, estado, cargando, guardando, error } = detalle;
   return (
@@ -321,6 +322,15 @@ function DetalleLista(propiedades: OpcionesDetalleLista) {
               </Button>
             </div>
           </form>
+          <Button
+            type="button"
+            disabled={guardando}
+            onClick={() =>
+              navegar(`${ROUTES.RUTA}?lista=${encodeURIComponent(lista.id)}`)
+            }
+          >
+            Calcular ruta
+          </Button>
           <Button
             type="button"
             variant="outline"

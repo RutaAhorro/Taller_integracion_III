@@ -1,0 +1,75 @@
+{
+  "estimado": true,
+  "origen": { "lat": -38.7359, "lon": -72.5904, "por_defecto": true },
+  "parametros": {
+    "factor_distancia": 1.3,
+    "max_paradas": 3,
+    "umbral_ahorro": 500,
+    "radio_km": 10
+  },
+  "ruta": {
+    "paradas": [
+      {
+        "orden": 1,
+        "sucursal_id": 5,
+        "nombre": "SuperBodega aCuenta Temuco Matta",
+        "cadena": "A Cuenta",
+        "lat": -38.7338383,
+        "lon": -72.5806422,
+        "subtotal": 2180,
+        "articulos": [
+          {
+            "producto_id": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+            "producto_id_oferta": "9b2e4c1a-7d3f-4e8a-b1c2-5f6a7b8c9d0e",
+            "nombre": "Arroz grado 1 1 kg",
+            "cantidad": 2,
+            "precio_unitario": 1090,
+            "subtotal": 2180
+          }
+        ]
+      },
+      {
+        "orden": 2,
+        "sucursal_id": 6,
+        "nombre": "Cugat Temuco Barros Arana",
+        "cadena": "Cugat",
+        "lat": -38.7385969,
+        "lon": -72.5813372,
+        "subtotal": 6490,
+        "articulos": [
+          {
+            "producto_id": "1a2b3c4d-5e6f-4a7b-8c9d-0e1f2a3b4c5d",
+            "producto_id_oferta": "7f8e9d0c-1b2a-4c3d-8e9f-0a1b2c3d4e5f",
+            "nombre": "Detergente líquido 3 L",
+            "cantidad": 1,
+            "precio_unitario": 6490,
+            "subtotal": 6490
+          }
+        ]
+      }
+    ],
+    "tramos": [
+      { "desde": "origen", "hasta": 5, "distancia_km": 1.14 },
+      { "desde": 5, "hasta": 6, "distancia_km": 0.69 },
+      { "desde": 6, "hasta": "origen", "distancia_km": 1.09 }
+    ],
+    "distancia_km": 2.92,
+    "costo_productos": 8670,
+    "costo_traslado": 0,
+    "total": 8670
+  },
+  "base_una_tienda": {
+    "sucursal_id": 6,
+    "nombre": "Cugat Temuco Barros Arana",
+    "cadena": "Cugat",
+    "total": 9590
+  },
+  "ahorro": 920,
+  "no_cubiertos": [
+    {
+      "producto_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9",
+      "motivo": "sin_oferta_en_radio"
+    }
+  ],
+  "candidatas_evaluadas": 6
+}
