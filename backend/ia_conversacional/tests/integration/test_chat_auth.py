@@ -135,10 +135,13 @@ def catalogo_fijo(monkeypatch):
         "obtener_todos",
         lambda: productos_normalizados,
     )
-    # Estas pruebas ejercitan la caché en memoria: la búsqueda dirigida se simula caída
-    # (None) para que el pipeline use esos productos. La búsqueda tiene sus propias
-    # pruebas en tests/unit/test_busqueda_catalogo.py.
-    monkeypatch.setattr(main.repositorio_productos, "buscar_productos", lambda *_argumentos, **_opciones: None)
+    # Estas pruebas ejercitan el pipeline con catálogo fijo: la búsqueda dirigida
+    # devuelve los mismos productos de prueba y el filtrado determinista decide.
+    monkeypatch.setattr(
+        main.repositorio_productos,
+        "buscar_productos",
+        lambda *_argumentos, **_opciones: productos_normalizados,
+    )
     # Asegurar que la fuente sea "catalogo" para que las pruebas de pipeline
     # funcionen con estado vigente, tal como el test original esperaba.
     main.repositorio_productos._fuente = "catalogo"

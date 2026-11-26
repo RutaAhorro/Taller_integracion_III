@@ -25,7 +25,11 @@ from app.domain.filtros import terminos_busqueda_catalogo
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.repositories.catalogo import FUENTE_CATALOGO, FUENTE_MEMORIA, ProductoRepositorio
 from app.services.chat import (
+    AVISO_CARGA_PREVIA,
+    AVISO_MEMORIA_ANTIGUA,
     ESTADO_MEMORIA,
+    ESTADO_MEMORIA_ANTIGUA,
+    ESTADO_SIN_DATOS,
     ESTADO_VIGENTE,
     TEXTO_CATALOGO_NO_DISPONIBLE,
     TEXTO_SIN_PRODUCTOS,
@@ -251,6 +255,10 @@ class RepositorioDoble:
         """Devuelve la caché fija sin red."""
         return self._cache
 
+    def obtener_cache_degradada(self) -> tuple[list, bool]:
+        """Devuelve la caché fija y su indicador de antigüedad sin ir a la red."""
+        return self._cache, self.datos_antiguos
+
     def obtener_todos(self) -> list:
         """Devuelve la caché fija y cuenta las recargas pedidas."""
         self.recargas += 1
@@ -470,6 +478,102 @@ def test_chat_recorta_consultas_y_completa_con_la_cache(monkeypatch):
 
     assert len(repositorio.terminos_buscados) == 1
     assert [ingrediente["ingrediente"] for ingrediente in datos["ingredientes_receta"]] == ["harina", "leche"]
+
+
+def test_chat_degradado_con_cache_real_antigua_informa_memoria_antigua():
+    """Tras una carga real exitosa envejecida, una búsqueda fallida no puede informarse como vigente."""
+    cliente_http = MagicMock(spec=httpx.Client)
+    cliente_http.get.return_value = _respuesta_http({"data": [LECHE_ENTERA], "paginacion": {"total_paginas": 1}})
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http, antiguedad_maxima=1.0)
+    repositorio.cargar_productos()
+    assert repositorio.fuente == FUENTE_CATALOGO
+
+    # Envejecemos la caché sin dormir y hacemos fallar la búsqueda posterior.
+    repositorio._ultima_carga_exitosa -= 3600.0
+    cliente_http.get.side_effect = httpx.ReadTimeout("tiempo agotado")
+
+    datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
+
+    assert datos["estado_datos"] == ESTADO_MEMORIA_ANTIGUA
+    assert datos["estado_datos"] != ESTADO_VIGENTE
+    assert AVISO_MEMORIA_ANTIGUA in datos["respuesta"]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+
+
+def test_chat_degradado_con_cache_real_reciente_informa_memoria_sin_aviso_antiguedad():
+    """Tras una carga real exitosa reciente, una búsqueda fallida se clasifica como memoria sin aviso de antigüedad."""
+    cliente_http = MagicMock(spec=httpx.Client)
+    cliente_http.get.return_value = _respuesta_http({"data": [LECHE_ENTERA], "paginacion": {"total_paginas": 1}})
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http, antiguedad_maxima=60.0)
+    repositorio.cargar_productos()
+    assert repositorio.fuente == FUENTE_CATALOGO
+
+    cliente_http.get.side_effect = httpx.ReadTimeout("tiempo agotado")
+
+    datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
+
+    assert datos["estado_datos"] == ESTADO_MEMORIA
+    assert AVISO_CARGA_PREVIA in datos["respuesta"]
+    assert AVISO_MEMORIA_ANTIGUA not in datos["respuesta"]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+
+
+def test_chat_busqueda_vencida_con_cache_vacia_no_encadena_recarga(monkeypatch):
+    """Con caché vacía y búsqueda vencida, no se invoca obtener_todos ni se excede el plazo común."""
+    monkeypatch.setattr(config, "CATALOGO_TIMEOUT", 0.05)
+
+    class RepositorioLentoSinCache(RepositorioDoble):
+        """Simula búsqueda lenta y una recarga completa también lenta."""
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
+            time.sleep(0.25)
+            return super().buscar_productos(termino, precio_max)
+
+        def obtener_todos(self) -> list:
+            time.sleep(0.20)
+            return super().obtener_todos()
+
+    repositorio = RepositorioLentoSinCache(cache=[], busquedas={})
+
+    inicio = time.monotonic()
+    datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.20
+    assert repositorio.recargas == 0
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert datos["estado_datos"] == ESTADO_SIN_DATOS
+    assert datos["productos_recomendados"] == []
+
+
+def test_chat_busqueda_vencida_conserva_parciales_sin_recargar_cache(monkeypatch):
+    """Si un término vence pero otro respondió, conserva los parciales y no llama a obtener_todos."""
+    monkeypatch.setattr(config, "CATALOGO_TIMEOUT", 0.05)
+
+    class RepositorioParcialLento(RepositorioDoble):
+        """'leche' responde al instante; 'harina' y la recarga completa son lentas."""
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
+            if termino == "harina":
+                time.sleep(0.25)
+            return super().buscar_productos(termino, precio_max)
+
+        def obtener_todos(self) -> list:
+            time.sleep(0.20)
+            return super().obtener_todos()
+
+    repositorio = RepositorioParcialLento(
+        cache=[],
+        busquedas={"leche": [_normalizar(LECHE_ENTERA)]},
+    )
+
+    inicio = time.monotonic()
+    datos = _procesar(repositorio, {"palabras_clave": ["leche", "harina"]})
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.20
+    assert repositorio.recargas == 0
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
 
 
 # ===== Utilidades =====

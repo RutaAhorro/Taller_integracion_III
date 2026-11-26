@@ -250,9 +250,10 @@ async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -
 
     Devuelve `(productos, estado_datos, busqueda_completa)`. Con palabras clave o
     ingredientes se busca en Catálogo completo; si esa búsqueda queda incompleta
-    se agregan los productos de la caché y el estado lo informa el repositorio.
-    La caché se usa tal como está (sin refrescar) si tiene productos: si Catálogo
-    no respondió a la búsqueda, una recarga completa solo sumaría otro plazo.
+    se completan los resultados parciales con la caché en memoria sin lanzar otra
+    descarga. Los datos reutilizados de la caché se clasifican siempre como
+    `memoria` o `memoria_antigua` según su edad real, y si tampoco hay resultados
+    parciales ni caché se informa `sin_datos`.
     Una búsqueda completa sin resultados significa que no hay coincidencias, no
     que el catálogo esté caído.
     """
@@ -262,8 +263,15 @@ async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -
         if busqueda_completa:
             return encontrados, ESTADO_VIGENTE, True
         logger.warning("Búsqueda dirigida en Catálogo incompleta: se completa con la caché en memoria.")
-        en_cache = repositorio.productos_en_memoria() or await anyio.to_thread.run_sync(repositorio.obtener_todos)
-        return _unir_sin_duplicados(encontrados, en_cache), _determinar_estado_datos(repositorio), False
+        en_cache, cache_antigua = repositorio.obtener_cache_degradada()
+        combinados = _unir_sin_duplicados(encontrados, en_cache)
+        if not combinados:
+            return [], ESTADO_SIN_DATOS, False
+        if en_cache:
+            estado_datos = ESTADO_MEMORIA_ANTIGUA if cache_antigua else ESTADO_MEMORIA
+        else:
+            estado_datos = ESTADO_VIGENTE
+        return combinados, estado_datos, False
 
     # Sin términos (solo categoría o precio) se mantiene la caché precargada.
     productos = await anyio.to_thread.run_sync(repositorio.obtener_todos)

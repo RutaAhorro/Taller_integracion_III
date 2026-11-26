@@ -82,6 +82,10 @@ class ProductoRepositorio:
         """Origen de los productos en memoria: 'catalogo', 'memoria' o 'sin_datos'."""
         return self._fuente
 
+    def cache_antigua(self) -> bool:
+        """Indica si la caché en memoria superó `antiguedad_maxima` según su última carga exitosa."""
+        return self._ultima_carga_exitosa > 0 and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
+
     @property
     def datos_antiguos(self) -> bool:
         """Indica si los datos en caché superaron el límite de antigüedad máxima.
@@ -89,11 +93,7 @@ class ProductoRepositorio:
         Retorna True solo cuando la fuente es 'memoria' (catálogo inalcanzable)
         y la última carga exitosa desde Catálogo superó antigüedad_maxima.
         """
-        return (
-            self._fuente == FUENTE_MEMORIA
-            and self._ultima_carga_exitosa > 0
-            and (time.time() - self._ultima_carga_exitosa) > self._antiguedad_maxima
-        )
+        return self._fuente == FUENTE_MEMORIA and self.cache_antigua()
 
     def __len__(self) -> int:
         """Cantidad en memoria, sin red, para que /health no dependa de Catálogo."""
@@ -337,6 +337,15 @@ class ProductoRepositorio:
     def productos_en_memoria(self) -> list[dict[str, Any]]:
         """Devuelve la caché actual sin ir a la red, aunque el TTL haya vencido."""
         return self._productos
+
+    def obtener_cache_degradada(self) -> tuple[list[dict[str, Any]], bool]:
+        """
+        Devuelve los productos en memoria sin ir a la red y si superaron la antigüedad máxima.
+
+        Se usa al degradar una búsqueda dirigida: clasifica por la edad real de la
+        caché (`_ultima_carga_exitosa`), sin depender de que `fuente` sea `memoria`.
+        """
+        return self._productos, self.cache_antigua()
 
     def obtener_todos(self) -> list[dict[str, Any]]:
         """
