@@ -183,7 +183,7 @@ kubectl rollout status deployment/catalogo -n "$NS"
 kubectl rollout status deployment/control-scraping -n "$NS"
 
 # 5. Motor de rutas e IA conversacional (dependen de Catálogo y BD)
-# Nota: si todos los pods corren a la vez, revisa la sección 8 (overlay motor-listas-ajustado)
+# Ambos usan strategy: type: Recreate para actualizarse sin requerir un pod extra bajo la cuota.
 kubectl apply -n "$NS" -f infrastructure/k8s/motor-rutas/configmap.yaml \
   -f infrastructure/k8s/motor-rutas/service.yaml \
   -f infrastructure/k8s/motor-rutas/deployment.yaml
@@ -327,21 +327,31 @@ También verifica manualmente desde el navegador en `https://miweb-vmatus.dev.ce
 | `frontend` | Deployment | 30m | 64Mi | 100m | 150Mi |
 | `scraper-go` | Deployment | 50m | 64Mi | 500m | 128Mi |
 | `bot` (Discord, opcional) | Deployment | 50m | 64Mi | 100m | 128Mi |
-| `motor-rutas` | Deployment | 50m | 64Mi | 250m | 128Mi |
+| `motor-rutas` | Deployment | 50m | 64Mi | 100m | 128Mi |
 | `ia-conversacional` | Deployment | 25m | 96Mi | 100m | 192Mi |
-| **Suma 11 Deployments (base)** | **11 pods** | **460m** | **736Mi** | **2150m** | **1702Mi** |
+| **Suma 11 Deployments (todo encendido)** | **11 pods** | **460m** | **736Mi** | **2000m** | **1702Mi** |
+| **Suma 9 Deployments (sin `bot` ni `scraper-go`)** | **9 pods** | **360m** | **608Mi** | **1400m** | **1446Mi** |
 | `scraping-scheduler` (efímero) | CronJob | 50m | 64Mi | 200m | 128Mi |
 
 ### Comparación contra la cuota
 
-| Recurso | Cuota `student-vmatus` | 11 Deployments (base) | Margen (base) | Con overlay `motor-listas-ajustado` (`motor-rutas` 100m) | Sin `bot` + overlay (`10` pods) |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| **Limits CPU** | `2000m` | `2150m` | **`-150m` (excede)** | `2000m` (`0m` libres) | `1900m` (`100m` libres) |
-| **Limits Memoria** | `2G` (`1907Mi`) | `1702Mi` | `+205Mi` | `1702Mi` (`+205Mi`) | `1574Mi` (`+333Mi`) |
-| **Pods** | `12` | `11` | `+1 pod` | `11` (`+1 pod`) | `10` (`+2 pods`) |
+Estado previo en `student-vmatus` (sin `ia-conversacional` y con `motor-rutas` en 0 réplicas): `1800m` CPU, `1382Mi` memoria y `9` pods. Tras desplegar `motor-rutas` (`100m / 128Mi`) e `ia-conversacional` (`100m / 192Mi`), existen dos escenarios operativos:
 
-> [!CAUTION]
-> **Presupuesto de CPU ajustado:** Con los 11 Deployments activos y los manifiestos base (`motor-rutas` en `250m`), la suma de `limits.cpu` es **`2150m`**, lo que supera en **`150m`** la cuota de `2000m` del namespace.
-> - Para desplegar los 11 pods dentro de la cuota sin tocar otros servicios, aplica el overlay existente `kubectl apply -n "$NS" -k infrastructure/k8s/overlays/motor-listas-ajustado/` (reduce `motor-rutas` a `100m`, dejando la suma en **`2000m` exactos**).
-> - Si no necesitas el bot de Discord durante la demo del MVP, escálalo a 0 (`kubectl scale deployment/bot -n "$NS" --replicas=0`) para liberar `100m` CPU, `128Mi` memoria y `1` pod.
-> - Para que el CronJob `scraping-scheduler` (`200m / 128Mi / 1 pod`) pueda lanzarse a las 03:00 sin fallo por cuota, se requieren al menos `200m` de CPU libres en el namespace.
+| Recurso | Cuota `student-vmatus` | Escenario 1: todo encendido (`11` pods) | Margen (todo encendido) | Escenario 2: `bot` y `scraper-go` en 0 réplicas (`9` pods) | Margen (escenario recomendado) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **Limits CPU** | `2000m` | `2000m` | **`0m` (sin margen)** | `1400m` | **`+600m`** |
+| **Limits Memoria** | `2G` (`1907Mi`) | `1702Mi` | `+205Mi` | `1446Mi` | `+461Mi` |
+| **Pods** | `12` | `11` | `+1 pod` | `9` | `+3 pods` |
+
+> [!WARNING]
+> **Sin margen con los 11 pods encendidos:** con todo activo se consume el **100 % de la cuota de CPU (`2000m / 2000m`)**. Aunque `motor-rutas` e `ia-conversacional` usan `strategy: type: Recreate` para evitar crear un pod extra durante un rollout, cualquier actualización con `RollingUpdate` o la ejecución del CronJob (`200m`) fallará por cuota.
+>
+> **Recomendación operativa:** apagar `bot` y `scraper-go` después de completar el scraping y encenderlos únicamente cuando se necesiten:
+>
+> ```bash
+> # Apagar tras el scraping (libera 600m CPU, 256Mi memoria y 2 pods)
+> kubectl scale deployment/bot deployment/scraper-go --replicas=0 -n "$NS"
+>
+> # Encender solo cuando se necesite ejecutar scraping o usar el bot
+> kubectl scale deployment/bot deployment/scraper-go --replicas=1 -n "$NS"
+> ```
