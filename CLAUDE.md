@@ -8,6 +8,10 @@
 - El contexto del servicio afectado; no cargar todos los archivos del repositorio.
 - Código, SQL y configuración prevalecen sobre planes o mapas desactualizados.
 
+## Objetivo vigente (MVP)
+Antes de planificar cualquier tarea, lee `docs/OBJETIVO_MVP.md`. Prioriza según su orden y aplica su
+definición de "terminado". Una tarea por conversación y por rama.
+
 ## Límites de arquitectura
 
 - Gateway Go (`net/http`) solo enruta: sin JWT, SQL, Redis ni reglas de negocio.
