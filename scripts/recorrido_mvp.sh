@@ -3,13 +3,14 @@
 # scripts/recorrido_mvp.sh
 #
 # Recorrido de diagnóstico del flujo MVP a través del Gateway (http://127.0.0.1:8082
-# por defecto). Ejecuta los 5 pasos principales usando curl:
+# por defecto). Ejecuta los 6 pasos principales usando curl:
 #   1. Sesión de prueba con cookie jwt HS256 (modo por defecto) o registro local
 #      (--registro-local / RECORRIDO_MODO_AUTH=registro)
 #   2. Búsqueda de producto (GET /api/v1/productos?limit=5)
 #   3. Creación de lista (POST /api/v1/listas)
 #   4. Agregado de artículo (POST /api/v1/listas/{lista_id}/articulos)
 #   5. Consulta al chat IA (POST /api/v1/chat)
+#   6. Optimización de ruta de la lista (POST /api/v1/rutas/optimizar)
 #
 # No detiene la ejecución ante el primer fallo, no imprime cookies ni secretos,
 # no toca la base de datos directamente ni modifica contenedores o volúmenes.
@@ -84,6 +85,12 @@ elif clave == "total_productos":
     print(datos.get("total_registros", 0))
 elif clave == "lista_id":
     print(datos.get("id", ""))
+elif clave == "resumen_ruta":
+    ruta = datos.get("ruta") or {}
+    paradas = ruta.get("paradas") or []
+    cadenas = ", ".join(p.get("cadena") or p.get("nombre") or "?" for p in paradas if isinstance(p, dict))
+    total = ruta.get("total", 0)
+    print(f"paradas={len(paradas)} ({cadenas}), total=${total}")
 PY
 }
 
@@ -306,6 +313,20 @@ if [[ "${CODIGO_CHAT}" == "200" ]]; then
   imprimir_resultado "5. Consultar chat" "OK" "HTTP 200 (respuesta recibida del asistente)"
 else
   imprimir_resultado "5. Consultar chat" "FALLO" "HTTP ${CODIGO_CHAT} - $(resumir_cuerpo)"
+fi
+
+# ----- Paso 6: Optimizar ruta de la lista -----
+CUERPO_RUTA="$(printf '{"lista_id":"%s"}' "${LISTA_ID_DESTINO}")"
+CODIGO_RUTA="$(ejecutar_peticion "POST" "/api/v1/rutas/optimizar" "${CUERPO_RUTA}" "enviar")"
+
+if [[ "${USA_UUID_RESPALDO}" -eq 1 ]]; then
+  imprimir_resultado "6. Optimizar ruta" "NO CONCLUYENTE (UUID de respaldo)" \
+    "HTTP ${CODIGO_RUTA} (${MOTIVO_RESPALDO}) - $(resumir_cuerpo)"
+elif [[ "${CODIGO_RUTA}" == "200" ]]; then
+  RESUMEN_RUTA="$(extraer_campo_json "resumen_ruta")"
+  imprimir_resultado "6. Optimizar ruta" "OK" "HTTP 200 (${RESUMEN_RUTA})"
+else
+  imprimir_resultado "6. Optimizar ruta" "FALLO" "HTTP ${CODIGO_RUTA} - $(resumir_cuerpo)"
 fi
 
 printf "=== Fin del recorrido MVP ===\n"

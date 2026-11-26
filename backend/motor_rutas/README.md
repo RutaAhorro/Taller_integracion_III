@@ -44,6 +44,7 @@ una migración ni un despliegue.
 | POST | `/api/v1/listas/{id}/articulos` | Cuerpo `{"producto_id", "cantidad"}`. 201 si es nuevo; 200 si ya estaba y se sumó la cantidad |
 | PUT | `/api/v1/listas/{id}/articulos/{articulo_id}` | Cuerpo con `cantidad` y/o `esta_comprado`. No consulta a Catálogo |
 | DELETE | `/api/v1/listas/{id}/articulos/{articulo_id}` | 204 |
+| POST | `/api/v1/rutas/optimizar` | Cuerpo `{"lista_id", "origen"?}`. Calcula cadena(s) más barata(s) y orden Haversine sin combustible ([contrato](../../docs/Contratos/CONTRATO_MOTOR_RUTAS.md)) |
 
 - La sesión sale sólo de la cookie HttpOnly `jwt` emitida por Identidad (HS256,
   `exp` obligatorio, `user_id` UUID). Se ignoran `Authorization`, `X-User-ID` y
@@ -110,7 +111,13 @@ Probes internos: `/_rutas/live` (sin SQL) y `/_rutas/ready` (ping SQL, 2 s).
 | `RUTAS_MAX_LISTAS` | Máximo de listas por usuario, 100 por defecto (1 a 1000) |
 | `CATALOGO_INTERNAL_URL` | Obligatoria. Origen HTTP(S) interno de Catálogo, sin ruta (`http://catalogo:8080`) |
 | `CATALOGO_CONSULTA_TOKEN` | Obligatoria. El mismo token de consulta que define Catálogo, al menos 32 bytes y distinto de `JWT_SECRET` |
-| `RUTAS_CATALOGO_TIMEOUT` | Plazo por consulta a Catálogo, `2s` por defecto (hasta `30s`) |
+| `RUTAS_CATALOGO_TIMEOUT` | Plazo por consulta a Catálogo, `5s` por defecto (hasta `30s`) |
+| `RUTAS_RADIO_KM` | Radio de búsqueda de sucursales en km, `10` por defecto (`(0, 50]`) |
+| `RUTAS_MAX_SUCURSALES` | Sucursales candidatas pedidas a Catálogo, `10` por defecto (`1` a `10`) |
+| `RUTAS_MAX_PARADAS` | Máximo de paradas por ruta, `3` por defecto (`1` a `3`) |
+| `RUTAS_MAX_ARTICULOS` | Máximo de artículos pendientes por cálculo, `30` por defecto (`1` a `100`) |
+| `RUTAS_FACTOR_DISTANCIA` | Factor de corrección sobre Haversine, `1.3` por defecto (`(0, 5]`) |
+| `RUTAS_UMBRAL_AHORRO` | Ahorro mínimo en CLP para recomendar varias tiendas (RN-08), `500` por defecto (`>= 0`) |
 | `PORT` | Puerto HTTP, 8001 por defecto |
 
 Ejemplo en [`.env.example`](.env.example).
