@@ -56,7 +56,7 @@ func TestGoogleClaimsAndInactiveAccounts(prueba *testing.T) {
 					prueba.Fatal("Google sin deadline")
 				}
 				return caso.payload, nil
-			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 			usuario, errorObtenido := servicio.LoginGoogle(prueba.Context(), "fixture")
 			if (errorObtenido != nil) != caso.wantError {
 				prueba.Fatalf("%v %v", usuario, errorObtenido)
@@ -84,7 +84,7 @@ func TestGoogleClaimsAndInactiveAccounts(prueba *testing.T) {
 			repositorio.usuarios[usuario.Correo] = usuario
 			servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "google-123", Claims: map[string]any{"email": usuario.Correo, "email_verified": true}}, nil
-			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 			if _, errorObtenido := servicio.LoginGoogle(prueba.Context(), "fixture"); errorObtenido == nil {
 				prueba.Fatal("cuenta no autorizada aceptada")
 			}
@@ -126,7 +126,7 @@ func TestGoogleConcurrentCreationRechecksAccount(prueba *testing.T) {
 			repositorio := &googleRaceRepository{mockUsuarioRepository: newMockUsuarioRepository(), competing: competidor}
 			servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "google-123", Claims: map[string]any{"email": "race@example.test", "email_verified": true}}, nil
-			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 			usuario, errorObtenido := servicio.LoginGoogle(prueba.Context(), "fixture")
 			if nombre == "same account" {
 				if errorObtenido != nil || usuario.ID != competidor.ID {
@@ -154,7 +154,7 @@ func TestGoogleVinculaCuentaLocalEInvalidaContrasena(prueba *testing.T) {
 	repositorio.usuarios[victima.Correo] = victima
 	servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 		return googlePayload("google-victima", "victima@uct.cl"), nil
-	}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+	}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 
 	usuario, errorOperacion := servicio.LoginGoogle(context.Background(), "token")
 	if errorOperacion != nil {
@@ -183,7 +183,7 @@ func TestGoogleRechazaOtraIdentidadVinculada(prueba *testing.T) {
 	repositorio.usuarios[usuario.Correo] = usuario
 	servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
 		return googlePayload("google-otro", "linked@uct.cl"), nil
-	}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+	}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 	if _, errorObtenido := servicio.LoginGoogle(context.Background(), "token"); !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
 		prueba.Fatal("se aceptó otra identidad Google:", errorObtenido)
 	}
@@ -213,7 +213,7 @@ func TestGoogleAvatarFitsPostgresWithoutBreakingLogin(prueba *testing.T) {
 				return &idtoken.Payload{Issuer: "https://accounts.google.com", Subject: "fixture-subject", Claims: map[string]any{
 					"email": "avatar@example.test", "email_verified": true, "name": "Fixture", "picture": caso.picture,
 				}}, nil
-			}, "fixture-client", plazoGoogleDePrueba)
+			}, "fixture-client", plazoGoogleDePrueba, nil)
 			usuario, errorObtenido := servicio.LoginGoogle(prueba.Context(), "fixture")
 			if errorObtenido != nil || usuario == nil || repositorio.usuarios[usuario.Correo] != usuario {
 				prueba.Fatalf("login or persistence failed: %v", errorObtenido)
@@ -256,7 +256,7 @@ func TestGoogleErrorClassificationDoesNotExposeStorage(prueba *testing.T) {
 		{"database", usuariosQueFallan{newMockUsuarioRepository()}, validadorQueAcepta("fixture@example.test"), clienteGoogleDePrueba, 500},
 	} {
 		prueba.Run(caso.name, func(prueba *testing.T) {
-			servicio := services.NuevoServicioAuth(caso.repositorio, caso.validador, caso.cliente, plazoGoogleDePrueba)
+			servicio := services.NuevoServicioAuth(caso.repositorio, caso.validador, caso.cliente, plazoGoogleDePrueba, nil)
 			enrutador := gin.New()
 			enrutador.POST("/google", api.NuevoManejadorAuth(servicio, false, claveJWTDePrueba).LoginGoogleUsuario)
 			escritor := httptest.NewRecorder()
@@ -322,13 +322,148 @@ func TestGoogleCryptographicValidation(prueba *testing.T) {
 			repositorio := newMockUsuarioRepository()
 			servicio := services.NuevoServicioAuth(repositorio, func(contexto context.Context, token, audiencia string) (*idtoken.Payload, error) {
 				return validador.Validate(contexto, token, audiencia)
-			}, clienteGoogleDePrueba, plazoGoogleDePrueba)
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, nil)
 			usuario, errorOperacion := servicio.LoginGoogle(prueba.Context(), codificado)
 			if (errorOperacion != nil) != caso.wantsError {
 				prueba.Fatalf("%v %v", usuario, errorOperacion)
 			}
 			if caso.wantsError && len(repositorio.usuarios) != 0 {
 				prueba.Fatal("token rechazado persistió usuario")
+			}
+		})
+	}
+}
+
+// ===== Asignación de rol con ADMIN_EMAILS =====
+
+// TestGoogleAsignaRolAdminYRechazaNoVerificado comprueba la asignación de rol al
+// crear usuarios con Google, insensibilidad a mayúsculas y rechazo de correo no verificado.
+func TestGoogleAsignaRolAdminYRechazaNoVerificado(prueba *testing.T) {
+	correosAdmin := map[string]struct{}{"ADMIN@ejemplo.cl": {}}
+	casos := []struct {
+		nombre     string
+		correo     string
+		verificado bool
+		esperaErr  bool
+		rolFinal   string
+	}{
+		{"nuevo admin", "admin@ejemplo.cl", true, false, domain.RolAdmin},
+		{"nuevo registrado", "usuario@ejemplo.cl", true, false, domain.RolRegistrado},
+		{"case insensitive", "Admin@Ejemplo.CL", true, false, domain.RolAdmin},
+		{"email_verified false rechazado", "admin@ejemplo.cl", false, true, ""},
+	}
+
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
+				return &idtoken.Payload{
+					Issuer:  "https://accounts.google.com",
+					Subject: "google-sub-1",
+					Claims:  map[string]any{"email": caso.correo, "email_verified": caso.verificado, "name": "Persona"},
+				}, nil
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, correosAdmin)
+
+			usuario, errorObtenido := servicio.LoginGoogle(prueba.Context(), "token-fixture")
+			if caso.esperaErr {
+				if !errors.Is(errorObtenido, services.ErrCredencialesInvalidas) {
+					prueba.Fatalf("esperaba ErrCredencialesInvalidas, obtuve %v", errorObtenido)
+				}
+				if len(repositorio.usuarios) != 0 {
+					prueba.Fatalf("un correo no verificado no debe crear usuario")
+				}
+				return
+			}
+			if errorObtenido != nil {
+				prueba.Fatalf("error inesperado en LoginGoogle: %v", errorObtenido)
+			}
+			if usuario.Rol != caso.rolFinal {
+				prueba.Fatalf("esperaba rol %q, obtuve %q", caso.rolFinal, usuario.Rol)
+			}
+			guardado := repositorio.usuarios[strings.ToLower(caso.correo)]
+			if guardado == nil || guardado.Rol != caso.rolFinal {
+				prueba.Fatalf("el rol persistido no coincide: %+v", guardado)
+			}
+		})
+	}
+}
+
+// TestGooglePromueveExistenteYSinDegradarOtrosRoles verifica que un usuario
+// registrado listado en ADMIN_EMAILS se promueva a admin (incluyendo JWT) y que
+// nunca se degraden admins existentes ni se modifiquen colaboradores.
+func TestGooglePromueveExistenteYSinDegradarOtrosRoles(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+	casos := []struct {
+		nombre       string
+		correo       string
+		rolInicial   string
+		correosAdmin map[string]struct{}
+		rolEsperado  string
+	}{
+		{"promueve registrado a admin", "promo@ejemplo.cl", domain.RolRegistrado, map[string]struct{}{"promo@ejemplo.cl": {}}, domain.RolAdmin},
+		{"colaborador intacto aunque este en ADMIN_EMAILS", "colab@ejemplo.cl", domain.RolColaborador, map[string]struct{}{"colab@ejemplo.cl": {}}, domain.RolColaborador},
+		{"colaborador intacto fuera de ADMIN_EMAILS", "colab2@ejemplo.cl", domain.RolColaborador, map[string]struct{}{"otro@ejemplo.cl": {}}, domain.RolColaborador},
+		{"admin existente no se degrada si sale de ADMIN_EMAILS", "jefe@ejemplo.cl", domain.RolAdmin, map[string]struct{}{"otro@ejemplo.cl": {}}, domain.RolAdmin},
+	}
+
+	for _, caso := range casos {
+		prueba.Run(caso.nombre, func(prueba *testing.T) {
+			repositorio := newMockUsuarioRepository()
+			sujetoGoogle := "google-existente"
+			usuarioInicial := &domain.Usuario{
+				ID:             uuid.New(),
+				Correo:         caso.correo,
+				NombreCompleto: "Cuenta Existente",
+				GoogleID:       &sujetoGoogle,
+				Rol:            caso.rolInicial,
+				EstaActivo:     true,
+			}
+			repositorio.usuarios[caso.correo] = usuarioInicial
+
+			servicio := services.NuevoServicioAuth(repositorio, func(context.Context, string, string) (*idtoken.Payload, error) {
+				return googlePayload(sujetoGoogle, caso.correo), nil
+			}, clienteGoogleDePrueba, plazoGoogleDePrueba, caso.correosAdmin)
+
+			enrutador := gin.New()
+			enrutador.POST("/api/v1/auth/google", api.NuevoManejadorAuth(servicio, false, claveJWTDePrueba).LoginGoogleUsuario)
+
+			escritor := httptest.NewRecorder()
+			peticion := httptest.NewRequest(http.MethodPost, "/api/v1/auth/google", strings.NewReader(`{"id_token":"fixture"}`))
+			peticion.Header.Set("Content-Type", "application/json")
+			enrutador.ServeHTTP(escritor, peticion)
+
+			if escritor.Code != http.StatusOK {
+				prueba.Fatalf("esperaba 200, obtuve %d: %s", escritor.Code, escritor.Body.String())
+			}
+
+			var respuesta api.RespuestaLogin
+			if errorLectura := json.Unmarshal(escritor.Body.Bytes(), &respuesta); errorLectura != nil {
+				prueba.Fatalf("respuesta JSON inválida: %v", errorLectura)
+			}
+			if respuesta.Rol != caso.rolEsperado {
+				prueba.Fatalf("rol en respuesta: esperaba %q, obtuve %q", caso.rolEsperado, respuesta.Rol)
+			}
+			if repositorio.usuarios[caso.correo].Rol != caso.rolEsperado {
+				prueba.Fatalf("rol en BD: esperaba %q, obtuve %q", caso.rolEsperado, repositorio.usuarios[caso.correo].Rol)
+			}
+
+			var cookieJWT *http.Cookie
+			for _, cookie := range escritor.Result().Cookies() {
+				if cookie.Name == "jwt" {
+					cookieJWT = cookie
+					break
+				}
+			}
+			if cookieJWT == nil {
+				prueba.Fatal("no se emitió cookie jwt")
+			}
+			tokenValidado, errorToken := api.ValidarToken(cookieJWT.Value, claveJWTDePrueba)
+			if errorToken != nil {
+				prueba.Fatalf("token inválido: %v", errorToken)
+			}
+			datosToken, valido := tokenValidado.Claims.(*api.DatosSesion)
+			if !valido || datosToken.Rol != caso.rolEsperado {
+				prueba.Fatalf("rol en JWT: esperaba %q, obtuve %+v", caso.rolEsperado, tokenValidado.Claims)
 			}
 		})
 	}

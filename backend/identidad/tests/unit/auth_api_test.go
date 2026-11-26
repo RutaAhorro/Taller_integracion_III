@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
@@ -14,6 +15,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"google.golang.org/api/idtoken"
 )
 
 func TestManejadorAuthRegistroIniciaSesion(prueba *testing.T) {
@@ -226,5 +228,50 @@ func TestManejadorAuthCerrarSesionExpiraCookie(prueba *testing.T) {
 	}
 	if !cookieJWT.HttpOnly || !cookieJWT.Secure || cookieJWT.Path != "/" {
 		prueba.Errorf("La cookie de expiración debe conservar HttpOnly, Secure y Path=/ para reemplazar a la original")
+	}
+}
+
+// TestManejadorAuthRegistroRechazaCorreoAdminCon409 impide pre-registrar
+// localmente un correo listado en ADMIN_EMAILS sin revelar que es admin.
+func TestManejadorAuthRegistroRechazaCorreoAdminCon409(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	repositorio := newMockUsuarioRepository()
+	servicioAuth := services.NuevoServicioAuth(
+		repositorio,
+		idtoken.Validate,
+		"",
+		plazoGoogleDePrueba,
+		map[string]struct{}{"admin@ejemplo.cl": {}},
+	)
+	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
+
+	enrutador := gin.New()
+	enrutador.POST("/api/v1/auth/register", manejador.RegistrarUsuario)
+
+	cuerpo, _ := json.Marshal(api.PeticionRegistro{
+		Correo:         "Admin@Ejemplo.CL",
+		Password:       "ClaveSegura2026!",
+		NombreCompleto: "Intento PreRegistro",
+	})
+	escritor := httptest.NewRecorder()
+	peticion, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(cuerpo))
+	peticion.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(escritor, peticion)
+
+	if escritor.Code != http.StatusConflict {
+		prueba.Fatalf("esperaba HTTP 409, obtuve %d. Body: %s", escritor.Code, escritor.Body.String())
+	}
+	cuerpoTexto := strings.ToLower(escritor.Body.String())
+	if strings.Contains(cuerpoTexto, "admin") || strings.Contains(cuerpoTexto, "ejemplo.cl") {
+		prueba.Fatalf("la respuesta 409 no debe revelar detalles del correo admin: %s", escritor.Body.String())
+	}
+	if len(repositorio.usuarios) != 0 {
+		prueba.Fatalf("el registro rechazado no debe persistir usuario")
+	}
+	for _, cookie := range escritor.Result().Cookies() {
+		if cookie.Name == "jwt" {
+			prueba.Fatal("el registro rechazado no debe emitir cookie jwt")
+		}
 	}
 }
