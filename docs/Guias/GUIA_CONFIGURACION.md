@@ -28,6 +28,7 @@ Al trabajar con microservicios independientes, las variables compartidas constit
 | --- | --- | --- | --- | --- |
 | `JWT_SECRET` | Identidad | Catálogo, Motor de rutas, IA conversacional | Secreto para firma y validación de tokens JWT de usuario (HMAC-SHA256). Cadena alfanumérica de al menos 32 bytes (64 caracteres hexadecimales recomendados), sin espacios. | Obligatorio sin valor por defecto (`${JWT_SECRET:?}`). Generar con `openssl rand -hex 32`. |
 | `GOOGLE_CLIENT_ID` | Identidad / Frontend | Identidad, Frontend (`VITE_GOOGLE_CLIENT_ID`) | Identificador de cliente OAuth 2.0 de Google. Cadena con terminación `.apps.googleusercontent.com`. | Opcional, vacío por defecto (`${GOOGLE_CLIENT_ID:-}`). Sin él, el login con Google queda deshabilitado. |
+| `ADMIN_EMAILS` | Identidad | Identidad | Lista de correos electrónicos separados por coma que reciben rol `admin` al autenticarse con Google (`email_verified=true`). Normalizada a minúsculas y sin espacios; nunca se aplica en registro local. | Opcional, vacío por defecto (`${ADMIN_EMAILS:-}`). |
 
 > [!NOTE]
 > `control_scraping` y `gateway` **no** consumen ni deben recibir `JWT_SECRET`: Control usa tokens de servicio dedicados y Gateway opera como proxy inverso ciego.

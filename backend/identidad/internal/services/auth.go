@@ -61,12 +61,27 @@ type ServicioAuth struct {
 	validarGoogle ValidadorGoogle
 	clienteGoogle string
 	plazoGoogle   time.Duration
+	correosAdmin  map[string]struct{}
 }
 
-// NuevoServicioAuth recibe el validador de Google, su client ID y su plazo ya
-// leídos al arrancar: el servicio nunca consulta el entorno.
-func NuevoServicioAuth(repositorio domain.RepositorioUsuarios, validarGoogle ValidadorGoogle, clienteGoogle string, plazoGoogle time.Duration) *ServicioAuth {
-	return &ServicioAuth{usuarios: repositorio, validarGoogle: validarGoogle, clienteGoogle: clienteGoogle, plazoGoogle: plazoGoogle}
+// NuevoServicioAuth recibe el validador de Google, su client ID, su plazo y el
+// conjunto de correos administradores ya leídos al arrancar: el servicio nunca
+// consulta el entorno.
+func NuevoServicioAuth(repositorio domain.RepositorioUsuarios, validarGoogle ValidadorGoogle, clienteGoogle string, plazoGoogle time.Duration, correosAdmin map[string]struct{}) *ServicioAuth {
+	conjuntoAdmin := make(map[string]struct{}, len(correosAdmin))
+	for correo := range correosAdmin {
+		correoNormalizado := normalizarCorreo(correo)
+		if correoNormalizado != "" {
+			conjuntoAdmin[correoNormalizado] = struct{}{}
+		}
+	}
+	return &ServicioAuth{
+		usuarios:      repositorio,
+		validarGoogle: validarGoogle,
+		clienteGoogle: clienteGoogle,
+		plazoGoogle:   plazoGoogle,
+		correosAdmin:  conjuntoAdmin,
+	}
 }
 
 // ===== Validaciones y valores iniciales =====
@@ -124,6 +139,12 @@ func normalizarCorreo(correo string) string {
 	return strings.ToLower(strings.TrimSpace(correo))
 }
 
+// esCorreoAdmin indica si el correo normalizado figura en ADMIN_EMAILS.
+func (servicio *ServicioAuth) esCorreoAdmin(correoNormalizado string) bool {
+	_, esAdmin := servicio.correosAdmin[correoNormalizado]
+	return esAdmin
+}
+
 // nuevoUsuarioRegistrado aplica los valores iniciales comunes a toda cuenta nueva.
 func nuevoUsuarioRegistrado(correo, nombre string) *domain.Usuario {
 	ahora := time.Now()
@@ -172,6 +193,12 @@ func (servicio *ServicioAuth) Registrar(contexto context.Context, entrada Regist
 	nombreSanitizado := SanitizarNombre(entrada.NombreCompleto)
 	if nombreSanitizado == "" {
 		return nil, ErrNombreInvalido
+	}
+
+	// Impide pre-registrar localmente correos reservados en ADMIN_EMAILS; usa el
+	// mismo error de conflicto para no revelar qué correos son administradores.
+	if servicio.esCorreoAdmin(correoNormalizado) {
+		return nil, ErrCorreoDuplicado
 	}
 
 	existente, errorObtenido := servicio.usuarios.BuscarPorCorreo(contexto, correoNormalizado)
@@ -273,6 +300,9 @@ func (servicio *ServicioAuth) LoginGoogle(contexto context.Context, tokenGoogle 
 
 	if usuario == nil {
 		nuevoUsuario := nuevoUsuarioRegistrado(direccionCorreo, nombre)
+		if servicio.esCorreoAdmin(direccionCorreo) {
+			nuevoUsuario.Rol = domain.RolAdmin
+		}
 		nuevoUsuario.ID = uuid.New()
 		nuevoUsuario.URLAvatar = urlAvatar
 		nuevoUsuario.GoogleID = &googleID
@@ -298,6 +328,15 @@ func (servicio *ServicioAuth) LoginGoogle(contexto context.Context, tokenGoogle 
 	usuario, errorObtenido = servicio.validarCuentaGoogle(contexto, usuario, googleID)
 	if errorObtenido != nil {
 		return nil, errorObtenido
+	}
+	// Sólo se promueve a usuarios con rol registrado cuyo correo verificado por
+	// Google esté en ADMIN_EMAILS; nunca se degrada ni se alteran otros roles.
+	if usuario.Rol == domain.RolRegistrado && servicio.esCorreoAdmin(direccionCorreo) {
+		datosRol := map[string]interface{}{"rol": domain.RolAdmin, "actualizado_el": time.Now()}
+		if errorPromocion := servicio.usuarios.Actualizar(contexto, usuario.ID.String(), datosRol); errorPromocion != nil {
+			return nil, fmt.Errorf("error al promover rol de usuario con Google: %w", errorPromocion)
+		}
+		usuario.Rol = domain.RolAdmin
 	}
 	servicio.registrarUltimoAcceso(contexto, usuario)
 	return usuario, nil

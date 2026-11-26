@@ -27,10 +27,10 @@ var plazoGoogleDePrueba = config.AjustesPredeterminados().PlazoGoogle
 
 // ===== Constructores =====
 
-// nuevoServicioAuth arma el servicio sin login Google configurado, que es lo
-// que necesitan las pruebas de registro, login local y perfil.
+// nuevoServicioAuth arma el servicio sin login Google ni admins configurados,
+// que es lo que necesitan las pruebas de registro, login local y perfil.
 func nuevoServicioAuth(repositorio domain.RepositorioUsuarios) *services.ServicioAuth {
-	return services.NuevoServicioAuth(repositorio, idtoken.Validate, "", plazoGoogleDePrueba)
+	return services.NuevoServicioAuth(repositorio, idtoken.Validate, "", plazoGoogleDePrueba, nil)
 }
 
 // usuariosQueFallan simula una base caída al buscar la cuenta.

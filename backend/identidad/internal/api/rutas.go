@@ -152,7 +152,7 @@ func NuevoModulo(base *gorm.DB, redisCliente *redis.Client, configuracion config
 	repositorioAdmin := repositories.NuevoRepositorioAdmin(base)
 	repositorioRecuperacion := repositories.NuevoRepositorioRecuperacion(base)
 	return &Modulo{
-		handler:       NuevoManejadorAuth(services.NuevoServicioAuth(repositorio, idtoken.Validate, configuracion.ClienteGoogle, ajustes.PlazoGoogle), configuracion.CookieSegura, configuracion.ClaveJWT),
+		handler:       NuevoManejadorAuth(services.NuevoServicioAuth(repositorio, idtoken.Validate, configuracion.ClienteGoogle, ajustes.PlazoGoogle, configuracion.CorreosAdmin), configuracion.CookieSegura, configuracion.ClaveJWT),
 		restablecer:   NuevoManejadorRestablecer(services.NuevoServicioRecuperacion(repositorioRecuperacion)),
 		adminHandler:  NuevoManejadorAdmin(services.NuevoServicioAdmin(repositorioAdmin)),
 		direcciones:   NuevoManejadorDirecciones(services.NuevoServicioDirecciones(repositories.NuevoRepositorioDirecciones(base))),
