@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
       - name: bot
-        image: ghcr.io/danirc2024/taller_integracion_iii-bot:develop
+        image: ghcr.io/rutaahorro/taller_integracion_iii-bot:develop
         imagePullPolicy: Always
         env:
         - name: DISCORD_BOT_TOKEN

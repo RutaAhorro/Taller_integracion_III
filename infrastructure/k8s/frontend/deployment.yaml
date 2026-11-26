@@ -17,7 +17,7 @@ spec:
         app: frontend
     spec:
       containers:
-      - image: ghcr.io/danirc2024/taller_integracion_iii-frontend:develop
+      - image: ghcr.io/rutaahorro/taller_integracion_iii-frontend:develop
         imagePullPolicy: Always
         name: frontend
         env:

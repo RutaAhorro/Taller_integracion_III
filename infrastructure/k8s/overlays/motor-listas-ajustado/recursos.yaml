@@ -5,6 +5,8 @@ metadata:
   name: motor-rutas
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   template:
     spec:
       imagePullSecrets:

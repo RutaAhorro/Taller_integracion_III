@@ -21,7 +21,7 @@ spec:
         seccompProfile: {type: RuntimeDefault}
       containers:
         - name: control-scraping
-          image: ghcr.io/danirc2024/taller_integracion_iii-control-scraping:develop
+          image: ghcr.io/rutaahorro/taller_integracion_iii-control-scraping:develop
           imagePullPolicy: Always
           ports:
             - {name: http, containerPort: 8080}
