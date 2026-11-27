@@ -146,7 +146,7 @@ function ContenidoListas() {
   return (
     <div className="relative flex h-full w-full flex-1 overflow-hidden bg-background">
       <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-4 py-6 md:px-6">
-        <div className="min-h-0 flex-1 overflow-y-auto pb-2 pr-1 -mr-1 scrollbar-hide">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-28 md:pb-16 pr-1 -mr-1 scrollbar-hide">
           <div className="mx-auto w-full max-w-6xl space-y-7 p-4 md:p-8">
             <header className="relative isolate flex min-h-52 items-end overflow-hidden rounded-xl border-2 border-border bg-primary px-6 py-7 text-primary-foreground shadow-[8px_8px_0px_var(--color-border)] sm:min-h-60 sm:px-9 sm:py-8">
               <img

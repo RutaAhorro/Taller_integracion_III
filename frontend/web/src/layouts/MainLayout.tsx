@@ -30,6 +30,9 @@ export function useLayoutContext() {
   return useOutletContext<TipoContextoDiseno>();
 }
 
+// Ciudad de referencia compartida entre la cabecera y el menú lateral.
+const CIUDAD_ACTIVA = "Temuco";
+
 export function MainLayout() {
   const [versionReinicio, setVersionReinicio] = useState(0);
   const [consulta, setConsulta] = useState("");
@@ -50,8 +53,11 @@ export function MainLayout() {
   const [errorCategorias, setErrorCategorias] = useState(false);
   const [intentoCategorias, setIntentoCategorias] = useState(0);
 
+  // Limpia la búsqueda al salir del catálogo y sus fichas para no arrastrarla a otras vistas.
   useEffect(() => {
-    if (!pathname.startsWith("/dashboard")) setConsulta("");
+    if (!pathname.startsWith("/dashboard") && !pathname.startsWith("/producto/")) {
+      setConsulta("");
+    }
   }, [pathname]);
 
   useEffect(() => {
@@ -119,7 +125,7 @@ export function MainLayout() {
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <CartSidebar />
       <SideBar
-        activeCity="Temuco"
+        activeCity={CIUDAD_ACTIVA}
         open={barraLateralAbierta}
         onClose={cerrarBarraLateral}
         onResetFilters={restablecerFiltros}
@@ -145,6 +151,7 @@ export function MainLayout() {
       />
 
       <TopNav
+        activeCity={CIUDAD_ACTIVA}
         sidebarOpen={barraLateralAbierta}
         query={consulta}
         onQueryChange={(valor) => {
@@ -155,9 +162,7 @@ export function MainLayout() {
         onResetFilters={restablecerFiltros}
       />
 
-      <div
-        className={`min-h-0 flex-1 flex flex-col overflow-y-auto overflow-x-hidden ${pathname.startsWith("/chat") ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))]" : "pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]"} md:pb-0`}
-      >
+      <div className="min-h-0 flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
         <Outlet
           context={
             {
@@ -182,7 +187,7 @@ export function MainLayout() {
       {!isCartOpen && (
         <button
           onClick={() => setIsCartOpen(true)}
-          className={`fixed ${pathname.startsWith("/chat") ? "bottom-[11.25rem]" : "bottom-[5.5rem]"} right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6`}
+          className={`fixed ${pathname.startsWith("/chat") ? "bottom-[calc(11.25rem+env(safe-area-inset-bottom,0px))]" : "bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))]"} right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6`}
           aria-label="Ver carrito"
         >
           <div className="relative flex items-center justify-center">

@@ -384,7 +384,7 @@ export default function Page() {
         >
           <div
             ref={referenciaScroll}
-            className="min-h-0 flex-1 overflow-y-auto pb-20 md:pb-2 pr-1 -mr-1 scrollbar-hide"
+            className="min-h-0 flex-1 overflow-y-auto pb-28 md:pb-16 pr-1 -mr-1 scrollbar-hide"
             onScroll={manejarDesplazamiento}
           >
             {!enModoPortada && (
