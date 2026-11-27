@@ -25,16 +25,33 @@ def _a_numero(valor) -> float | None:
     return None
 
 
+def dividir_frases_compuestas(texto: str) -> list[str]:
+    """
+    Separa una frase compuesta por comas o conjunciones ('o', 'y', 'e', 'u') en términos independientes.
+
+    Permite buscar cada producto por separado en Catálogo (p. ej. "zanahorias o verduras" ->
+    ["zanahorias", "verduras"]) sin partir cifras con coma decimal o de miles.
+    """
+    if not isinstance(texto, str):
+        return []
+    partes = PATRON_SEPARADOR_FRASES_MENSAJE.split(texto)
+    return list(dict.fromkeys(parte.strip() for parte in partes if parte and parte.strip()))
+
+
 def _a_lista_de_terminos(valor) -> list[str]:
-    """Normaliza palabras clave: lista de textos o un texto suelto separado por comas."""
+    """Normaliza palabras clave: lista de textos o texto suelto, separando frases unidas por comas o conjunciones."""
     if isinstance(valor, list):
-        terminos = valor
+        terminos_crudos = valor
     elif isinstance(valor, str):
-        # Visto en pruebas: a veces el modelo manda "tomate, ajo" en vez de una lista.
-        terminos = valor.split(",")
+        # Visto en pruebas: a veces el modelo manda "tomate, ajo" o "zanahorias o verduras" en un solo texto.
+        terminos_crudos = [valor]
     else:
         return []
-    return [termino.strip() for termino in terminos if isinstance(termino, str) and termino.strip()]
+    resultado = []
+    for item in terminos_crudos:
+        if isinstance(item, str) and item.strip():
+            resultado.extend(dividir_frases_compuestas(item))
+    return list(dict.fromkeys(resultado))
 
 
 def _a_lista_de_ingredientes(valor) -> list[dict]:
@@ -117,7 +134,14 @@ PATRON_SEPARADOR_TERMINOS = re.compile(r"[^a-zA-Zñáéíóúü]+")
 LONGITUD_MINIMA_TERMINO_RESPALDO = 2
 
 # Separa enumeraciones de productos distintos (",", "y", "e", "o", "u") sin partir montos como "$2,000".
-PATRON_SEPARADOR_FRASES_MENSAJE = re.compile(r"(?<!\d),(?!\d)|\b(?:y|e|o|u)\b")
+PATRON_SEPARADOR_FRASES_MENSAJE = re.compile(r"(?<!\d),(?!\d)|\b(?:y|e|o|u)\b", re.IGNORECASE)
+
+# Reglas simples de singularización en español (sin librerías externas).
+LONGITUD_MINIMA_PLURAL = 4
+LONGITUD_MINIMA_PLURAL_ES = 5
+LONGITUD_MINIMA_PLURAL_ONES = 6
+VOCALES_ESPANOL = frozenset("aeiouáéíóúü")
+CONSONANTES_PLURAL_ES = frozenset("lnrdjy")
 
 # Palabras frecuentes en mensajes de búsqueda que no nombran un producto.
 PALABRAS_VACIAS_MENSAJE = frozenset(
@@ -206,6 +230,12 @@ PALABRAS_VACIAS_MENSAJE = frozenset(
         "ahora",
         "hoy",
         "hola",
+        "tal",
+        "es",
+        "son",
+        "ser",
+        "estan",
+        "estoy",
         "buenas",
         "buenos",
         "dias",
@@ -273,15 +303,64 @@ def _separar_terminos(texto: str) -> list[str]:
     return [termino for termino in terminos if termino and termino not in PALABRAS_VACIAS_CATEGORIA]
 
 
+def singularizar_palabra(palabra: str) -> str:
+    """
+    Convierte una palabra española en plural a su forma singular probable con reglas simples.
+
+    Cubre los casos frecuentes de supermercado sin librerías externas:
+    - `-ces` -> `-z` ("nueces" -> "nuez", "arroces" -> "arroz")
+    - `-ones` -> `-ón` ("limones" -> "limón", "jamones" -> "jamón")
+    - `-íes` / `-ies` -> `-í` / `-i` ("ajíes" -> "ají")
+    - `<vocal><l|n|r|d|j|y>es` -> quita `es` ("yogures" -> "yogur", "panes" -> "pan", "cereales" -> "cereal")
+    - `<vocal>s` -> quita `s` ("zanahorias" -> "zanahoria", "verduras" -> "verdura", "leches" -> "leche")
+    """
+    palabra_limpia = palabra.strip()
+    if len(palabra_limpia) < LONGITUD_MINIMA_PLURAL or not palabra_limpia.endswith("s"):
+        return palabra_limpia
+    if len(palabra_limpia) >= LONGITUD_MINIMA_PLURAL_ES and palabra_limpia.endswith("ces"):
+        return f"{palabra_limpia[:-3]}z"
+    if len(palabra_limpia) >= LONGITUD_MINIMA_PLURAL_ONES and palabra_limpia.endswith("ones"):
+        return f"{palabra_limpia[:-4]}ón"
+    if len(palabra_limpia) >= LONGITUD_MINIMA_PLURAL_ES and palabra_limpia.endswith(("íes", "ies")):
+        return palabra_limpia[:-2]
+    if (
+        len(palabra_limpia) >= LONGITUD_MINIMA_PLURAL_ES
+        and palabra_limpia.endswith("es")
+        and palabra_limpia[-3] in CONSONANTES_PLURAL_ES
+        and palabra_limpia[-4] in VOCALES_ESPANOL
+    ):
+        return palabra_limpia[:-2]
+    if palabra_limpia[-2] in VOCALES_ESPANOL:
+        return palabra_limpia[:-1]
+    return palabra_limpia
+
+
+def singularizar_frase(frase: str) -> str:
+    """Singulariza cada palabra de una frase manteniendo el resto intacto."""
+    return " ".join(singularizar_palabra(palabra) for palabra in frase.split())
+
+
+def formatear_precio_clp(precio: float | int) -> str:
+    """Formatea un precio en pesos chilenos con signo peso y punto de miles (ej. 10600.0 -> '$10.600')."""
+    return f"${round(precio):,}".replace(",", ".")
+
+
 def _texto_contiene(texto_primero: str, texto_segundo: str) -> bool:
     """
-    Compara dos palabras por igualdad o prefijo de palabra, nunca por subcadena interna.
+    Compara dos palabras por igualdad, singular equivalente o prefijo de palabra, nunca por subcadena interna.
 
     Evita falsos positivos como "leche" en "Loncoleche" y, bajo `LONGITUD_MINIMA_PREFIJO`,
-    exige igualdad exacta para evitar choques en términos cortos ("bajo" vs "ajo", "sal" vs "salsa").
+    exige igualdad exacta (o singular exacto como "panes" == "pan") para evitar choques
+    en términos cortos ("bajo" vs "ajo", "sal" vs "salsa").
     """
+    if texto_primero == texto_segundo:
+        return True
+    singular_primero = _normalizar_texto(singularizar_palabra(texto_primero))
+    singular_segundo = _normalizar_texto(singularizar_palabra(texto_segundo))
+    if singular_primero == singular_segundo:
+        return True
     if len(texto_primero) < LONGITUD_MINIMA_PREFIJO or len(texto_segundo) < LONGITUD_MINIMA_PREFIJO:
-        return texto_primero == texto_segundo
+        return False
     return texto_segundo.startswith(texto_primero) or texto_primero.startswith(texto_segundo)
 
 
@@ -367,25 +446,37 @@ def admitido_por_catalogo(termino: str) -> bool:
 
 def terminos_busqueda_catalogo(frase: str) -> list[str]:
     """
-    Devuelve los textos que se envían como `?q=` a Catálogo para una palabra clave o ingrediente.
+    Devuelve la secuencia ordenada de términos `?q=` para buscar una frase en Catálogo.
 
-    Catálogo busca la subcadena literal (ILIKE, sensible a tildes): "harina almendras"
-    no encontraría "Harina de Almendras". Por eso se envía la frase completa y, si
-    tiene varias palabras, también su término más largo; el filtrado determinista
-    exige después que calcen todos los términos. Se agregan las variantes sin
-    tildes porque los títulos de las cadenas no siempre las llevan.
+    Orden de prioridad:
+    1. La frase tal cual (y su versión sin tildes si difiere).
+    2. La forma singular (y sin tildes si difiere), porque Catálogo usa prefijo/palabra
+       y "zanahorias" no coincide con "Zanahoria Granel".
+    3. Si la frase tiene varias palabras, su término más largo y su singular, porque
+       Catálogo busca la subcadena literal ("harina almendras" no calza "Harina de Almendras").
+    El llamador prueba cada término en orden y se detiene al obtener resultados.
     """
     frase_minuscula = " ".join(frase.lower().split())
     if not frase_minuscula:
         return []
 
     candidatos = [frase_minuscula]
+    frase_singular = singularizar_frase(frase_minuscula)
+    if frase_singular != frase_minuscula:
+        candidatos.append(frase_singular)
+
     terminos = [termino for termino in _separar_terminos(frase_minuscula) if len(termino) >= LONGITUD_MINIMA_PREFIJO]
     if len(terminos) > 1 or (terminos and terminos[0] != frase_minuscula):
-        candidatos.append(max(terminos, key=len))
+        termino_mas_largo = max(terminos, key=len)
+        candidatos.append(termino_mas_largo)
+        termino_mas_largo_singular = singularizar_palabra(termino_mas_largo)
+        if termino_mas_largo_singular != termino_mas_largo:
+            candidatos.append(termino_mas_largo_singular)
+
     candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
 
-    # Conserva el orden (la frase completa primero), quita repetidos y lo que Catálogo rechazaría.
+    # Conserva el orden (primero el término tal cual, luego singular y variantes), quita repetidos
+    # y descarta lo que Catálogo rechazaría con 400 (< 3 bytes).
     return list(dict.fromkeys(candidato for candidato in candidatos if candidato and admitido_por_catalogo(candidato)))
 
 
