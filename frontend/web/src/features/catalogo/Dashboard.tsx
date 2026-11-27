@@ -31,11 +31,15 @@ import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { useCart } from '@/features/catalogo/CartContext'
 import { getProducts, PREFIJO_CATEGORIA } from '@/features/catalogo/products-api'
 
+type BloqueCache<Datos> = {
+  datos: Datos
+  capturadoEn: number
+}
+
 type CachePortada = {
-  ofertas?: Producto[]
-  marcas?: Producto[]
-  supermercadosPortada?: number
-  capturadoEn?: number
+  ofertas?: BloqueCache<Producto[]>
+  marcas?: BloqueCache<Producto[]>
+  supermercadosPortada?: BloqueCache<number>
 }
 
 const cachePortada: CachePortada = {}
@@ -44,7 +48,8 @@ const cachePortada: CachePortada = {}
 const TTL_CACHE_PORTADA_MS = 5 * 60 * 1000
 
 /** Conserva una captura de la portada sólo dentro de su ventana de validez. */
-const cacheVigente = (capturadoEn?: number) => !capturadoEn || Date.now() - capturadoEn <= TTL_CACHE_PORTADA_MS
+const cacheVigente = (capturadoEn?: number) =>
+  capturadoEn !== undefined && Date.now() - capturadoEn <= TTL_CACHE_PORTADA_MS
 
 // La categoría técnica de BD no representa una categoría de compra.
 const CATEGORIA_OCULTA = 'scraped category'
@@ -239,11 +244,23 @@ export default function Page() {
   }, [resetVersion, parametrosUrl, setParametrosUrl])
 
   // ===== Datos reales de la portada =====
-  const [ofertasVigentes, setOfertasVigentes] = useState<Producto[]>(cachePortada.ofertas ?? [])
-  const [marcasPropias, setMarcasPropias] = useState<Producto[]>(cachePortada.marcas ?? [])
-  const [supermercadosPortada, setSupermercadosPortada] = useState<number | undefined>(cachePortada.supermercadosPortada)
-  const [cargandoOfertas, setCargandoOfertas] = useState(!cachePortada.ofertas)
-  const [cargandoMarcas, setCargandoMarcas] = useState(!cachePortada.marcas)
+  const ofertasEnCacheVigentes = cacheVigente(cachePortada.ofertas?.capturadoEn)
+    ? cachePortada.ofertas?.datos
+    : undefined
+  const marcasEnCacheVigentes = cacheVigente(cachePortada.marcas?.capturadoEn)
+    ? cachePortada.marcas?.datos
+    : undefined
+  const supermercadosEnCacheVigentes = cacheVigente(cachePortada.supermercadosPortada?.capturadoEn)
+    ? cachePortada.supermercadosPortada?.datos
+    : undefined
+
+  const [ofertasVigentes, setOfertasVigentes] = useState<Producto[]>(ofertasEnCacheVigentes ?? [])
+  const [marcasPropias, setMarcasPropias] = useState<Producto[]>(marcasEnCacheVigentes ?? [])
+  const [supermercadosPortada, setSupermercadosPortada] = useState<number | undefined>(
+    supermercadosEnCacheVigentes,
+  )
+  const [cargandoOfertas, setCargandoOfertas] = useState(!ofertasEnCacheVigentes)
+  const [cargandoMarcas, setCargandoMarcas] = useState(!marcasEnCacheVigentes)
   const [errorOfertas, setErrorOfertas] = useState(false)
   const [errorMarcas, setErrorMarcas] = useState(false)
   const [intentoPortada, setIntentoPortada] = useState(0)
@@ -257,27 +274,38 @@ export default function Page() {
     referenciaCategorias.current?.scrollBy({ left: direccion * DESPLAZAMIENTO_CATEGORIAS_PX, behavior: 'smooth' })
   }
 
-  // Carga progresiva independiente; cada bloque se cachea y actualiza su estado.
+  // Carga progresiva independiente; cada bloque maneja su propio TTL y limpia datos vencidos al fallar.
   useEffect(() => {
     if (!enModoPortada) return
     const controlador = new AbortController()
 
-    if (!cachePortada.ofertas || !cacheVigente(cachePortada.capturadoEn)) {
+    const registrarSupermercadosPortada = (cantidad: number) => {
+      const actual = cacheVigente(cachePortada.supermercadosPortada?.capturadoEn)
+        ? (cachePortada.supermercadosPortada?.datos ?? 0)
+        : 0
+      const maximo = Math.max(actual, cantidad)
+      cachePortada.supermercadosPortada = { datos: maximo, capturadoEn: Date.now() }
+      setSupermercadosPortada(maximo)
+    }
+
+    if (!cachePortada.ofertas || !cacheVigente(cachePortada.ofertas.capturadoEn)) {
+      delete cachePortada.ofertas
+      setOfertasVigentes([])
       setCargandoOfertas(true)
       setErrorOfertas(false)
       getProducts(`?en_stock=true&en_oferta=true&page=1&limit=${LIMITE_CONSULTA_PORTADA}`, controlador.signal)
         .then((resultado) => {
           if (controlador.signal.aborted) return
           const representativos = seleccionarRepresentativos(resultado.products)
-          cachePortada.ofertas = representativos
-          cachePortada.capturadoEn = Date.now()
-          cachePortada.supermercadosPortada = resultado.markets.length
-          setSupermercadosPortada(resultado.markets.length)
+          cachePortada.ofertas = { datos: representativos, capturadoEn: Date.now() }
+          registrarSupermercadosPortada(resultado.markets.length)
           setOfertasVigentes(representativos)
           setErrorOfertas(false)
         })
         .catch(() => {
           if (controlador.signal.aborted) return
+          delete cachePortada.ofertas
+          setOfertasVigentes([])
           setErrorOfertas(true)
         })
         .finally(() => {
@@ -285,22 +313,24 @@ export default function Page() {
         })
     }
 
-    if (!cachePortada.marcas || !cacheVigente(cachePortada.capturadoEn)) {
+    if (!cachePortada.marcas || !cacheVigente(cachePortada.marcas.capturadoEn)) {
+      delete cachePortada.marcas
+      setMarcasPropias([])
       setCargandoMarcas(true)
       setErrorMarcas(false)
       getProducts(`?en_stock=true&solo_marcas_blancas=true&page=1&limit=${LIMITE_CONSULTA_PORTADA}`, controlador.signal)
         .then((resultado) => {
           if (controlador.signal.aborted) return
           const representativos = seleccionarRepresentativos(resultado.products)
-          cachePortada.marcas = representativos
-          cachePortada.capturadoEn = Date.now()
-          cachePortada.supermercadosPortada = resultado.markets.length
-          setSupermercadosPortada(resultado.markets.length)
+          cachePortada.marcas = { datos: representativos, capturadoEn: Date.now() }
+          registrarSupermercadosPortada(resultado.markets.length)
           setMarcasPropias(representativos)
           setErrorMarcas(false)
         })
         .catch(() => {
           if (controlador.signal.aborted) return
+          delete cachePortada.marcas
+          setMarcasPropias([])
           setErrorMarcas(true)
         })
         .finally(() => {
@@ -582,6 +612,7 @@ export default function Page() {
                     ))}
                   </div>
                 ) : (
+                  !errorOfertas &&
                   ofertasVigentes.length > 0 && (
                     <ProductCarousel
                       products={ofertasVigentes}
@@ -622,6 +653,7 @@ export default function Page() {
                     ))}
                   </div>
                 ) : (
+                  !errorMarcas &&
                   marcasPropias.length > 0 && (
                     <ProductCarousel
                       products={marcasPropias}
