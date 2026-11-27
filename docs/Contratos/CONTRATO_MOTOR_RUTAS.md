@@ -8,7 +8,8 @@
 > - **Sin costo de combustible en el MVP:** `costo_traslado` es `0`, `total == costo_productos`, no se pide `rendimiento_km_l` y no se consulta CNE.
 > - **Entrada mínima:** solo `lista_id` (sin lista ad-hoc de artículos) y **`origen` opcional**. Si `origen` se omite o es `null`, se usa el **centro de Temuco** (`lat: -38.7359`, `lon: -72.5904`) y la respuesta informa `origen.por_defecto: true`.
 > - **`ruta` es siempre la opción recomendada:** si por el umbral de ahorro (`RUTAS_UMBRAL_AHORRO`, `500` CLP por defecto) gana comprar todo en una sola tienda, `ruta` tiene una sola parada y `ahorro` es `0`.
-> - **Cadenas sin precios (ej. Unimarc) u ofertas sin stock:** se ignoran sin error; los productos sin ninguna oferta vigente salen en `no_cubiertos[]`.
+> - **Cadenas sin precios (ej. Unimarc) u ofertas sin stock:** se ignoran sin error; los productos sin ninguna oferta vigente salen en `no_cubiertos[]` con `motivo: "sin_oferta_en_radio"`.
+> - **Ruta parcial:** si los productos están repartidos en más tiendas que `RUTAS_MAX_PARADAS`, la respuesta es `200` con la ruta que cubre más artículos; los que no caben salen en `no_cubiertos[]` con `motivo: "fuera_del_maximo_de_paradas"` y su `nombre`. Solo se responde `422` si ningún artículo tiene oferta.
 
 ## 0. Contrato vigente MVP (fuente para Frontend)
 
@@ -130,7 +131,7 @@ Envoltorio común: `{"estado": <int>, "mensaje": <string>, "detalle"?: <string>}
 | Lista sin artículos pendientes (`esta_comprado = false`) | `422` | `La lista no tiene artículos por comprar.` |
 | Más artículos pendientes que `RUTAS_MAX_ARTICULOS` (30) | `422` | `La lista supera el máximo de artículos para calcular una ruta.` |
 | Sin sucursales físicas en el radio | `422` | `No hay supermercados cercanos para calcular una ruta.` |
-| Ningún artículo con oferta vigente, o ningún conjunto de hasta `RUTAS_MAX_PARADAS` cubre los cubribles | `422` | `No se encontró una forma de comprar la lista en las tiendas cercanas.` |
+| Ningún artículo con oferta vigente (si solo faltan algunos, o no caben en `RUTAS_MAX_PARADAS` tiendas, responde `200` con ruta parcial) | `422` | `No se encontró una forma de comprar la lista en las tiendas cercanas.` |
 | Catálogo no responde o falla | `503` | `No se pudo consultar precios. Intenta de nuevo.` |
 
 ---
@@ -195,6 +196,12 @@ registra y se reestima antes de programarlo.
 4. **Alternativas incompletas.** Si un conjunto no cubre todos los artículos
    cubribles, se descarta. Un conjunto con una tienda donde no se compra nada
    también se descarta, porque ya se evaluó el conjunto sin esa tienda.
+5. **Compra parcial.** Si ningún conjunto cubre todos los cubribles (están
+   repartidos en más tiendas que `RUTAS_MAX_PARADAS`), se usan los conjuntos que
+   cubren la mayor cantidad de artículos. Gana el de menor total y solo se
+   compara (incluida la base de una tienda y el umbral) con los conjuntos que
+   dejan fuera exactamente los mismos artículos. Los que quedan fuera se
+   informan en `no_cubiertos` con `motivo: "fuera_del_maximo_de_paradas"`.
 
 ### 2.3 Orden de visita y traslado (SUP-328)
 
@@ -299,7 +306,7 @@ para un ejemplo completo. La forma general es:
 | `ruta.paradas[]` | `orden`, `sucursal_id`, `nombre`, `cadena`, `lat`, `lon`, `subtotal` y `articulos` (con `producto_id` de la lista, `producto_id_oferta`, `cantidad`, `precio_unitario` y `subtotal`) |
 | `base_una_tienda` | `sucursal_id`, `nombre`, `total`; o `null` si ninguna tienda sola alcanza |
 | `ahorro` | Número; o `null` cuando `base_una_tienda` es `null` |
-| `no_cubiertos[]` | `producto_id` y `motivo` (`sin_oferta_en_radio`) de los artículos que salieron del cálculo |
+| `no_cubiertos[]` | `producto_id`, `motivo` (`sin_oferta_en_radio` o `fuera_del_maximo_de_paradas`) y `nombre` cuando se conoce, de los artículos que salieron del cálculo |
 | `candidatas_evaluadas` | Cantidad de sucursales consideradas |
 
 `producto_id_oferta` es el `producto_id` del equivalente que se compra en esa
@@ -319,11 +326,12 @@ opcional.
 | Lista sin artículos pendientes | 422 | `La lista no tiene artículos por comprar.` |
 | Más artículos que `RUTAS_MAX_ARTICULOS` | 422 | `La lista supera el máximo de artículos para calcular una ruta.` |
 | No hay sucursales con coordenadas dentro del radio | 422 | `No hay supermercados cercanos para calcular una ruta.` |
-| Ningún artículo tiene oferta en el radio, o ningún conjunto de hasta `RUTAS_MAX_PARADAS` tiendas cubre la compra | 422 | `No se encontró una forma de comprar la lista en las tiendas cercanas.` (el `detalle` indica los productos sin cobertura) |
+| Ningún artículo tiene oferta en el radio | 422 | `No se encontró una forma de comprar la lista en las tiendas cercanas.` (el `detalle` indica los productos sin cobertura) |
 | Catálogo no responde o responde con error | 503 | `No se pudo consultar precios. Intenta de nuevo.` |
 
 **Regla:** si falta un dato, el motor no inventa una ruta. Un 422 o un 503 no
-devuelve una ruta parcial.
+devuelve una ruta parcial. La ruta parcial (`200`) solo omite artículos y los
+informa en `no_cubiertos`; nunca inventa precios ni tiendas.
 
 ## 4. Qué le pide Rutas a Catálogo (SUP-317)
 

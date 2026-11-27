@@ -44,7 +44,7 @@ una migración ni un despliegue.
 | POST | `/api/v1/listas/{id}/articulos` | Cuerpo `{"producto_id", "cantidad"}`. 201 si es nuevo; 200 si ya estaba y se sumó la cantidad |
 | PUT | `/api/v1/listas/{id}/articulos/{articulo_id}` | Cuerpo con `cantidad` y/o `esta_comprado`. No consulta a Catálogo |
 | DELETE | `/api/v1/listas/{id}/articulos/{articulo_id}` | 204 |
-| POST | `/api/v1/rutas/optimizar` | Cuerpo `{"lista_id", "origen"?}`. Calcula cadena(s) más barata(s) y orden Haversine sin combustible ([contrato](../../docs/Contratos/CONTRATO_MOTOR_RUTAS.md)) |
+| POST | `/api/v1/rutas/optimizar` | Cuerpo `{"lista_id", "origen"?}`. Calcula cadena(s) más barata(s) y orden Haversine sin combustible. Si los productos no caben en `RUTAS_MAX_PARADAS` tiendas, responde 200 con ruta parcial y `no_cubiertos` (`fuera_del_maximo_de_paradas`); 422 solo si ningún artículo tiene oferta ([contrato](../../docs/Contratos/CONTRATO_MOTOR_RUTAS.md)) |
 
 - La sesión sale sólo de la cookie HttpOnly `jwt` emitida por Identidad (HS256,
   `exp` obligatorio, `user_id` UUID). Se ignoran `Authorization`, `X-User-ID` y

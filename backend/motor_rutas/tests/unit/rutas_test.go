@@ -7,11 +7,13 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"sync"
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/httpapi"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/listas"
+	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/optimizacion"
 )
 
 // =============================================================================
@@ -91,6 +93,54 @@ func sucursalesTemucoPrueba() []listas.SucursalCandidata {
 // =============================================================================
 // Casos de éxito (200 OK)
 // =============================================================================
+
+// TestOptimizarRutaParcialCuandoNoCabeEnLasParadas: con una parada permitida
+// y cada producto en una cadena distinta, la ruta ya no responde 422: compra
+// lo que cabe y el resto sale en no_cubiertos con su nombre y motivo.
+func TestOptimizarRutaParcialCuandoNoCabeEnLasParadas(prueba *testing.T) {
+	precios := &preciosFalso{
+		respuesta: listas.RespuestaPreciosComparables{
+			Sucursales: sucursalesTemucoPrueba(),
+			Productos: []listas.ProductoPreciosComparable{
+				{ProductoID: productoLeche, Estado: "comparable", Ofertas: []listas.OfertaComparable{
+					{ProductoIDOferta: productoLeche, SucursalID: 5, Cadena: "A Cuenta", Nombre: "Leche 1 L", Precio: ptrFloat(1100), EnStock: ptrBool(true)},
+				}},
+				{ProductoID: productoPan, Estado: "comparable", Ofertas: []listas.OfertaComparable{
+					{ProductoIDOferta: productoPan, SucursalID: 6, Cadena: "Cugat", Nombre: "Pan molde", Precio: ptrFloat(2000), EnStock: ptrBool(true)},
+				}},
+			},
+		},
+	}
+	clienteHTTP := nuevoClienteRutas(prueba, precios, httpapi.OpcionesOptimizacion{MaxParadas: 1})
+	listaID := crearListaConArticulos(prueba, clienteHTTP.repo, usuarioA, []listas.ArticuloLote{
+		{ProductoID: productoLeche, Cantidad: 1},
+		{ProductoID: productoPan, Cantidad: 1},
+	})
+
+	respuesta := clienteHTTP.pedir(http.MethodPost, rutaOptimizar, `{"lista_id":"`+listaID+`"}`, nil)
+	if respuesta.Code != http.StatusOK {
+		prueba.Fatalf("estado = %d, se esperaba 200 con ruta parcial; cuerpo = %s", respuesta.Code, respuesta.Body.String())
+	}
+	var cuerpo struct {
+		Ruta struct {
+			Paradas []struct {
+				SucursalID int `json:"sucursal_id"`
+			} `json:"paradas"`
+			CostoProductos int `json:"costo_productos"`
+		} `json:"ruta"`
+		NoCubiertos []optimizacion.NoCubierto `json:"no_cubiertos"`
+	}
+	if errorJSON := json.Unmarshal(respuesta.Body.Bytes(), &cuerpo); errorJSON != nil {
+		prueba.Fatal(errorJSON)
+	}
+	if len(cuerpo.Ruta.Paradas) != 1 || cuerpo.Ruta.Paradas[0].SucursalID != 5 || cuerpo.Ruta.CostoProductos != 1100 {
+		prueba.Fatalf("ruta = %+v, se esperaba solo A Cuenta con la leche", cuerpo.Ruta)
+	}
+	esperado := []optimizacion.NoCubierto{{ProductoID: productoPan, Nombre: "Pan molde", Motivo: optimizacion.MotivoFueraDelMaximoDeParadas}}
+	if !slices.Equal(cuerpo.NoCubiertos, esperado) {
+		prueba.Fatalf("no_cubiertos = %+v, se esperaba %+v", cuerpo.NoCubiertos, esperado)
+	}
+}
 
 func TestOptimizarRutaSinOrigenUsaCentroTemucoYCombinaCadenas(prueba *testing.T) {
 	precios := &preciosFalso{

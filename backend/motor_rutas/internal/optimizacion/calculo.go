@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 )
 
 // =============================================================================
@@ -60,6 +61,17 @@ func Calcular(entrada Entrada) (Resultado, error) {
 	}
 	slices.SortStableFunc(evaluadas, compararEvaluadas)
 
+	// --- Compra parcial: solo se comparan compras de los mismos artículos ---
+	// La mejor fija qué artículos quedan fuera; la base y el ahorro se calculan
+	// entre los conjuntos que dejan fuera exactamente esos, o comparar totales
+	// premiaría al que deja fuera el producto más caro.
+	if len(evaluadas[0].alternativa.Faltantes) > 0 {
+		faltantesGanadores := claveFaltantes(evaluadas[0].alternativa.Faltantes)
+		evaluadas = slices.DeleteFunc(evaluadas, func(candidata evaluada) bool {
+			return claveFaltantes(candidata.alternativa.Faltantes) != faltantesGanadores
+		})
+	}
+
 	// --- Base de una tienda: la mejor alternativa con una sola parada ---
 	var base *evaluada
 	for indice := range evaluadas {
@@ -78,7 +90,7 @@ func Calcular(entrada Entrada) (Resultado, error) {
 
 	resultado := Resultado{
 		Ruta:                construirRuta(*elegida),
-		NoCubiertos:         asignacion.NoCubiertos,
+		NoCubiertos:         append(slices.Clone(asignacion.NoCubiertos), elegida.alternativa.Faltantes...),
 		CandidatasEvaluadas: asignacion.CandidatasEvaluadas,
 	}
 	if base != nil {
@@ -176,6 +188,17 @@ func validarParametros(entrada Entrada) error {
 		return fmt.Errorf("%w: UmbralAhorro no puede ser negativo", ErrParametros)
 	}
 	return nil
+}
+
+// claveFaltantes identifica qué artículos deja fuera una compra parcial. Los
+// faltantes siguen el orden de la lista, así que la misma selección da la
+// misma clave.
+func claveFaltantes(faltantes []NoCubierto) string {
+	ids := make([]string, 0, len(faltantes))
+	for _, faltante := range faltantes {
+		ids = append(ids, faltante.ProductoID)
+	}
+	return strings.Join(ids, "\x00")
 }
 
 // pesos redondea un monto al peso entero.
