@@ -1132,6 +1132,53 @@ data:
     -- No se elimina la fila al vaciar: la versión y el último resultado protegen reintentos.
     GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
     COMMIT;
+  15_indices_busqueda_trigram.sql: |
+    -- =======================================================
+    -- Índices GIN trigram para búsquedas sobre scraper.productos_crudos
+    -- =======================================================
+    -- Ejecutar como operador (POSTGRES_USER). Idempotente: segura en bases nuevas y
+    -- existentes. Complementa 03_indices_optimizacion.sql incorporando el índice de
+    -- sku y actualizando las estadísticas del planificador con ANALYZE.
+
+    -- ===== Extensión pg_trgm =====
+    CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+    -- ===== Índices GIN con gin_trgm_ops =====
+    CREATE INDEX IF NOT EXISTS idx_productos_crudos_titulo_trgm
+        ON scraper.productos_crudos USING gin (titulo_crudo gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_productos_crudos_marca_trgm
+        ON scraper.productos_crudos USING gin (marca_cruda gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_productos_crudos_categoria_trgm
+        ON scraper.productos_crudos USING gin (categoria_cruda gin_trgm_ops);
+
+    CREATE INDEX IF NOT EXISTS idx_productos_crudos_sku_trgm
+        ON scraper.productos_crudos USING gin (sku gin_trgm_ops);
+
+    -- ===== Actualización de estadísticas =====
+    ANALYZE scraper.productos_crudos;
+  16_desactivar_jit_roles_lectura.sql: |
+    -- =======================================================
+    -- Desactivar JIT en roles de consulta (app_catalogo, app_rutas)
+    -- =======================================================
+    -- Ejecutar como operador (POSTGRES_USER) después de 06_propiedad_permisos.sql.
+    -- Idempotente: segura en bases nuevas y existentes.
+    -- Motivo: con límite de CPU acotado en PostgreSQL, la compilación JIT sumaba
+    -- ~1 s por consulta en Catálogo y Motor de rutas.
+
+    -- ===== Configuración de roles runtime =====
+    DO $$
+    BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_catalogo') THEN
+            ALTER ROLE app_catalogo SET jit = off;
+        END IF;
+
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'app_rutas') THEN
+            ALTER ROLE app_rutas SET jit = off;
+        END IF;
+    END
+    $$;
   init.sql: |
     -- Inicialización de una base PostgreSQL + PostGIS nueva (SUP-370).
     --
