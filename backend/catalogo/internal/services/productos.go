@@ -25,6 +25,9 @@ type LimitesProductos struct {
 	// VigenciaCacheSupermercados reutiliza las cadenas disponibles de un mismo
 	// filtro; 0 consulta siempre (sin caché).
 	VigenciaCacheSupermercados time.Duration
+	// Reloj de la caché; nil usa time.Now. Las pruebas lo fijan para
+	// comprobar el vencimiento sin esperar.
+	Reloj func() time.Time
 }
 
 // Límites propios del contrato, no configurables.
@@ -63,10 +66,14 @@ type ServicioProductos struct {
 
 // NuevoServicioProductos inyecta el repositorio y los límites ya validados.
 func NuevoServicioProductos(repositorio domain.RepositorioProductos, limites LimitesProductos) *ServicioProductos {
+	reloj := limites.Reloj
+	if reloj == nil {
+		reloj = time.Now
+	}
 	return &ServicioProductos{
 		repositorio:   repositorio,
 		limites:       limites,
-		supermercados: nuevaCacheSupermercados(limites.VigenciaCacheSupermercados, time.Now),
+		supermercados: nuevaCacheSupermercados(limites.VigenciaCacheSupermercados, reloj),
 	}
 }
 

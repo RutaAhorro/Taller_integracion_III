@@ -1,12 +1,17 @@
 // Pruebas de la caché de supermercados disponibles del listado público: se
 // reutiliza entre páginas y órdenes de un mismo filtro, se separa por filtro,
-// no guarda errores, no expone su contenido a modificaciones y se desactiva
-// con vigencia 0.
+// no guarda errores, no expone su contenido a modificaciones, vence con el
+// plazo, libera espacio al llenarse, soporta concurrencia y se desactiva con
+// vigencia 0.
 package unit_test
 
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -122,5 +127,123 @@ func TestCacheSupermercados_VigenciaCeroConsultaSiempre(prueba *testing.T) {
 	}
 	if pagina.Supermercados == nil {
 		prueba.Fatal("sin caché los supermercados deben ser [] y no null")
+	}
+}
+
+// relojManual permite adelantar el tiempo de la caché sin esperar.
+type relojManual struct{ ahora time.Time }
+
+// Ahora devuelve el instante actual del reloj de prueba.
+func (reloj *relojManual) Ahora() time.Time { return reloj.ahora }
+
+// TestCacheSupermercados_VenceTrasLaVigencia comprueba que una entrada se
+// reutiliza antes del plazo y se vuelve a consultar al cumplirse.
+func TestCacheSupermercados_VenceTrasLaVigencia(prueba *testing.T) {
+	const vigencia = 2 * time.Minute
+	reloj := &relojManual{ahora: time.Date(2026, 11, 27, 12, 0, 0, 0, time.UTC)}
+	repositorio := &mockProductoRepository{}
+	limites := limitesProductosDePrueba
+	limites.VigenciaCacheSupermercados = vigencia
+	limites.Reloj = reloj.Ahora
+	servicio := services.NuevoServicioProductos(repositorio, limites)
+
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{})
+	reloj.ahora = reloj.ahora.Add(vigencia - time.Second)
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{})
+	if repositorio.llamadasSupermercados != 1 {
+		prueba.Fatalf("antes del plazo se esperaba 1 consulta, hubo %d", repositorio.llamadasSupermercados)
+	}
+	reloj.ahora = reloj.ahora.Add(time.Second)
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{})
+	if repositorio.llamadasSupermercados != 2 {
+		prueba.Fatalf("al cumplirse el plazo se esperaba otra consulta, hubo %d", repositorio.llamadasSupermercados)
+	}
+}
+
+// entradasParaLlenarCache supera el máximo interno de 512 entradas de la caché.
+const entradasParaLlenarCache = 513
+
+// TestCacheSupermercados_LiberaEspacioAlLlenarse comprueba que al superar el
+// máximo de entradas vigentes la caché se vacía y vuelve a consultar.
+func TestCacheSupermercados_LiberaEspacioAlLlenarse(prueba *testing.T) {
+	repositorio := &mockProductoRepository{}
+	servicio := servicioConCache(repositorio, vigenciaCacheDePrueba)
+	for indice := 0; indice < entradasParaLlenarCache; indice++ {
+		pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{Query: fmt.Sprintf("busqueda%d", indice)})
+	}
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{Query: "busqueda0"})
+	if repositorio.llamadasSupermercados != entradasParaLlenarCache+1 {
+		prueba.Fatalf("la primera entrada debía descartarse al llenarse: %d consultas", repositorio.llamadasSupermercados)
+	}
+}
+
+// TestCacheSupermercados_FiltroNoSerializableNoSeGuarda comprueba que un
+// precio NaN no comparte clave con otros filtros: consulta siempre.
+func TestCacheSupermercados_FiltroNoSerializableNoSeGuarda(prueba *testing.T) {
+	repositorio := &mockProductoRepository{}
+	servicio := servicioConCache(repositorio, vigenciaCacheDePrueba)
+	precioInvalido := math.NaN()
+	precioInfinito := math.Inf(1)
+
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{PrecioMin: &precioInvalido})
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{PrecioMin: &precioInfinito})
+	pedirCatalogo(prueba, servicio, domain.FiltroProductosDTO{PrecioMin: &precioInvalido})
+	if repositorio.llamadasSupermercados != 3 {
+		prueba.Fatalf("un filtro no serializable no debe usar la caché: %d consultas", repositorio.llamadasSupermercados)
+	}
+}
+
+// repositorioConcurrente es un doble seguro para goroutines que sólo cuenta
+// las consultas de supermercados.
+type repositorioConcurrente struct {
+	mockProductoRepository
+	llamadas atomic.Int64
+}
+
+// Listar responde una página vacía sin compartir estado entre goroutines.
+func (repositorio *repositorioConcurrente) Listar(context.Context, domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
+	return nil, 0, nil
+}
+
+// ListarSupermercados cuenta la consulta de forma atómica.
+func (repositorio *repositorioConcurrente) ListarSupermercados(context.Context, domain.FiltroProductosDTO) ([]domain.SupermercadoDTO, error) {
+	repositorio.llamadas.Add(1)
+	return []domain.SupermercadoDTO{{ID: 1, Nombre: "Jumbo"}}, nil
+}
+
+// peticionesConcurrentes es la cantidad de goroutines que comparten la caché.
+const peticionesConcurrentes = 50
+
+// TestCacheSupermercados_PeticionesConcurrentes comprueba con -race que muchas
+// peticiones simultáneas comparten la caché sin carreras y sin errores.
+func TestCacheSupermercados_PeticionesConcurrentes(prueba *testing.T) {
+	repositorio := &repositorioConcurrente{}
+	limites := limitesProductosDePrueba
+	limites.VigenciaCacheSupermercados = vigenciaCacheDePrueba
+	servicio := services.NuevoServicioProductos(repositorio, limites)
+
+	var grupo sync.WaitGroup
+	errores := make(chan error, peticionesConcurrentes)
+	for indice := 0; indice < peticionesConcurrentes; indice++ {
+		grupo.Add(1)
+		go func(indice int) {
+			defer grupo.Done()
+			filtro := domain.FiltroProductosDTO{Query: fmt.Sprintf("busqueda%d", indice%3)}
+			pagina, errorObtenido := servicio.ObtenerCatalogo(context.Background(), filtro)
+			if errorObtenido == nil && len(pagina.Supermercados) != 1 {
+				errorObtenido = fmt.Errorf("supermercados inesperados: %#v", pagina.Supermercados)
+			}
+			errores <- errorObtenido
+		}(indice)
+	}
+	grupo.Wait()
+	close(errores)
+	for errorObtenido := range errores {
+		if errorObtenido != nil {
+			prueba.Fatal(errorObtenido)
+		}
+	}
+	if llamadas := repositorio.llamadas.Load(); llamadas < 3 || llamadas > peticionesConcurrentes {
+		prueba.Fatalf("consultas fuera de rango: %d", llamadas)
 	}
 }

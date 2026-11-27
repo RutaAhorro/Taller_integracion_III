@@ -61,7 +61,12 @@ func (cache *cacheSupermercados) obtener(contexto context.Context, filtro domain
 		return consultarSinNulos(contexto, filtro, consultar)
 	}
 
-	clave := claveSupermercados(filtro)
+	clave, claveValida := claveSupermercados(filtro)
+	if !claveValida {
+		// Un filtro que no se puede serializar (p. ej. precio NaN) no se guarda:
+		// compartiría clave con otros filtros inválidos distintos.
+		return consultarSinNulos(contexto, filtro, consultar)
+	}
 	ahora := cache.reloj()
 	cache.mutex.Lock()
 	entrada, existe := cache.entradas[clave]
@@ -104,16 +109,17 @@ func (cache *cacheSupermercados) guardar(clave string, supermercados []domain.Su
 
 // claveSupermercados identifica el filtro sin los campos que no cambian las
 // cadenas disponibles: página, tamaño y orden, y la cadena elegida, que la
-// agregación omite para seguir ofreciendo las alternativas.
-func claveSupermercados(filtro domain.FiltroProductosDTO) string {
+// agregación omite para seguir ofreciendo las alternativas. Devuelve false si
+// el filtro no se puede serializar (JSON rechaza NaN e infinito).
+func claveSupermercados(filtro domain.FiltroProductosDTO) (string, bool) {
 	filtro.Page, filtro.Limit = 0, 0
 	filtro.SortBy, filtro.Order = "", ""
 	filtro.Supermercado = ""
 	clave, errorSerializacion := json.Marshal(filtro)
 	if errorSerializacion != nil {
-		return "" // FiltroProductosDTO sólo tiene textos, números y booleanos
+		return "", false
 	}
-	return string(clave)
+	return string(clave), true
 }
 
 // consultarSinNulos llama al repositorio y convierte nil en una lista vacía.

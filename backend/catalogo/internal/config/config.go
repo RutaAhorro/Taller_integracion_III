@@ -179,7 +179,6 @@ func Cargar() (Configuracion, error) {
 	}{
 		{"DB_CONN_MAX_LIFETIME", &configuracion.VidaMaximaConexion, vidaConexionPredeterminada},
 		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", &configuracion.AntiguedadMaximaDisponibilidad, antiguedadPredeterminada},
-		{"CATALOGO_CACHE_SUPERMERCADOS", &configuracion.VigenciaCacheSupermercados, vigenciaCacheSupermercadosPredeterminada},
 		{"CATALOGO_READ_HEADER_TIMEOUT", &configuracion.PlazoCabeceras, PlazoCabecerasPredeterminado},
 		{"CATALOGO_READ_TIMEOUT", &configuracion.PlazoLectura, PlazoLecturaPredeterminado},
 		{"CATALOGO_WRITE_TIMEOUT", &configuracion.PlazoEscritura, PlazoEscrituraPredeterminado},
@@ -194,6 +193,13 @@ func Cargar() (Configuracion, error) {
 		}
 		*variable.destino = valor
 	}
+
+	// La caché admite 0 para apagarla sin cambiar código (diagnóstico).
+	vigenciaCache, errorVigencia := leerDuracionNoNegativa("CATALOGO_CACHE_SUPERMERCADOS", vigenciaCacheSupermercadosPredeterminada)
+	if errorVigencia != nil {
+		return Configuracion{}, errorVigencia
+	}
+	configuracion.VigenciaCacheSupermercados = vigenciaCache
 	return configuracion, nil
 }
 
@@ -272,6 +278,20 @@ func leerDuracionPositiva(nombre string, predeterminada time.Duration) (time.Dur
 	duracion, errorConversion := time.ParseDuration(texto)
 	if errorConversion != nil || duracion <= 0 {
 		return 0, errors.New(nombre + " debe ser una duración positiva, por ejemplo 5s")
+	}
+	return duracion, nil
+}
+
+// leerDuracionNoNegativa es como leerDuracionPositiva pero acepta 0, que
+// desactiva la función asociada.
+func leerDuracionNoNegativa(nombre string, predeterminada time.Duration) (time.Duration, error) {
+	texto := os.Getenv(nombre)
+	if texto == "" {
+		return predeterminada, nil
+	}
+	duracion, errorConversion := time.ParseDuration(texto)
+	if errorConversion != nil || duracion < 0 {
+		return 0, errors.New(nombre + " debe ser una duración mayor o igual a 0, por ejemplo 2m o 0s")
 	}
 	return duracion, nil
 }

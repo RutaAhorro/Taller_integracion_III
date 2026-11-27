@@ -91,6 +91,21 @@ func TestCargarAplicaValoresConfigurados(prueba *testing.T) {
 	}
 }
 
+// TestCargarCacheSupermercadosAdmiteCero comprueba que 0 apaga la caché y que
+// una duración negativa se rechaza.
+func TestCargarCacheSupermercadosAdmiteCero(prueba *testing.T) {
+	prepararEntornoMinimo(prueba)
+	prueba.Setenv("CATALOGO_CACHE_SUPERMERCADOS", "0s")
+	configuracion, errorCarga := config.Cargar()
+	if errorCarga != nil || configuracion.VigenciaCacheSupermercados != 0 {
+		prueba.Fatalf("0s debe apagar la caché: %v %v", configuracion.VigenciaCacheSupermercados, errorCarga)
+	}
+	prueba.Setenv("CATALOGO_CACHE_SUPERMERCADOS", "-1m")
+	if _, errorCarga = config.Cargar(); errorCarga == nil {
+		prueba.Fatal("una vigencia negativa debe rechazarse")
+	}
+}
+
 func TestCargarRechazaValoresInvalidos(prueba *testing.T) {
 	for _, caso := range []struct{ variable, valor string }{
 		{"PORT", "0"}, {"PORT", "70000"}, {"PORT", "no-es-puerto"},
