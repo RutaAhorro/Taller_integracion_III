@@ -39,6 +39,9 @@ def configuracion_valida_base(monkeypatch):
     monkeypatch.setattr(config, "FALLBACK_JITTER_MAX", 0.5)
     monkeypatch.setattr(config, "CHAT_MAX_MENSAJE_LEN", 1000)
     monkeypatch.setattr(config, "EXPLICACION_MAX_PRODUCTOS", 8)
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 18.0)
+    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 5.0)
     monkeypatch.setattr(config, "GEMINI_API_KEY", "llave-gemini-prueba")
     monkeypatch.setattr(config, "GROQ_API_KEY", "llave-groq-prueba")
 
@@ -272,3 +275,16 @@ def test_leer_env_opcional_devuelve_none_si_solo_tiene_espacios(monkeypatch):
 
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     assert config._leer_env_opcional("GEMINI_API_KEY") is None
+
+
+def test_validar_configuracion_reparto_plazos_chat(monkeypatch):
+    """Valida que la fracción de Catálogo esté en (0, 1) y el mínimo de explicación sea > 0."""
+    for fraccion_invalida in (0.0, -0.1, 1.0, 1.5):
+        monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", fraccion_invalida)
+        with pytest.raises(RuntimeError, match="IA_CHAT_CATALOGO_FRACCION_PLAZO debe estar entre 0 y 1"):
+            config.validar_configuracion()
+
+    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.0)
+    with pytest.raises(RuntimeError, match="IA_CHAT_EXPLICACION_PLAZO_MINIMO debe ser mayor a 0"):
+        config.validar_configuracion()

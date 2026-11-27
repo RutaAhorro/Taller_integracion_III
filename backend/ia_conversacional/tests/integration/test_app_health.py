@@ -57,8 +57,16 @@ def test_lifespan_arranca_exitosamente_si_configuracion_valida(monkeypatch):
 
 
 def test_repositorio_productos_modulo_main_no_autocarga_en_import(monkeypatch):
-    """Verifica que importar app.main no llame a Catálogo: la carga espera al ciclo de vida."""
+    """Verifica que importar app.main no llame a Catálogo ni precargue productos al arrancar."""
+    from unittest.mock import patch
+
     from app.main import repositorio_productos
 
     assert hasattr(repositorio_productos, "cargar_productos")
     assert repositorio_productos._limite_pagina == config.CATALOGO_PAGE_LIMIT
+
+    with patch.object(repositorio_productos, "cargar_productos") as mock_cargar:
+        with TestClient(app) as cliente_activo:
+            respuesta = cliente_activo.get("/health")
+            assert respuesta.status_code == 200
+        mock_cargar.assert_not_called()

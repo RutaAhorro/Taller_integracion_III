@@ -12,9 +12,11 @@ from unittest.mock import MagicMock
 import httpx
 
 from app.domain.filtros import (
+    dividir_frases_compuestas,
     extraer_terminos_respaldo,
     filtrar_productos,
     sanitizar_filtros_crudos,
+    singularizar_palabra,
     vincular_ingredientes_catalogo,
 )
 from app.repositories.groq import rescatar_filtros_de_error_groq
@@ -409,3 +411,25 @@ def test_extraer_terminos_respaldo_descarta_verbos_conversacionales_adicionales(
     assert extraer_terminos_respaldo("Quisiera queso gauda") == ["queso gauda"]
     assert extraer_terminos_respaldo("Recomiendo pan integral") == ["pan integral"]
     assert extraer_terminos_respaldo("Busca arroz y necesita fideos") == ["arroz", "fideos"]
+    assert extraer_terminos_respaldo("Que zanahorias estan baratas?") == ["zanahorias"]
+    assert extraer_terminos_respaldo("qué zanahorias o verduras tienes baratas") == ["zanahorias", "verduras"]
+
+
+def test_singularizar_palabra_casos_frecuentes_supermercado():
+    """Reglas simples de plural a singular en español sin librerías externas."""
+    assert singularizar_palabra("zanahorias") == "zanahoria"
+    assert singularizar_palabra("verduras") == "verdura"
+    assert singularizar_palabra("limones") == "limón"
+    assert singularizar_palabra("nueces") == "nuez"
+    assert singularizar_palabra("panes") == "pan"
+    assert singularizar_palabra("yogures") == "yogur"
+    assert singularizar_palabra("carnes") == "carne"
+    assert singularizar_palabra("leches") == "leche"
+    assert singularizar_palabra("gas") == "gas"
+
+
+def test_dividir_frases_compuestas_separa_o_y_comas():
+    """Separa frases unidas por 'o', 'y' o comas sin alterar frases de un solo producto."""
+    assert dividir_frases_compuestas("zanahorias o verduras") == ["zanahorias", "verduras"]
+    assert dividir_frases_compuestas("tomate, cebolla y ajo") == ["tomate", "cebolla", "ajo"]
+    assert dividir_frases_compuestas("harina de almendras") == ["harina de almendras"]
