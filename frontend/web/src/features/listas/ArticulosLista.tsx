@@ -29,6 +29,11 @@ const AVISOS_PRODUCTO: Record<EstadoProducto, string> = {
     "Producto no encontrado en Catálogo. Puedes quitarlo de la lista.",
 };
 
+// Ignora precios nulos, no finitos o no positivos (ej. 0) al calcular totales y mostrar importes.
+function tienePrecioVigente(precio: number | null | undefined): precio is number {
+  return typeof precio === "number" && Number.isFinite(precio) && precio > 0;
+}
+
 /** Calcula el subtotal sin atribuir precios a referencias sin precio vigente confirmado. */
 function calcularTotalArticulos(articulos: ArticuloDetalle[]) {
   let totalPesos = 0;
@@ -37,7 +42,7 @@ function calcularTotalArticulos(articulos: ArticuloDetalle[]) {
 
   for (const articulo of articulos) {
     const precio = articulo.producto?.precio;
-    if (typeof precio === "number" && Number.isFinite(precio)) {
+    if (tienePrecioVigente(precio)) {
       totalPesos += precio * articulo.cantidad;
       conPrecio += 1;
     } else {
@@ -328,6 +333,7 @@ function ArticuloGuardado({
   const cantidadNumerica = Number(cantidad);
   const cantidadValida = esCantidadValida(cantidadNumerica);
   const producto = articulo.producto;
+  const precioVigente = producto?.precio;
   const nombre = producto?.nombre || "Producto sin información disponible";
 
   /** Envía el reemplazo de cantidad, no una suma, solo cuando el borrador es válido. */
@@ -371,9 +377,9 @@ function ArticuloGuardado({
           </div>
         </div>
         <p className="max-w-full rounded-md bg-secondary/70 px-3 py-1.5 text-xs font-semibold text-foreground sm:text-sm">
-          {producto?.precio === null || !producto
-            ? "Precio vigente no disponible"
-            : `${formatPrice(producto.precio)} / envase`}
+          {tienePrecioVigente(precioVigente)
+            ? `${formatPrice(precioVigente)} / envase`
+            : "Precio vigente no disponible"}
         </p>
       </div>
 
