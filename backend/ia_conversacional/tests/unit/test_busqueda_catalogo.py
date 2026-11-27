@@ -27,8 +27,6 @@ from app.repositories.catalogo import FUENTE_CATALOGO, FUENTE_MEMORIA, ProductoR
 from app.services.chat import (
     AVISO_CARGA_PREVIA,
     AVISO_MEMORIA_ANTIGUA,
-    ESTADO_MEMORIA,
-    ESTADO_MEMORIA_ANTIGUA,
     ESTADO_SIN_DATOS,
     ESTADO_VIGENTE,
     TEXTO_CATALOGO_NO_DISPONIBLE,
@@ -199,8 +197,20 @@ def test_terminos_busqueda_frase_simple():
 
 
 def test_terminos_busqueda_frase_compuesta_agrega_termino_mas_largo():
-    """Una frase de varias palabras agrega su término más largo, porque Catálogo busca la subcadena literal."""
-    assert terminos_busqueda_catalogo("harina almendras") == ["harina almendras", "almendras"]
+    """Una frase de varias palabras agrega su forma singular y el término más largo (y su singular)."""
+    assert terminos_busqueda_catalogo("harina almendras") == [
+        "harina almendras",
+        "harina almendra",
+        "almendras",
+        "almendra",
+    ]
+
+
+def test_terminos_busqueda_plurales_agrega_singular_despues_del_original():
+    """Primero se prueba el término tal cual y después la forma singular (con y sin tilde si aplica)."""
+    assert terminos_busqueda_catalogo("zanahorias") == ["zanahorias", "zanahoria"]
+    assert terminos_busqueda_catalogo("verduras") == ["verduras", "verdura"]
+    assert terminos_busqueda_catalogo("limones") == ["limones", "limón", "limon"]
 
 
 def test_terminos_busqueda_agrega_variante_sin_tildes():
@@ -336,34 +346,30 @@ def test_chat_busqueda_sin_resultados_no_dice_que_el_catalogo_esta_caido():
     assert datos["estado_datos"] == ESTADO_VIGENTE
 
 
-def test_chat_busqueda_caida_degrada_a_la_cache():
-    """Si Catálogo no responde a la búsqueda, se usa la caché y el estado lo informa el repositorio."""
+def test_chat_busqueda_caida_no_usa_la_cache_e_informa_catalogo_no_disponible():
+    """Si Catálogo no responde por red, no se usa la copia parcial en memoria: se informa que no respondió."""
     repositorio = RepositorioDoble(cache=[_normalizar(LECHE_ENTERA)], busquedas=None, fuente=FUENTE_MEMORIA)
 
     datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
 
-    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
-    assert datos["estado_datos"] == ESTADO_MEMORIA
-
-
-def test_chat_busqueda_caida_usa_la_cache_sin_recargarla():
-    """Con caché disponible no se pide otra recarga completa: Catálogo ya no respondió."""
-    repositorio = RepositorioDoble(cache=[_normalizar(LECHE_ENTERA)], busquedas=None, fuente=FUENTE_MEMORIA)
-
-    _procesar(repositorio, {"palabras_clave": ["leche"]})
-
+    assert datos["productos_recomendados"] == []
+    assert datos["estado_datos"] == ESTADO_SIN_DATOS
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert AVISO_CARGA_PREVIA not in datos["respuesta"]
     assert repositorio.recargas == 0
 
 
-def test_chat_frase_sin_terminos_admitidos_usa_la_cache():
-    """Una palabra clave que Catálogo rechazaría ("te") se resuelve con la caché, sin consultar."""
+def test_chat_frase_sin_terminos_admitidos_no_usa_la_cache():
+    """Un término que Catálogo rechazaría ('te') no cae a la copia parcial en memoria."""
     te_negro = _normalizar(_producto("prod-te", "Te Negro 100 bolsitas", 1990.0))
     repositorio = RepositorioDoble(cache=[te_negro], busquedas={})
 
     datos = _procesar(repositorio, {"palabras_clave": ["te"]})
 
     assert repositorio.terminos_buscados == []
-    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-te"]
+    assert datos["productos_recomendados"] == []
+    assert datos["respuesta"] == TEXTO_SIN_PRODUCTOS
+    assert datos["estado_datos"] == ESTADO_VIGENTE
 
 
 def test_chat_limita_las_busquedas_simultaneas(monkeypatch):
@@ -396,11 +402,11 @@ def test_chat_limita_las_busquedas_simultaneas(monkeypatch):
 
 
 def test_chat_busqueda_lenta_no_alarga_la_etapa_2(monkeypatch):
-    """Una consulta que excede el plazo común se abandona y se completa con la caché."""
+    """Una consulta que excede el plazo de Catálogo se abandona sin caer a la copia en memoria."""
     monkeypatch.setattr(config, "CATALOGO_TIMEOUT", 0.2)
 
     class RepositorioLento(RepositorioDoble):
-        """La búsqueda de "harina" tarda más que el plazo."""
+        """La búsqueda de 'harina' tarda más que el plazo."""
 
         def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
             if termino == "harina":
@@ -416,11 +422,12 @@ def test_chat_busqueda_lenta_no_alarga_la_etapa_2(monkeypatch):
     datos = _procesar(repositorio, {"palabras_clave": ["leche", "harina"]})
 
     assert time.monotonic() - inicio < 0.9
-    assert sorted(producto["id"] for producto in datos["productos_recomendados"]) == ["prod-harina-trigo", "prod-leche"]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["estado_datos"] == ESTADO_VIGENTE
 
 
 def test_chat_busqueda_caida_y_cache_vacia_informa_catalogo_no_disponible():
-    """Sin búsqueda ni caché no se inventan productos: se informa que el catálogo no está disponible."""
+    """Sin respuesta de Catálogo no se inventan productos: se informa que el catálogo no está disponible."""
     repositorio = RepositorioDoble(cache=[], busquedas=None)
 
     datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
@@ -429,13 +436,14 @@ def test_chat_busqueda_caida_y_cache_vacia_informa_catalogo_no_disponible():
     assert datos["productos_recomendados"] == []
 
 
-def test_chat_solo_categoria_usa_la_cache_sin_buscar():
-    """Sin palabras clave ni ingredientes se mantiene la caché precargada."""
-    repositorio = RepositorioDoble(cache=[_normalizar(LECHE_ENTERA)], busquedas={})
+def test_chat_solo_categoria_busca_en_catalogo_sin_usar_cache():
+    """Con solo categoría se consulta Catálogo por `?q=` en vez de depender de la copia en memoria."""
+    repositorio = RepositorioDoble(cache=[], busquedas={"lacteos": [_normalizar(LECHE_ENTERA)]})
 
     datos = _procesar(repositorio, {"categoria": "lacteos"})
 
-    assert repositorio.terminos_buscados == []
+    assert repositorio.terminos_buscados == [("lacteos", None)]
+    assert repositorio.recargas == 0
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
 
 
@@ -461,8 +469,8 @@ def test_chat_receta_busca_cada_ingrediente():
     assert datos["ingredientes_faltantes"] == ["vainilla"]
 
 
-def test_chat_recorta_consultas_y_completa_con_la_cache(monkeypatch):
-    """Con más consultas que el máximo se recorta y se agrega la caché para no perder ingredientes."""
+def test_chat_recorta_consultas_sin_completar_con_cache(monkeypatch):
+    """Con más términos que el máximo se recorta sin caer a la copia en memoria."""
     monkeypatch.setattr(config, "CATALOGO_BUSQUEDA_MAX_CONSULTAS", 1)
     repositorio = RepositorioDoble(
         cache=[_normalizar(LECHE_ENTERA)],
@@ -478,45 +486,27 @@ def test_chat_recorta_consultas_y_completa_con_la_cache(monkeypatch):
     datos = _procesar(repositorio, filtros)
 
     assert len(repositorio.terminos_buscados) == 1
-    assert [ingrediente["ingrediente"] for ingrediente in datos["ingredientes_receta"]] == ["harina", "leche"]
+    assert [ingrediente["ingrediente"] for ingrediente in datos["ingredientes_receta"]] == ["harina"]
+    assert datos["ingredientes_faltantes"] == ["leche"]
 
 
-def test_chat_degradado_con_cache_real_antigua_informa_memoria_antigua():
-    """Tras una carga real exitosa envejecida, una búsqueda fallida no puede informarse como vigente."""
+def test_chat_error_red_catalogo_real_no_usa_cache_previa():
+    """Incluso si existiera carga previa en memoria, un fallo de red responde sin_datos y sin aviso de carga previa."""
     cliente_http = MagicMock(spec=httpx.Client)
     cliente_http.get.return_value = _respuesta_http({"data": [LECHE_ENTERA], "paginacion": {"total_paginas": 1}})
     repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http, antiguedad_maxima=1.0)
     repositorio.cargar_productos()
     assert repositorio.fuente == FUENTE_CATALOGO
 
-    # Envejecemos la caché sin dormir y hacemos fallar la búsqueda posterior.
-    repositorio._ultima_carga_exitosa -= 3600.0
     cliente_http.get.side_effect = httpx.ReadTimeout("tiempo agotado")
 
     datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
 
-    assert datos["estado_datos"] == ESTADO_MEMORIA_ANTIGUA
-    assert datos["estado_datos"] != ESTADO_VIGENTE
-    assert AVISO_MEMORIA_ANTIGUA in datos["respuesta"]
-    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
-
-
-def test_chat_degradado_con_cache_real_reciente_informa_memoria_sin_aviso_antiguedad():
-    """Tras una carga real exitosa reciente, una búsqueda fallida se clasifica como memoria sin aviso de antigüedad."""
-    cliente_http = MagicMock(spec=httpx.Client)
-    cliente_http.get.return_value = _respuesta_http({"data": [LECHE_ENTERA], "paginacion": {"total_paginas": 1}})
-    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http, antiguedad_maxima=60.0)
-    repositorio.cargar_productos()
-    assert repositorio.fuente == FUENTE_CATALOGO
-
-    cliente_http.get.side_effect = httpx.ReadTimeout("tiempo agotado")
-
-    datos = _procesar(repositorio, {"palabras_clave": ["leche"]})
-
-    assert datos["estado_datos"] == ESTADO_MEMORIA
-    assert AVISO_CARGA_PREVIA in datos["respuesta"]
+    assert datos["estado_datos"] == ESTADO_SIN_DATOS
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert AVISO_CARGA_PREVIA not in datos["respuesta"]
     assert AVISO_MEMORIA_ANTIGUA not in datos["respuesta"]
-    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["productos_recomendados"] == []
 
 
 def test_chat_busqueda_vencida_con_cache_vacia_no_encadena_recarga(monkeypatch):
@@ -618,6 +608,190 @@ def test_chat_respaldo_busco_harina_de_almendras_no_devuelve_harina_tostada():
 
     assert datos["filtros_aplicados"] == {"precio_max": 6000, "palabras_clave": ["harina almendras"]}
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-almendras"]
+
+
+# ===== Pruebas de plurales, términos compuestos, reparto de plazos y casos simulados =====
+
+
+def test_chat_plural_prueba_original_y_cae_a_singular():
+    """Prueba primero 'zanahorias' y, al recibir 0 resultados, busca 'zanahoria' y devuelve el producto real."""
+    zanahoria = _normalizar(_producto("prod-zanahoria", "Zanahoria Granel 1 kg", 890.0, "verduras"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"zanahoria": [zanahoria]})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["zanahorias"]}, mensaje="Que zanahorias estan baratas?")
+
+    assert repositorio.terminos_buscados == [("zanahorias", None), ("zanahoria", None)]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-zanahoria"]
+    assert datos["estado_datos"] == ESTADO_VIGENTE
+
+
+def test_chat_plural_no_consulta_singular_si_original_ya_trajo_resultados():
+    """Si el término original ya devolvió resultados, no se hace una segunda petición por el singular."""
+    fideos = _normalizar(_producto("prod-fideos", "Fideos Spaghetti 400 g", 990.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"fideos": [fideos]})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["fideos"]}, mensaje="Busco fideos")
+
+    assert repositorio.terminos_buscados == [("fideos", None)]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-fideos"]
+
+
+def test_chat_terminos_unidos_por_o_combina_sin_duplicados_y_respeta_limite(monkeypatch):
+    """'zanahorias o verduras' busca cada término aparte, une sin duplicados y respeta el límite de tarjetas."""
+    monkeypatch.setattr(config, "EXPLICACION_MAX_PRODUCTOS", 3)
+    zanahoria = _normalizar(_producto("prod-zanahoria", "Zanahoria Granel", 890.0, "verduras"))
+    lechuga = _normalizar(_producto("prod-lechuga", "Lechuga Costina", 990.0, "verduras"))
+    tomate = _normalizar(_producto("prod-tomate", "Tomate Larga Vida", 1190.0, "verduras"))
+    zapallo = _normalizar(_producto("prod-zapallo", "Zapallo Camote", 1490.0, "verduras"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "zanahoria": [zanahoria],
+            "verdura": [zanahoria, lechuga, tomate, zapallo],
+        },
+    )
+
+    datos = _procesar(
+        repositorio,
+        {"palabras_clave": ["zanahorias o verduras"]},
+        mensaje="qué zanahorias o verduras tienes baratas",
+    )
+
+    ids = [producto["id"] for producto in datos["productos_recomendados"]]
+    assert len(ids) == 3
+    assert len(ids) == len(set(ids))
+    assert "prod-zanahoria" in ids
+    assert ("zanahoria", None) in repositorio.terminos_buscados
+    assert ("verdura", None) in repositorio.terminos_buscados
+
+
+def test_chat_catalogo_lento_no_deja_sin_tiempo_a_la_explicacion(monkeypatch):
+    """Catálogo no puede gastar más de su fracción del plazo y la explicación conserva su mínimo garantizado."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 1.0)
+    monkeypatch.setattr(config, "CATALOGO_TIMEOUT", 5.0)
+    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.2)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.4)
+
+    class RepositorioParcialLento(RepositorioDoble):
+        """'leche' responde rápido; 'harina' tarda más que la fracción permitida para Catálogo."""
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
+            if termino == "harina":
+                time.sleep(0.8)
+            return super().buscar_productos(termino, precio_max)
+
+    class ProveedorExplicacionMedia(ProveedorFijo):
+        """La explicación tarda 0.25s: cabe holgadamente en el mínimo garantizado (0.4s)."""
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            await anyio.sleep(0.25)
+            return "Explicación completa dentro del plazo reservado."
+
+    repositorio = RepositorioParcialLento(cache=[], busquedas={"leche": [_normalizar(LECHE_ENTERA)]})
+    proveedor = ProveedorExplicacionMedia({"palabras_clave": ["leche", "harina"]})
+
+    inicio = time.monotonic()
+    datos = anyio.run(procesar_mensaje, proveedor, repositorio, "leche o harina")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.85
+    assert datos["respuesta"] == "Explicación completa dentro del plazo reservado."
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+
+
+def test_chat_explicacion_falla_responde_con_frase_fija_y_productos():
+    """Si la explicación falla con excepción, devuelve los productos reales y una frase fija corta con el término y precio CLP."""
+    zanahoria = _normalizar(_producto("prod-zanahoria", "Zanahoria Granel", 10600.0, "verduras"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"zanahoria": [zanahoria]})
+
+    class ProveedorExplicacionFallida(ProveedorFijo):
+        """Simula error de red/cuota en etapa 3."""
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            raise RuntimeError("Proveedor sin cuota")
+
+    datos = anyio.run(
+        procesar_mensaje,
+        ProveedorExplicacionFallida({"palabras_clave": ["zanahoria"]}),
+        repositorio,
+        "Busco zanahoria",
+    )
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-zanahoria"]
+    assert datos["respuesta"] == "Estas son las opciones que encontré para «zanahoria», desde $10.600."
+
+
+def test_chat_busqueda_sin_resultados_responde_mensaje_claro_y_no_copia_parcial():
+    """Sin coincidencias en Catálogo responde mensaje claro, incluso si hubiera productos en la copia en memoria."""
+    repositorio = RepositorioDoble(cache=[_normalizar(LECHE_ENTERA), _normalizar(YOGUR_BARATO)], busquedas={})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["trufa blanca"]})
+
+    assert datos["respuesta"] == TEXTO_SIN_PRODUCTOS
+    assert datos["productos_recomendados"] == []
+    assert datos["estado_datos"] == ESTADO_VIGENTE
+    assert AVISO_CARGA_PREVIA not in datos["respuesta"]
+    assert repositorio.recargas == 0
+
+
+def test_casos_chat_con_cliente_catalogo_simulado_pr208():
+    """
+    Simula el contrato real de búsqueda por prefijo/palabra de Catálogo (PR #208):
+    'zanahorias' no coincide con 'Zanahoria Granel', solo 'zanahoria' coincide.
+    Verifica que los 6 mensajes críticos devuelven productos reales y nunca caen en error genérico ni 0 resultados.
+    """
+    catalogo_simulado = [
+        _producto("prod-leche-entera", "Leche Entera 1 L", 1190.0, "lacteos"),
+        _producto("prod-leche-cara", "Leche Sin Lactosa 1 L", 2490.0, "lacteos"),
+        _producto("prod-harina-almendras", "Harina de Almendras 500 g", 10600.0, "despensa"),
+        _producto("prod-harina-tostada", "Harina Tostada Granel", 1200.0, "despensa"),
+        _producto("prod-zanahoria", "Zanahoria Granel 1 kg", 890.0, "verduras"),
+        _producto("prod-lechuga", "Lechuga Costina", 990.0, "verduras"),
+        _producto("prod-tomate", "Tomate Larga Vida", 1290.0, "verduras"),
+    ]
+
+    def simular_get_catalogo(_url: str, params: dict) -> MagicMock:
+        """Simula GET /api/v1/productos?q= con coincidencia por prefijo de palabra en nombre/categoría."""
+        consulta = str(params.get("q", "")).strip().lower()
+        precio_max = params.get("precio_max")
+        coincidencias = []
+        for item in catalogo_simulado:
+            if precio_max is not None and item["precio"] > float(precio_max):
+                continue
+            texto_nombre = item["nombre"].lower()
+            texto_categoria = item["categoria"].lower()
+            palabras_objetivo = [*texto_nombre.split(), *texto_categoria.split()]
+            if (
+                texto_nombre.startswith(consulta)
+                or any(palabra.startswith(consulta) for palabra in palabras_objetivo)
+                or consulta in texto_nombre
+            ):
+                coincidencias.append(item)
+        return _respuesta_http({"data": coincidencias, "paginacion": {"total_paginas": 1}})
+
+    cliente_http = MagicMock(spec=httpx.Client)
+    cliente_http.get.side_effect = simular_get_catalogo
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
+
+    casos = [
+        ("Busco leche por menos de $2.000", {"palabras_clave": ["leche"], "precio_max": 2000}, "prod-leche-entera"),
+        ("Busco harina de almendras", {"palabras_clave": ["harina de almendras"]}, "prod-harina-almendras"),
+        ("¿Me recomiendas leche?", {"palabras_clave": ["leche"]}, "prod-leche-entera"),
+        # Simula el caso en que el LLM responde texto libre sin llamar a la herramienta: rescate por respaldo.
+        ("me recomiendas leche?", None, "prod-leche-entera"),
+        ("qué zanahorias o verduras tienes baratas", {"palabras_clave": ["zanahorias o verduras"]}, "prod-zanahoria"),
+        ("Que zanahorias estan baratas?", {"palabras_clave": ["zanahorias"]}, "prod-zanahoria"),
+    ]
+
+    for mensaje, filtros, id_esperado in casos:
+        datos = anyio.run(procesar_mensaje, ProveedorFijo(filtros), repositorio, mensaje)
+        ids = [producto["id"] for producto in datos["productos_recomendados"]]
+        assert id_esperado in ids, f"Falló '{mensaje}': ids={ids}, respuesta={datos['respuesta']}"
+        assert datos["respuesta"] != TEXTO_SIN_PRODUCTOS
+        assert datos["respuesta"] != TEXTO_SIN_FILTROS
+        assert datos["respuesta"] != TEXTO_CATALOGO_NO_DISPONIBLE
+        assert "Lo siento, en este momento no puedo procesar tu solicitud" not in datos["respuesta"]
+        assert datos["estado_datos"] == ESTADO_VIGENTE
 
 
 # ===== Utilidades =====

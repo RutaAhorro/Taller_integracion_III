@@ -153,6 +153,10 @@ CHAT_RATE_LIMIT_SOLICITUDES = _leer_env_int("IA_CHAT_RATE_LIMIT_SOLICITUDES", 10
 CHAT_RATE_LIMIT_VENTANA_SEGUNDOS = _leer_env_float("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", 60.0)
 
 CHAT_TIMEOUT_TOTAL = _leer_env_float("IA_CHAT_TIMEOUT_TOTAL", 18.0)
+# Reparto explícito del plazo total: Catálogo nunca puede consumir más de esta fracción
+# y la explicación conserva un mínimo garantizado para no quedarse sin tiempo.
+CHAT_CATALOGO_FRACCION_PLAZO = _leer_env_float("IA_CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
+CHAT_EXPLICACION_PLAZO_MINIMO = _leer_env_float("IA_CHAT_EXPLICACION_PLAZO_MINIMO", 5.0)
 
 
 # ===== Antigüedad de la caché de Catálogo (SUP-315) =====
@@ -245,6 +249,7 @@ def _validar_limites_numericos() -> None:
         ("CHAT_MAX_MENSAJE_LEN", CHAT_MAX_MENSAJE_LEN),
         ("EXPLICACION_MAX_PRODUCTOS", EXPLICACION_MAX_PRODUCTOS),
         ("IA_CHAT_TIMEOUT_TOTAL", CHAT_TIMEOUT_TOTAL),
+        ("IA_CHAT_EXPLICACION_PLAZO_MINIMO", CHAT_EXPLICACION_PLAZO_MINIMO),
         # Estos dos se nombran por su variable de entorno, como en sus mensajes originales.
         ("IA_CHAT_RATE_LIMIT_SOLICITUDES", CHAT_RATE_LIMIT_SOLICITUDES),
         ("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", CHAT_RATE_LIMIT_VENTANA_SEGUNDOS),
@@ -253,6 +258,9 @@ def _validar_limites_numericos() -> None:
     for nombre, valor in estrictamente_positivos:
         if valor <= 0:
             raise RuntimeError(f"{nombre} debe ser mayor a 0.")
+
+    if not (0 < CHAT_CATALOGO_FRACCION_PLAZO < 1):
+        raise RuntimeError("IA_CHAT_CATALOGO_FRACCION_PLAZO debe estar entre 0 y 1.")
 
     no_negativos = (
         ("CATALOGO_CACHE_TTL", CATALOGO_CACHE_TTL),

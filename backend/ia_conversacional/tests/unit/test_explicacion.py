@@ -17,10 +17,13 @@ import anyio
 import pytest
 
 from app import config
+from app.domain.filtros import formatear_precio_clp
+from app.domain.prompts import construir_prompt_explicacion
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.services.chat import (
     TEXTO_EXPLICACION_RESPALDO,
     AsistenteNoDisponible,
+    construir_explicacion_respaldo,
     generar_explicacion_con_tiempo,
     limpiar_explicacion,
     procesar_mensaje,
@@ -147,3 +150,39 @@ async def test_procesar_mensaje_loguea_fallo_extraccion_cuando_etapa_1_falla(cap
 
     assert "Falló la extracción" in caplog.text
     assert "Falló la explicación" not in caplog.text
+
+
+# ===== Formato de precios en pesos chilenos =====
+
+
+def test_formatear_precio_clp_y_prompt_explicacion():
+    """Los precios se envían al modelo ya formateados en pesos chilenos con punto de miles ($10.600)."""
+    assert formatear_precio_clp(10600.0) == "$10.600"
+    assert formatear_precio_clp(2000) == "$2.000"
+    assert formatear_precio_clp(890.0) == "$890"
+
+    prompt = construir_prompt_explicacion(
+        "Busco harina de almendras",
+        [{"nombre": "Harina de Almendras", "precio": 10600.0, "categoria": "despensa", "distancia_km": 0.0}],
+    )
+    assert "$10.600" in prompt
+    assert "10600.0" not in prompt
+
+
+def test_limpiar_explicacion_corrige_precios_sin_formato_o_con_espacio():
+    """Si el modelo escribe '$10600.0', '$890.0' o '$2 000', la limpieza los normaliza sin tocar '$2.000'."""
+    texto = "Encontré Harina de Almendras a $10600.0, Zanahoria a $890.0 y Leche Entera a $2 000."
+    assert (
+        limpiar_explicacion(texto)
+        == "Encontré Harina de Almendras a $10.600, Zanahoria a $890 y Leche Entera a $2.000."
+    )
+    assert limpiar_explicacion("Leche a $2.000 y Queso a $10.000.") == "Leche a $2.000 y Queso a $10.000."
+
+
+def test_construir_explicacion_respaldo_formatea_precio_clp():
+    """La frase fija de respaldo usa el término buscado y el precio mínimo formateado en CLP."""
+    productos = [{"nombre": "Harina de Almendras", "precio": 10600.0}]
+    assert (
+        construir_explicacion_respaldo(productos, "harina de almendras")
+        == "Estas son las opciones que encontré para «harina de almendras», desde $10.600."
+    )

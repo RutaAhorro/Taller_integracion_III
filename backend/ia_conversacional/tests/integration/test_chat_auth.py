@@ -352,7 +352,7 @@ def test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(cliente):
 
         assert respuesta.status_code == 200
         datos = respuesta.json()
-        assert datos["respuesta"] == "Encontramos estos productos para tu búsqueda."
+        assert datos["respuesta"] == "Estas son las opciones que encontré para «lacteos», desde $1.190."
         assert len(datos["productos_recomendados"]) > 0
 
 
@@ -714,8 +714,8 @@ def test_chat_explicacion_lenta_excede_limite_returns_200_con_fallback(cliente, 
 
         assert respuesta.status_code == 200
         datos = respuesta.json()
-        # Debería retornar el texto de fallback, no 503
-        assert datos["respuesta"] == "Encontramos estos productos para tu búsqueda."
+        # Debería retornar la frase fija de respaldo basada en el término, no 503
+        assert datos["respuesta"] == "Estas son las opciones que encontré para «verduras», desde $590."
         # Los productos filtrados deberían estar presentes
         assert len(datos["productos_recomendados"]) > 0
         # Los filtros deberían aplicarse
@@ -1081,7 +1081,7 @@ def test_chat_receta_revalida_precio_max_tras_disponibilidad(cliente):
 
     with (
         patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
-        patch.object(main.repositorio_productos, "obtener_todos", return_value=catalogo_cache),
+        patch.object(main.repositorio_productos, "buscar_productos", return_value=catalogo_cache),
         patch.object(main.repositorio_productos, "consultar_disponibilidad", return_value=disponibilidad_simulada),
     ):
         mock_extraer.return_value = mock_resultado
@@ -1187,7 +1187,7 @@ def test_chat_gemini_responde_429_y_groq_ok_retorna_200(monkeypatch):
 
 
 def test_chat_catalogo_vacio_retorna_200_con_texto_no_disponible(cliente):
-    """Con el catálogo vacío se informa la indisponibilidad sin inventar productos y sin 503."""
+    """Si Catálogo no responde a la búsqueda se informa la indisponibilidad sin inventar productos y sin 503."""
     token_valido = generar_token(user_id="user-catalogo-vacio")
     mock_resultado = ResultadoExtraccion(
         filtros={"categoria": "verduras"},
@@ -1196,7 +1196,7 @@ def test_chat_catalogo_vacio_retorna_200_con_texto_no_disponible(cliente):
 
     with (
         patch("app.main.proveedor_respaldo.extraer_filtros", new_callable=AsyncMock) as mock_extraer,
-        patch.object(main.repositorio_productos, "obtener_todos", return_value=[]),
+        patch.object(main.repositorio_productos, "buscar_productos", return_value=None),
     ):
         mock_extraer.return_value = mock_resultado
 
@@ -1210,19 +1210,19 @@ def test_chat_catalogo_vacio_retorna_200_con_texto_no_disponible(cliente):
     datos = respuesta.json()
     assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
     assert datos["productos_recomendados"] == []
-    assert "estado_datos" in datos
+    assert datos["estado_datos"] == "sin_datos"
 
 
 def test_chat_sin_datos_retorna_200_con_estado_sin_datos(cliente):
-    """Con repositorio fuente sin_datos y catálogo vacío devuelve estado_datos == 'sin_datos'."""
+    """Cuando la búsqueda en Catálogo falla por red devuelve estado_datos == 'sin_datos'."""
 
     class RepositorioSinDatos:
-        """Doble de repositorio con fuente sin_datos y catálogo vacío."""
+        """Doble de repositorio que simula fallo de red al buscar en Catálogo."""
 
         fuente = "sin_datos"
 
-        def obtener_todos(self) -> list:
-            return []
+        def buscar_productos(self, _termino: str, _precio_max: float | None = None) -> list | None:
+            return None
 
         def consultar_disponibilidad(self, _producto_ids: list) -> dict | None:
             return None
@@ -1249,8 +1249,8 @@ def test_chat_sin_datos_retorna_200_con_estado_sin_datos(cliente):
     assert datos["productos_recomendados"] == []
 
 
-def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():
-    """Una carga previa antigua se informa como memoria_antigua y agrega un aviso en la respuesta."""
+def test_chat_fallo_catalogo_no_cae_a_memoria_antigua():
+    """Ante fallo de red en Catálogo no se usan datos viejos en memoria; se informa que Catálogo no respondió."""
     productos_en_memoria = [
         {
             "id": "prod-tomate-1",
@@ -1269,8 +1269,8 @@ def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():
         }
     ]
 
-    class RepositorioMemoriaAntigua:
-        """Doble de repositorio que representa una carga previa antigua del catálogo."""
+    class RepositorioConMemoriaYCaida:
+        """Doble con productos en memoria cuya búsqueda en Catálogo falla por red."""
 
         datos_antiguos = True
 
@@ -1280,6 +1280,9 @@ def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():
 
         def obtener_todos(self) -> list:
             return productos_en_memoria
+
+        def buscar_productos(self, _termino: str, _precio_max: float | None = None) -> list | None:
+            return None
 
         def consultar_disponibilidad(self, _producto_ids: list):
             return None
@@ -1295,13 +1298,13 @@ def test_chat_memoria_antigua_retorna_200_con_aviso_de_carga_previa():
         async def generar_explicacion(self, mensaje: str, productos: list) -> str:
             return "Tomate disponible."
 
-    cliente_prueba = _crear_cliente_chat(RepositorioMemoriaAntigua(), ProveedorFijo())
+    cliente_prueba = _crear_cliente_chat(RepositorioConMemoriaYCaida(), ProveedorFijo())
 
     respuesta = cliente_prueba.post("/api/v1/chat", json={"mensaje": "busco verduras"})
 
     assert respuesta.status_code == 200
     datos = respuesta.json()
-    assert datos["estado_datos"] == "memoria_antigua"
-    assert "carga previa" in datos["respuesta"]
-    assert datos["respuesta"].startswith("Tomate disponible.")
-    assert len(datos["productos_recomendados"]) == 1
+    assert datos["estado_datos"] == "sin_datos"
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+    assert "carga previa" not in datos["respuesta"]
+    assert datos["productos_recomendados"] == []

@@ -11,6 +11,7 @@ filtrados, para que el modelo no invente productos, precios ni tiendas.
 import json
 
 from app import config
+from app.domain.filtros import formatear_precio_clp
 
 # ===== Función de extracción (etapa 1) =====
 
@@ -130,12 +131,12 @@ DECLARACION_FUNCION_FILTROS = {
 
 
 def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list) -> str:
-    """Arma el prompt común a Gemini y Groq con un resumen de los productos validados."""
+    """Arma el prompt común a Gemini y Groq con un resumen de los productos validados y precios CLP formateados."""
     # Ya vienen ordenados por precio: los primeros bastan y un prompt corto responde más rápido.
     resumen = [
         {
             "nombre": producto["nombre"],
-            "precio": producto["precio"],
+            "precio": formatear_precio_clp(producto["precio"]),
             "categoria": producto["categoria"],
             "distancia_km": producto["distancia_km"],
         }
@@ -151,7 +152,9 @@ def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list
         "Redacta una respuesta breve en espanol (sin maximo de oraciones) "
         "explicando por que estos productos calzan con lo que pidio. "
         "Responde en texto plano, sin formato Markdown. "
-        "Menciona nombres y precios reales de la lista. No inventes "
+        "Menciona nombres y precios reales de la lista copiando cada precio "
+        "exactamente como viene formateado (por ejemplo, $10.600), sin "
+        "agregar decimales ni espacios entre digitos. No inventes "
         "productos, precios, tiendas ni caracteristicas que no esten en "
         "la lista. No hagas preguntas de seguimiento, es una respuesta "
         "unica."
