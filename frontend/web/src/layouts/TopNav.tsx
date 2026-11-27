@@ -113,7 +113,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                             {ciudadActiva}
                         </span>
                     </div>
-                    <div className="relative">
+                    <div className="relative hidden md:block">
                         <Button
                             variant="ghost"
                             size="icon"

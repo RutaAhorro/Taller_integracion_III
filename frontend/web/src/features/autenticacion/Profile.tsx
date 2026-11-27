@@ -1,13 +1,14 @@
 // Muestra la cuenta de la sesión y avisa qué ajustes del perfil todavía no tienen integración.
 import { useState } from 'react';
-import { User, ShieldAlert, Zap, Settings } from 'lucide-react';
+import { User, ShieldAlert, Zap, Settings, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/features/autenticacion/useAuth';
 import { PLAN_PREMIUM } from '@/features/autenticacion/tipos';
 
 export default function Profile() {
-    const { user, isGuest } = useAuth();
+    const { user, isGuest, logout, isLoggingOut } = useAuth();
+    const navegar = useNavigate();
     const [pestanaActiva, setPestanaActiva] = useState<'cuenta' | 'preferencias'>('cuenta');
 
     if (isGuest || !user) {
@@ -84,6 +85,17 @@ export default function Profile() {
                                             </div>
                                         </div>
                                         <p className="text-xs text-muted-foreground">Tu acceso se gestiona con tu cuenta de Google. La edición de datos personales no está disponible en esta vista.</p>
+                                        <div className="pt-2">
+                                            <button
+                                                type="button"
+                                                disabled={Boolean(isLoggingOut)}
+                                                onClick={async () => { await logout(); navegar('/login'); }}
+                                                className="inline-flex items-center gap-2 rounded-xl border-2 border-destructive/40 bg-destructive/10 px-4 py-2.5 text-sm font-bold text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50 cursor-pointer"
+                                            >
+                                                <LogOut className="h-4 w-4" aria-hidden="true" />
+                                                {isLoggingOut ? 'Cerrando sesión…' : 'Cerrar sesión'}
+                                            </button>
+                                        </div>
                                     </div>
                                 </section>
                             </div>

@@ -121,7 +121,7 @@ export function MainLayout() {
       {!isCartOpen && (
         <button
           onClick={() => setIsCartOpen(true)}
-          className={`fixed ${pathname.startsWith("/chat") ? "bottom-[10.5rem]" : "bottom-[5.5rem]"} right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6`}
+          className={`fixed ${pathname.startsWith("/chat") ? "bottom-[11.25rem]" : "bottom-[5.5rem]"} right-4 z-50 flex items-center gap-2.5 rounded-full border border-primary-foreground/20 bg-primary px-4 py-2.5 text-primary-foreground shadow-[0_8px_30px_rgb(0,0,0,0.12)] transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_rgb(0,0,0,0.2)] active:scale-95 md:bottom-6`}
           aria-label="Ver carrito"
         >
           <div className="relative flex items-center justify-center">
