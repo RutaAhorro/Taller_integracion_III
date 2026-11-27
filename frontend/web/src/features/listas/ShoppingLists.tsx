@@ -1,6 +1,14 @@
 // Gestiona listas y artículos persistidos de la cuenta actual mediante Motor y Catálogo.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import {
+  Info,
+  ListChecks,
+  ListPlus,
+  RefreshCw,
+  ShoppingBasket,
+  Trash2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/features/autenticacion/useAuth";
@@ -136,116 +144,187 @@ function ContenidoListas() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-5xl space-y-6 p-4 md:p-8">
-      <header>
-        <h1 className="text-2xl font-bold">Mis listas de compra</h1>
-        <p className="mt-2 text-muted-foreground">
-          Gestiona tus listas guardadas en tu cuenta y consúltalas entre
-          sesiones.
-        </p>
-      </header>
-      <p className="rounded-xl border border-border bg-secondary/40 p-4 text-sm">
-        Crear, consultar, editar y eliminar listas requiere que el servicio de
-        listas esté habilitado en este entorno. Selecciona una lista para buscar
-        y agregar productos, cambiar cantidades o quitarlos. Desde el carrito
-        del catálogo puedes elegir una lista y confirmar el guardado de sus
-        productos: no se guarda automáticamente.
-      </p>
-      <form onSubmit={crear} className="space-y-2">
-        <label htmlFor="new-list-name" className="text-sm font-medium">
-          Nombre de la nueva lista
-        </label>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Input
-            id="new-list-name"
-            value={nombre}
-            onChange={(evento) => setNombre(evento.target.value)}
-            maxLength={150}
-            required
-            disabled={guardando || cargando || detalleOcupado}
-            placeholder="Por ejemplo: compras de la semana"
-          />
-          <Button
-            type="submit"
-            disabled={guardando || cargando || detalleOcupado || !nombre.trim()}
-          >
-            {guardando ? "Creando…" : "Crear lista"}
-          </Button>
-        </div>
-      </form>
-      <AvisoErrorLista error={error} />
-      <Button
-        variant="outline"
-        disabled={cargando || guardando || detalleOcupado}
-        onClick={() => setRevision((valor) => valor + 1)}
-      >
-        Actualizar listas
-      </Button>
-      {cargando ? (
-        <p role="status">Cargando listas…</p>
-      ) : (
-        <div className="grid gap-6 md:grid-cols-2">
-          <section aria-label="Listas guardadas">
-            {listas.length === 0 ? (
-              <p>
-                {error
-                  ? "No se pudieron cargar las listas."
-                  : "Aún no tienes listas. Crea la primera para empezar."}
-              </p>
-            ) : (
-              <ul className="space-y-3">
-                {listas.map((lista) => (
-                  <li key={lista.id}>
-                    <button
-                      disabled={guardando || detalleOcupado}
-                      onClick={() => setIdSeleccionada(lista.id)}
-                      aria-pressed={idSeleccionada === lista.id}
-                      className={`w-full rounded-xl border p-4 text-left disabled:opacity-60 ${idSeleccionada === lista.id ? "border-primary bg-primary/5" : "border-border bg-card"}`}
-                    >
-                      <span className="block break-words font-semibold">
-                        {lista.nombre}
-                      </span>
-                      <span className="text-sm text-muted-foreground">
-                        {estados[lista.estado]} · {lista.total_articulos}{" "}
-                        artículos
-                      </span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-          {idSeleccionada ? (
-            <fieldset disabled={guardando} className="min-w-0">
-              <DetalleLista
-                key={idSeleccionada}
-                id={idSeleccionada}
-                onBusy={setDetalleOcupado}
-                onUpdated={(lista) =>
-                  setListas((actuales) =>
-                    actuales.map((elemento) =>
-                      elemento.id === lista.id ? lista : elemento,
-                    ),
-                  )
-                }
-                onDeleted={() => {
-                  setListas((actuales) =>
-                    actuales.filter(
-                      (elemento) => elemento.id !== idSeleccionada,
-                    ),
-                  );
-                  setIdSeleccionada(null);
-                }}
+    <div className="relative flex h-full w-full flex-1 overflow-hidden bg-background">
+      <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-4 py-6 md:px-6">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-2 pr-1 -mr-1 scrollbar-hide">
+          <div className="mx-auto w-full max-w-6xl space-y-7 p-4 md:p-8">
+            <header className="relative isolate flex min-h-52 items-end overflow-hidden rounded-xl border-2 border-border bg-primary px-6 py-7 text-primary-foreground shadow-[8px_8px_0px_var(--color-border)] sm:min-h-60 sm:px-9 sm:py-8">
+              <img
+                src="/street_art_supermarket.jpg"
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-0 -z-20 size-full object-cover object-center opacity-30 grayscale"
               />
-            </fieldset>
-          ) : (
-            <p className="text-muted-foreground">
-              Selecciona una lista para consultar su detalle.
+              <div
+                className="absolute inset-0 -z-10 bg-primary/75"
+                aria-hidden="true"
+              />
+              <div className="max-w-2xl">
+                <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-primary-foreground/30 bg-primary-foreground/10 px-3 py-1 text-xs font-semibold uppercase">
+                  <ShoppingBasket className="size-4" aria-hidden="true" />
+                  Compra a tu manera
+                </div>
+                <h1 className="font-display text-3xl font-extrabold text-balance sm:text-4xl">
+                  Mis listas de compra
+                </h1>
+                <p className="mt-2 max-w-xl text-sm text-primary-foreground/90 sm:text-base">
+                  Organiza tus productos, ajusta cantidades y compara opciones
+                  cuando estés listo para comprar.
+                </p>
+                <p className="mt-4 text-sm font-semibold">
+                  {listas.length} {listas.length === 1 ? "lista guardada" : "listas guardadas"}
+                </p>
+              </div>
+            </header>
+
+            <p className="flex items-start gap-3 border-l-4 border-primary bg-secondary/50 px-4 py-3 text-sm text-muted-foreground">
+              <Info
+                className="mt-0.5 size-4 shrink-0 text-primary"
+                aria-hidden="true"
+              />
+              <span>
+                Selecciona una lista para buscar y agregar productos, cambiar
+                cantidades o quitarlos. Desde el carrito del catálogo puedes
+                elegir una lista y confirmar el guardado de sus productos: no se
+                guarda automáticamente.
+              </span>
             </p>
-          )}
+
+            <form
+              onSubmit={crear}
+              className="grid gap-3 border-b-2 border-border pb-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"
+            >
+              <div className="space-y-2">
+                <label
+                  htmlFor="new-list-name"
+                  className="block text-sm font-semibold"
+                >
+                  Crea una lista nueva
+                </label>
+                <Input
+                  id="new-list-name"
+                  value={nombre}
+                  onChange={(evento) => setNombre(evento.target.value)}
+                  maxLength={150}
+                  required
+                  disabled={guardando || cargando || detalleOcupado}
+                  placeholder="Por ejemplo: compras de la semana"
+                  className="h-12"
+                />
+              </div>
+              <Button
+                type="submit"
+                disabled={
+                  guardando || cargando || detalleOcupado || !nombre.trim()
+                }
+                className="h-12"
+              >
+                <ListPlus aria-hidden="true" />
+                {guardando ? "Creando…" : "Crear lista"}
+              </Button>
+            </form>
+
+            <AvisoErrorLista error={error} />
+
+            <section aria-label="Listas guardadas" className="space-y-4">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h2 className="font-display text-xl font-bold">Tus listas</h2>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Elige una para ver y editar sus artículos.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  disabled={cargando || guardando || detalleOcupado}
+                  onClick={() =>
+                    setRevision((revisionActual) => revisionActual + 1)
+                  }
+                >
+                  <RefreshCw aria-hidden="true" />
+                  Actualizar listas
+                </Button>
+              </div>
+
+              {cargando ? (
+                <p role="status" className="py-4 text-muted-foreground">
+                  Cargando listas…
+                </p>
+              ) : listas.length === 0 ? (
+                <p className="border-y border-border py-5 text-muted-foreground">
+                  {error
+                    ? "No se pudieron cargar las listas."
+                    : "Aún no tienes listas. Crea la primera para empezar."}
+                </p>
+              ) : (
+                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {listas.map((lista) => (
+                    <li key={lista.id}>
+                      <button
+                        disabled={guardando || detalleOcupado}
+                        onClick={() =>
+                          setIdSeleccionada((idActual) =>
+                            idActual === lista.id ? null : lista.id,
+                          )
+                        }
+                        aria-pressed={idSeleccionada === lista.id}
+                        className={`flex min-h-24 w-full items-start gap-3 rounded-lg border-2 p-4 text-left transition-colors disabled:opacity-60 ${idSeleccionada === lista.id ? "border-primary bg-primary/10 shadow-[4px_4px_0px_var(--color-border)]" : "border-border bg-card hover:border-primary/60"}`}
+                      >
+                        <span className="grid size-10 shrink-0 place-items-center rounded-md bg-secondary text-primary">
+                          <ListChecks className="size-5" aria-hidden="true" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block break-words font-semibold">
+                            {lista.nombre}
+                          </span>
+                          <span className="mt-1 block text-sm text-muted-foreground">
+                            {estados[lista.estado]} · {lista.total_articulos}{" "}
+                            {lista.total_articulos === 1
+                              ? "artículo"
+                              : "artículos"}
+                          </span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            {cargando ? null : idSeleccionada ? (
+              <fieldset disabled={guardando} className="min-w-0">
+                <DetalleLista
+                  key={idSeleccionada}
+                  id={idSeleccionada}
+                  onBusy={setDetalleOcupado}
+                  onUpdated={(listaActualizada) =>
+                    setListas((listasActuales) =>
+                      listasActuales.map((elementoLista) =>
+                        elementoLista.id === listaActualizada.id
+                          ? listaActualizada
+                          : elementoLista,
+                      ),
+                    )
+                  }
+                  onDeleted={() => {
+                    setListas((listasActuales) =>
+                      listasActuales.filter(
+                        (elementoLista) => elementoLista.id !== idSeleccionada,
+                      ),
+                    );
+                    setIdSeleccionada(null);
+                  }}
+                />
+              </fieldset>
+            ) : listas.length > 0 ? (
+              <p className="border-t border-border pt-5 text-sm text-muted-foreground">
+                Selecciona una lista para consultar su detalle.
+              </p>
+            ) : null}
+          </div>
         </div>
-      )}
-    </main>
+      </main>
+    </div>
   );
 }
 
@@ -253,13 +332,24 @@ function ContenidoListas() {
 function DetalleLista(propiedades: OpcionesDetalleLista) {
   const navegar = useNavigate();
   const detalle = useDetalleLista(propiedades);
+  const [confirmacionEliminacionAbierta, setConfirmacionEliminacionAbierta] =
+    useState(false);
   const { lista, nombre, estado, cargando, guardando, error } = detalle;
+
+  async function confirmarEliminacion() {
+    const eliminacionConfirmada = await detalle.eliminar();
+    if (!eliminacionConfirmada) setConfirmacionEliminacionAbierta(false);
+  }
+
   return (
     <section
       aria-label="Detalle de la lista"
-      className="min-w-0 space-y-4 rounded-xl border border-border bg-card p-4"
+      className="mx-auto w-full max-w-4xl min-w-0 space-y-5 border-t-2 border-border bg-background/70 py-6"
     >
-      <h2 className="text-lg font-semibold">Detalle de la lista</h2>
+      <h2 className="flex items-center gap-2 font-display text-xl font-bold">
+        <ListChecks className="size-5 text-primary" aria-hidden="true" />
+        Detalle de la lista
+      </h2>
       <AvisoErrorLista error={error} />
       {cargando ? (
         <p role="status">Cargando detalle…</p>
@@ -309,15 +399,9 @@ function DetalleLista(propiedades: OpcionesDetalleLista) {
                 type="button"
                 variant="destructive"
                 disabled={guardando}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `¿Eliminar la lista “${lista.nombre}” y todos sus artículos?`,
-                    )
-                  )
-                    void detalle.eliminar();
-                }}
+                onClick={() => setConfirmacionEliminacionAbierta(true)}
               >
+                <Trash2 aria-hidden="true" />
                 Eliminar lista
               </Button>
             </div>
@@ -356,6 +440,68 @@ function DetalleLista(propiedades: OpcionesDetalleLista) {
         <Button variant="outline" onClick={detalle.recargar}>
           Reintentar detalle
         </Button>
+      )}
+      {confirmacionEliminacionAbierta && lista && (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-foreground/50 p-4 backdrop-blur-sm"
+          onClick={(evento) => {
+            if (evento.target === evento.currentTarget)
+              setConfirmacionEliminacionAbierta(false);
+          }}
+          onKeyDown={(evento) => {
+            if (evento.key === "Escape")
+              setConfirmacionEliminacionAbierta(false);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirmar-eliminar-lista-titulo"
+            aria-describedby="confirmar-eliminar-lista-detalle"
+            className="w-full max-w-md space-y-5 rounded-xl border-2 border-border bg-background p-5 shadow-[8px_8px_0px_var(--color-border)] sm:p-6"
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive">
+                <Trash2 className="size-5" aria-hidden="true" />
+              </span>
+              <div className="space-y-1">
+                <h3
+                  id="confirmar-eliminar-lista-titulo"
+                  className="font-display text-lg font-bold"
+                >
+                  ¿Eliminar esta lista?
+                </h3>
+                <p
+                  id="confirmar-eliminar-lista-detalle"
+                  className="text-sm text-muted-foreground"
+                >
+                  Se eliminará “{lista.nombre}” junto con todos sus artículos.
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={guardando}
+                autoFocus
+                onClick={() => setConfirmacionEliminacionAbierta(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={guardando}
+                onClick={() => void confirmarEliminacion()}
+              >
+                <Trash2 aria-hidden="true" />
+                {guardando ? "Eliminando…" : "Eliminar lista"}
+              </Button>
+            </div>
+          </section>
+        </div>
       )}
     </section>
   );

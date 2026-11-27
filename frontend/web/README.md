@@ -35,11 +35,43 @@ en Google Maps sin API key. Los artículos `no_cubiertos` se advierten como
 excluidos del total; sus nombres se consultan como complemento en el detalle de
 la lista y, si no se pueden recuperar, se conserva su identificador.
 
+Cada parada presenta una compra compacta: cantidad, precio por envase y subtotal.
+Las líneas de una misma **oferta y precio unitario** se muestran juntas, sumando
+las cantidades y los subtotales recibidos, sin modificar los totales ni el orden
+calculados por Motor. No se agrupan productos solo porque sus nombres se parezcan
+ni compras de tiendas diferentes. Una parada con más de cuatro líneas agrupadas
+permite desplegar las restantes; el total siempre incluye toda su compra.
+
 Una sola parada puede tener ahorro cero; ahorro `null` significa que no hay
 base de una tienda, no que el ahorro sea cero. La pantalla distingue sesión
 vencida (401), lista ausente (404), restricciones o falta de cobertura (422),
 precios no disponibles (503) y errores de conexión. Recalcular no modifica la
 lista. El resultado es una instantánea: se debe recalcular si cambia la compra.
+
+### Cómo interpretar los rechazos del cálculo (SUP-341)
+
+La selección exige un UUID válido: un enlace inválido no consulta el motor ni
+conserva ese parámetro al volver a las listas. Un 403 se presenta como falta de
+permisos, no como desconexión, y no ofrece un reintento de red.
+
+Cada restricción 422 tiene una orientación concreta: agregar o revisar artículos
+pendientes, dividir una lista demasiado grande, revisar la ausencia de sucursales
+físicas cercanas o la imposibilidad de cubrir la compra con el máximo de paradas.
+Cuando el Motor identifica productos en el detalle público «productos sin
+cobertura», se muestran sus nombres si el detalle de lista está disponible, o su
+identificador si no. Esa lectura complementaria no retrasa ni oculta el rechazo.
+No se imprime el detalle arbitrario del error.
+
+**Sin ofertas vigentes no equivale necesariamente a precios vencidos.** Puede
+deberse también a stock o cobertura; la pantalla presenta estas causas como
+posibilidades, no como un diagnóstico confirmado. Si se obtiene una ruta parcial
+con `no_cubiertos`, sus artículos siguen excluidos del total y se advierte antes
+del resumen. No se calcula una alternativa ficticia para sustituir un rechazo.
+
+El pulido visual se limita a la pantalla de rutas: resumen con importes destacados,
+paradas numeradas, carga y errores diferenciados. Se conserva el formato actual
+de `router.tsx`, sin otra reformateada global, y no se modifica el catálogo ni el
+layout compartido del PR #209.
 
 ### Desarrollo y pruebas sin backend
 

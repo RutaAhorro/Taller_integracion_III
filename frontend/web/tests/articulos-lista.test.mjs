@@ -292,6 +292,11 @@ test("buscar respeta el mínimo UTF-8, consulta al servidor y pagina con los mis
   await resolverPeticiones();
   assert.match(consultas[1].ruta, /q=t%C3%A9/);
   assert.match(consultas[1].ruta, /page=2/);
+  leer().limpiarBusqueda();
+  assert.equal(leer().consulta, "");
+  assert.equal(leer().consultado, false);
+  assert.deepEqual(leer().productos, []);
+  assert.equal(leer().error, null);
 });
 
 test("editar o desmontar aborta la búsqueda y una respuesta antigua no repone productos", async () => {
@@ -324,6 +329,11 @@ test("editar o desmontar aborta la búsqueda y una respuesta antigua no repone p
 const formatters = await cargar("../src/features/catalogo/formatters.ts");
 const vista = await cargar("../src/features/listas/ArticulosLista.tsx", {
   react: import.meta.resolve("react"),
+  "lucide-react": crearModulo(`
+    export const Check = () => null;
+    export const Package = () => null;
+    export const Trash2 = () => null;
+  `),
   "@/features/listas/listas-api": api.url,
   "@/features/listas/useDetalleLista": detalle.url,
   "@/features/catalogo/formatters": formatters.url,
@@ -372,4 +382,28 @@ test("la vista muestra productos, precios ausentes y advertencias sin inventar d
     assert.match(contenido, /Quitar de la lista/);
     assert.doesNotMatch(contenido, /producto_normalizado_id|\$0/);
   }
+});
+
+test("la tarjeta de artículo presenta la imagen real del catálogo con texto alternativo", () => {
+  const contenido = renderToStaticMarkup(
+    createElement(vista.modulo.ArticulosLista, {
+      articulos: [
+        {
+          ...articulo,
+          producto: {
+            ...producto,
+            url_imagen: "https://catalogo.example/arroz.jpg",
+          },
+        },
+      ],
+      ocupado: false,
+      alAgregar: async () => true,
+      alActualizar: async () => true,
+      alEliminar: async () => true,
+    }),
+  );
+
+  assert.match(contenido, /src="https:\/\/catalogo\.example\/arroz\.jpg"/);
+  assert.match(contenido, /alt="Imagen de Arroz 1 kg"/);
+  assert.match(contenido, /loading="lazy"/);
 });

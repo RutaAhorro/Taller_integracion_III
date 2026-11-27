@@ -44,12 +44,25 @@ const ejemplo = JSON.parse(
     "utf8",
   ),
 );
+const LISTA_ID = "3f6c2a10-8b1e-4d2f-9a3c-7e5d4c3b2a10";
+const OTRA_LISTA_ID = "4f6c2a10-8b1e-4d2f-9a3c-7e5d4c3b2a11";
 const api = await cargar("../src/features/rutas/rutas-api.ts");
-const { rutasApi, ErrorSolicitudRutas, mensajeErrorRuta } = api.modulo;
+const {
+  rutasApi,
+  ErrorSolicitudRutas,
+  mensajeErrorRuta,
+  esListaIDValida,
+  productosSinCobertura,
+  orientacionErrorRuta,
+} = api.modulo;
 const listas = await cargar("../src/features/listas/listas-api.ts");
 const formato = await cargar("../src/features/catalogo/formatters.ts");
+const presentacion = await cargar("../src/features/rutas/presentacion-ruta.ts");
+const { agruparArticulosParada } = presentacion.modulo;
 const resultado = await cargar("../src/features/rutas/ResultadoRuta.tsx", {
+  "lucide-react": import.meta.resolve("lucide-react"),
   "@/features/catalogo/formatters": formato.url,
+  "./presentacion-ruta": presentacion.url,
 });
 const { ResultadoRuta, enlaceGoogleMaps } = resultado.modulo;
 
@@ -61,14 +74,11 @@ test("optimización usa POST, Gateway, cookie y solo lista_id; conserva toda la 
     assert.equal(opciones.method, "POST");
     assert.equal(opciones.credentials, "include");
     assert.equal(opciones.headers["Content-Type"], "application/json");
-    assert.deepEqual(JSON.parse(opciones.body), { lista_id: "lista-real" });
+    assert.deepEqual(JSON.parse(opciones.body), { lista_id: LISTA_ID });
     assert.equal(opciones.headers.Authorization, undefined);
     return Response.json(ejemplo);
   });
-  assert.deepEqual(
-    await rutasApi.optimizar({ lista_id: "lista-real" }),
-    ejemplo,
-  );
+  assert.deepEqual(await rutasApi.optimizar({ lista_id: LISTA_ID }), ejemplo);
 });
 
 test("acepta origen opcional explícito o null, sin agregar campos históricos", async (prueba) => {
@@ -77,16 +87,16 @@ test("acepta origen opcional explícito o null, sin agregar campos históricos",
     llamadas.push(JSON.parse(opciones.body));
     return Response.json(ejemplo);
   });
-  await rutasApi.optimizar({ lista_id: "lista", origen: { lat: 0, lon: 0 } });
-  await rutasApi.optimizar({ lista_id: "lista", origen: null });
+  await rutasApi.optimizar({ lista_id: LISTA_ID, origen: { lat: 0, lon: 0 } });
+  await rutasApi.optimizar({ lista_id: LISTA_ID, origen: null });
   assert.deepEqual(llamadas, [
-    { lista_id: "lista", origen: { lat: 0, lon: 0 } },
-    { lista_id: "lista", origen: null },
+    { lista_id: LISTA_ID, origen: { lat: 0, lon: 0 } },
+    { lista_id: LISTA_ID, origen: null },
   ]);
 });
 
 test("conserva código y detalle de errores; solo 401 solicita iniciar sesión", async (prueba) => {
-  for (const estado of [400, 401, 404, 422, 503, 502, 504]) {
+  for (const estado of [400, 401, 403, 404, 422, 503, 502, 504]) {
     const simulacion = prueba.mock.method(globalThis, "fetch", async () =>
       Response.json(
         {
@@ -97,7 +107,7 @@ test("conserva código y detalle de errores; solo 401 solicita iniciar sesión",
       ),
     );
     await assert.rejects(
-      rutasApi.optimizar({ lista_id: "lista" }),
+      rutasApi.optimizar({ lista_id: LISTA_ID }),
       (errorObtenido) => {
         assert.ok(errorObtenido instanceof ErrorSolicitudRutas);
         assert.equal(errorObtenido.estado, estado);
@@ -118,7 +128,6 @@ test("distingue causas 422 y tolera errores no JSON sin fabricar una recomendaci
     "La lista no tiene artículos por comprar.",
     "La lista supera el máximo de artículos para calcular una ruta.",
     "No hay supermercados cercanos para calcular una ruta.",
-    "No se encontró una forma de comprar la lista en las tiendas cercanas.",
   ]) {
     assert.equal(
       mensajeErrorRuta(new ErrorSolicitudRutas(422, mensaje)),
@@ -131,7 +140,7 @@ test("distingue causas 422 y tolera errores no JSON sin fabricar una recomendaci
     async () => new Response("<html>Bad gateway</html>", { status: 502 }),
   );
   await assert.rejects(
-    rutasApi.optimizar({ lista_id: "lista" }),
+    rutasApi.optimizar({ lista_id: LISTA_ID }),
     (errorObtenido) =>
       errorObtenido.estado === 502 &&
       /conectar/.test(mensajeErrorRuta(errorObtenido)),
@@ -150,7 +159,7 @@ test("propaga cancelación y diferencia un fallo de red de una sesión vencida",
     },
   );
   await assert.rejects(
-    rutasApi.optimizar({ lista_id: "lista" }, controlador.signal),
+    rutasApi.optimizar({ lista_id: LISTA_ID }, controlador.signal),
     { name: "AbortError" },
   );
   simulacion.mock.restore();
@@ -158,10 +167,125 @@ test("propaga cancelación y diferencia un fallo de red de una sesión vencida",
     throw new TypeError("Failed to fetch");
   });
   await assert.rejects(
-    rutasApi.optimizar({ lista_id: "lista" }),
+    rutasApi.optimizar({ lista_id: LISTA_ID }),
     (errorObtenido) =>
       /conectar/.test(mensajeErrorRuta(errorObtenido)) &&
       !(errorObtenido instanceof ErrorSolicitudRutas),
+  );
+});
+
+test("UUID inválido se rechaza sin red; admite UUID canónico con mayúsculas", async (prueba) => {
+  prueba.mock.method(globalThis, "fetch", () =>
+    assert.fail("No debe consultar con UUID inválido"),
+  );
+  assert.equal(esListaIDValida(LISTA_ID), true);
+  assert.equal(esListaIDValida(LISTA_ID.toUpperCase()), true);
+  for (const listaID of [
+    null,
+    "",
+    "lista-real",
+    "../listas",
+    `${LISTA_ID}x`,
+    `${LISTA_ID}\n`,
+    LISTA_ID.replaceAll("-", ""),
+  ]) {
+    assert.equal(esListaIDValida(listaID), false);
+    await assert.rejects(
+      rutasApi.optimizar({ lista_id: listaID }),
+      (errorObtenido) =>
+        errorObtenido instanceof ErrorSolicitudRutas &&
+        errorObtenido.estado === 400,
+    );
+  }
+});
+
+test("cobertura reconoce solo el detalle público validado y diferencia límites de paradas", () => {
+  const mensaje =
+    "No se encontró una forma de comprar la lista en las tiendas cercanas.";
+  const productoID = ejemplo.no_cubiertos[0].producto_id;
+  const errorCobertura = new ErrorSolicitudRutas(
+    422,
+    mensaje,
+    `productos sin cobertura: ${productoID}, ${productoID}`,
+  );
+  assert.deepEqual(productosSinCobertura(errorCobertura), [productoID]);
+  assert.match(mensajeErrorRuta(errorCobertura), /Faltan ofertas vigentes/);
+  assert.match(
+    orientacionErrorRuta(errorCobertura),
+    /Puede deberse.*stock.*precios vencidos.*radio/,
+  );
+  assert.match(orientacionErrorRuta(errorCobertura), /no permite distinguir/);
+  const errorParadas = new ErrorSolicitudRutas(
+    422,
+    mensaje,
+    "ningún conjunto de tiendas cubre la compra",
+  );
+  assert.match(orientacionErrorRuta(errorParadas), /máximo de paradas/);
+  assert.doesNotMatch(orientacionErrorRuta(errorParadas), /precios vencidos/);
+  assert.doesNotMatch(
+    mensajeErrorRuta(errorParadas),
+    /no se encontró una forma/i,
+  );
+  for (const detalle of [
+    null,
+    [],
+    { producto_id: productoID },
+    "error SQL privado",
+    "productos sin cobertura: ",
+    `productos sin cobertura: ${productoID}, dato-no-valido`,
+    "productos sin cobertura: <script>alert(1)</script>",
+  ]) {
+    assert.deepEqual(
+      productosSinCobertura(new ErrorSolicitudRutas(422, mensaje, detalle)),
+      [],
+    );
+  }
+  assert.deepEqual(
+    productosSinCobertura(
+      new ErrorSolicitudRutas(
+        503,
+        mensaje,
+        `productos sin cobertura: ${productoID}`,
+      ),
+    ),
+    [],
+  );
+  assert.deepEqual(
+    productosSinCobertura(
+      new ErrorSolicitudRutas(
+        422,
+        "Otro error",
+        `productos sin cobertura: ${productoID}`,
+      ),
+    ),
+    [],
+  );
+});
+
+test("cada causa 422 orienta sin diagnosticar vencimiento confirmado y 403 no es un fallo de red", () => {
+  for (const [mensaje, esperado] of [
+    ["La lista no tiene artículos por comprar.", /marcados como comprados/],
+    [
+      "La lista supera el máximo de artículos para calcular una ruta.",
+      /listas más pequeñas/,
+    ],
+    [
+      "No hay supermercados cercanos para calcular una ruta.",
+      /sucursales físicas.*radio/,
+    ],
+    ["Otra restricción de negocio.", /artículos pendientes/],
+  ])
+    assert.match(
+      orientacionErrorRuta(new ErrorSolicitudRutas(422, mensaje)),
+      esperado,
+    );
+  assert.match(
+    mensajeErrorRuta(new ErrorSolicitudRutas(403, "Forbidden")),
+    /No tienes permisos/,
+  );
+  assert.doesNotMatch(
+    mensajeErrorRuta(new ErrorSolicitudRutas(403, "Forbidden")),
+    /conectar|sesión expiró/,
   );
 });
 
@@ -175,7 +299,10 @@ test("presenta dos paradas, montos confirmados, origen y avisos de estimación y
   const html = presentar(ejemplo, {
     [ejemplo.no_cubiertos[0].producto_id]: "Quinoa",
   });
-  assert.ok(html.indexOf("A Cuenta") < html.indexOf("2. Cugat"));
+  assert.ok(
+    html.indexOf('aria-label="Parada 1: A Cuenta"') <
+      html.indexOf('aria-label="Parada 2: Cugat"'),
+  );
   for (const texto of [
     "8.670",
     "920",
@@ -210,6 +337,123 @@ test("una parada muestra ahorro cero, sin inventar un ahorro extra", () => {
   assert.match(html, /Conviene comprar en una sola tienda/);
   assert.match(html, /\$0/);
   assert.doesNotMatch(html, /Compra parcial/);
+});
+
+test("pluraliza envases sin alterar cantidad, importes ni el orden de Motor", () => {
+  const html = presentar(ejemplo);
+  assert.match(html, /1 envase ×/);
+  assert.match(html, /2 envases ×/);
+  assert.doesNotMatch(html, /1 envases/);
+  assert.ok(
+    html.indexOf('aria-label="Parada 1: A Cuenta"') <
+      html.indexOf('aria-label="Parada 2: Cugat"'),
+  );
+});
+
+test("diez repeticiones de la misma oferta se presentan como una compra con diez envases", () => {
+  const base = {
+    ...ejemplo.ruta.paradas[0].articulos[0],
+    cantidad: 1,
+    subtotal: 1090,
+  };
+  const articulos = Object.freeze(
+    Array.from({ length: 10 }, () => Object.freeze({ ...base })),
+  );
+  const agrupados = agruparArticulosParada(articulos);
+  assert.equal(agrupados.length, 1);
+  assert.equal(agrupados[0].cantidad, 10);
+  assert.equal(agrupados[0].subtotal, 10900);
+  assert.equal(articulos[0].cantidad, 1);
+  const datos = structuredClone(ejemplo);
+  datos.ruta.paradas = [
+    { ...datos.ruta.paradas[0], articulos, subtotal: 10900 },
+  ];
+  datos.ruta.total = 10900;
+  const html = presentar(datos);
+  assert.equal(html.split(base.nombre).length - 1, 1);
+  assert.match(html, /10 envases ×/);
+  assert.match(html, /1 producto · 10 envases/);
+  assert.match(html, /10\.900/);
+});
+
+test("equivalentes enviados por Motor se agrupan por oferta, preservando referencias e importes", () => {
+  const articulo = ejemplo.ruta.paradas[0].articulos[0];
+  const agrupados = agruparArticulosParada([
+    {
+      ...articulo,
+      nombre: undefined,
+      producto_id: "lista-primero",
+      cantidad: 2,
+      subtotal: 2180,
+    },
+    { ...articulo, producto_id: "lista-segundo", cantidad: 3, subtotal: 3270 },
+  ]);
+  assert.equal(agrupados.length, 1);
+  assert.deepEqual(agrupados[0].producto_ids, [
+    "lista-primero",
+    "lista-segundo",
+  ]);
+  assert.equal(agrupados[0].cantidad, 5);
+  assert.equal(agrupados[0].subtotal, 5450);
+  assert.equal(agrupados[0].nombre, articulo.nombre);
+});
+
+test("nombres iguales no prueban equivalencia; ofertas y precios distintos no se mezclan", () => {
+  const articulo = ejemplo.ruta.paradas[0].articulos[0];
+  const agrupados = agruparArticulosParada([
+    articulo,
+    { ...articulo, producto_id_oferta: "otra-oferta" },
+    { ...articulo, precio_unitario: articulo.precio_unitario + 100 },
+  ]);
+  assert.equal(agrupados.length, 3);
+  assert.equal(new Set(agrupados.map((agrupado) => agrupado.clave)).size, 3);
+  const subtotales = agruparArticulosParada([
+    { ...articulo, subtotal: 2000 },
+    { ...articulo, subtotal: 3000 },
+  ]);
+  assert.equal(
+    subtotales[0].subtotal,
+    5000,
+    "no recalcula precio × cantidad para sustituir el subtotal recibido",
+  );
+  assert.equal(
+    agruparArticulosParada([
+      { ...articulo, producto_id_oferta: "", producto_id: "origen-uno" },
+      { ...articulo, producto_id_oferta: "", producto_id: "origen-dos" },
+    ]).length,
+    2,
+    "sin oferta identificada no se deduce equivalencia por nombre",
+  );
+  assert.deepEqual(agruparArticulosParada([]), []);
+});
+
+test("las compras se agrupan dentro de cada parada, sin borrar productos de otra tienda", () => {
+  const datos = structuredClone(ejemplo);
+  const articulo = datos.ruta.paradas[0].articulos[0];
+  datos.ruta.paradas[1].articulos = [{ ...articulo }];
+  const html = presentar(datos);
+  assert.equal(html.split(articulo.nombre).length - 1, 2);
+});
+
+test("una parada larga conserva totales y deja los productos adicionales en un desplegable nativo", () => {
+  const datos = structuredClone(ejemplo);
+  const parada = datos.ruta.paradas[0];
+  parada.articulos = Array.from({ length: 10 }, (_, indice) => ({
+    ...parada.articulos[0],
+    producto_id: `producto-${indice}`,
+    producto_id_oferta: `oferta-${indice}`,
+    nombre: `Producto de prueba ${indice}`,
+    cantidad: 1,
+    subtotal: 1090,
+  }));
+  parada.subtotal = 10900;
+  const html = presentar(datos);
+  assert.match(html, /10 productos · 10 envases/);
+  assert.match(html, /Ver 6 productos más/);
+  assert.match(html, /aria-label="Más productos en/);
+  assert.match(html, /Producto de prueba 9/);
+  assert.doesNotMatch(html, /<details[^>]*\bopen(?:=|>)/);
+  assert.match(html, /10\.900/);
 });
 
 test("sin base comparativa no presenta ahorro cero y conserva referencias sin nombre", () => {
@@ -284,6 +528,71 @@ function renderHook(listaID, reiniciar = false) {
 /** Resuelve las promesas pendientes sin esperar relojes o servicios externos. */
 const resolver = () => new Promise((continuar) => setImmediate(continuar));
 
+test("el hook no consulta ni optimización ni detalle con selección inválida", async (prueba) => {
+  prueba.mock.method(globalThis, "fetch", () =>
+    assert.fail("No debe consultar"),
+  );
+  assert.equal(
+    renderHook("lista-invalida", true).estado.tipo,
+    "lista_invalida",
+  );
+  await resolver();
+  assert.equal(renderHook("lista-invalida").estado.tipo, "lista_invalida");
+  assert.equal(renderHook(null).estado.tipo, "lista_invalida");
+  assert.equal(renderHook(null).estado.tipo, "sin_lista");
+  ciclo.desmontar();
+});
+
+test("un 422 de cobertura carga nombres como complemento sin alterar el rechazo", async (prueba) => {
+  const productoID = ejemplo.no_cubiertos[0].producto_id;
+  const llamadas = [];
+  prueba.mock.method(globalThis, "fetch", async (url) => {
+    llamadas.push(url);
+    if (url.includes("/listas/"))
+      return Response.json({
+        articulos: [
+          { producto_id: productoID, producto: { nombre: "Quinoa" } },
+        ],
+      });
+    return Response.json(
+      {
+        mensaje:
+          "No se encontró una forma de comprar la lista en las tiendas cercanas.",
+        detalle: `productos sin cobertura: ${productoID}`,
+      },
+      { status: 422 },
+    );
+  });
+  renderHook(LISTA_ID, true);
+  await resolver();
+  const { estado, nombres } = renderHook(LISTA_ID);
+  assert.equal(estado.tipo, "error");
+  assert.equal(estado.error.estado, 422);
+  assert.equal(nombres[productoID], "Quinoa");
+  assert.equal(llamadas.length, 2);
+  ciclo.desmontar();
+});
+
+test("un rechazo sigue visible si falla la lectura complementaria de nombres", async (prueba) => {
+  prueba.mock.method(globalThis, "fetch", async (url) => {
+    if (url.includes("/listas/")) throw new TypeError("sin conexión");
+    return Response.json(
+      {
+        mensaje:
+          "No se encontró una forma de comprar la lista en las tiendas cercanas.",
+        detalle: `productos sin cobertura: ${ejemplo.no_cubiertos[0].producto_id}`,
+      },
+      { status: 422 },
+    );
+  });
+  renderHook(LISTA_ID, true);
+  await resolver();
+  const { estado, nombres } = renderHook(LISTA_ID);
+  assert.equal(estado.error.estado, 422);
+  assert.deepEqual(nombres, {});
+  ciclo.desmontar();
+});
+
 test("sin lista no consulta; éxito permite recalcular y el fallo secundario no invalida la recomendación", async (prueba) => {
   let consultas = 0;
   prueba.mock.method(globalThis, "fetch", async (url) => {
@@ -294,17 +603,17 @@ test("sin lista no consulta; éxito permite recalcular y el fallo secundario no 
   });
   assert.equal(renderHook(null, true).estado.tipo, "sin_lista");
   assert.equal(consultas, 0);
-  assert.equal(renderHook("lista", true).estado.tipo, "cargando");
+  assert.equal(renderHook(LISTA_ID, true).estado.tipo, "cargando");
   await resolver();
-  let estado = renderHook("lista");
+  let estado = renderHook(LISTA_ID);
   assert.equal(estado.estado.tipo, "resultado");
   assert.deepEqual(estado.nombres, {});
   assert.equal(consultas, 2);
   estado.recalcular();
-  renderHook("lista");
-  assert.equal(renderHook("lista").estado.tipo, "cargando");
+  renderHook(LISTA_ID);
+  assert.equal(renderHook(LISTA_ID).estado.tipo, "cargando");
   await resolver();
-  estado = renderHook("lista");
+  estado = renderHook(LISTA_ID);
   assert.equal(estado.estado.tipo, "resultado");
   assert.equal(consultas, 4);
   ciclo.desmontar();
@@ -325,15 +634,15 @@ test("carga nombres de no cubiertos y no consulta detalles cuando la cobertura e
         : ejemplo,
     );
   });
-  renderHook("lista", true);
+  renderHook(LISTA_ID, true);
   await resolver();
-  assert.equal(renderHook("lista").nombres[productoID], "Quinoa");
+  assert.equal(renderHook(LISTA_ID).nombres[productoID], "Quinoa");
   ciclo.desmontar();
   prueba.mock.method(globalThis, "fetch", async (url) => {
     llamadas.push(url);
     return Response.json({ ...ejemplo, no_cubiertos: [] });
   });
-  renderHook("otra", true);
+  renderHook(OTRA_LISTA_ID, true);
   await resolver();
   assert.equal(llamadas.length, 3);
   ciclo.desmontar();
@@ -349,8 +658,8 @@ test("descarta respuestas antiguas incluso cuando fetch ignora la cancelación",
         pendientes.push({ url, opciones, resolverPeticion }),
       ),
   );
-  renderHook("anterior", true);
-  renderHook("actual");
+  renderHook(LISTA_ID, true);
+  renderHook(OTRA_LISTA_ID);
   assert.equal(pendientes[0].opciones.signal.aborted, true);
   pendientes[1].resolverPeticion(
     Response.json({ ...ejemplo, no_cubiertos: [], ahorro: 1000 }),
@@ -358,7 +667,7 @@ test("descarta respuestas antiguas incluso cuando fetch ignora la cancelación",
   await resolver();
   pendientes[0].resolverPeticion(Response.json(ejemplo));
   await resolver();
-  assert.equal(renderHook("actual").estado.datos.ahorro, 1000);
+  assert.equal(renderHook(OTRA_LISTA_ID).estado.datos.ahorro, 1000);
   ciclo.desmontar();
 });
 
@@ -371,7 +680,7 @@ test("al desmontar por cambio de cuenta cancela peticiones y no conserva sus dat
       completar = continuar;
     });
   });
-  renderHook("lista", true);
+  renderHook(LISTA_ID, true);
   ciclo.desmontar();
   assert.equal(senal.aborted, true);
   completar(Response.json(ejemplo));
@@ -389,9 +698,9 @@ test("un error de optimización publica error sin consultar detalles ni simular 
       { status: 422 },
     );
   });
-  renderHook("lista", true);
+  renderHook(LISTA_ID, true);
   await resolver();
-  const { estado } = renderHook("lista");
+  const { estado } = renderHook(LISTA_ID);
   assert.equal(estado.tipo, "error");
   assert.equal(estado.error.estado, 422);
   assert.equal(llamadas, 1);
@@ -401,7 +710,15 @@ test("un error de optimización publica error sin consultar detalles ni simular 
 // ===== Página y navegación =====
 
 const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
+  react: import.meta.resolve("react"),
   "react-router-dom": import.meta.resolve("react-router-dom"),
+  "lucide-react": crearModulo(`
+    export const Bike = () => null;
+    export const BusFront = () => null;
+    export const CarFront = () => null;
+    export const Footprints = () => null;
+    export const ShoppingBasket = () => null;
+  `),
   "@/app/routes": crearModulo(
     'export const ROUTES = { LOGIN: "/login", LISTAS: "/listas" };',
   ),
@@ -420,14 +737,14 @@ const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
 });
 
 /** Renderiza estados explícitos sin manipular el orden interno de hooks de la página. */
-function presentarEstado(estado) {
+function presentarEstado(estado, nombres = {}) {
   return renderToStaticMarkup(
     createElement(
       MemoryRouter,
       null,
       createElement(pagina.modulo.EstadoRecomendacion, {
         estado,
-        nombres: {},
+        nombres,
         recalcular() {},
       }),
     ),
@@ -437,7 +754,7 @@ function presentarEstado(estado) {
 test("página muestra carga, ausencia de selección y acciones adecuadas a cada error", () => {
   assert.match(presentarEstado({ tipo: "cargando" }), /role="status"/);
   assert.match(presentarEstado({ tipo: "sin_lista" }), /Selecciona una lista/);
-  for (const codigo of [400, 401, 404, 422, 503, 502]) {
+  for (const codigo of [400, 401, 403, 404, 422, 503, 502]) {
     const html = presentarEstado({
       tipo: "error",
       error: new ErrorSolicitudRutas(codigo, "Sin precios disponibles."),
@@ -452,15 +769,79 @@ test("página muestra carga, ausencia de selección y acciones adecuadas a cada 
   }
 });
 
+test("la página de rutas presenta los cuatro medios de transporte con selección accesible", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: [`/route?lista=${LISTA_ID}`] },
+      createElement(pagina.modulo.default),
+    ),
+  );
+
+  for (const etiqueta of [
+    "Vehículo particular",
+    "Transporte público",
+    "Bicicleta",
+    "A pie",
+  ])
+    assert.ok(html.includes(etiqueta));
+  assert.match(html, /type="radio"/);
+  assert.match(html, /La selección es visual por ahora/);
+});
+
+test("un error de cobertura muestra nombres, alcance y acciones, nunca el detalle técnico arbitrario", () => {
+  const productoID = ejemplo.no_cubiertos[0].producto_id;
+  const mensaje =
+    "No se encontró una forma de comprar la lista en las tiendas cercanas.";
+  const error = new ErrorSolicitudRutas(
+    422,
+    mensaje,
+    `productos sin cobertura: ${productoID}`,
+  );
+  const html = presentarEstado(
+    { tipo: "error", error },
+    { [productoID]: "Quinoa" },
+  );
+  assert.match(html, /Faltan ofertas vigentes/);
+  assert.match(html, /Quinoa/);
+  assert.match(html, /Artículos sin cobertura/);
+  assert.match(html, /precios vencidos/);
+  assert.match(html, /no permite distinguir/);
+  assert.doesNotMatch(html, /Reintentar cálculo|Resumen de la ruta/);
+  assert.match(html, /Revisar mis listas/);
+  const desconocido = presentarEstado({
+    tipo: "error",
+    error: new ErrorSolicitudRutas(422, mensaje, "error SQL privado"),
+  });
+  assert.doesNotMatch(desconocido, /error SQL privado/);
+  assert.match(
+    presentarEstado({ tipo: "lista_invalida" }),
+    /enlace de la lista no es válido/,
+  );
+});
+
+test("la URL inválida vuelve al listado sin conservar el parámetro rechazado", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: ["/route?lista=invalido"] },
+      createElement(pagina.modulo.default),
+    ),
+  );
+  assert.match(html, /href="\/listas"/);
+  assert.doesNotMatch(html, /\/listas\?lista=invalido/);
+  assert.match(html, /Ir a mis listas/);
+});
+
 test("la página conserva lista al volver y la ruta sigue bajo ProtectedRoute", async () => {
   const html = renderToStaticMarkup(
     createElement(
       MemoryRouter,
-      { initialEntries: ["/route?lista=lista-real"] },
+      { initialEntries: [`/route?lista=${LISTA_ID}`] },
       createElement(pagina.modulo.default),
     ),
   );
-  assert.match(html, /href="\/listas\?lista=lista-real"/);
+  assert.ok(html.includes(`href="/listas?lista=${LISTA_ID}"`));
   const router = await readFile(
     new URL("../src/app/router.tsx", import.meta.url),
     "utf8",
@@ -516,6 +897,14 @@ test("Calcular ruta navega con la lista persistida y se bloquea al guardar", asy
       export const useSearchParams = () => [new URLSearchParams()];
       export const useNavigate = () => destino => escenario.destinos.push(destino);
       export const Link = ({ to, children, ...propiedades }) => createElement("a", { href: to, ...propiedades }, children);
+    `),
+    "lucide-react": crearModulo(`
+      export const Info = () => null;
+      export const ListChecks = () => null;
+      export const ListPlus = () => null;
+      export const RefreshCw = () => null;
+      export const ShoppingBasket = () => null;
+      export const Trash2 = () => null;
     `),
     "@/components/ui/button": crearModulo(`
       import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
