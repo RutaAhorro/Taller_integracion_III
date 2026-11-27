@@ -64,9 +64,10 @@ func ejecutar(registrador *slog.Logger) error {
 
 	enrutador := api.NuevoEnrutador(api.Dependencias{
 		Productos: services.NuevoServicioProductos(repositories.NuevoRepositorioProductos(baseDatos), services.LimitesProductos{
-			TamanoPagina:        configuracion.TamanoPagina,
-			TamanoPaginaMaximo:  configuracion.TamanoPaginaMaximo,
-			LargoMaximoBusqueda: configuracion.LargoMaximoBusqueda,
+			TamanoPagina:               configuracion.TamanoPagina,
+			TamanoPaginaMaximo:         configuracion.TamanoPaginaMaximo,
+			LargoMaximoBusqueda:        configuracion.LargoMaximoBusqueda,
+			VigenciaCacheSupermercados: configuracion.VigenciaCacheSupermercados,
 		}),
 		Fuentes: services.NuevoServicioFuentes(repositories.NuevoRepositorioFuentes(baseDatos)),
 		Disponibilidad: services.NuevoServicioDisponibilidad(repositories.NuevoRepositorioDisponibilidad(baseDatos), services.LimitesDisponibilidad{

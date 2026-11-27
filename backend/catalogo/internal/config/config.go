@@ -55,6 +55,10 @@ const (
 	vidaConexionPredeterminada         = 30 * time.Minute
 	productosConsultaPredeterminados   = 1000
 	antiguedadPredeterminada           = 48 * time.Hour
+	// vigenciaCacheSupermercadosPredeterminada acota cuánto tarda en verse una
+	// cadena nueva o agotada en el filtro lateral; evita recorrer todo el
+	// catálogo en cada página.
+	vigenciaCacheSupermercadosPredeterminada = 2 * time.Minute // CATALOGO_CACHE_SUPERMERCADOS
 )
 
 // ===== Configuración del servicio =====
@@ -96,6 +100,9 @@ type Configuracion struct {
 	AntiguedadMaximaDisponibilidad time.Duration
 	// RadioMaximoKm acota la consulta de precios comparables por sucursal.
 	RadioMaximoKm int
+	// VigenciaCacheSupermercados es cuánto se reutilizan los supermercados
+	// disponibles de un mismo filtro en el listado público.
+	VigenciaCacheSupermercados time.Duration
 }
 
 // Cargar lee y valida el entorno del proceso. Los mensajes de error nombran la
@@ -172,6 +179,7 @@ func Cargar() (Configuracion, error) {
 	}{
 		{"DB_CONN_MAX_LIFETIME", &configuracion.VidaMaximaConexion, vidaConexionPredeterminada},
 		{"CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", &configuracion.AntiguedadMaximaDisponibilidad, antiguedadPredeterminada},
+		{"CATALOGO_CACHE_SUPERMERCADOS", &configuracion.VigenciaCacheSupermercados, vigenciaCacheSupermercadosPredeterminada},
 		{"CATALOGO_READ_HEADER_TIMEOUT", &configuracion.PlazoCabeceras, PlazoCabecerasPredeterminado},
 		{"CATALOGO_READ_TIMEOUT", &configuracion.PlazoLectura, PlazoLecturaPredeterminado},
 		{"CATALOGO_WRITE_TIMEOUT", &configuracion.PlazoEscritura, PlazoEscrituraPredeterminado},

@@ -36,6 +36,7 @@ go run ./cmd/catalogo
 | `CATALOGO_MAX_PRODUCTOS_CONSULTA` | `1000` | IDs aceptados por lote en las consultas internas de disponibilidad, equivalencia y precios comparables |
 | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA` | `48h` | Antigüedad máxima de la captura más reciente para considerarla vigente |
 | `CATALOGO_MAX_RADIO_KM` | `50` | Radio máximo aceptado por `/internal/v1/productos/precios-comparables` |
+| `CATALOGO_CACHE_SUPERMERCADOS` | `2m` | Cuánto se reutilizan los supermercados disponibles de un mismo filtro en `/api/v1/productos` (por réplica). Una cadena nueva o agotada tarda a lo más ese plazo en verse en el filtro lateral |
 | `CATALOGO_TEST_DB_URL` | Sólo pruebas | Base PostgreSQL aislada con rol `app_catalogo` para `tests/integration/postgres_test.go`; vacía omite la prueba |
 
 Las duraciones usan el formato de Go (`500ms`, `5s`, `30m`) y deben ser positivas;

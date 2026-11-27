@@ -75,6 +75,50 @@ func crearRepositorioSeco(prueba *testing.T) (domain.RepositorioProductos, *stri
 	return repositories.NuevoRepositorioProductos(db), &consultas
 }
 
+// consultaDePagina recorta el registro hasta la consulta de la página. Con la
+// conexión simulada una página posterior a la primera llega vacía y Listar
+// agrega el conteo de respaldo, que no debe confundirse con el ORDER BY de la
+// página.
+func consultaDePagina(registro string) string {
+	if indiceConteo := strings.Index(registro, "SELECT count(*) FROM"); indiceConteo >= 0 {
+		return registro[:indiceConteo]
+	}
+	return registro
+}
+
+// TestListar_TotalEnLaMismaConsulta comprueba que la primera página calcula el
+// total con count(*) OVER () y no lanza un COUNT aparte, que repetía la
+// búsqueda de la última captura de cada producto.
+func TestListar_TotalEnLaMismaConsulta(prueba *testing.T) {
+	repositorio, consultas := crearRepositorioSeco(prueba)
+	_, total, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{Page: 1, Limit: 20})
+	if errorObtenido != nil {
+		prueba.Fatalf("Listar generó error: %v", errorObtenido)
+	}
+	consultaSQL := consultas.String()
+	if !strings.Contains(consultaSQL, "count(*) OVER () AS total_registros") {
+		prueba.Errorf("la página no calcula el total en la misma consulta: %s", consultaSQL)
+	}
+	if strings.Contains(consultaSQL, "SELECT count(*) FROM") {
+		prueba.Errorf("la primera página no debe lanzar un COUNT aparte: %s", consultaSQL)
+	}
+	if total != 0 {
+		prueba.Errorf("una primera página vacía debe informar total 0, se obtuvo %d", total)
+	}
+}
+
+// TestListar_PaginaPosteriorAlFinalCuentaAparte comprueba que una página sin
+// filas después de la primera conserva el total con un conteo de respaldo.
+func TestListar_PaginaPosteriorAlFinalCuentaAparte(prueba *testing.T) {
+	repositorio, consultas := crearRepositorioSeco(prueba)
+	if _, _, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{Page: 5, Limit: 20}); errorObtenido != nil {
+		prueba.Fatalf("Listar generó error: %v", errorObtenido)
+	}
+	if !strings.Contains(consultas.String(), "SELECT count(*) FROM") {
+		prueba.Errorf("una página vacía posterior a la primera debe contar aparte: %s", consultas.String())
+	}
+}
+
 func TestOrdenSeguro_PreciosFaltantesNullsLast(prueba *testing.T) {
 	casos := []struct {
 		nombre       string
@@ -293,7 +337,7 @@ func TestListar_OrdenPorRelevanciaYComodines(prueba *testing.T) {
 		if errorObtenido != nil {
 			subprueba.Fatalf("Listar con q generó error: %v", errorObtenido)
 		}
-		consultaSQL := consultas.String()
+		consultaSQL := consultaDePagina(consultas.String())
 		indiceOrden := strings.LastIndex(consultaSQL, "ORDER BY")
 		if indiceOrden < 0 {
 			subprueba.Fatalf("la consulta no contiene ORDER BY: %s", consultaSQL)
