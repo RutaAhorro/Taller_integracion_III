@@ -15,6 +15,9 @@ type TipoContextoDiseno = {
   category: string;
   markets: UiSupermarket[];
   catalogo: ReturnType<typeof useCatalog>;
+  onSelectCategory: (categoria: string) => void;
+  onResetFilters: () => void;
+  resetVersion: number;
 };
 
 export function useLayoutContext() {
@@ -22,6 +25,7 @@ export function useLayoutContext() {
 }
 
 export function MainLayout() {
+  const [versionReinicio, setVersionReinicio] = useState(0);
   const [consulta, setConsulta] = useState("");
   const [categoria, setCategoria] = useState("");
   // El diálogo solo se abre por acción del usuario; no captura el foco al cargar.
@@ -38,7 +42,13 @@ export function MainLayout() {
     setConsulta("");
     setCategoria("");
     setSupermercadoActivo(null);
+    setVersionReinicio((anterior) => anterior + 1);
   };
+  // Comparte la misma selección entre el lateral y la portada del catálogo.
+  const seleccionarCategoria = useCallback((valor: string) => {
+    setConsulta("");
+    setCategoria(valor);
+  }, []);
   const { totalItems, totalPrice, isCartOpen, setIsCartOpen } = useCart();
   const { pathname } = useLocation();
   const pestanaActiva = pathname.startsWith("/chat")
@@ -79,10 +89,7 @@ export function MainLayout() {
         errorSupermercados={catalogo.error !== null}
         avisoSupermercados={catalogo.notice}
         alReintentarSupermercados={catalogo.retry}
-        onSelectCategory={(valor) => {
-          setConsulta("");
-          setCategoria(valor);
-        }}
+        onSelectCategory={seleccionarCategoria}
         onSelectMarket={(id) => {
           setSupermercadoActivo(
             catalogo.markets.find((supermercado) => supermercado.id === id) ??
@@ -113,6 +120,9 @@ export function MainLayout() {
               category: categoria,
               markets: catalogo.markets,
               catalogo,
+              onSelectCategory: seleccionarCategoria,
+              onResetFilters: restablecerFiltros,
+              resetVersion: versionReinicio,
             } satisfies TipoContextoDiseno
           }
         />
