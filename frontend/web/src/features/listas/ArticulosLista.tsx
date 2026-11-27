@@ -80,6 +80,30 @@ export function ArticulosLista({
         Las cantidades son envases: entre 1 y {MAXIMO_ENVASES_ARTICULO} por
         producto. Puedes guardar productos sin stock con una advertencia.
       </p>
+      {articulos.length > 0 && (
+        <div className="rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm">
+          {sinPrecio === 0 ? (
+            <p className="font-semibold">
+              Total estimado: {formatPrice(totalPesos)}
+            </p>
+          ) : conPrecio > 0 ? (
+            <>
+              <p className="font-semibold">
+                Subtotal con precio vigente: {formatPrice(totalPesos)}
+              </p>
+              <p className="text-muted-foreground">
+                {sinPrecio} {sinPrecio === 1 ? "artículo no tiene" : "artículos no tienen"}{" "}
+                precio vigente.
+              </p>
+            </>
+          ) : (
+            <p>
+              Total no disponible: los artículos no tienen precio vigente
+              confirmado.
+            </p>
+          )}
+        </div>
+      )}
       <BuscadorArticulos ocupado={ocupado} alAgregar={alAgregar} />
       {articulos.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -87,28 +111,6 @@ export function ArticulosLista({
         </p>
       ) : (
         <>
-          <div className="rounded-xl border border-border bg-muted/50 px-4 py-3 text-sm">
-            {sinPrecio === 0 ? (
-              <p className="font-semibold">
-                Total estimado: {formatPrice(totalPesos)}
-              </p>
-            ) : conPrecio > 0 ? (
-              <>
-                <p className="font-semibold">
-                  Subtotal con precio vigente: {formatPrice(totalPesos)}
-                </p>
-                <p className="text-muted-foreground">
-                  {sinPrecio} {sinPrecio === 1 ? "artículo no tiene" : "artículos no tienen"}{" "}
-                  precio vigente.
-                </p>
-              </>
-            ) : (
-              <p>
-                Total no disponible: los artículos no tienen precio vigente
-                confirmado.
-              </p>
-            )}
-          </div>
           <ul className="space-y-3">
             {articulos.map((articulo) => (
               <li key={`${articulo.id}:${articulo.cantidad}`}>

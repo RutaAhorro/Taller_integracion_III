@@ -56,7 +56,7 @@ function esCategoriaVisible(categoria: string): boolean {
 
 // Mejora únicamente la etiqueta visible de una categoría del backend.
 function formatearEtiquetaCategoria(categoria: string): string {
-  const etiqueta = categoria.replace(/-/g, ' ').replace(/\s+/g, ' ').trim()
+  const etiqueta = categoria.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
   return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1)
 }
 
