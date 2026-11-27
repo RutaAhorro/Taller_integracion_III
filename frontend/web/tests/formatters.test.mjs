@@ -16,6 +16,7 @@ test('formatea categorías normalizadas con excepciones y palabras acentuadas', 
   assert.equal(formatearCategoria('frescos-y-lacteos'), 'Frescos y lácteos');
   assert.equal(formatearCategoria('Dulces_mermeladas_y_manjar'), 'Dulces, mermeladas y manjar');
   assert.equal(formatearCategoria('panaderia_y_pasteleria'), 'Panadería y pastelería');
+  assert.equal(formatearCategoria('aseo-y-bano'), 'Aseo y baño');
 });
 
 test('devuelve vacío para categorías nulas o vacías', () => {

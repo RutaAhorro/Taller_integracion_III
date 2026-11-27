@@ -65,6 +65,7 @@ export function formatearCategoria(categoria: string | undefined | null): string
     tecnologia: 'tecnología',
     jugueteria: 'juguetería',
     libreria: 'librería',
+    bano: 'baño',
     bebes: 'bebés',
     cafe: 'café',
     te: 'té',
