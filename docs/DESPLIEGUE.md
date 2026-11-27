@@ -3,7 +3,7 @@
 Esta guía describe cómo desplegar el MVP completo de RutaAhorro en el clúster Kubernetes (namespace `student-vmatus`) usando los manifiestos de `infrastructure/k8s/`, las imágenes publicadas en GHCR por `.github/workflows/docker-publish.yml` y los scripts de migración de `infrastructure/db/`.
 
 > [!WARNING]
-> **No apliques `infrastructure/k8s/db/secret.yaml` directamente.** El archivo versionado contiene credenciales estáticas históricas; crea o rota `db-secret` directamente en el clúster con `kubectl create secret` usando valores nuevos generados con `openssl rand -hex 32`.
+> **Nunca subas secretos reales al repositorio.** El archivo `infrastructure/k8s/db/secret.yaml` fue retirado del árbol; usa [`infrastructure/k8s/db/secret.example.yaml`](../infrastructure/k8s/db/secret.example.yaml) solo como referencia de estructura y crea o rota `db-secret` directamente en el clúster con `kubectl create secret` usando valores nuevos generados con `openssl rand -hex 32` **antes** de desplegar la base de datos.
 
 ---
 
@@ -38,7 +38,7 @@ Genera cada secreto/token independiente con `openssl rand -hex 32` (64 caractere
 
 ### 2.1. Base de datos y JWT (`db-secret`)
 
-Usado por `db` (`envFrom`) y para `JWT_SECRET` en `identidad`, `catalogo`, `motor-rutas` e `ia-conversacional`.
+Usado por `db` (`envFrom`) y para `JWT_SECRET` en `identidad`, `catalogo`, `motor-rutas` e `ia-conversacional`. Su estructura de referencia con valores falsos está en [`infrastructure/k8s/db/secret.example.yaml`](../infrastructure/k8s/db/secret.example.yaml); este Secret **debe crearse antes** de aplicar `infrastructure/k8s/db/deployment.yaml`.
 
 ```bash
 kubectl create secret generic db-secret -n "$NS" \
