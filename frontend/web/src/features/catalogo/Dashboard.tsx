@@ -7,9 +7,40 @@ import { Footer } from '@/components/Footer'
 import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { useCart } from '@/features/catalogo/CartContext'
 
+function formatearCategoriaActiva(categoria: string): string {
+  if (categoria === 'ofertas') return 'Mejores ofertas'
+  if (categoria === 'descuentos') return 'Mayor descuento'
+  if (categoria === 'marcas') return 'Marcas blancas'
+
+  const textoCategoria = categoria.startsWith('categoria:')
+    ? categoria.slice('categoria:'.length)
+    : categoria
+  const textoNormalizado = textoCategoria.replace(/[-_]+/g, ' ').trim()
+  if (!textoNormalizado) return ''
+  return textoNormalizado.charAt(0).toUpperCase() + textoNormalizado.slice(1)
+}
+
 export default function Page() {
-  const { query, catalogo } = useLayoutContext()
+  const { query, category, activeMarket, markets, catalogo } = useLayoutContext()
   const { addToCart } = useCart()
+  const supermercadoSeleccionado = markets.find((mercado) => mercado.id === activeMarket)?.name
+  const consultaActiva = query.trim()
+  const categoriaActiva = formatearCategoriaActiva(category)
+  const hayFiltroActivo = Boolean(consultaActiva || category || supermercadoSeleccionado)
+  const tituloHero = consultaActiva
+    ? `Resultados para “${consultaActiva}”`
+    : category
+      ? categoriaActiva
+      : supermercadoSeleccionado
+        ? `Catálogo en ${supermercadoSeleccionado}`
+        : 'Compara precios antes de salir a comprar'
+  const subtituloHero = consultaActiva
+    ? `Mostrando coincidencias para “${consultaActiva}”${supermercadoSeleccionado ? ` en ${supermercadoSeleccionado}` : ''}${category ? ` · ${categoriaActiva}` : ''}.`
+    : category
+      ? `Mostrando ${categoriaActiva.toLowerCase()}${supermercadoSeleccionado ? ` en ${supermercadoSeleccionado}` : ''}.`
+      : supermercadoSeleccionado
+        ? `Filtrando el catálogo en ${supermercadoSeleccionado}.`
+        : 'Explora los precios vigentes o abre el menú ☰ para filtrar por categoría o supermercado.'
 
   const manejarDesplazamiento = (evento: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, scrollHeight, clientHeight } = evento.currentTarget;
@@ -37,27 +68,23 @@ export default function Page() {
             className="min-h-0 flex-1 overflow-y-auto pb-2 pr-1 -mr-1 scrollbar-hide"
             onScroll={manejarDesplazamiento}
           >
-            <div className="relative mb-4 md:mb-6 flex flex-col justify-end overflow-hidden rounded-xl md:rounded-2xl border-2 border-border shadow-[2px_2px_0px_var(--color-border)] md:shadow-[4px_4px_0px_var(--color-border)] bg-card p-4 md:p-5 min-h-[90px] md:min-h-[140px]">
-              <div
-                className="absolute inset-0 z-0 opacity-[0.25] mix-blend-multiply bg-[url('/images/dashboard-bg.jpg')] bg-cover bg-center transition-opacity"
-                aria-hidden="true"
-              />
-              <div className="absolute inset-0 z-0 bg-gradient-to-r from-card/80 via-card/50 to-transparent pointer-events-none" />
-              <div className="relative z-10 flex items-end justify-between w-full">
-                <div>
-                  <h1 className="text-balance text-xl md:text-2xl font-extrabold tracking-tight text-foreground drop-shadow-sm">
-                    Productos comparados en {catalogo.supermarketCount}{' '}
-                    {catalogo.supermarketCount === 1 ? 'supermercado' : 'supermercados'}
-                  </h1>
-                  <p className="text-sm font-semibold text-muted-foreground mt-1">
-                    Catálogo disponible cerca de ti
-                  </p>
-                </div>
+            <section className="mb-5 rounded-2xl border-2 border-border bg-card p-5 shadow-[6px_6px_0px_var(--color-border)] md:p-6">
+              <div className="min-w-0">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-primary/10 px-3 py-1 text-xs font-bold text-primary">
+                  {catalogo.supermarketCount}{' '}
+                  {catalogo.supermarketCount === 1 ? 'supermercado activo' : 'supermercados activos'}
+                </span>
+                <h1 className="mt-2 font-['Fraunces'] text-2xl font-bold tracking-tight text-foreground md:text-3xl">
+                  {tituloHero}
+                </h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {subtituloHero}
+                </p>
               </div>
-            </div>
+            </section>
 
             {catalogo.isLoading ? (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 md:gap-4">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4">
                 {Array.from({ length: 12 }).map((_, indice) => (
                   <ProductSkeleton key={indice} />
                 ))}
@@ -71,8 +98,16 @@ export default function Page() {
                  <button type="button" className="text-sm underline" onClick={catalogo.retry}>Reintentar</button>
               </div>
             ) : catalogo.filtered.length > 0 ? (
-              <div className="flex flex-col gap-6 pb-6">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 md:gap-4">
+              <div className="flex flex-col pb-6">
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 px-1">
+                  <h2 className="text-sm font-bold text-foreground">
+                    {hayFiltroActivo ? 'Resultados encontrados' : 'Explorar por menor precio'}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {catalogo.filtered.length} productos cargados · Ordenados de menor a mayor precio
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 md:gap-4">
                   {catalogo.filtered.map((producto) => (
                     <ProductCard key={producto.id} product={producto} onAdd={manejarAgregar} />
                   ))}
