@@ -7,6 +7,7 @@ import {
   ListPlus,
   RefreshCw,
   ShoppingBasket,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -331,11 +332,19 @@ function ContenidoListas() {
 function DetalleLista(propiedades: OpcionesDetalleLista) {
   const navegar = useNavigate();
   const detalle = useDetalleLista(propiedades);
+  const [confirmacionEliminacionAbierta, setConfirmacionEliminacionAbierta] =
+    useState(false);
   const { lista, nombre, estado, cargando, guardando, error } = detalle;
+
+  async function confirmarEliminacion() {
+    const eliminacionConfirmada = await detalle.eliminar();
+    if (!eliminacionConfirmada) setConfirmacionEliminacionAbierta(false);
+  }
+
   return (
     <section
       aria-label="Detalle de la lista"
-      className="min-w-0 space-y-5 border-t-2 border-border bg-background/70 py-6"
+      className="mx-auto w-full max-w-4xl min-w-0 space-y-5 border-t-2 border-border bg-background/70 py-6"
     >
       <h2 className="flex items-center gap-2 font-display text-xl font-bold">
         <ListChecks className="size-5 text-primary" aria-hidden="true" />
@@ -390,15 +399,9 @@ function DetalleLista(propiedades: OpcionesDetalleLista) {
                 type="button"
                 variant="destructive"
                 disabled={guardando}
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      `¿Eliminar la lista “${lista.nombre}” y todos sus artículos?`,
-                    )
-                  )
-                    void detalle.eliminar();
-                }}
+                onClick={() => setConfirmacionEliminacionAbierta(true)}
               >
+                <Trash2 aria-hidden="true" />
                 Eliminar lista
               </Button>
             </div>
@@ -437,6 +440,68 @@ function DetalleLista(propiedades: OpcionesDetalleLista) {
         <Button variant="outline" onClick={detalle.recargar}>
           Reintentar detalle
         </Button>
+      )}
+      {confirmacionEliminacionAbierta && lista && (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-foreground/50 p-4 backdrop-blur-sm"
+          onClick={(evento) => {
+            if (evento.target === evento.currentTarget)
+              setConfirmacionEliminacionAbierta(false);
+          }}
+          onKeyDown={(evento) => {
+            if (evento.key === "Escape")
+              setConfirmacionEliminacionAbierta(false);
+          }}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="confirmar-eliminar-lista-titulo"
+            aria-describedby="confirmar-eliminar-lista-detalle"
+            className="w-full max-w-md space-y-5 rounded-xl border-2 border-border bg-background p-5 shadow-[8px_8px_0px_var(--color-border)] sm:p-6"
+          >
+            <div className="flex items-start gap-3">
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-destructive/10 text-destructive">
+                <Trash2 className="size-5" aria-hidden="true" />
+              </span>
+              <div className="space-y-1">
+                <h3
+                  id="confirmar-eliminar-lista-titulo"
+                  className="font-display text-lg font-bold"
+                >
+                  ¿Eliminar esta lista?
+                </h3>
+                <p
+                  id="confirmar-eliminar-lista-detalle"
+                  className="text-sm text-muted-foreground"
+                >
+                  Se eliminará “{lista.nombre}” junto con todos sus artículos.
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-col-reverse justify-end gap-2 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={guardando}
+                autoFocus
+                onClick={() => setConfirmacionEliminacionAbierta(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={guardando}
+                onClick={() => void confirmarEliminacion()}
+              >
+                <Trash2 aria-hidden="true" />
+                {guardando ? "Eliminando…" : "Eliminar lista"}
+              </Button>
+            </div>
+          </section>
+        </div>
       )}
     </section>
   );

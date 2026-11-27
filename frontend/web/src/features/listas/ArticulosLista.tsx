@@ -1,5 +1,6 @@
 // Presenta artículos reales y formularios de búsqueda/edición; ninguna acción simula persistencia.
 import { useState, type FormEvent } from "react";
+import { Check, Package, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatPrice } from "@/features/catalogo/formatters";
@@ -340,88 +341,122 @@ function ArticuloGuardado({
   return (
     <fieldset
       disabled={ocupado}
-      className="min-w-0 space-y-2 rounded-xl border border-border p-3 text-sm"
+      className="min-w-0 space-y-4 rounded-lg border border-border bg-card p-4 text-sm shadow-sm sm:p-5"
     >
       <legend className="sr-only">{nombre}</legend>
-      <h4 className="break-words font-semibold">{nombre}</h4>
-      {producto && (
-        <p className="break-words">
-          {producto.marca} · {producto.supermercado} · {producto.unidad}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="relative grid size-20 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-background sm:size-24">
+            <Package className="size-5" aria-hidden="true" />
+            {producto?.url_imagen && (
+              <img
+                src={producto.url_imagen}
+                alt={`Imagen de ${nombre}`}
+                loading="lazy"
+                onError={(evento) => {
+                  evento.currentTarget.style.display = "none";
+                }}
+                className="absolute inset-0 size-full object-contain p-1"
+              />
+            )}
+          </span>
+          <div className="min-w-0 space-y-1">
+            <h4 className="break-words font-semibold leading-snug">{nombre}</h4>
+            {producto && (
+              <p className="break-words text-xs text-muted-foreground sm:text-sm">
+                {[producto.marca, producto.supermercado, producto.unidad]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </p>
+            )}
+          </div>
+        </div>
+        <p className="max-w-full rounded-md bg-secondary/70 px-3 py-1.5 text-xs font-semibold text-foreground sm:text-sm">
+          {producto?.precio === null || !producto
+            ? "Precio vigente no disponible"
+            : `${formatPrice(producto.precio)} / envase`}
         </p>
-      )}
-      <p>
-        {producto?.precio === null || !producto
-          ? "Precio vigente no disponible"
-          : `${formatPrice(producto.precio)} por envase`}
-      </p>
-      <p
-        className={
-          articulo.estado_producto === "disponible"
-            ? "text-muted-foreground"
-            : "font-medium text-foreground"
-        }
-      >
-        {AVISOS_PRODUCTO[articulo.estado_producto] ??
-          AVISOS_PRODUCTO.desconocido}
-      </p>
-      <p>Cantidad guardada: {articulo.cantidad} envases</p>
-      <form onSubmit={guardar} className="space-y-2">
-        <label htmlFor={`cantidad-articulo-${articulo.id}`}>
-          Cantidad de envases
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <Input
-            id={`cantidad-articulo-${articulo.id}`}
-            type="number"
-            min={1}
-            max={MAXIMO_ENVASES_ARTICULO}
-            step={1}
-            value={cantidad}
-            onChange={(evento) => setCantidad(evento.target.value)}
-            required
-            aria-invalid={!cantidadValida}
-            className="w-24"
-          />
-          <Button
-            type="submit"
-            variant="outline"
-            disabled={
-              ocupado ||
-              !cantidadValida ||
-              cantidadNumerica === articulo.cantidad
-            }
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-y border-border py-3">
+        <p
+          className={`min-w-0 flex-1 text-xs sm:text-sm ${articulo.estado_producto === "disponible" ? "text-muted-foreground" : "font-medium text-foreground"}`}
+        >
+          {AVISOS_PRODUCTO[articulo.estado_producto] ??
+            AVISOS_PRODUCTO.desconocido}
+        </p>
+        <span className="shrink-0 text-xs font-medium text-muted-foreground">
+          {articulo.cantidad} {articulo.cantidad === 1 ? "envase" : "envases"}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <form onSubmit={guardar} className="space-y-2">
+          <label
+            htmlFor={`cantidad-articulo-${articulo.id}`}
+            className="block text-xs font-medium text-muted-foreground"
           >
-            Guardar cantidad
+            Cambiar cantidad
+          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id={`cantidad-articulo-${articulo.id}`}
+              type="number"
+              min={1}
+              max={MAXIMO_ENVASES_ARTICULO}
+              step={1}
+              value={cantidad}
+              onChange={(evento) => setCantidad(evento.target.value)}
+              required
+              aria-invalid={!cantidadValida}
+              className="w-24"
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={
+                ocupado ||
+                !cantidadValida ||
+                cantidadNumerica === articulo.cantidad
+              }
+            >
+              Guardar cantidad
+            </Button>
+          </div>
+          {!cantidadValida && (
+            <p className="text-destructive">
+              Ingresa un entero entre 1 y {MAXIMO_ENVASES_ARTICULO}.
+            </p>
+          )}
+        </form>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border px-3 font-medium">
+            <input
+              type="checkbox"
+              checked={articulo.esta_comprado}
+              onChange={(evento) => {
+                void alActualizar(articulo.id, {
+                  esta_comprado: evento.target.checked,
+                });
+              }}
+            />
+            <Check className="size-4 text-primary" aria-hidden="true" />
+            Comprado
+          </label>
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={ocupado}
+            onClick={() => {
+              void alEliminar(articulo.id);
+            }}
+          >
+            <Trash2 aria-hidden="true" />
+            Quitar de la lista
           </Button>
         </div>
-        {!cantidadValida && (
-          <p className="text-destructive">
-            Ingresa un entero entre 1 y {MAXIMO_ENVASES_ARTICULO}.
-          </p>
-        )}
-      </form>
-      <label className="flex items-center gap-2">
-        <input
-          type="checkbox"
-          checked={articulo.esta_comprado}
-          onChange={(evento) => {
-            void alActualizar(articulo.id, {
-              esta_comprado: evento.target.checked,
-            });
-          }}
-        />
-        Comprado
-      </label>
-      <Button
-        type="button"
-        variant="destructive"
-        disabled={ocupado}
-        onClick={() => {
-          void alEliminar(articulo.id);
-        }}
-      >
-        Quitar de la lista
-      </Button>
+      </div>
     </fieldset>
   );
 }

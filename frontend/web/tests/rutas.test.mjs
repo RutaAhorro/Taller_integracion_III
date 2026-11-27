@@ -594,7 +594,15 @@ test("un error de optimización publica error sin consultar detalles ni simular 
 // ===== Página y navegación =====
 
 const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
+  react: import.meta.resolve("react"),
   "react-router-dom": import.meta.resolve("react-router-dom"),
+  "lucide-react": crearModulo(`
+    export const Bike = () => null;
+    export const BusFront = () => null;
+    export const CarFront = () => null;
+    export const Footprints = () => null;
+    export const ShoppingBasket = () => null;
+  `),
   "@/app/routes": crearModulo(
     'export const ROUTES = { LOGIN: "/login", LISTAS: "/listas" };',
   ),
@@ -643,6 +651,26 @@ test("página muestra carga, ausencia de selección y acciones adecuadas a cada 
     );
     if (codigo === 422) assert.match(html, /Sin precios disponibles/);
   }
+});
+
+test("la página de rutas presenta los cuatro medios de transporte con selección accesible", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      MemoryRouter,
+      { initialEntries: [`/route?lista=${LISTA_ID}`] },
+      createElement(pagina.modulo.default),
+    ),
+  );
+
+  for (const etiqueta of [
+    "Vehículo particular",
+    "Transporte público",
+    "Bicicleta",
+    "A pie",
+  ])
+    assert.ok(html.includes(etiqueta));
+  assert.match(html, /type="radio"/);
+  assert.match(html, /La selección es visual por ahora/);
 });
 
 test("un error de cobertura muestra nombres, alcance y acciones, nunca el detalle técnico arbitrario", () => {
@@ -760,6 +788,7 @@ test("Calcular ruta navega con la lista persistida y se bloquea al guardar", asy
       export const ListPlus = () => null;
       export const RefreshCw = () => null;
       export const ShoppingBasket = () => null;
+      export const Trash2 = () => null;
     `),
     "@/components/ui/button": crearModulo(`
       import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
