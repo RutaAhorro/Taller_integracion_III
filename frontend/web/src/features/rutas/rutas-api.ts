@@ -81,6 +81,23 @@ export type RespuestaOptimizacion = {
 
 // ===== Solicitud y errores =====
 
+// UUID canónico: admite cualquier versión, igual que los identificadores emitidos por Motor.
+const PATRON_UUID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const LONGITUD_UUID_CANONICO = 36;
+const PREFIJO_SIN_COBERTURA = "productos sin cobertura: ";
+const MENSAJE_SIN_COBERTURA =
+  "No se encontró una forma de comprar la lista en las tiendas cercanas.";
+
+/** Valida la selección antes de consultar; el backend conserva la autorización por dueño. */
+export function esListaIDValida(listaID: string | null): listaID is string {
+  return (
+    typeof listaID === "string" &&
+    listaID.length === LONGITUD_UUID_CANONICO &&
+    PATRON_UUID.test(listaID)
+  );
+}
+
 /** Mantiene el código HTTP para distinguir sesión, negocio y servicio no disponible. */
 export class ErrorSolicitudRutas extends Error {
   readonly estado: number;
@@ -94,16 +111,82 @@ export class ErrorSolicitudRutas extends Error {
   }
 }
 
+/** Lee solo el detalle público conocido del Motor, nunca SQL, texto arbitrario o un contrato supuesto. */
+export function productosSinCobertura(errorObtenido: unknown): string[] {
+  if (
+    !(errorObtenido instanceof ErrorSolicitudRutas) ||
+    errorObtenido.estado !== 422 ||
+    errorObtenido.message !== MENSAJE_SIN_COBERTURA ||
+    typeof errorObtenido.detalle !== "string" ||
+    !errorObtenido.detalle.startsWith(PREFIJO_SIN_COBERTURA)
+  )
+    return [];
+  const identificadores = errorObtenido.detalle
+    .slice(PREFIJO_SIN_COBERTURA.length)
+    .split(",")
+    .map((identificador) => identificador.trim());
+  return identificadores.every(esListaIDValida)
+    ? [...new Set(identificadores)]
+    : [];
+}
+
+/** Explica qué revisar sin afirmar que la falta de ofertas prueba una causa concreta. */
+export function orientacionErrorRuta(errorObtenido: unknown): string {
+  if (!(errorObtenido instanceof ErrorSolicitudRutas))
+    return "Comprueba tu conexión y vuelve a calcular. No se ha modificado tu lista.";
+  if (errorObtenido.estado === 403)
+    return "Vuelve a tus listas y selecciona una disponible para tu cuenta. Iniciar sesión de nuevo no garantiza acceso a esta lista.";
+  if (errorObtenido.estado === 422) {
+    if (errorObtenido.message === "La lista no tiene artículos por comprar.")
+      return "Agrega productos o revisa si todos los artículos ya están marcados como comprados.";
+    if (
+      errorObtenido.message ===
+      "La lista supera el máximo de artículos para calcular una ruta."
+    )
+      return "Divide los artículos pendientes en listas más pequeñas y vuelve a calcular.";
+    if (
+      errorObtenido.message ===
+      "No hay supermercados cercanos para calcular una ruta."
+    )
+      return "No se encontraron sucursales físicas candidatas dentro del radio usado por el motor. Si no indicaste otro origen, se usa el centro de Temuco.";
+    if (errorObtenido.message === MENSAJE_SIN_COBERTURA) {
+      if (productosSinCobertura(errorObtenido).length > 0)
+        return "No se obtuvo una combinación válida con los límites del motor. Los artículos indicados no tienen ofertas vigentes disponibles en las sucursales evaluadas. Puede deberse a falta de stock, precios vencidos o ausencia de ofertas en el radio. El resultado no permite distinguir cuál de esas causas aplica. Revisa o reemplaza los artículos en tu lista.";
+      if (
+        errorObtenido.detalle === "ningún conjunto de tiendas cubre la compra"
+      )
+        return "Ninguna combinación de tiendas dentro del máximo de paradas configurado cubre todos los artículos con oferta. Prueba dividiendo la lista o revisando los productos.";
+      return "No hay una combinación válida de ofertas y tiendas cercanas para completar la compra con los límites del motor. La falta de ofertas puede deberse a stock, precios vencidos o cobertura; no se confirmó una causa individual. Revisa la lista antes de recalcular.";
+    }
+    return "Revisa los artículos pendientes y su disponibilidad en tu lista antes de volver a calcular.";
+  }
+  if (errorObtenido.estado === 503)
+    return "El servicio de precios no está disponible ahora. Tu lista sigue guardada; vuelve a intentarlo más tarde.";
+  if (errorObtenido.estado === 404)
+    return "La lista pudo haberse eliminado o pertenecer a otra cuenta. Selecciona una desde Mis listas.";
+  if (errorObtenido.estado === 401)
+    return "Inicia sesión para volver a consultar tus listas. No se ha calculado una recomendación.";
+  return "Vuelve a seleccionar tu lista o reintenta cuando el servicio esté disponible. No se ha modificado tu compra.";
+}
+
 /** Presenta causas de negocio del servidor sin convertir un fallo en una ruta de ejemplo. */
 export function mensajeErrorRuta(errorObtenido: unknown): string {
   if (errorObtenido instanceof ErrorSolicitudRutas) {
     if (errorObtenido.estado === 401)
       return "Tu sesión expiró. Vuelve a iniciar sesión.";
+    if (errorObtenido.estado === 403)
+      return "No tienes permisos para consultar la ruta de esta lista.";
     if (errorObtenido.estado === 404)
       return "La lista no existe o no está disponible para tu cuenta.";
     if (errorObtenido.estado === 400)
       return "No se pudo solicitar la ruta. Vuelve a seleccionar la lista.";
-    if (errorObtenido.estado === 422) return errorObtenido.message;
+    if (errorObtenido.estado === 422) {
+      if (errorObtenido.message === MENSAJE_SIN_COBERTURA)
+        return productosSinCobertura(errorObtenido).length > 0
+          ? "Faltan ofertas vigentes para completar tu compra."
+          : "No pudimos cubrir tu compra en las tiendas cercanas.";
+      return errorObtenido.message;
+    }
     if (errorObtenido.estado === 503)
       return "No pudimos consultar los precios. Intenta nuevamente.";
   }
@@ -115,6 +198,11 @@ async function optimizar(
   solicitud: SolicitudOptimizacion,
   senal?: AbortSignal,
 ): Promise<RespuestaOptimizacion> {
+  if (!esListaIDValida(solicitud.lista_id))
+    throw new ErrorSolicitudRutas(
+      400,
+      "El identificador de la lista no es válido.",
+    );
   const respuesta = await fetch(`${URL_API}/rutas/optimizar`, {
     method: "POST",
     credentials: "include",
