@@ -32,6 +32,7 @@ from app.services.chat import (
     ESTADO_SIN_DATOS,
     ESTADO_VIGENTE,
     TEXTO_CATALOGO_NO_DISPONIBLE,
+    TEXTO_SIN_FILTROS,
     TEXTO_SIN_PRODUCTOS,
     procesar_mensaje,
 )
@@ -574,6 +575,34 @@ def test_chat_busqueda_vencida_conserva_parciales_sin_recargar_cache(monkeypatch
     assert duracion < 0.20
     assert repositorio.recargas == 0
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+
+
+def test_chat_solo_precio_usa_terminos_utiles_del_mensaje_como_respaldo():
+    """Si el LLM solo devuelve precio_max, rescata 'leche' del mensaje en vez de devolver lo más barato de la caché."""
+    bicarbonato = _normalizar(_producto("prod-bicarbonato", "Bicarbonato de Sodio 100 g", 170.0, "despensa"))
+    repositorio = RepositorioDoble(
+        cache=[bicarbonato],
+        busquedas={"leche": [_normalizar(LECHE_ENTERA)]},
+    )
+
+    datos = _procesar(repositorio, {"precio_max": 2000}, mensaje="Busco leche por menos de $2.000")
+
+    assert repositorio.terminos_buscados == [("leche", 2000.0)]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["filtros_aplicados"] == {"precio_max": 2000, "palabras_clave": ["leche"]}
+
+
+def test_chat_solo_precio_sin_terminos_utiles_no_devuelve_cache_barata():
+    """Si el LLM solo devuelve precio_max y el mensaje no tiene términos de producto, responde que no entendió."""
+    bicarbonato = _normalizar(_producto("prod-bicarbonato", "Bicarbonato de Sodio 100 g", 170.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[bicarbonato], busquedas={})
+
+    datos = _procesar(repositorio, {"precio_max": 2000}, mensaje="Algo barato por menos de $2.000")
+
+    assert datos["respuesta"] == TEXTO_SIN_FILTROS
+    assert datos["productos_recomendados"] == []
+    assert datos["filtros_aplicados"] is None
+    assert repositorio.recargas == 0
 
 
 # ===== Utilidades =====

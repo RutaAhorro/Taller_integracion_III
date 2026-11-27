@@ -10,6 +10,8 @@ Verifica:
 6. Ausencia de llaves de API (GEMINI_API_KEY / GROQ_API_KEY) emite advertencia pero no lanza excepción en validar_configuracion.
 """
 
+import importlib
+
 import pytest
 
 from app import config
@@ -242,3 +244,25 @@ def test_defaults_modelos_groq_actualizados():
     """Verifica que los modelos por defecto de Groq usen los vigentes de OpenAI OSS."""
     assert config.GROQ_MODEL_EXTRACCION == "openai/gpt-oss-20b"
     assert config.GROQ_MODEL_EXPLICACION == "openai/gpt-oss-120b"
+
+
+def test_claves_api_se_limpian_con_strip_al_leer_configuracion(monkeypatch):
+    """Espacios o saltos de línea en GEMINI_API_KEY y GROQ_API_KEY se eliminan al cargar el módulo."""
+    monkeypatch.setenv("GEMINI_API_KEY", "  clave-gemini-secreta \n")
+    monkeypatch.setenv("GROQ_API_KEY", "\t clave-groq-secreta  ")
+    try:
+        importlib.reload(config)
+        assert config.GEMINI_API_KEY == "clave-gemini-secreta"
+        assert config.GROQ_API_KEY == "clave-groq-secreta"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
+
+
+def test_leer_env_opcional_devuelve_none_si_solo_tiene_espacios(monkeypatch):
+    """Una clave con solo espacios en blanco se trata como ausente (None)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "   \n ")
+    assert config._leer_env_opcional("GEMINI_API_KEY") is None
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert config._leer_env_opcional("GEMINI_API_KEY") is None

@@ -106,11 +106,134 @@ def sanitizar_filtros_crudos(crudo: dict) -> dict:
 # Palabras vacías que no aportan al comparar categorías ("frutas y verduras").
 PALABRAS_VACIAS_CATEGORIA = {"y", "o", "u", "de", "del", "la", "el", "los", "las", "en", "con"}
 
-# Bug real con "bajo consumo": "bajo" contiene "ajo" y calzaba con el producto
-# Ajo. Bajo este largo se exige igualdad exacta en vez de contención.
-LONGITUD_MINIMA_SUBCADENA = 4
+# Bug real con "bajo consumo": "bajo" contiene "ajo" y calzaba con el producto Ajo.
+# Bajo este largo se exige igualdad exacta en vez de coincidencia por prefijo.
+LONGITUD_MINIMA_PREFIJO = 4
 
 PATRON_SEPARADOR_TERMINOS = re.compile(r"[^a-zA-Zñáéíóúü]+")
+
+# ===== Términos de respaldo desde el mensaje =====
+
+LONGITUD_MINIMA_TERMINO_RESPALDO = 2
+
+# Palabras frecuentes en mensajes de búsqueda que no nombran un producto.
+PALABRAS_VACIAS_MENSAJE = frozenset(
+    {
+        *PALABRAS_VACIAS_CATEGORIA,
+        "a",
+        "al",
+        "e",
+        "por",
+        "para",
+        "sin",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "que",
+        "me",
+        "mi",
+        "mis",
+        "se",
+        "lo",
+        "le",
+        "les",
+        "nos",
+        "su",
+        "sus",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "eso",
+        "esa",
+        "algo",
+        "algun",
+        "alguna",
+        "algunos",
+        "algunas",
+        "todo",
+        "todos",
+        "cualquier",
+        "cualquiera",
+        "busco",
+        "buscar",
+        "quiero",
+        "querer",
+        "necesito",
+        "necesitar",
+        "dame",
+        "dime",
+        "recomienda",
+        "recomiendame",
+        "recomendacion",
+        "muestra",
+        "muestrame",
+        "ver",
+        "comprar",
+        "tengo",
+        "tienen",
+        "hay",
+        "hola",
+        "buenas",
+        "buenos",
+        "dias",
+        "tardes",
+        "noches",
+        "favor",
+        "gracias",
+        "porfa",
+        "puedes",
+        "puede",
+        "podrias",
+        "productos",
+        "producto",
+        "cosas",
+        "cosa",
+        "opciones",
+        "opcion",
+        "supermercado",
+        "supermercados",
+        "tienda",
+        "tiendas",
+        "cerca",
+        "cercano",
+        "cercanos",
+        "precio",
+        "precios",
+        "menos",
+        "mas",
+        "bajo",
+        "abajo",
+        "debajo",
+        "maximo",
+        "max",
+        "hasta",
+        "entre",
+        "desde",
+        "pesos",
+        "peso",
+        "clp",
+        "lucas",
+        "luca",
+        "mil",
+        "barato",
+        "baratos",
+        "barata",
+        "baratas",
+        "economico",
+        "economicos",
+        "economica",
+        "economicas",
+        "oferta",
+        "ofertas",
+        "descuento",
+        "descuentos",
+        "km",
+        "kilometros",
+        "metros",
+    }
+)
 
 
 def _separar_terminos(texto: str) -> list[str]:
@@ -120,10 +243,15 @@ def _separar_terminos(texto: str) -> list[str]:
 
 
 def _texto_contiene(texto_primero: str, texto_segundo: str) -> bool:
-    """Compara por contención en ambos sentidos, o por igualdad si alguno es más corto que el mínimo."""
-    if len(texto_primero) < LONGITUD_MINIMA_SUBCADENA or len(texto_segundo) < LONGITUD_MINIMA_SUBCADENA:
+    """
+    Compara dos palabras por igualdad o prefijo de palabra, nunca por subcadena interna.
+
+    Evita falsos positivos como "leche" en "Loncoleche" y, bajo `LONGITUD_MINIMA_PREFIJO`,
+    exige igualdad exacta para evitar choques en términos cortos ("bajo" vs "ajo", "sal" vs "salsa").
+    """
+    if len(texto_primero) < LONGITUD_MINIMA_PREFIJO or len(texto_segundo) < LONGITUD_MINIMA_PREFIJO:
         return texto_primero == texto_segundo
-    return texto_primero in texto_segundo or texto_segundo in texto_primero
+    return texto_segundo.startswith(texto_primero) or texto_primero.startswith(texto_segundo)
 
 
 def _normalizar_texto(texto: str) -> str:
@@ -134,32 +262,52 @@ def _normalizar_texto(texto: str) -> str:
 
 
 def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -> bool:
-    """Indica si la frase completa o todos sus términos calzan con la categoría o el nombre del producto.
+    """Indica si los términos de la frase calzan por palabra o prefijo con la categoría o el nombre del producto.
 
-    Con `exigir_todos` se exige que todos calzen; sin el flag, las frases compuestas
-    separadas por conjuncion ("frutas y verduras") se evaluan como alternativas: basta con
-    que un grupo calze.
+    Con `exigir_todos` se exige que todos calcen; sin el flag, las frases compuestas
+    separadas por conjunción ("frutas y verduras") se evalúan como alternativas: basta con
+    que un grupo calce.
     """
     frase_normalizada = _normalizar_texto(frase)
     if not frase_normalizada:
         return False
 
-    categoria_producto = _normalizar_texto(producto["categoria"])
-    nombre_producto = _normalizar_texto(producto["nombre"])
-    nombres_tokens = _separar_terminos(nombre_producto)
+    categoria_tokens = _separar_terminos(_normalizar_texto(producto.get("categoria") or ""))
+    nombre_tokens = _separar_terminos(_normalizar_texto(producto.get("nombre") or ""))
+    objetivos = [*categoria_tokens, *nombre_tokens]
+    if not objetivos:
+        return False
+
     terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
-    objetivos = [categoria_producto, nombre_producto, *nombres_tokens]
     if exigir_todos:
         # Todos los términos de la frase deben calzar: "aji verde" exige "aji" y "verde".
         return all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in terminos)
-    # Sin exigir todos, la frase puede ser una categoria compuesta ("frutas y verduras"): al
-    # separar por conjuncion queda una alternancia de subcategorias, asi que basta un grupo.
+    # Sin exigir todos, la frase puede ser una categoría compuesta ("frutas y verduras"): al
+    # separar por conjunción queda una alternancia de subcategorías, así que basta un grupo.
     grupos = re.split(r"\b(?:y|o|u)\b", frase_normalizada)
     return any(
         all(any(_texto_contiene(termino, objetivo) for objetivo in objetivos) for termino in _separar_terminos(grupo))
         for grupo in grupos
         if _separar_terminos(grupo)
     )
+
+
+def extraer_terminos_respaldo(mensaje: str) -> list[str]:
+    """
+    Extrae términos útiles del mensaje cuando la extracción no trajo palabras clave, ingredientes ni categoría.
+
+    Descarta números, símbolos de precio y palabras vacías para evitar devolver lo más barato de toda la caché.
+    """
+    mensaje_normalizado = _normalizar_texto(mensaje)
+    if not mensaje_normalizado:
+        return []
+    tokens = PATRON_SEPARADOR_TERMINOS.split(mensaje_normalizado)
+    terminos_utiles = [
+        token
+        for token in tokens
+        if len(token) >= LONGITUD_MINIMA_TERMINO_RESPALDO and token not in PALABRAS_VACIAS_MENSAJE
+    ]
+    return list(dict.fromkeys(terminos_utiles))
 
 
 # ===== Términos para la búsqueda en Catálogo =====
@@ -192,7 +340,7 @@ def terminos_busqueda_catalogo(frase: str) -> list[str]:
         return []
 
     candidatos = [frase_minuscula]
-    terminos = [termino for termino in _separar_terminos(frase_minuscula) if len(termino) >= LONGITUD_MINIMA_SUBCADENA]
+    terminos = [termino for termino in _separar_terminos(frase_minuscula) if len(termino) >= LONGITUD_MINIMA_PREFIJO]
     if len(terminos) > 1 or (terminos and terminos[0] != frase_minuscula):
         candidatos.append(max(terminos, key=len))
     candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
@@ -203,10 +351,44 @@ def terminos_busqueda_catalogo(frase: str) -> list[str]:
 
 # ===== Filtrado del catálogo =====
 
+RELEVANCIA_ALTA = 0
+RELEVANCIA_NORMAL = 1
+
+
+def _nivel_relevancia_producto(producto: dict, palabras_clave: list[str]) -> int:
+    """
+    Calcula la prioridad de un producto respecto a las palabras clave (menor es más relevante).
+
+    Prioriza coincidencia en la primera palabra del nombre o en la categoría del producto
+    (`RELEVANCIA_ALTA`) por sobre menciones secundarias en el nombre (`RELEVANCIA_NORMAL`).
+    """
+    tokens_nombre = _separar_terminos(_normalizar_texto(producto.get("nombre") or ""))
+    primera_palabra = tokens_nombre[0] if tokens_nombre else ""
+    tokens_categoria = _separar_terminos(_normalizar_texto(producto.get("categoria") or ""))
+
+    for frase in palabras_clave:
+        frase_normalizada = _normalizar_texto(frase)
+        if not frase_normalizada:
+            continue
+        terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
+        coincide_primera_palabra = bool(primera_palabra) and any(
+            _texto_contiene(termino, primera_palabra) for termino in terminos
+        )
+        coincide_categoria = any(
+            _texto_contiene(termino, token_categoria) for termino in terminos for token_categoria in tokens_categoria
+        )
+        if coincide_primera_palabra or coincide_categoria:
+            return RELEVANCIA_ALTA
+
+    return RELEVANCIA_NORMAL
+
 
 def filtrar_productos(catalogo: list, filtros: dict) -> list:
     """
-    Aplica precio máximo, categoría, palabras clave y distancia máxima, y ordena por precio.
+    Aplica precio máximo, categoría, palabras clave y distancia máxima.
+
+    Con palabras clave ordena primero por relevancia (primera palabra del nombre o categoría)
+    y luego por precio ascendente; sin palabras clave ordena solo por precio ascendente.
     """
     resultado = catalogo
 
@@ -230,6 +412,12 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:
         resultado = [producto for producto in resultado if producto["distancia_km"] <= distancia_max]
+
+    if palabras_clave:
+        return sorted(
+            resultado,
+            key=lambda producto: (_nivel_relevancia_producto(producto, palabras_clave), producto["precio"]),
+        )
 
     return sorted(resultado, key=lambda producto: producto["precio"])
 

@@ -20,7 +20,12 @@ from itertools import zip_longest
 import anyio
 
 from app import config
-from app.domain.filtros import filtrar_productos, terminos_busqueda_catalogo, vincular_ingredientes_catalogo
+from app.domain.filtros import (
+    extraer_terminos_respaldo,
+    filtrar_productos,
+    terminos_busqueda_catalogo,
+    vincular_ingredientes_catalogo,
+)
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
 from app.repositories.catalogo import FUENTE_MEMORIA, FUENTE_SIN_DATOS, ProductoRepositorio
 
@@ -278,6 +283,32 @@ async def _obtener_candidatos(repositorio: ProductoRepositorio, filtros: dict) -
     return productos, _determinar_estado_datos(repositorio), False
 
 
+# ===== Respaldo de criterios de búsqueda =====
+
+
+def _tiene_criterio_busqueda(filtros: dict) -> bool:
+    """Indica si los filtros incluyen al menos palabras clave, ingredientes o categoría."""
+    return bool(filtros.get("palabras_clave") or filtros.get("ingredientes") or filtros.get("categoria"))
+
+
+def _completar_filtros_con_respaldo(filtros: dict, mensaje: str) -> dict | None:
+    """
+    Garantiza un criterio de producto antes de consultar Catálogo.
+
+    Si la extracción solo trajo precio o distancia, usa como respaldo los términos útiles
+    del mensaje; si no queda ninguno, devuelve None para no mostrar lo más barato de la caché.
+    """
+    if _tiene_criterio_busqueda(filtros):
+        return filtros
+
+    terminos_respaldo = extraer_terminos_respaldo(mensaje)
+    if not terminos_respaldo:
+        return None
+
+    logger.info("Extracción sin criterio de producto; se usan términos de respaldo del mensaje: %s", terminos_respaldo)
+    return {**filtros, "palabras_clave": terminos_respaldo}
+
+
 # ===== Pipeline =====
 
 
@@ -317,23 +348,28 @@ async def _ejecutar_etapas_1_y_2(
             logger.debug("Sin function calling (texto libre omitido por anti-alucinación): %s", resultado.texto_libre)
             return _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0), None
 
+        filtros_efectivos = _completar_filtros_con_respaldo(resultado.filtros, mensaje)
+        if not filtros_efectivos:
+            logger.debug("Filtros sin criterio de producto ni términos útiles en el mensaje: %s", resultado.filtros)
+            return _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0), None
+
         # Etapa 2: filtrado determinista sobre los candidatos de Catálogo.
-        productos, estado_datos, busqueda_completa = await _obtener_candidatos(repositorio, resultado.filtros)
+        productos, estado_datos, busqueda_completa = await _obtener_candidatos(repositorio, filtros_efectivos)
         if not productos and not busqueda_completa:
             return _respuesta_chat(
                 TEXTO_CATALOGO_NO_DISPONIBLE,
-                resultado.filtros,
+                filtros_efectivos,
                 [],
                 resultado.tiempo_extraccion_ms,
                 0,
                 estado_datos=estado_datos,
             ), None
 
-        if "ingredientes" in resultado.filtros:
+        if "ingredientes" in filtros_efectivos:
             # Receta: aplicar filtros base de precio/categoria/distancia antes de vincular ingredientes.
             filtros_base = {
                 clave: valor
-                for clave, valor in resultado.filtros.items()
+                for clave, valor in filtros_efectivos.items()
                 if clave in ("precio_max", "categoria", "distancia_max")
             }
             if filtros_base:
@@ -341,7 +377,7 @@ async def _ejecutar_etapas_1_y_2(
 
             # NOTE: limite_candidatos=None para no descartar un 4º candidato vigente antes de validar
             ingredientes_receta, ingredientes_faltantes = vincular_ingredientes_catalogo(
-                productos, resultado.filtros["ingredientes"], limite_candidatos=None
+                productos, filtros_efectivos["ingredientes"], limite_candidatos=None
             )
 
             ids_candidatos = sorted(
@@ -384,7 +420,7 @@ async def _ejecutar_etapas_1_y_2(
                     candidatos = candidatos_actualizados
 
                 # Revalidar precio_max contra los precios vigentes tras consultar_disponibilidad
-                precio_max = resultado.filtros.get("precio_max")
+                precio_max = filtros_efectivos.get("precio_max")
                 if isinstance(precio_max, (int, float)) and not isinstance(precio_max, bool) and precio_max > 0:
                     candidatos = [candidato for candidato in candidatos if candidato["precio"] <= precio_max]
 
@@ -421,7 +457,7 @@ async def _ejecutar_etapas_1_y_2(
                 None,
                 DatosEtapa3(
                     productos=productos_receta,
-                    filtros=resultado.filtros,
+                    filtros=filtros_efectivos,
                     tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
                     ingredientes_receta=ingredientes_receta_validados,
                     ingredientes_faltantes=ingredientes_faltantes,
@@ -430,12 +466,12 @@ async def _ejecutar_etapas_1_y_2(
             )
 
         # Camino no-receta: filtrar productos con los filtros aplicados
-        productos_filtrados = filtrar_productos(productos, resultado.filtros)
+        productos_filtrados = filtrar_productos(productos, filtros_efectivos)
         return (
             None,
             DatosEtapa3(
                 productos=productos_filtrados,
-                filtros=resultado.filtros,
+                filtros=filtros_efectivos,
                 tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
                 estado_datos=estado_datos,
             ),
