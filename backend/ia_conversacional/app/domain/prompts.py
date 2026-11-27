@@ -150,6 +150,7 @@ def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list
         f"{json.dumps(resumen, ensure_ascii=False)}\n\n"
         "Redacta una respuesta breve en espanol (sin maximo de oraciones) "
         "explicando por que estos productos calzan con lo que pidio. "
+        "Responde en texto plano, sin formato Markdown. "
         "Menciona nombres y precios reales de la lista. No inventes "
         "productos, precios, tiendas ni caracteristicas que no esten en "
         "la lista. No hagas preguntas de seguimiento, es una respuesta "

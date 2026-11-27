@@ -12,6 +12,7 @@ almendras. Si la búsqueda falla, se usa la caché como antes.
 """
 
 import logging
+import re
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -28,6 +29,7 @@ from app.domain.filtros import (
 )
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
 from app.repositories.catalogo import FUENTE_MEMORIA, FUENTE_SIN_DATOS, ProductoRepositorio
+from app.services.fallback import formatear_error_seguro
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,15 @@ AVISO_MEMORIA_ANTIGUA = (
 
 AVISO_CARGA_PREVIA = "Nota: los datos provienen de una carga previa del catálogo y pueden haber cambiado."
 AVISO_SIN_VALIDAR_DISPONIBILIDAD = "Nota: no fue posible validar el stock y el precio en tiempo real."
+
+# Patrones para limpiar Markdown crudo y detectar oraciones completas en la explicación.
+PATRON_ENCABEZADO_MARKDOWN = re.compile(r"(?m)^\s*#{1,6}\s+")
+PATRON_VINETA_ASTERISCO = re.compile(r"(?m)^(\s*)\*\s+")
+PATRON_MARCAS_MARKDOWN = re.compile(r"\*\*|__|~~|`")
+PATRON_CURSIVA_ASTERISCO = re.compile(r"(?<!\d)\*(?!\d)")
+PATRON_ESPACIOS_HORIZONTALES = re.compile(r"[ \t]+")
+PATRON_TERMINA_EN_ORACION = re.compile(r"[.!?][\"'”»)\]]*$")
+PATRON_FIN_ORACION = re.compile(r"[.!?][\"'”»)\]]*(?=\s|$)")
 
 GeneradorExplicacion = Callable[[str, list], Awaitable[str]]
 
@@ -126,6 +137,32 @@ def _anexar_aviso_estado_datos(explicacion: str, estado_datos: str) -> str:
 # ===== Etapa 3 con respaldo =====
 
 
+def limpiar_explicacion(texto: str) -> str:
+    """
+    Quita formato Markdown crudo y recorta respuestas truncadas en la última oración completa.
+
+    Evita entregar texto con marcas abiertas como `**Yogh` cuando un modelo agota sus tokens;
+    solo recorta si hay al menos una oración terminada en `.`, `!` o `?` seguida de espacio o fin
+    (para no cortar montos chilenos como `$1.290` ni frases breves sin punto final).
+    """
+    texto_limpio = PATRON_ENCABEZADO_MARKDOWN.sub("", texto.strip())
+    texto_limpio = PATRON_VINETA_ASTERISCO.sub(r"\1- ", texto_limpio)
+    texto_limpio = PATRON_MARCAS_MARKDOWN.sub("", texto_limpio)
+    texto_limpio = PATRON_CURSIVA_ASTERISCO.sub("", texto_limpio)
+    texto_limpio = PATRON_ESPACIOS_HORIZONTALES.sub(" ", texto_limpio).strip()
+    if not texto_limpio:
+        return ""
+
+    if PATRON_TERMINA_EN_ORACION.search(texto_limpio):
+        return texto_limpio
+
+    cierres = list(PATRON_FIN_ORACION.finditer(texto_limpio))
+    if cierres:
+        return texto_limpio[: cierres[-1].end()].strip()
+
+    return texto_limpio
+
+
 async def generar_explicacion_con_tiempo(
     generador: GeneradorExplicacion, mensaje_usuario: str, productos_filtrados: list, tiempo_limite: float | None = None
 ) -> tuple[str, int]:
@@ -145,16 +182,19 @@ async def generar_explicacion_con_tiempo(
     explicacion = None
     try:
         if tiempo_limite is not None:
-            with anyio.move_on_after(tiempo_limite):
+            with anyio.move_on_after(tiempo_limite) as plazo_explicacion:
                 explicacion = await generador(mensaje_usuario, productos_filtrados)
+            if plazo_explicacion.cancelled_caught:
+                logger.warning("Falló la explicación: plazo agotado tras %.2fs.", tiempo_limite)
         else:
             explicacion = await generador(mensaje_usuario, productos_filtrados)
     except Exception as error_explicacion:
-        logger.warning("No se pudo generar la explicacion: %s", error_explicacion)
+        logger.warning("Falló la explicación: %s", formatear_error_seguro(error_explicacion))
         explicacion = None
     tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
 
-    return explicacion or TEXTO_EXPLICACION_RESPALDO, tiempo_ms
+    explicacion_limpia = limpiar_explicacion(explicacion) if explicacion else ""
+    return explicacion_limpia or TEXTO_EXPLICACION_RESPALDO, tiempo_ms
 
 
 # ===== Candidatos de la etapa 2 =====
@@ -341,7 +381,7 @@ async def _ejecutar_etapas_1_y_2(
         resultado = await proveedor.extraer_filtros(mensaje)
 
         if resultado.error:
-            logger.error("Error del proveedor IA en extracción: %s", resultado.error)
+            logger.error("Falló la extracción: %s", resultado.error)
             raise AsistenteNoDisponible(resultado.error)
 
         if not resultado.filtros:
@@ -492,6 +532,7 @@ async def procesar_mensaje(proveedor: ProveedorIA, repositorio: ProductoReposito
     try:
         respuesta, datos_etapa_3 = await _ejecutar_etapas_1_y_2(proveedor, repositorio, mensaje)
     except TimeoutError as error_tiempo:
+        logger.error("Falló la extracción: plazo total agotado.")
         raise AsistenteNoDisponible("Tiempo total agotado en el asistente") from error_tiempo
 
     if respuesta is not None:

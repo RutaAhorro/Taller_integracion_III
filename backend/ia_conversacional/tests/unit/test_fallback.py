@@ -232,7 +232,51 @@ async def test_fallback_log_incluye_tipo_excepcion_y_oculta_key_en_url(caplog):
         with pytest.raises(RuntimeError, match="key=\\*\\*\\*"):
             await orquestador.generar_explicacion(mensaje_usuario="hola", productos_filtrados=[])
 
-    assert "gemini falló tras 1 intentos: ReadTimeout" in caplog.text
-    assert "groq falló tras 1 intentos: RequestError:" in caplog.text
+    assert "Falló la explicación en gemini tras 1 intentos: ReadTimeout" in caplog.text
+    assert "Falló la explicación en groq tras 1 intentos: RequestError:" in caplog.text
     assert "secreto123" not in caplog.text
     assert "key=***" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_fallback_logs_distinguen_extraccion_de_explicacion_sin_claves_ni_cabeceras(caplog):
+    """Los logs distinguen fallo en extracción frente a explicación y ocultan claves y cabeceras."""
+    proveedor_falla_extraccion = ProveedorFalso("gemini")
+    proveedor_falla_explicacion = ProveedorFalso("groq")
+
+    async def extraccion_con_cabecera(*args, **kwargs):
+        raise ValueError("Rechazado con x-goog-api-key: clave-google-secreta")
+
+    async def explicacion_con_bearer(*args, **kwargs):
+        raise RuntimeError("Error con Authorization: Bearer token-groq-secreto")
+
+    proveedor_falla_extraccion.extraer_filtros = extraccion_con_cabecera
+    proveedor_falla_explicacion.generar_explicacion = explicacion_con_bearer
+
+    orquestador_extraccion = FallbackProveedor(
+        proveedores=[proveedor_falla_extraccion],
+        reintentos_primario=0,
+    )
+    with caplog.at_level("WARNING"):
+        resultado = await orquestador_extraccion.extraer_filtros(mensaje="leche")
+
+    assert resultado.error is not None
+    assert "Falló la extracción" in caplog.text
+    assert "Falló la explicación" not in caplog.text
+    assert "clave-google-secreta" not in caplog.text
+    assert "clave-google-secreta" not in resultado.error
+
+    caplog.clear()
+
+    orquestador_explicacion = FallbackProveedor(
+        proveedores=[proveedor_falla_explicacion],
+        reintentos_primario=0,
+    )
+    with caplog.at_level("WARNING"):
+        with pytest.raises(RuntimeError) as error_capturado:
+            await orquestador_explicacion.generar_explicacion(mensaje_usuario="leche", productos_filtrados=[])
+
+    assert "Falló la explicación" in caplog.text
+    assert "Falló la extracción" not in caplog.text
+    assert "token-groq-secreto" not in caplog.text
+    assert "token-groq-secreto" not in str(error_capturado.value)
