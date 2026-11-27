@@ -126,7 +126,7 @@ kubectl create secret generic bot-secret -n "$NS" \
 | Motor de rutas | `infrastructure/k8s/motor-rutas/configmap.yaml` | `CATALOGO_INTERNAL_URL=http://catalogo:8080`, `RUTAS_DB_POOL_MAX`, `RUTAS_MAX_LISTAS`, `RUTAS_CATALOGO_TIMEOUT`, `RUTAS_RADIO_KM`, `RUTAS_MAX_SUCURSALES`, `RUTAS_MAX_PARADAS`, `RUTAS_MAX_ARTICULOS`, `RUTAS_FACTOR_DISTANCIA`, `RUTAS_UMBRAL_AHORRO` |
 | Motor de rutas | `infrastructure/k8s/motor-rutas/deployment.yaml` | `CATALOGO_CONSULTA_TOKEN` (`catalogo-internal-secret`, obligatorio), `RUTAS_DB_URL` (`rutas-db-secret`), `JWT_SECRET` (`db-secret`) |
 | Identidad | `infrastructure/k8s/identidad/deployment.yaml` | `GOOGLE_CLIENT_ID` y `ADMIN_EMAILS` (`identidad-admin-secret`, `optional: true`) |
-| Catálogo | `infrastructure/k8s/catalogo/configmap.yaml` | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA=48h` (ya presente) |
+| Catálogo | `infrastructure/k8s/catalogo/configmap.yaml` | `CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA=2160h` (recorte MVP para instantánea de precios; con scraping fresco volver a `48h`) |
 
 ---
 
@@ -209,9 +209,20 @@ kubectl apply -n "$NS" -f infrastructure/k8s/ingress/api-ingress.yaml \
 kubectl rollout status deployment/api-gateway -n "$NS"
 kubectl rollout status deployment/frontend -n "$NS"
 
-# 7. Worker de scraping y opcionales (Bot y CronJob)
+# 7. Worker de scraping (0 réplicas por defecto) y opcionales (Bot y CronJob)
+# scraper-go se aplica con replicas: 0 porque sus 500m exceden la cuota de 2000m
+# junto a los 9 pods base (1650m). Sin réplicas de scraper-go, el CronJob
+# scraping-scheduler solo encola trabajos en Redis y nadie los consume.
 kubectl apply -n "$NS" -f infrastructure/k8s/scraper-go/pvc.yaml \
   -f infrastructure/k8s/scraper-go/deployment.yaml
+
+# Para encender scraper-go bajo demanda: libera al menos 150m escalando a 0
+# `bot` (si estuviera activo) y los Deployments que no se usen en ese momento
+# (por ejemplo `ia-conversacional` y `motor-rutas`), y luego escala el worker:
+# kubectl scale deployment/scraper-go --replicas=1 -n "$NS"
+# Al terminar la corrida, vuelve a 0:
+# kubectl scale deployment/scraper-go --replicas=0 -n "$NS"
+
 # Opcionales según presupuesto de cuota (ver sección 8):
 # kubectl apply -n "$NS" -f infrastructure/k8s/bot/deployment.yaml
 # kubectl apply -n "$NS" -f infrastructure/k8s/control-scraping/cronjob-configmap.yaml \
@@ -299,13 +310,34 @@ Los scripts en `/docker-entrypoint-initdb.d` (montados desde el ConfigMap `db-in
      infrastructure/db/11_direcciones_usuario.sql \
      infrastructure/db/12_lotes_articulos_idempotencia.sql \
      infrastructure/db/13_actualizar_sucursales_acuenta_cugat.sql \
-     infrastructure/db/14_carritos_persistentes.sql
+     infrastructure/db/14_carritos_persistentes.sql \
+     infrastructure/db/15_indices_busqueda_trigram.sql \
+     infrastructure/db/16_desactivar_jit_roles_lectura.sql
    do
      echo "Aplicando $archivo..."
      kubectl exec -i -n "$NS" "$DB_POD" -- sh -c \
        'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "$archivo"
    done
    ```
+
+   > [!WARNING]
+   > **Índices trigram en el clúster actual (`student-vmatus`):** los índices de `titulo_crudo`, `marca_cruda` y `categoria_cruda` ya existen en la base con los nombres `idx_productos_crudos_*_trgm`. **No ejecutes `03_indices_optimizacion.sql` allí**, ya que crearía índices duplicados con los nombres `idx_productos_*_trgm`. El script `15_indices_busqueda_trigram.sql` solo agrega `idx_productos_crudos_sku_trgm` y ejecuta `ANALYZE`.
+
+   > [!NOTE]
+   > La migración `16_desactivar_jit_roles_lectura.sql` aplica de forma idempotente:
+   >
+   > ```sql
+   > ALTER ROLE app_catalogo SET jit = off;
+   > ALTER ROLE app_rutas SET jit = off;
+   > ```
+   >
+   > **Motivo:** con límite de CPU acotado en PostgreSQL, la compilación JIT sumaba ~1 s por consulta en Catálogo y Motor de rutas. En una base ya desplegada también puede ejecutarse manualmente con `POSTGRES_USER` si aún no se aplicó `16_desactivar_jit_roles_lectura.sql`.
+   >
+   > **Importante:** `ALTER ROLE ... SET jit = off` **solo afecta conexiones nuevas**. En una base en vivo, reinicia `catalogo` y `motor-rutas` tras aplicarla para renovar sus pools de conexiones:
+   >
+   > ```bash
+   > kubectl rollout restart deployment/catalogo deployment/motor-rutas -n "$NS"
+   > ```
 
 3. Si el rol `app_rutas` es nuevo o necesitas sincronizar contraseñas de roles runtime en una base ya existente, ejecuta el script de credenciales dentro del pod (lee las variables inyectadas por los Secrets del Deployment `db`):
 
@@ -369,7 +401,7 @@ También verifica manualmente desde el navegador en `https://miweb-vmatus.dev.ce
 
 | Servicio | Tipo | Request CPU | Request Mem | Limit CPU | Limit Mem |
 | --- | --- | ---: | ---: | ---: | ---: |
-| `db` (PostgreSQL/PostGIS) | Deployment | 50m | 64Mi | 250m | 300Mi |
+| `db` (PostgreSQL/PostGIS) | Deployment | 50m | 64Mi | 500m | 300Mi |
 | `redis` | Deployment | 25m | 64Mi | 100m | 100Mi |
 | `control-scraping` | Deployment | 50m | 64Mi | 200m | 160Mi |
 | `identidad` | Deployment | 50m | 64Mi | 200m | 160Mi |
@@ -380,29 +412,31 @@ También verifica manualmente desde el navegador en `https://miweb-vmatus.dev.ce
 | `bot` (Discord, opcional) | Deployment | 50m | 64Mi | 100m | 128Mi |
 | `motor-rutas` | Deployment | 50m | 64Mi | 100m | 128Mi |
 | `ia-conversacional` | Deployment | 25m | 96Mi | 100m | 192Mi |
-| **Suma 11 Deployments (todo encendido)** | **11 pods** | **460m** | **736Mi** | **2000m** | **1702Mi** |
-| **Suma 9 Deployments (sin `bot` ni `scraper-go`)** | **9 pods** | **360m** | **608Mi** | **1400m** | **1446Mi** |
+| **Suma 11 Deployments (todo encendido)** | **11 pods** | **460m** | **736Mi** | **2250m** | **1702Mi** |
+| **Suma 9 Deployments (sin `bot` ni `scraper-go`)** | **9 pods** | **360m** | **608Mi** | **1650m** | **1446Mi** |
 | `scraping-scheduler` (efímero) | CronJob | 50m | 64Mi | 200m | 128Mi |
 
 ### Comparación contra la cuota
 
-Estado previo en `student-vmatus` (sin `ia-conversacional` y con `motor-rutas` en 0 réplicas): `1800m` CPU, `1382Mi` memoria y `9` pods. Tras desplegar `motor-rutas` (`100m / 128Mi`) e `ia-conversacional` (`100m / 192Mi`), existen dos escenarios operativos:
+Tras subir el límite de CPU de `db` a `500m` (dentro del `LimitRange` de `25m–500m`), existen dos escenarios operativos:
 
 | Recurso | Cuota `student-vmatus` | Escenario 1: todo encendido (`11` pods) | Margen (todo encendido) | Escenario 2: `bot` y `scraper-go` en 0 réplicas (`9` pods) | Margen (escenario recomendado) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| **Limits CPU** | `2000m` | `2000m` | **`0m` (sin margen)** | `1400m` | **`+600m`** |
+| **Limits CPU** | `2000m` | `2250m` | **`-250m` (excede cuota)** | `1650m` | **`+350m`** *(1 réplica/servicio, sin scale-up de HPA)* |
 | **Limits Memoria** | `2G` (`1907Mi`) | `1702Mi` | `+205Mi` | `1446Mi` | `+461Mi` |
 | **Pods** | `12` | `11` | `+1 pod` | `9` | `+3 pods` |
 
 > [!WARNING]
-> **Sin margen con los 11 pods encendidos:** con todo activo se consume el **100 % de la cuota de CPU (`2000m / 2000m`)**. Aunque `motor-rutas` e `ia-conversacional` usan `strategy: type: Recreate` para evitar crear un pod extra durante un rollout, cualquier actualización con `RollingUpdate` o la ejecución del CronJob (`200m`) fallará por cuota.
+> **Cuota excedida con los 11 pods encendidos:** con `db` en `500m`, tener todos los Deployments activos suma `2250m / 2000m` de CPU. Con `bot` y `scraper-go` en `0` réplicas (escenario recomendado para operar el MVP), los 9 Deployments activos consumen **`1650m / 2000m` de CPU (`+350m` de margen asumiendo 1 réplica por servicio, sin scale-up de HPA)** y **`1446Mi / 1907Mi` de memoria (`+461Mi` de margen)**, lo que además deja espacio para ejecutar `scraping-scheduler` (`200m`) o `bot` (`100m`). Ten en cuenta que sin réplicas activas de `scraper-go`, el CronJob `scraping-scheduler` solo encola trabajos y nadie los consume.
 >
-> **Recomendación operativa:** apagar `bot` y `scraper-go` después de completar el scraping y encenderlos únicamente cuando se necesiten:
+> **Recomendación operativa:** `scraper-go` se despliega con `replicas: 0` por defecto y conviene mantener `bot` también en `0` réplicas en operación normal. Si necesitas levantar `scraper-go` (`500m`) bajo demanda, libera al menos `150m` escalando a `0` `bot` (si estuviera activo) y los Deployments que no se usen en ese momento (por ejemplo `ia-conversacional` y `motor-rutas`):
 >
 > ```bash
-> # Apagar tras el scraping (libera 600m CPU, 256Mi memoria y 2 pods)
-> kubectl scale deployment/bot deployment/scraper-go --replicas=0 -n "$NS"
+> # Encender scraper-go bajo demanda (liberando al menos 150m primero)
+> kubectl scale deployment/ia-conversacional deployment/motor-rutas --replicas=0 -n "$NS"
+> kubectl scale deployment/scraper-go --replicas=1 -n "$NS"
 >
-> # Encender solo cuando se necesite ejecutar scraping o usar el bot
-> kubectl scale deployment/bot deployment/scraper-go --replicas=1 -n "$NS"
+> # Al terminar la corrida, apagar scraper-go y restaurar los servicios
+> kubectl scale deployment/scraper-go --replicas=0 -n "$NS"
+> kubectl scale deployment/ia-conversacional deployment/motor-rutas --replicas=1 -n "$NS"
 > ```

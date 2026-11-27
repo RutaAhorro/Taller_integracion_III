@@ -5,7 +5,10 @@ metadata:
     app: scraper-go
   name: scraper-go
 spec:
-  replicas: 1
+  # 0 réplicas por defecto: la cuota de 2000m no alcanza con los 9 pods base
+  # (1650m) más los 500m de scraper-go. Escalar a 1 bajo demanda tras liberar
+  # al menos 150m (ver docs/DESPLIEGUE.md).
+  replicas: 0
   strategy:
     type: Recreate
   selector:
