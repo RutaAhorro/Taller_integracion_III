@@ -330,3 +330,181 @@ func TestPostgresGuardaPrecioMinimo(prueba *testing.T) {
 		prueba.Fatalf("detalle de producto sin captura=%d; se esperaba 404", estado)
 	}
 }
+
+// TestPostgresRelevanciaBusqueda comprueba contra PostgreSQL real el orden por
+// relevancia y precio del repositorio, el escape de comodines ILIKE (% y _) y
+// la compatibilidad con filtros por supermercado, precio máximo y paginación.
+func TestPostgresRelevanciaBusqueda(prueba *testing.T) {
+	baseDatos := baseDatosPostgres(prueba)
+	enrutador := enrutadorPostgres(prueba, baseDatos)
+	repositorio := repositories.NuevoRepositorioProductos(baseDatos)
+	contexto := prueba.Context()
+	sufijo := strings.ToUpper(uuid.NewString()[:8])
+
+	prefijoCadena := "Cadena Rel " + sufijo
+	alfa := sembrarCadena(prueba, baseDatos, enrutador, prefijoCadena+" Alfa")
+	beta := sembrarCadena(prueba, baseDatos, enrutador, prefijoCadena+" Beta")
+
+	ingestarLote := func(sucursalID int, productos []map[string]any) {
+		prueba.Helper()
+		lote := map[string]any{
+			"lote_id":     uuid.NewString(),
+			"sucursal_id": sucursalID,
+			"productos":   productos,
+		}
+		if estado := pedir(prueba, enrutador, http.MethodPost, "/internal/v1/ingestas", tokenIngestaPostgres, nil, lote, nil); estado != http.StatusOK {
+			prueba.Fatalf("ingesta de prueba=%d", estado)
+		}
+	}
+
+	// Los productos menos relevantes tienen precios más bajos a propósito para
+	// verificar que la relevancia prevalece sobre el precio cuando q está presente.
+	ingestarLote(alfa.SucursalID, []map[string]any{
+		{"sku": "REL-1-" + sufijo, "producto": "Yogurt Loncoleche " + sufijo, "marca": "Soprole", "categoria": "Postres", "precio_normal": 400, "en_stock": true},
+		{"sku": "REL-2-" + sufijo, "producto": "Postre Cremoso " + sufijo, "marca": "Loncoleche", "categoria": "Postres", "precio_normal": 450, "en_stock": true},
+		{"sku": "REL-3-" + sufijo, "producto": "Flan de leche " + sufijo, "marca": "Soprole", "categoria": "Postres", "precio_normal": 500, "en_stock": true},
+		{"sku": "REL-4-" + sufijo, "producto": "Leche Entera Colun 1L " + sufijo, "marca": "Colun", "categoria": "Lacteos", "precio_normal": 1200, "en_stock": true},
+		{"sku": "REL-5-" + sufijo, "producto": "Jugo 100%_especial " + sufijo, "marca": "Watt", "categoria": "Jugos", "precio_normal": 800, "en_stock": true},
+		{"sku": "REL-6-" + sufijo, "producto": "Jugo 100XXespecial " + sufijo, "marca": "Watt", "categoria": "Jugos", "precio_normal": 700, "en_stock": true},
+	})
+	ingestarLote(beta.SucursalID, []map[string]any{
+		{"sku": "REL-7-" + sufijo, "producto": "Leche Descremada 1L " + sufijo, "marca": "Soprole", "categoria": "Lacteos", "precio_normal": 900, "en_stock": true},
+	})
+
+	nombresDeProductos := func(productos []domain.ProductoDTO) []string {
+		nombres := make([]string, len(productos))
+		for indice, producto := range productos {
+			nombres[indice] = producto.Nombre
+		}
+		return nombres
+	}
+
+	esperadoCompleto := []string{
+		"Leche Descremada 1L " + sufijo,
+		"Leche Entera Colun 1L " + sufijo,
+		"Flan de leche " + sufijo,
+		"Postre Cremoso " + sufijo,
+		"Yogurt Loncoleche " + sufijo,
+	}
+
+	prueba.Run("leche prioriza prefijo, palabra completa, marca/categoría y resto", func(subprueba *testing.T) {
+		productos, total, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "leche",
+			Supermercado: prefijoCadena,
+			Page:         1,
+			Limit:        20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar generó error: %v", errorObtenido)
+		}
+		if total != 5 {
+			subprueba.Fatalf("se esperaban 5 resultados, se obtuvo total=%d", total)
+		}
+		obtenidos := nombresDeProductos(productos)
+		for indice, esperado := range esperadoCompleto {
+			if obtenidos[indice] != esperado {
+				subprueba.Fatalf("orden inesperado:\nobtenido: %v\nesperado: %v", obtenidos, esperadoCompleto)
+			}
+		}
+	})
+
+	prueba.Run("filtro por supermercado mantiene relevancia", func(subprueba *testing.T) {
+		productos, total, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "leche",
+			Supermercado: alfa.Nombre,
+			Page:         1,
+			Limit:        20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar con supermercado generó error: %v", errorObtenido)
+		}
+		if total != 4 || len(productos) != 4 {
+			subprueba.Fatalf("se esperaban 4 resultados de Alfa, llegó total=%d len=%d", total, len(productos))
+		}
+		if productos[0].Nombre != "Leche Entera Colun 1L "+sufijo || productos[1].Nombre != "Flan de leche "+sufijo {
+			subprueba.Fatalf("orden inesperado en Alfa: %v", nombresDeProductos(productos))
+		}
+	})
+
+	prueba.Run("filtro por precio máximo mantiene relevancia", func(subprueba *testing.T) {
+		precioMaximo := 1000.0
+		productos, total, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "leche",
+			Supermercado: prefijoCadena,
+			PrecioMax:    &precioMaximo,
+			Page:         1,
+			Limit:        20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar con precio_max generó error: %v", errorObtenido)
+		}
+		if total != 4 || len(productos) != 4 {
+			subprueba.Fatalf("se esperaban 4 resultados <= 1000, llegó total=%d len=%d", total, len(productos))
+		}
+		if productos[0].Nombre != "Leche Descremada 1L "+sufijo || productos[1].Nombre != "Flan de leche "+sufijo {
+			subprueba.Fatalf("orden inesperado con precio_max: %v", nombresDeProductos(productos))
+		}
+	})
+
+	prueba.Run("paginación corta sobre el conjunto ya ordenado por relevancia", func(subprueba *testing.T) {
+		pagina1, total1, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "leche",
+			Supermercado: prefijoCadena,
+			Page:         1,
+			Limit:        2,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("página 1 generó error: %v", errorObtenido)
+		}
+		pagina2, total2, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "leche",
+			Supermercado: prefijoCadena,
+			Page:         2,
+			Limit:        2,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("página 2 generó error: %v", errorObtenido)
+		}
+		if total1 != 5 || total2 != 5 || len(pagina1) != 2 || len(pagina2) != 2 {
+			subprueba.Fatalf("paginación inesperada: total1=%d len1=%d total2=%d len2=%d", total1, len(pagina1), total2, len(pagina2))
+		}
+		if pagina1[0].Nombre != esperadoCompleto[0] || pagina1[1].Nombre != esperadoCompleto[1] ||
+			pagina2[0].Nombre != esperadoCompleto[2] || pagina2[1].Nombre != esperadoCompleto[3] {
+			subprueba.Fatalf("páginas inconsistentes: p1=%v p2=%v", nombresDeProductos(pagina1), nombresDeProductos(pagina2))
+		}
+	})
+
+	prueba.Run("sin q conserva el orden por precio", func(subprueba *testing.T) {
+		productos, total, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Supermercado: prefijoCadena,
+			Page:         1,
+			Limit:        20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar sin q generó error: %v", errorObtenido)
+		}
+		if total != 7 || len(productos) != 7 {
+			subprueba.Fatalf("se esperaban 7 productos, llegó total=%d len=%d", total, len(productos))
+		}
+		for indice := 1; indice < len(productos); indice++ {
+			if productos[indice-1].Precio > productos[indice].Precio {
+				subprueba.Fatalf("sin q no ordenó por precio ascendente: %+v", productos)
+			}
+		}
+	})
+
+	prueba.Run("escapa comodines % y _ en q", func(subprueba *testing.T) {
+		productos, total, errorObtenido := repositorio.Listar(contexto, domain.FiltroProductosDTO{
+			Query:        "100%_especial",
+			Supermercado: prefijoCadena,
+			Page:         1,
+			Limit:        20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar con comodines generó error: %v", errorObtenido)
+		}
+		if total != 1 || len(productos) != 1 || productos[0].Nombre != "Jugo 100%_especial "+sufijo {
+			subprueba.Fatalf("los comodines %% y _ no se escaparon correctamente: total=%d productos=%v", total, nombresDeProductos(productos))
+		}
+	})
+}

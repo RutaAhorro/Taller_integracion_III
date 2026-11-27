@@ -6,12 +6,14 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 	"github.com/google/uuid"
 	"github.com/lib/pq"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ===== Repositorio =====
@@ -118,9 +120,12 @@ func (repositorio *RepositorioProductos) consultaBase(contexto context.Context, 
 		)
 	}
 
-	if filtro.Query != "" {
-		terminoBusqueda := "%" + filtro.Query + "%"
-		consulta = consulta.Where("(pc.titulo_crudo ILIKE ? OR pc.marca_cruda ILIKE ? OR pc.categoria_cruda ILIKE ? OR pc.sku ILIKE ?)", terminoBusqueda, terminoBusqueda, terminoBusqueda, terminoBusqueda)
+	if termino := strings.TrimSpace(filtro.Query); termino != "" {
+		terminoBusqueda := "%" + escaparComodinesILIKE(termino) + "%"
+		consulta = consulta.Where(
+			`(pc.titulo_crudo ILIKE ? ESCAPE '\' OR pc.marca_cruda ILIKE ? ESCAPE '\' OR pc.categoria_cruda ILIKE ? ESCAPE '\' OR pc.sku ILIKE ? ESCAPE '\')`,
+			terminoBusqueda, terminoBusqueda, terminoBusqueda, terminoBusqueda,
+		)
 	}
 	if filtro.CategoriaExacta != "" {
 		consulta = consulta.Where("BTRIM(pc.categoria_cruda) = ?", filtro.CategoriaExacta)
@@ -221,6 +226,60 @@ func (repositorio *RepositorioProductos) consultaPublica(contexto context.Contex
 	return consulta
 }
 
+// ===== Escape y relevancia de búsqueda =====
+
+// escapadorILIKE protege la barra invertida y los comodines de ILIKE (% y _)
+// para que se evalúen de forma literal junto con ESCAPE '\'.
+var escapadorILIKE = strings.NewReplacer(
+	`\`, `\\`,
+	`%`, `\%`,
+	`_`, `\_`,
+)
+
+// escaparComodinesILIKE escapa los comodines % y _ (y la barra de escape) antes
+// de construir un patrón ILIKE con ESCAPE '\'.
+func escaparComodinesILIKE(texto string) string {
+	return escapadorILIKE.Replace(texto)
+}
+
+// patronPalabraCompleta construye una expresión regular POSIX para PostgreSQL
+// que exige límites de palabra (\m y \M) alrededor del texto escapado.
+func patronPalabraCompleta(texto string) string {
+	return `\m` + regexp.QuoteMeta(texto) + `\M`
+}
+
+// ordenConRelevancia arma el ORDER BY cuando existe término de búsqueda:
+// prioriza stock, luego la relevancia del término y después el orden solicitado
+// (precio por defecto). Se expresa como una sola cláusula parametrizada para no
+// interpolar texto del usuario y permitir que PostgreSQL ordene antes de paginar.
+//
+// Niveles de relevancia:
+//   - 0: el título comienza con el término
+//   - 1: el término aparece como palabra completa dentro del título
+//   - 2: el término coincide en marca o categoría
+//   - 3: resto de coincidencias (p. ej. subcadena dentro de una palabra o SKU)
+func ordenConRelevancia(filtro domain.FiltroProductosDTO) clause.OrderBy {
+	termino := strings.TrimSpace(filtro.Query)
+	terminoEscapado := escaparComodinesILIKE(termino)
+	prefijo := terminoEscapado + "%"
+	contiene := "%" + terminoEscapado + "%"
+	patronPalabra := patronPalabraCompleta(termino)
+
+	expresion := fmt.Sprintf(`pc.en_stock DESC, CASE
+		WHEN pc.titulo_crudo ILIKE ? ESCAPE '\' THEN 0
+		WHEN pc.titulo_crudo ~* ? THEN 1
+		WHEN pc.marca_cruda ILIKE ? ESCAPE '\' OR pc.categoria_cruda ILIKE ? ESCAPE '\' THEN 2
+		ELSE 3
+	END ASC, %s`, ordenSeguro(filtro))
+
+	return clause.OrderBy{
+		Expression: clause.Expr{
+			SQL:  expresion,
+			Vars: []any{prefijo, patronPalabra, contiene, contiene},
+		},
+	}
+}
+
 // ordenSeguro construye la cláusula ORDER BY sólo con columnas permitidas.
 func ordenSeguro(filtro domain.FiltroProductosDTO) string {
 	direccion := "ASC"
@@ -271,7 +330,13 @@ func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro
 	`
 
 	items := []domain.ProductoDTO{}
-	errorConsulta := paginar(consulta.Select(columnas).Order("pc.en_stock DESC").Order(ordenSeguro(filtro)), filtro).
+	consultaOrdenada := consulta.Select(columnas)
+	if strings.TrimSpace(filtro.Query) != "" {
+		consultaOrdenada = consultaOrdenada.Clauses(ordenConRelevancia(filtro))
+	} else {
+		consultaOrdenada = consultaOrdenada.Order("pc.en_stock DESC").Order(ordenSeguro(filtro))
+	}
+	errorConsulta := paginar(consultaOrdenada, filtro).
 		Scan(&items).Error
 	if errorConsulta != nil {
 		return nil, 0, errorConsulta

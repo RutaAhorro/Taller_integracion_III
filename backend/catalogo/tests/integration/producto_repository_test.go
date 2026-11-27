@@ -278,3 +278,82 @@ func TestListar_ExigeCapturaConPrecioMinimoValido(prueba *testing.T) {
 		}
 	})
 }
+
+// TestListar_OrdenPorRelevanciaYComodines comprueba que Listar ordene primero
+// por relevancia y luego por precio cuando existe q, conserve el orden sin q y
+// escape los comodines % y _ en las consultas ILIKE.
+func TestListar_OrdenPorRelevanciaYComodines(prueba *testing.T) {
+	prueba.Run("con q ordena por relevancia antes de precio y paginación", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, _, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{
+			Query: "leche",
+			Page:  2,
+			Limit: 10,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar con q generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		indiceOrden := strings.LastIndex(consultaSQL, "ORDER BY")
+		if indiceOrden < 0 {
+			subprueba.Fatalf("la consulta no contiene ORDER BY: %s", consultaSQL)
+		}
+		clausulaOrden := consultaSQL[indiceOrden:]
+		fragmentos := []string{
+			"pc.en_stock DESC",
+			"CASE",
+			`pc.titulo_crudo ILIKE "leche%" ESCAPE '\'`,
+			`pc.titulo_crudo ~* "\mleche\M"`,
+			`pc.marca_cruda ILIKE "%leche%" ESCAPE '\' OR pc.categoria_cruda ILIKE "%leche%" ESCAPE '\'`,
+			"END ASC",
+			"COALESCE(cp.precio_oferta, cp.precio_normal) ASC NULLS LAST",
+			"LIMIT 10",
+			"OFFSET 10",
+		}
+		for _, fragmento := range fragmentos {
+			if !strings.Contains(clausulaOrden, fragmento) {
+				subprueba.Errorf("falta %q en ORDER BY: %s", fragmento, clausulaOrden)
+			}
+		}
+		if strings.Index(clausulaOrden, "END ASC") > strings.Index(clausulaOrden, "COALESCE(cp.precio_oferta, cp.precio_normal)") {
+			subprueba.Errorf("la relevancia debe ir antes del precio en ORDER BY: %s", clausulaOrden)
+		}
+	})
+
+	prueba.Run("sin q mantiene el orden actual sin CASE de relevancia", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, _, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{
+			Page:  1,
+			Limit: 20,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar sin q generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		if strings.Contains(consultaSQL, "CASE") {
+			subprueba.Errorf("Listar sin q no debe incluir CASE de relevancia. SQL: %s", consultaSQL)
+		}
+	})
+
+	prueba.Run("escapa comodines % y _ de q en WHERE y ORDER BY", func(subprueba *testing.T) {
+		repositorio, consultas := crearRepositorioSeco(subprueba)
+		_, _, errorObtenido := repositorio.Listar(context.Background(), domain.FiltroProductosDTO{
+			Query: "100%_leche",
+			Page:  1,
+			Limit: 10,
+		})
+		if errorObtenido != nil {
+			subprueba.Fatalf("Listar con comodines generó error: %v", errorObtenido)
+		}
+		consultaSQL := consultas.String()
+		if !strings.Contains(consultaSQL, `"%100\%\_leche%"`) {
+			subprueba.Errorf("no se escaparon %% y _ en el patrón de búsqueda. SQL: %s", consultaSQL)
+		}
+		if !strings.Contains(consultaSQL, `"100\%\_leche%"`) {
+			subprueba.Errorf("no se escaparon %% y _ en el prefijo de relevancia. SQL: %s", consultaSQL)
+		}
+		if !strings.Contains(consultaSQL, `ESCAPE '\'`) {
+			subprueba.Errorf("falta cláusula ESCAPE '\\' en ILIKE. SQL: %s", consultaSQL)
+		}
+	})
+}
