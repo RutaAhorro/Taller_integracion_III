@@ -279,7 +279,7 @@ export function adminSourceFromBackend(fuente: FuenteBackend): AdminSource {
     id: String(fuente.id),
     name: fuente.nombre,
     type: 'Supermercado',
-    status: fuente.habilitada ? 'Operativa' : 'Inactiva',
+    status: !fuente.habilitada ? 'Inactiva' : fuente.productos > 0 ? 'Operativa' : 'Sin datos',
     lastSync: formatearUltimaSincronizacion(fuente.ultima_extraccion),
     products: fuente.productos,
     branches: fuente.sucursales,
