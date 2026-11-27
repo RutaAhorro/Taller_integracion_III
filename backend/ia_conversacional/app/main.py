@@ -62,9 +62,8 @@ proveedor_respaldo = FallbackProveedor(
 
 @asynccontextmanager
 async def ciclo_de_vida(aplicacion: FastAPI):
-    """Valida la configuración y precarga el catálogo antes de aceptar peticiones; al apagar cierra conexiones."""
+    """Valida la configuración al arrancar sin precargar el catálogo en memoria; al apagar cierra conexiones."""
     config.validar_configuracion()
-    repositorio_productos.cargar_productos()
     yield
     repositorio_productos.cerrar()
 
