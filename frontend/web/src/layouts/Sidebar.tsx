@@ -33,6 +33,10 @@ type PropiedadesBarraLateral = {
   onSelectMarket: (id: string | null) => void
   activeCategory: string
   activeCity?: string
+  categoriasDisponibles?: string[]
+  cargandoCategorias?: boolean
+  errorCategorias?: boolean
+  alReintentarCategorias?: () => void
 }
 
 // ===== Navegación estática: no son categorías del catálogo =====
@@ -107,39 +111,49 @@ export function SideBar({
   onSelectCategory,
   onSelectMarket,
   activeCategory,
-  activeCity
+  activeCity,
+  categoriasDisponibles,
+  cargandoCategorias,
+  errorCategorias,
+  alReintentarCategorias,
 }: PropiedadesBarraLateral) {
-  const [categorias, setCategorias] = useState<string[]>([])
-  const [cargandoCategorias, setCargandoCategorias] = useState(true)
-  const [errorCategorias, setErrorCategorias] = useState(false)
-  const [intentoCategorias, setIntentoCategorias] = useState(0)
+  const [categoriasLocal, setCategoriasLocal] = useState<string[]>([])
+  const [cargandoCategoriasLocal, setCargandoCategoriasLocal] = useState(true)
+  const [errorCategoriasLocal, setErrorCategoriasLocal] = useState(false)
+  const [intentoCategoriasLocal, setIntentoCategoriasLocal] = useState(0)
+  const categoriasActivas = categoriasDisponibles ?? categoriasLocal
+  const cargandoCategoriasActivas = cargandoCategorias ?? cargandoCategoriasLocal
+  const errorCategoriasActivas = errorCategorias ?? errorCategoriasLocal
+  const alReintentarCategoriasActivas = alReintentarCategorias ?? (() => setIntentoCategoriasLocal((anterior) => anterior + 1))
   const referenciaPanel = useRef<HTMLElement>(null)
   const referenciaBotonCerrar = useRef<HTMLButtonElement>(null)
   const navegar = useNavigate()
   const { pathname } = useLocation()
-  const categoriasVisibles = categorias.filter(esCategoriaVisible)
+  const categoriasVisibles = categoriasActivas.filter(esCategoriaVisible)
 
   // Carga una lista completa por montaje/reintento, sin repetirla al paginar
   // o abrir el panel. Cancela al salir para no aplicar respuestas tardías.
+  // Con categorías recibidas desde el layout no se vuelve a consultar.
   useEffect(() => {
+    if (categoriasDisponibles !== undefined) return
     const controlador = new AbortController()
-    setCargandoCategorias(true)
-    setErrorCategorias(false)
+    setCargandoCategoriasLocal(true)
+    setErrorCategoriasLocal(false)
     obtenerCategorias(controlador.signal)
       .then((resultado) => {
-        if (!controlador.signal.aborted) setCategorias(resultado)
+        if (!controlador.signal.aborted) setCategoriasLocal(resultado)
       })
       .catch(() => {
         if (!controlador.signal.aborted) {
-          setCategorias([])
-          setErrorCategorias(true)
+          setCategoriasLocal([])
+          setErrorCategoriasLocal(true)
         }
       })
       .finally(() => {
-        if (!controlador.signal.aborted) setCargandoCategorias(false)
+        if (!controlador.signal.aborted) setCargandoCategoriasLocal(false)
       })
     return () => controlador.abort()
-  }, [intentoCategorias])
+  }, [intentoCategoriasLocal])
 
   // Lleva la selección al catálogo y libera el espacio del panel en móvil.
   const manejarSeleccionCategoria = (categoria: string, cerrarBarra = true) => {
@@ -269,14 +283,14 @@ export function SideBar({
 
           <nav aria-label="Categorías">
             <TituloSeccion>Categorías</TituloSeccion>
-            {cargandoCategorias && <p role="status" className="px-2 text-sm text-muted-foreground">Cargando categorías…</p>}
-            {errorCategorias && (
+            {cargandoCategoriasActivas && <p role="status" className="px-2 text-sm text-muted-foreground">Cargando categorías…</p>}
+            {errorCategoriasActivas && (
               <div role="alert" className="px-2 text-sm">
                 <p>No se pudieron cargar las categorías.</p>
-                <button type="button" className="underline" onClick={() => setIntentoCategorias((anterior) => anterior + 1)}>Reintentar</button>
+                <button type="button" className="underline" onClick={alReintentarCategoriasActivas}>Reintentar</button>
               </div>
             )}
-            {!cargandoCategorias && !errorCategorias && categoriasVisibles.length === 0 && (
+            {!cargandoCategoriasActivas && !errorCategoriasActivas && categoriasVisibles.length === 0 && (
               <p className="px-2 text-sm text-muted-foreground">No hay categorías disponibles.</p>
             )}
             <ul className="flex flex-col gap-0.5">

@@ -37,7 +37,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: Propieda
   return (
     <Link 
       to={ROUTES.PRODUCTO_DETALLE(product.id)}
-      className="group flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card transition-all hover:-translate-y-0.5 hover:shadow-md"
+      className="group flex h-full flex-col overflow-hidden rounded-xl border-2 border-border bg-card transition-all hover:-translate-y-0.5 hover:shadow-[4px_4px_0px_var(--color-border)]"
     >
       <div className="relative aspect-square bg-white flex items-center justify-center overflow-hidden">
         {porcentajeDescuento > 0 && (
@@ -46,7 +46,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: Propieda
           </span>
         )}
 
-        <span className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5 rounded bg-background/95 px-2 py-1 text-[10px] font-medium text-foreground backdrop-blur-sm shadow-sm border border-border/50">
+        <span className="absolute bottom-2 left-2 z-10 flex items-center gap-1.5 rounded border border-border bg-card/95 px-2 py-1 text-[10px] font-medium text-foreground backdrop-blur-sm shadow-sm">
           {marketLogo ? (
             <img
               src={marketLogo}
@@ -109,7 +109,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: Propieda
         </div>
         <Button
           size="icon"
-          className="h-9 w-9 shrink-0 rounded-full bg-brand text-white hover:bg-brand-dark"
+          className="h-9 w-9 shrink-0 rounded-full border-2 border-border bg-brand text-white shadow-[2px_2px_0px_var(--color-border)] hover:bg-brand-dark"
           aria-label={`Añadir ${product.name} a la lista`}
           onClick={(evento) => {
             evento.preventDefault()

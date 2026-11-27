@@ -54,6 +54,9 @@ const { MainLayout } = await cargarComponente("../src/layouts/MainLayout.tsx", {
   "@/features/catalogo/useCatalog": crearModulo(
     "export const useCatalog = () => ({ marketsReady: false });",
   ),
+  "@/features/catalogo/products-api": crearModulo(
+    "export const obtenerCategorias = async () => [];",
+  ),
   "@/layouts/TopNav": crearModulo("export const TopNav = () => null;"),
   "@/layouts/Sidebar": crearModulo("export const SideBar = () => null;"),
   "@/layouts/BottomNav": crearModulo("export default () => null;"),
