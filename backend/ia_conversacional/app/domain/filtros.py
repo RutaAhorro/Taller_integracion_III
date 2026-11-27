@@ -160,14 +160,19 @@ PALABRAS_VACIAS_MENSAJE = frozenset(
         "cualquier",
         "cualquiera",
         "busco",
+        "busca",
         "buscar",
         "quiero",
+        "quisiera",
         "querer",
         "necesito",
+        "necesita",
         "necesitar",
         "dame",
         "dime",
         "recomienda",
+        "recomiendas",
+        "recomiendo",
         "recomiendame",
         "recomendacion",
         "muestra",
@@ -418,12 +423,51 @@ def _nivel_relevancia_producto(producto: dict, palabras_clave: list[str]) -> int
     return RELEVANCIA_NORMAL
 
 
+def _cantidad_terminos_coincidentes(frase: str, producto: dict) -> int:
+    """Cuenta cuántos términos de la frase calzan por palabra o prefijo con la categoría o el nombre del producto."""
+    frase_normalizada = _normalizar_texto(frase)
+    if not frase_normalizada:
+        return 0
+
+    categoria_tokens = _separar_terminos(_normalizar_texto(producto.get("categoria") or ""))
+    nombre_tokens = _separar_terminos(_normalizar_texto(producto.get("nombre") or ""))
+    objetivos = [*categoria_tokens, *nombre_tokens]
+    if not objetivos:
+        return 0
+
+    terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
+    return sum(1 for termino in terminos if any(_texto_contiene(termino, objetivo) for objetivo in objetivos))
+
+
+def _filtrar_por_palabras_clave(productos: list, palabras_clave: list[str]) -> list:
+    """
+    Conserva para cada frase los productos que calcen el mayor número de sus términos (> 0).
+
+    Si existen productos que coinciden con todos los términos (p. ej. "harina almendras" ->
+    "Harina de Almendras"), solo se conservan esos; si ninguno calza todos (p. ej.
+    "leche litro" frente a "Leche Entera 1 L"), se conservan los que calcen más términos.
+    """
+    indices_seleccionados: set[int] = set()
+    for frase in palabras_clave:
+        puntajes = [
+            (indice, _cantidad_terminos_coincidentes(frase, producto)) for indice, producto in enumerate(productos)
+        ]
+        maximo_coincidencias = max((puntaje for _, puntaje in puntajes), default=0)
+        if maximo_coincidencias == 0:
+            continue
+        for indice, puntaje in puntajes:
+            if puntaje == maximo_coincidencias:
+                indices_seleccionados.add(indice)
+    return [producto for indice, producto in enumerate(productos) if indice in indices_seleccionados]
+
+
 def filtrar_productos(catalogo: list, filtros: dict) -> list:
     """
     Aplica precio máximo, categoría, palabras clave y distancia máxima.
 
-    Con palabras clave ordena primero por relevancia (primera palabra del nombre o categoría)
-    y luego por precio ascendente; sin palabras clave ordena solo por precio ascendente.
+    Con palabras clave conserva los productos con mayor número de términos coincidentes
+    por frase, ordena primero por relevancia (primera palabra del nombre o categoría) y
+    luego por precio ascendente; sin palabras clave ordena solo por precio ascendente.
     """
     resultado = catalogo
 
@@ -438,11 +482,7 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
 
     palabras_clave = _a_lista_de_terminos(filtros.get("palabras_clave"))
     if palabras_clave:
-        resultado = [
-            producto
-            for producto in resultado
-            if any(_coincide_por_texto(termino, producto) for termino in palabras_clave)
-        ]
+        resultado = _filtrar_por_palabras_clave(resultado, palabras_clave)
 
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:

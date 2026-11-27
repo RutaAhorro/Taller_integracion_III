@@ -31,13 +31,29 @@ from app.services.chat import (
 
 def test_limpiar_explicacion_recorta_markdown_truncado_en_ultima_oracion_completa():
     """Una respuesta cortada con markdown abierto como `**Yogh` se recorta al último punto válido."""
-    texto_truncado = "Encontramos **Leche Entera** a $1.190. También tienes **Yogh"
+    texto_truncado = "Encontré leche a $1.290. Además **Yogh"
 
     resultado = limpiar_explicacion(texto_truncado)
 
-    assert resultado == "Encontramos Leche Entera a $1.190."
+    assert resultado == "Encontré leche a $1.290."
     assert "**" not in resultado
     assert "Yogh" not in resultado
+
+
+def test_limpiar_explicacion_conserva_lista_numerada_completa_sin_punto_final():
+    """Una explicación completa sin punto final ni delimitadores abiertos no se recorta."""
+    texto_lista = "Opciones:\n1. Leche a $1.190\n2. Pan a $1.290"
+
+    assert limpiar_explicacion(texto_lista) == texto_lista
+
+
+def test_limpiar_explicacion_ignora_listas_numeradas_y_abreviaturas_al_recortar_truncado():
+    """Ante delimitadores sin cerrar (backtick o paréntesis), el corte ignora `1.`, `2.`, `Av.` y `Sr.`."""
+    texto_parentesis_abierto = "Opciones:\n1. Leche a $1.190.\n2. Pan en Av. Providencia (sucursal Sr. Juan"
+    assert limpiar_explicacion(texto_parentesis_abierto) == "Opciones:\n1. Leche a $1.190."
+
+    texto_backtick_abierto = "Encontré leche a $1.290. Disponible en Av. Italia `cod"
+    assert limpiar_explicacion(texto_backtick_abierto) == "Encontré leche a $1.290."
 
 
 def test_limpiar_explicacion_quita_markdown_crudo_de_respuesta_completa():
@@ -57,8 +73,8 @@ def test_limpiar_explicacion_no_corta_precio_chileno_sin_punto_final():
 
 
 def test_groq_max_tokens_explicacion_por_defecto_evita_recortes_prematuros():
-    """El límite por defecto de Groq para explicación supera ampliamente el antiguo tope de 200."""
-    assert config.GROQ_MAX_TOKENS_EXPLICACION >= 500
+    """El límite por defecto de Groq para explicación queda fijado en 600 tokens."""
+    assert config.GROQ_MAX_TOKENS_EXPLICACION == 600
 
 
 # ===== Logs diferenciados entre extracción y explicación =====

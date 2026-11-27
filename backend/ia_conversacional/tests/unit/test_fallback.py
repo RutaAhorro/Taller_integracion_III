@@ -16,7 +16,8 @@ import pytest
 
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.repositories.gemini import GeminiProveedor
-from app.services.fallback import FallbackProveedor
+from app.repositories.groq import GroqProveedor
+from app.services.fallback import FallbackProveedor, formatear_error_seguro
 
 
 class ProveedorFalso(ProveedorIA):
@@ -280,3 +281,64 @@ async def test_fallback_logs_distinguen_extraccion_de_explicacion_sin_claves_ni_
     assert "Falló la extracción" not in caplog.text
     assert "token-groq-secreto" not in caplog.text
     assert "token-groq-secreto" not in str(error_capturado.value)
+
+
+def test_formatear_error_seguro_enmascara_cabeceras_ilegales_diccionarios_basic_y_x_api_key():
+    """Oculta credenciales en LocalProtocolError, diccionarios serializados, Authorization Basic y x-api-key."""
+    casos = [
+        (
+            httpx.LocalProtocolError("Illegal header value b'AQ.clave-falsa-123\\n'"),
+            "AQ.clave-falsa-123",
+            "Illegal header value b'***'",
+        ),
+        (
+            ValueError("Cabeceras: {'x-goog-api-key': 'clave-falsa-comilla-simple'}"),
+            "clave-falsa-comilla-simple",
+            "{'x-goog-api-key': '***'}",
+        ),
+        (
+            ValueError('Cabeceras: {"x-goog-api-key": "clave-falsa-comilla-doble"}'),
+            "clave-falsa-comilla-doble",
+            '{"x-goog-api-key": "***"}',
+        ),
+        (
+            RuntimeError("Fallo con Authorization: Basic dXN1YXJpbzpjbGF2ZS1mYWxzYQ=="),
+            "dXN1YXJpbzpjbGF2ZS1mYWxzYQ==",
+            "Authorization: Basic ***",
+        ),
+        (
+            RuntimeError("Fallo con x-api-key: clave-falsa-x-api-key"),
+            "clave-falsa-x-api-key",
+            "x-api-key: ***",
+        ),
+    ]
+
+    for error_prueba, secreto_falso, fragmento_enmascarado in casos:
+        formateado = formatear_error_seguro(error_prueba)
+        assert secreto_falso not in formateado
+        assert fragmento_enmascarado in formateado
+
+
+@pytest.mark.anyio
+async def test_groq_proveedor_no_loguea_cuerpo_crudo_ante_error_http(caplog):
+    """Si Groq devuelve un error HTTP sin filtros rescatables, el log no expone el cuerpo de respuesta."""
+    proveedor = GroqProveedor(
+        clave_api="clave-falsa-groq",
+        url_endpoint="https://api.groq.test/v1/chat/completions",
+        modelo_extraccion="modelo-extraccion",
+        modelo_explicacion="modelo-explicacion",
+    )
+    peticion = httpx.Request("POST", proveedor.url_endpoint)
+    respuesta = httpx.Response(401, text="Unauthorized: Bearer clave-falsa-en-cuerpo", request=peticion)
+
+    async def enviar_con_error(_cuerpo: dict) -> dict:
+        raise httpx.HTTPStatusError("401 Unauthorized", request=peticion, response=respuesta)
+
+    proveedor._enviar = enviar_con_error
+
+    with caplog.at_level("WARNING"):
+        with pytest.raises(httpx.HTTPStatusError):
+            await proveedor.extraer_filtros("leche")
+
+    assert "401" in caplog.text
+    assert "clave-falsa-en-cuerpo" not in caplog.text

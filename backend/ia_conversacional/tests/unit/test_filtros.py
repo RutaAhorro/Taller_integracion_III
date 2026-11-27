@@ -366,7 +366,7 @@ def test_extraer_terminos_respaldo_quita_palabras_vacias_y_precios():
 
 
 def test_respaldo_harina_de_almendras_no_devuelve_harina_tostada():
-    """Al exigir todos los términos de la frase de respaldo, 'Busco harina de almendras' descarta harina tostada."""
+    """Al priorizar el mayor número de términos coincidentes, 'Busco harina de almendras' descarta harina tostada si existe harina de almendras."""
     catalogo = [
         {"id": 1, "nombre": "Harina Tostada Granel", "categoria": "despensa", "precio": 1200.0, "distancia_km": 1.0},
         {
@@ -382,3 +382,30 @@ def test_respaldo_harina_de_almendras_no_devuelve_harina_tostada():
 
     assert terminos == ["harina almendras"]
     assert [producto["nombre"] for producto in filtrados] == ["Harina de Almendras 500 g"]
+
+
+def test_respaldo_recomiendas_leche_y_leche_de_un_litro_devuelven_leche():
+    """'¿Me recomiendas leche?' y 'Busco leche de 1 litro' devuelven leche incluso cuando sobran términos como 'litro'."""
+    catalogo = [
+        {"id": 1, "nombre": "Leche Entera 1 L", "categoria": "lacteos", "precio": 1190.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Pan Marraqueta", "categoria": "panaderia", "precio": 1400.0, "distancia_km": 1.0},
+    ]
+
+    terminos_recomiendas = extraer_terminos_respaldo("¿Me recomiendas leche?")
+    assert terminos_recomiendas == ["leche"]
+    assert [
+        producto["nombre"] for producto in filtrar_productos(catalogo, {"palabras_clave": terminos_recomiendas})
+    ] == ["Leche Entera 1 L"]
+
+    terminos_litro = extraer_terminos_respaldo("Busco leche de 1 litro")
+    assert terminos_litro == ["leche litro"]
+    assert [producto["nombre"] for producto in filtrar_productos(catalogo, {"palabras_clave": terminos_litro})] == [
+        "Leche Entera 1 L"
+    ]
+
+
+def test_extraer_terminos_respaldo_descarta_verbos_conversacionales_adicionales():
+    """Verbos frecuentes como recomiendas, recomiendo, quisiera, busca y necesita se descartan como palabras vacías."""
+    assert extraer_terminos_respaldo("Quisiera queso gauda") == ["queso gauda"]
+    assert extraer_terminos_respaldo("Recomiendo pan integral") == ["pan integral"]
+    assert extraer_terminos_respaldo("Busca arroz y necesita fideos") == ["arroz", "fideos"]

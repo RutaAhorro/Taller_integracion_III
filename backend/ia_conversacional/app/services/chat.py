@@ -61,8 +61,12 @@ PATRON_VINETA_ASTERISCO = re.compile(r"(?m)^(\s*)\*\s+")
 PATRON_MARCAS_MARKDOWN = re.compile(r"\*\*|__|~~|`")
 PATRON_CURSIVA_ASTERISCO = re.compile(r"(?<!\d)\*(?!\d)")
 PATRON_ESPACIOS_HORIZONTALES = re.compile(r"[ \t]+")
-PATRON_TERMINA_EN_ORACION = re.compile(r"[.!?][\"'”»)\]]*$")
 PATRON_FIN_ORACION = re.compile(r"[.!?][\"'”»)\]]*(?=\s|$)")
+PATRON_MARCADOR_LISTA_NUMERADA = re.compile(r"(?:^|\n)\s*\d+$")
+PATRON_PALABRA_FINAL = re.compile(r"([A-Za-zÁÉÍÓÚáéíóúÑñ]+)$")
+ABREVIATURAS_NO_CORTE = frozenset(
+    {"av", "sr", "sra", "srta", "dr", "dra", "prof", "nro", "num", "ej", "etc", "aprox", "min", "max"}
+)
 
 GeneradorExplicacion = Callable[[str, list], Awaitable[str]]
 
@@ -137,15 +141,47 @@ def _anexar_aviso_estado_datos(explicacion: str, estado_datos: str) -> str:
 # ===== Etapa 3 con respaldo =====
 
 
+def _tiene_evidencia_truncado(texto: str) -> bool:
+    """Indica si el texto conserva delimitadores sin cerrar (`**`, backticks o paréntesis)."""
+    if texto.count("**") % 2 != 0 or texto.count("`") % 2 != 0:
+        return True
+    profundidad_parentesis = 0
+    for caracter in texto:
+        if caracter == "(":
+            profundidad_parentesis += 1
+        elif caracter == ")" and profundidad_parentesis > 0:
+            profundidad_parentesis -= 1
+    return profundidad_parentesis > 0
+
+
+def _buscar_ultimo_fin_oracion(texto: str) -> int | None:
+    """Devuelve el índice de cierre de la última oración válida, ignorando listas numeradas y abreviaturas."""
+    posicion_valida = None
+    for coincidencia in PATRON_FIN_ORACION.finditer(texto):
+        signo = texto[coincidencia.start()]
+        if signo == ".":
+            prefijo = texto[: coincidencia.start()]
+            if PATRON_MARCADOR_LISTA_NUMERADA.search(prefijo):
+                continue
+            palabra_previa = PATRON_PALABRA_FINAL.search(prefijo)
+            if palabra_previa and palabra_previa.group(1).lower() in ABREVIATURAS_NO_CORTE:
+                continue
+        posicion_valida = coincidencia.end()
+    return posicion_valida
+
+
 def limpiar_explicacion(texto: str) -> str:
     """
-    Quita formato Markdown crudo y recorta respuestas truncadas en la última oración completa.
+    Quita formato Markdown crudo y recorta solo respuestas con evidencia de truncado.
 
-    Evita entregar texto con marcas abiertas como `**Yogh` cuando un modelo agota sus tokens;
-    solo recorta si hay al menos una oración terminada en `.`, `!` o `?` seguida de espacio o fin
-    (para no cortar montos chilenos como `$1.290` ni frases breves sin punto final).
+    Solo recorta cuando hay `**`, backticks o paréntesis sin cerrar (ej. `**Yogh`),
+    respetando explicaciones completas sin punto final (como listas de opciones) y
+    evitando cortar en marcadores de lista numerada (`1.`, `2.`) o abreviaturas (`Av.`, `Sr.`).
     """
-    texto_limpio = PATRON_ENCABEZADO_MARKDOWN.sub("", texto.strip())
+    texto_original = texto.strip()
+    esta_truncado = _tiene_evidencia_truncado(texto_original)
+
+    texto_limpio = PATRON_ENCABEZADO_MARKDOWN.sub("", texto_original)
     texto_limpio = PATRON_VINETA_ASTERISCO.sub(r"\1- ", texto_limpio)
     texto_limpio = PATRON_MARCAS_MARKDOWN.sub("", texto_limpio)
     texto_limpio = PATRON_CURSIVA_ASTERISCO.sub("", texto_limpio)
@@ -153,12 +189,12 @@ def limpiar_explicacion(texto: str) -> str:
     if not texto_limpio:
         return ""
 
-    if PATRON_TERMINA_EN_ORACION.search(texto_limpio):
+    if not esta_truncado:
         return texto_limpio
 
-    cierres = list(PATRON_FIN_ORACION.finditer(texto_limpio))
-    if cierres:
-        return texto_limpio[: cierres[-1].end()].strip()
+    posicion_corte = _buscar_ultimo_fin_oracion(texto_limpio)
+    if posicion_corte is not None:
+        return texto_limpio[:posicion_corte].strip()
 
     return texto_limpio
 

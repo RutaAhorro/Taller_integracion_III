@@ -29,8 +29,12 @@ FACTOR_BACKOFF = 2
 ETAPA_EXTRACCION = "extracción"
 ETAPA_EXPLICACION = "explicación"
 PATRON_PARAMETRO_CLAVE = re.compile(r"([?&]key=)[^&\s'\"]+")
+PATRON_VALOR_CABECERA_ILEGAL = re.compile(r"(?is)(illegal header value\s+b?)(['\"])(?:\\.|(?!\2).)*\2")
+PATRON_CABECERA_DICCIONARIO = re.compile(
+    r"""(?i)(['"](?:authorization|x-goog-api-key|x-api-key)['"]\s*:\s*b?)(['"])(?:\\.|(?!\2).)*\2"""
+)
 PATRON_CABECERA_SECRETA = re.compile(
-    r"(?i)(authorization\s*[:=]\s*bearer\s+|x-goog-api-key\s*[:=]\s*|bearer\s+)[^\s,'\"]+"
+    r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+|(?:x-goog-api-key|x-api-key)\s*[:=]\s*|bearer\s+)[^\s,'\"}\]]+"
 )
 
 Resultado = TypeVar("Resultado")
@@ -40,11 +44,13 @@ Resultado = TypeVar("Resultado")
 
 
 def formatear_error_seguro(error: Exception | None) -> str:
-    """Devuelve tipo y detalle del error ocultando claves en URLs y cabeceras de autenticación."""
+    """Devuelve tipo y detalle del error ocultando claves en URLs, diccionarios y cabeceras HTTP."""
     if error is None:
         return "ErrorDesconocido"
     tipo_error = type(error).__name__
     detalle_sanitizado = PATRON_PARAMETRO_CLAVE.sub(r"\1***", str(error))
+    detalle_sanitizado = PATRON_VALOR_CABECERA_ILEGAL.sub(r"\1\2***\2", detalle_sanitizado)
+    detalle_sanitizado = PATRON_CABECERA_DICCIONARIO.sub(r"\1\2***\2", detalle_sanitizado)
     detalle_sanitizado = PATRON_CABECERA_SECRETA.sub(r"\1***", detalle_sanitizado).strip()
     if not detalle_sanitizado:
         return tipo_error
