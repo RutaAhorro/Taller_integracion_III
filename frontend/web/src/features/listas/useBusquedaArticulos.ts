@@ -79,6 +79,13 @@ export function useBusquedaArticulos() {
     setPeticion(null);
   }
 
+  /** Limpia consulta y resultados tras completar el agregado a la lista. */
+  function limpiarBusqueda() {
+    setConsulta("");
+    setPeticion(null);
+    setResultado(null);
+  }
+
   /** Repetir una búsqueda fallida genera una nueva solicitud, sin perder el texto escrito. */
   function buscar() {
     if (!busquedaCorta)
@@ -102,6 +109,7 @@ export function useBusquedaArticulos() {
   return {
     consulta,
     cambiarConsulta,
+    limpiarBusqueda,
     buscar,
     cambiarPagina,
     busquedaCorta,

@@ -754,6 +754,13 @@ test("Calcular ruta navega con la lista persistida y se bloquea al guardar", asy
       export const useNavigate = () => destino => escenario.destinos.push(destino);
       export const Link = ({ to, children, ...propiedades }) => createElement("a", { href: to, ...propiedades }, children);
     `),
+    "lucide-react": crearModulo(`
+      export const Info = () => null;
+      export const ListChecks = () => null;
+      export const ListPlus = () => null;
+      export const RefreshCw = () => null;
+      export const ShoppingBasket = () => null;
+    `),
     "@/components/ui/button": crearModulo(`
       import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
       import { escenario } from ${JSON.stringify(entorno)};

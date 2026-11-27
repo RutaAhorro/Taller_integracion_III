@@ -292,6 +292,11 @@ test("buscar respeta el mínimo UTF-8, consulta al servidor y pagina con los mis
   await resolverPeticiones();
   assert.match(consultas[1].ruta, /q=t%C3%A9/);
   assert.match(consultas[1].ruta, /page=2/);
+  leer().limpiarBusqueda();
+  assert.equal(leer().consulta, "");
+  assert.equal(leer().consultado, false);
+  assert.deepEqual(leer().productos, []);
+  assert.equal(leer().error, null);
 });
 
 test("editar o desmontar aborta la búsqueda y una respuesta antigua no repone productos", async () => {

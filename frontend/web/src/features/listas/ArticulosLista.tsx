@@ -12,7 +12,6 @@ import {
 } from "@/features/listas/listas-api";
 import { esCantidadValida } from "@/features/listas/useDetalleLista";
 import {
-  MINIMO_BYTES_BUSQUEDA_ARTICULOS,
   useBusquedaArticulos,
 } from "@/features/listas/useBusquedaArticulos";
 
@@ -149,6 +148,7 @@ function BuscadorArticulos({
     if (await alAgregar(seleccionado.id, cantidadNumerica)) {
       setSeleccionado(null);
       setCantidad("1");
+      busqueda.limpiarBusqueda();
     }
   }
 
@@ -191,8 +191,7 @@ function BuscadorArticulos({
         </div>
         {busqueda.busquedaCorta && (
           <p className="text-xs text-muted-foreground">
-            Escribe al menos {MINIMO_BYTES_BUSQUEDA_ARTICULOS} bytes UTF-8 para
-            buscar (por ejemplo, «arroz»).
+            Escribe un poco más para buscar (por ejemplo, «arroz»).
           </p>
         )}
       </form>
