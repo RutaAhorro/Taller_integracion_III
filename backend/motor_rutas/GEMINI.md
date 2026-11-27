@@ -28,9 +28,9 @@
 
 ## Índice breve generado
 
-30 archivos fuente, incluidos los de pruebas. Distribución:
+32 archivos fuente, incluidos los de pruebas. Distribución:
 - `cmd`: 1 archivos.
-- `internal`: 19 archivos.
-- `tests`: 10 archivos.
+- `internal`: 20 archivos.
+- `tests`: 11 archivos.
 
 Buscar símbolos en el código; este índice no acredita funciones desplegadas.

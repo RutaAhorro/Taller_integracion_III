@@ -17,6 +17,7 @@ import {
 import { Button } from '@/components/ui/button'
 import type { UiSupermarket } from '@/features/catalogo/tipos'
 import { obtenerCategorias, PREFIJO_CATEGORIA } from '@/features/catalogo/products-api'
+import { formatearCategoria } from '@/features/catalogo/formatters'
 
 // Mantiene la selección en el layout para compartirla con el listado paginado.
 type PropiedadesBarraLateral = {
@@ -56,12 +57,6 @@ const enlacesHerramientas = [
 // Oculta la categoría técnica sin alterar su valor original para el filtro.
 function esCategoriaVisible(categoria: string): boolean {
   return categoria.trim().toLowerCase() !== CATEGORIA_OCULTA
-}
-
-// Mejora únicamente la etiqueta visible de una categoría del backend.
-function formatearEtiquetaCategoria(categoria: string): string {
-  const etiqueta = categoria.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim()
-  return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1)
 }
 
 // Comparte los estilos de navegación sin duplicar la indicación de selección.
@@ -307,7 +302,7 @@ export function SideBar({
                         activa ? 'bg-accent text-primary font-bold' : 'text-muted-foreground hover:bg-accent hover:text-primary'
                       }`}
                     >
-                      {formatearEtiquetaCategoria(categoria)}
+                      {formatearCategoria(categoria)}
                     </button>
                   </li>
                 )

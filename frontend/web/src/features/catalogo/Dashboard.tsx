@@ -30,6 +30,7 @@ import { Footer } from '@/components/Footer'
 import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { useCart } from '@/features/catalogo/CartContext'
 import { getProducts, PREFIJO_CATEGORIA } from '@/features/catalogo/products-api'
+import { formatearCategoria } from '@/features/catalogo/formatters'
 
 type BloqueCache<Datos> = {
   datos: Datos
@@ -91,9 +92,7 @@ function formatearCategoriaActiva(categoria: string): string {
   const textoCategoria = categoria.startsWith(PREFIJO_CATEGORIA)
     ? categoria.slice(PREFIJO_CATEGORIA.length)
     : categoria
-  const textoNormalizado = textoCategoria.replace(/[-_]+/g, ' ').trim()
-  if (!textoNormalizado) return ''
-  return textoNormalizado.charAt(0).toUpperCase() + textoNormalizado.slice(1)
+  return formatearCategoria(textoCategoria)
 }
 
 // Tarjetas editoriales destacadas con las imágenes convertidas a WebP.

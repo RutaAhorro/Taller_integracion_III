@@ -38,3 +38,58 @@ export function calculateSavings(precioOriginal?: number, precio?: number): numb
   if (!precioOriginal || !precio || precioOriginal <= precio) return 0;
   return precioOriginal - precio;
 }
+
+// Convierte identificadores de categoría del catálogo en etiquetas legibles.
+export function formatearCategoria(categoria: string | undefined | null): string {
+  if (categoria === undefined || categoria === null) return '';
+  const normalizada = categoria.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!normalizada) return '';
+
+  const clave = normalizada.toLowerCase();
+  const excepciones: Record<string, string> = {
+    'dulces mermeladas y manjar': 'Dulces, mermeladas y manjar',
+    'frescos y lacteos': 'Frescos y lácteos',
+  };
+  if (excepciones[clave]) return excepciones[clave];
+
+  const palabrasConTilde: Record<string, string> = {
+    lacteos: 'lácteos',
+    panaderia: 'panadería',
+    pasteleria: 'pastelería',
+    carniceria: 'carnicería',
+    pescaderia: 'pescadería',
+    charcuteria: 'charcutería',
+    fiambreria: 'fiambrería',
+    perfumeria: 'perfumería',
+    ferreteria: 'ferretería',
+    tecnologia: 'tecnología',
+    jugueteria: 'juguetería',
+    libreria: 'librería',
+    bebes: 'bebés',
+    cafe: 'café',
+    te: 'té',
+    azucar: 'azúcar',
+    limon: 'limón',
+    jamon: 'jamón',
+    atun: 'atún',
+    maiz: 'maíz',
+    mani: 'maní',
+    organico: 'orgánico',
+    organicos: 'orgánicos',
+  };
+  const etiqueta = normalizada
+    .toLowerCase()
+    .split(' ')
+    .map((palabra) => palabrasConTilde[palabra] || palabra)
+    .join(' ');
+  return etiqueta.charAt(0).toUpperCase() + etiqueta.slice(1);
+}
+
+// Oculta valores de unidad que representan metadatos inválidos.
+export function formatearUnidad(unidad: string | undefined | null): string | null {
+  if (unidad === undefined || unidad === null) return null;
+  const unidadVisible = unidad.trim();
+  if (!unidadVisible) return null;
+  if (['format', 'formato', 'n/a', 'na', 'null', 'undefined', '-'].includes(unidadVisible.toLowerCase())) return null;
+  return unidadVisible;
+}

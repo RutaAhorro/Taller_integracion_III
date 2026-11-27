@@ -3,7 +3,7 @@ import { useState, type FormEvent } from "react";
 import { Check, Package, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatPrice } from "@/features/catalogo/formatters";
+import { formatPrice, formatearUnidad } from "@/features/catalogo/formatters";
 import type { UiProduct } from "@/features/catalogo/tipos";
 import {
   MAXIMO_ARTICULOS_LISTA,
@@ -226,8 +226,7 @@ function BuscadorArticulos({
             >
               <span className="block font-semibold">{producto.name}</span>
               <span className="block">
-                {producto.supermarketName} · {producto.unit} ·{" "}
-                {formatPrice(producto.price)}
+                {[producto.supermarketName, formatearUnidad(producto.unit), formatPrice(producto.price)].filter(Boolean).join(" · ")}
               </span>
               {producto.inStock !== true && (
                 <span className="block text-muted-foreground">
@@ -364,7 +363,7 @@ function ArticuloGuardado({
             <h4 className="break-words font-semibold leading-snug">{nombre}</h4>
             {producto && (
               <p className="break-words text-xs text-muted-foreground sm:text-sm">
-                {[producto.marca, producto.supermercado, producto.unidad]
+                {[producto.marca, producto.supermercado, formatearUnidad(producto.unidad)]
                   .filter(Boolean)
                   .join(" · ")}
               </p>
