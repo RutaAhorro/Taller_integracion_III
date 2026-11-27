@@ -1,5 +1,5 @@
 // Cabecera con búsqueda, acceso al menú y acciones de la sesión.
-import { useState, type FormEvent, useEffect } from 'react'
+import { useState, type FormEvent, useEffect, useRef } from 'react'
 import { Menu, MapPin, Search, ShoppingBasket, CircleUserRound, Bot, User, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Link, useNavigate } from 'react-router-dom'
@@ -12,20 +12,32 @@ type PropiedadesNavegacionSuperior = {
     onMenuClick: () => void
     sidebarOpen: boolean
     onResetFilters: () => void
+    activeCity?: string
 }
 
-export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters }: PropiedadesNavegacionSuperior) {
+export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onResetFilters, activeCity = "Temuco" }: PropiedadesNavegacionSuperior) {
     const [menuDesplegableAbierto, setMenuDesplegableAbierto] = useState(false);
     const [consultaLocal, setConsultaLocal] = useState(query || '');
+    const botonMenuUsuarioRef = useRef<HTMLButtonElement | null>(null);
     const navegar = useNavigate();
     const { logout, isLoggingOut } = useAuth();
-    
-    // Ciudad de referencia de la interfaz; aún no representa una ubicación obtenida del perfil.
-    const ciudadActiva = "Temuco";
 
     useEffect(() => {
         setConsultaLocal(query || '');
     }, [query]);
+
+    // Cierra el menú con Escape y devuelve el foco al disparador por accesibilidad.
+    useEffect(() => {
+        if (!menuDesplegableAbierto) return;
+        const cerrarConEscape = (evento: KeyboardEvent) => {
+            if (evento.key === 'Escape') {
+                setMenuDesplegableAbierto(false);
+                botonMenuUsuarioRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', cerrarConEscape);
+        return () => window.removeEventListener('keydown', cerrarConEscape);
+    }, [menuDesplegableAbierto]);
 
     const manejarBusqueda = (evento: FormEvent) => {
         evento.preventDefault();
@@ -110,15 +122,17 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                     >
                         <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <span className="text-xs font-semibold leading-tight text-foreground">
-                            {ciudadActiva}
+                            {activeCity}
                         </span>
                     </div>
                     <div className="relative hidden md:block">
                         <Button
+                            ref={botonMenuUsuarioRef}
                             variant="ghost"
                             size="icon"
                             className="h-10 w-10 rounded-full border border-border shadow-sm bg-background hover:bg-accent transition-colors"
                             aria-label="Menú de usuario"
+                            aria-expanded={menuDesplegableAbierto}
                             onClick={() => setMenuDesplegableAbierto(!menuDesplegableAbierto)}
                         >
                             <CircleUserRound className="h-6 w-6 text-foreground/80" aria-hidden="true" />
