@@ -349,8 +349,36 @@ def test_filtrar_productos_prioriza_relevancia_antes_que_precio():
 
 
 def test_extraer_terminos_respaldo_quita_palabras_vacias_y_precios():
-    """Extrae solo los términos útiles de producto y devuelve vacío si el mensaje solo habla de precio."""
+    """Conserva la frase completa de cada producto y devuelve vacío si el mensaje solo habla de precio o disponibilidad."""
     assert extraer_terminos_respaldo("Busco leche por menos de $2.000") == ["leche"]
+    assert extraer_terminos_respaldo("Busco harina de almendras") == ["harina almendras"]
+    assert extraer_terminos_respaldo("¿Tienen harina de almendras disponibles en stock por menos de $5.000?") == [
+        "harina almendras"
+    ]
     assert extraer_terminos_respaldo("Quiero pan y queso bajo 3000 pesos") == ["pan", "queso"]
+    assert extraer_terminos_respaldo("Busco harina de almendras y leche de avena") == [
+        "harina almendras",
+        "leche avena",
+    ]
     assert extraer_terminos_respaldo("Algo barato por menos de $2.000") == []
+    assert extraer_terminos_respaldo("¿Qué productos hay disponibles en catálogo ahora?") == []
     assert extraer_terminos_respaldo("   ") == []
+
+
+def test_respaldo_harina_de_almendras_no_devuelve_harina_tostada():
+    """Al exigir todos los términos de la frase de respaldo, 'Busco harina de almendras' descarta harina tostada."""
+    catalogo = [
+        {"id": 1, "nombre": "Harina Tostada Granel", "categoria": "despensa", "precio": 1200.0, "distancia_km": 1.0},
+        {
+            "id": 2,
+            "nombre": "Harina de Almendras 500 g",
+            "categoria": "despensa",
+            "precio": 4990.0,
+            "distancia_km": 1.0,
+        },
+    ]
+    terminos = extraer_terminos_respaldo("Busco harina de almendras")
+    filtrados = filtrar_productos(catalogo, {"palabras_clave": terminos})
+
+    assert terminos == ["harina almendras"]
+    assert [producto["nombre"] for producto in filtrados] == ["Harina de Almendras 500 g"]

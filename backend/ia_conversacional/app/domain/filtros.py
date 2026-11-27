@@ -116,6 +116,9 @@ PATRON_SEPARADOR_TERMINOS = re.compile(r"[^a-zA-Zñáéíóúü]+")
 
 LONGITUD_MINIMA_TERMINO_RESPALDO = 2
 
+# Separa enumeraciones de productos distintos (",", "y", "e", "o", "u") sin partir montos como "$2,000".
+PATRON_SEPARADOR_FRASES_MENSAJE = re.compile(r"(?<!\d),(?!\d)|\b(?:y|e|o|u)\b")
+
 # Palabras frecuentes en mensajes de búsqueda que no nombran un producto.
 PALABRAS_VACIAS_MENSAJE = frozenset(
     {
@@ -172,8 +175,31 @@ PALABRAS_VACIAS_MENSAJE = frozenset(
         "ver",
         "comprar",
         "tengo",
+        "tiene",
+        "tienes",
         "tienen",
+        "vende",
+        "venden",
         "hay",
+        "encontrar",
+        "encuentro",
+        "conseguir",
+        "consigo",
+        "disponible",
+        "disponibles",
+        "disponibilidad",
+        "stock",
+        "existencia",
+        "existencias",
+        "vigente",
+        "vigentes",
+        "actual",
+        "actuales",
+        "actualmente",
+        "catalogo",
+        "venta",
+        "ahora",
+        "hoy",
         "hola",
         "buenas",
         "buenos",
@@ -294,20 +320,29 @@ def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -
 
 def extraer_terminos_respaldo(mensaje: str) -> list[str]:
     """
-    Extrae términos útiles del mensaje cuando la extracción no trajo palabras clave, ingredientes ni categoría.
+    Extrae frases útiles de producto del mensaje cuando la extracción no trajo palabras clave, ingredientes ni categoría.
 
-    Descarta números, símbolos de precio y palabras vacías para evitar devolver lo más barato de toda la caché.
+    Conserva cada producto multipalabra como una sola palabra clave (p. ej. "harina de almendras" -> ["harina almendras"])
+    para que `filtrar_productos` exija todos sus términos en vez de aceptar cualquiera por separado.
+    Descarta números, símbolos de precio, verbos de búsqueda y palabras vacías.
     """
     mensaje_normalizado = _normalizar_texto(mensaje)
     if not mensaje_normalizado:
         return []
-    tokens = PATRON_SEPARADOR_TERMINOS.split(mensaje_normalizado)
-    terminos_utiles = [
-        token
-        for token in tokens
-        if len(token) >= LONGITUD_MINIMA_TERMINO_RESPALDO and token not in PALABRAS_VACIAS_MENSAJE
-    ]
-    return list(dict.fromkeys(terminos_utiles))
+
+    frases_utiles = []
+    for segmento in PATRON_SEPARADOR_FRASES_MENSAJE.split(mensaje_normalizado):
+        tokens = PATRON_SEPARADOR_TERMINOS.split(segmento)
+        terminos_utiles = list(
+            dict.fromkeys(
+                token
+                for token in tokens
+                if len(token) >= LONGITUD_MINIMA_TERMINO_RESPALDO and token not in PALABRAS_VACIAS_MENSAJE
+            )
+        )
+        if terminos_utiles:
+            frases_utiles.append(" ".join(terminos_utiles))
+    return list(dict.fromkeys(frases_utiles))
 
 
 # ===== Términos para la búsqueda en Catálogo =====

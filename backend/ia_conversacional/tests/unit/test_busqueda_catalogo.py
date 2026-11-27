@@ -605,6 +605,21 @@ def test_chat_solo_precio_sin_terminos_utiles_no_devuelve_cache_barata():
     assert repositorio.recargas == 0
 
 
+def test_chat_respaldo_busco_harina_de_almendras_no_devuelve_harina_tostada():
+    """El respaldo conserva 'harina almendras' como una sola palabra clave y descarta 'Harina Tostada Granel'."""
+    harina_tostada = _normalizar(_producto("prod-tostada", "Harina Tostada Granel", 1200.0, "despensa"))
+    harina_almendras = _normalizar(_producto("prod-almendras", "Harina de Almendras 500 g", 4990.0, "despensa"))
+    repositorio = RepositorioDoble(
+        cache=[harina_tostada],
+        busquedas={"almendras": [harina_tostada, harina_almendras]},
+    )
+
+    datos = _procesar(repositorio, {"precio_max": 6000}, mensaje="Busco harina de almendras disponible")
+
+    assert datos["filtros_aplicados"] == {"precio_max": 6000, "palabras_clave": ["harina almendras"]}
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-almendras"]
+
+
 # ===== Utilidades =====
 
 
