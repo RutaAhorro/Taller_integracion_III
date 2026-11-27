@@ -12,13 +12,16 @@ import (
 // Tipos de la asignación
 // =============================================================================
 
-// Alternativa es un conjunto de tiendas que cubre todos los artículos
-// cubribles, con lo que se compra en cada una. Todavía no tiene orden de
-// visita ni traslado: eso lo agrega recorrido.go (SUP-328).
+// Alternativa es un conjunto de tiendas con lo que se compra en cada una.
+// Normalmente cubre todos los artículos cubribles; en una compra parcial
+// (ningún conjunto de MaxParadas tiendas alcanza) Faltantes lleva los que
+// este conjunto deja fuera. Todavía no tiene orden de visita ni traslado: eso
+// lo agrega recorrido.go (SUP-328).
 type Alternativa struct {
 	Sucursales     []Sucursal                 // ordenadas por ID ascendente
 	Compras        map[int][]ArticuloAsignado // por sucursal_id, en el orden de la lista
 	CostoProductos int                        // CLP, suma de precio × cantidad
+	Faltantes      []NoCubierto               // vacío salvo en una compra parcial
 }
 
 // Asignacion es el resultado de SUP-313: las alternativas completas y los
@@ -47,6 +50,11 @@ type mejorOferta struct {
 // Se descarta un conjunto si no cubre todos los artículos cubribles o si
 // incluye una tienda donde no se compra nada: ese caso ya se evaluó en el
 // conjunto sin esa tienda, que además recorre menos.
+//
+// Si ningún conjunto cubre todo (los productos están repartidos en más
+// tiendas que MaxParadas), devuelve los conjuntos que cubren la mayor
+// cantidad de artículos, cada uno con sus Faltantes: es mejor mostrar lo que
+// sí se puede comprar que no mostrar nada.
 func AsignarConjuntos(entrada Entrada) (Asignacion, error) {
 	articulos, errorArticulos := agruparArticulos(entrada.Articulos)
 	if errorArticulos != nil {
@@ -99,9 +107,87 @@ func AsignarConjuntos(entrada Entrada) (Asignacion, error) {
 		}
 	}
 	if len(asignacion.Alternativas) == 0 {
+		asignacion.Alternativas = alternativasParciales(utiles, maximoParadas, cubribles, ofertas)
+	}
+	if len(asignacion.Alternativas) == 0 {
 		return Asignacion{}, &ErrorSinCobertura{NoCubiertos: idsNoCubiertos(asignacion.NoCubiertos)}
 	}
 	return asignacion, nil
+}
+
+// alternativasParciales devuelve los conjuntos que cubren la mayor cantidad
+// de artículos cuando ninguno los cubre todos. Comparar totales solo tiene
+// sentido entre compras del mismo tamaño; Calcular además restringe la
+// comparación a los conjuntos que dejan fuera los mismos artículos.
+func alternativasParciales(utiles []Sucursal, maximoParadas int, cubribles []Articulo, ofertas map[string]map[int]mejorOferta) []Alternativa {
+	var mejores []Alternativa
+	mayorCobertura := 0
+	for tamano := 1; tamano <= maximoParadas; tamano++ {
+		for _, conjunto := range combinaciones(utiles, tamano) {
+			alternativa, valida := asignarParcialEnConjunto(conjunto, cubribles, ofertas)
+			if !valida {
+				continue
+			}
+			cobertura := len(cubribles) - len(alternativa.Faltantes)
+			switch {
+			case cobertura > mayorCobertura:
+				mayorCobertura, mejores = cobertura, []Alternativa{alternativa}
+			case cobertura == mayorCobertura:
+				mejores = append(mejores, alternativa)
+			}
+		}
+	}
+	return mejores
+}
+
+// asignarParcialEnConjunto compra en el conjunto lo que se pueda, con las
+// mismas reglas que asignarEnConjunto, y anota el resto como faltante. Un
+// conjunto con una tienda donde no se compra nada sigue siendo inválido.
+func asignarParcialEnConjunto(conjunto []Sucursal, cubribles []Articulo, ofertas map[string]map[int]mejorOferta) (Alternativa, bool) {
+	var presentes []Articulo
+	alternativa := Alternativa{Faltantes: []NoCubierto{}}
+	for _, articulo := range cubribles {
+		if ofertaEnConjunto(conjunto, ofertas[articulo.ProductoID]) {
+			presentes = append(presentes, articulo)
+			continue
+		}
+		alternativa.Faltantes = append(alternativa.Faltantes, NoCubierto{
+			ProductoID: articulo.ProductoID,
+			Nombre:     nombreConocido(ofertas[articulo.ProductoID]),
+			Motivo:     MotivoFueraDelMaximoDeParadas,
+		})
+	}
+	if len(presentes) == 0 {
+		return Alternativa{}, false
+	}
+	completa, valida := asignarEnConjunto(conjunto, presentes, ofertas)
+	if !valida {
+		return Alternativa{}, false
+	}
+	completa.Faltantes = alternativa.Faltantes
+	return completa, true
+}
+
+// ofertaEnConjunto indica si alguna tienda del conjunto vende el artículo.
+func ofertaEnConjunto(conjunto []Sucursal, ofertasArticulo map[int]mejorOferta) bool {
+	for _, sucursal := range conjunto {
+		if _, existe := ofertasArticulo[sucursal.ID]; existe {
+			return true
+		}
+	}
+	return false
+}
+
+// nombreConocido toma el nombre de la oferta de menor sucursal_id, para que
+// el aviso al usuario sea siempre el mismo con los mismos datos.
+func nombreConocido(ofertasArticulo map[int]mejorOferta) string {
+	sucursalID := 0
+	for candidata := range ofertasArticulo {
+		if sucursalID == 0 || candidata < sucursalID {
+			sucursalID = candidata
+		}
+	}
+	return ofertasArticulo[sucursalID].nombre
 }
 
 // asignarEnConjunto compra cada artículo en la tienda más barata del conjunto.

@@ -80,8 +80,14 @@ type Entrada struct {
 // Resultado (forma del JSON de la sección 3.2 del contrato)
 // =============================================================================
 
-// MotivoSinOfertaEnRadio indica que ninguna candidata tiene el producto con stock.
-const MotivoSinOfertaEnRadio = "sin_oferta_en_radio"
+// Motivos por los que un artículo queda fuera de la ruta.
+const (
+	// MotivoSinOfertaEnRadio indica que ninguna candidata tiene el producto con stock.
+	MotivoSinOfertaEnRadio = "sin_oferta_en_radio"
+	// MotivoFueraDelMaximoDeParadas indica que el producto sí tiene oferta, pero
+	// comprarlo junto con el resto exigiría más tiendas que RUTAS_MAX_PARADAS.
+	MotivoFueraDelMaximoDeParadas = "fuera_del_maximo_de_paradas"
+)
 
 // ArticuloAsignado es un artículo comprado en una parada.
 type ArticuloAsignado struct {
@@ -148,8 +154,10 @@ type BaseUnaTienda struct {
 }
 
 // NoCubierto es un artículo que salió del cálculo y se informa al usuario.
+// Nombre solo se conoce cuando el producto tiene alguna oferta.
 type NoCubierto struct {
 	ProductoID string `json:"producto_id"`
+	Nombre     string `json:"nombre,omitempty"`
 	Motivo     string `json:"motivo"`
 }
 
@@ -177,9 +185,10 @@ var ErrSinSucursales = errors.New("no hay sucursales candidatas")
 // Es un error de programación o de configuración, no del usuario.
 var ErrParametros = errors.New("parámetros del cálculo inválidos")
 
-// ErrorSinCobertura indica que no hay forma de comprar la lista: ningún
-// artículo tiene oferta, o ningún conjunto de hasta MaxParadas tiendas cubre
-// todos los que sí la tienen. NoCubiertos lleva los productos sin oferta.
+// ErrorSinCobertura indica que no hay nada que comprar: ningún artículo tiene
+// oferta con stock en las candidatas. Si solo algunos faltan, o si no caben
+// todos en MaxParadas tiendas, el cálculo devuelve una ruta parcial y los
+// informa en NoCubiertos. Aquí NoCubiertos lleva los productos sin oferta.
 type ErrorSinCobertura struct {
 	NoCubiertos []string
 }

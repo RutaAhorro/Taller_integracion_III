@@ -56,10 +56,20 @@ export type BaseUnaTienda = {
   total: number;
 };
 
+/**
+ * Por qué un artículo quedó fuera: sin oferta con stock en el radio, o con
+ * oferta pero en más tiendas que el máximo de paradas (ruta parcial).
+ */
+export type MotivoNoCubierto =
+  | "sin_oferta_en_radio"
+  | "fuera_del_maximo_de_paradas";
+
 /** Un producto excluido no forma parte del total de la recomendación. */
 export type ArticuloNoCubierto = {
   producto_id: string;
-  motivo: "sin_oferta_en_radio";
+  /** Nombre de Catálogo; el Motor solo lo conoce si el producto tiene oferta. */
+  nombre?: string;
+  motivo: MotivoNoCubierto;
 };
 
 /** Respuesta vigente; no incluye los parámetros históricos de combustible. */

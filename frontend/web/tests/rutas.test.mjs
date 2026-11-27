@@ -956,3 +956,23 @@ test("Calcular ruta navega con la lista persistida y se bloquea al guardar", asy
     true,
   );
 });
+
+test("ruta parcial explica el motivo de cada artículo y usa el nombre del motor", () => {
+  const datos = {
+    ...ejemplo,
+    no_cubiertos: [
+      { producto_id: "sin-oferta", motivo: "sin_oferta_en_radio" },
+      {
+        producto_id: "fuera-de-paradas",
+        nombre: "Aceite maravilla 1 L",
+        motivo: "fuera_del_maximo_de_paradas",
+      },
+    ],
+  };
+  const html = presentar(datos);
+  assert.match(html, /Compra parcial/);
+  assert.match(html, /Aceite maravilla 1 L/);
+  assert.match(html, /exigiría visitar más tiendas que el máximo de paradas/);
+  assert.match(html, /Sin oferta vigente disponible en las sucursales evaluadas/);
+  assert.ok(html.includes("Producto sin-oferta"));
+});

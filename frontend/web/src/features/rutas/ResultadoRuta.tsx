@@ -16,7 +16,12 @@ import {
   agruparArticulosParada,
   type ArticuloAgrupadoRuta,
 } from "./presentacion-ruta";
-import type { ParadaRuta, RespuestaOptimizacion } from "./rutas-api";
+import type {
+  ArticuloNoCubierto,
+  MotivoNoCubierto,
+  ParadaRuta,
+  RespuestaOptimizacion,
+} from "./rutas-api";
 
 // Una compra larga se despliega a petición del usuario; la ruta nunca oculta cuántas líneas quedan.
 const MAXIMO_PRODUCTOS_VISIBLES = 4;
@@ -40,13 +45,35 @@ export function enlaceGoogleMaps(
   return `https://www.google.com/maps/search/?${parametros}`;
 }
 
+/** Texto breve por motivo; no afirma causas que el motor no informó. */
+const DETALLE_MOTIVO_NO_CUBIERTO: Record<MotivoNoCubierto, string> = {
+  sin_oferta_en_radio:
+    "Sin oferta vigente disponible en las sucursales evaluadas.",
+  fuera_del_maximo_de_paradas:
+    "Tiene oferta, pero comprarlo exigiría visitar más tiendas que el máximo de paradas.",
+};
+
+/** Usa los nombres que entrega el motor cuando la lista aún no los resolvió. */
+function nombresNoCubiertos(
+  noCubiertos: ArticuloNoCubierto[],
+): Record<string, string> {
+  return Object.fromEntries(
+    noCubiertos
+      .filter((articulo) => articulo.nombre)
+      .map((articulo) => [articulo.producto_id, articulo.nombre as string]),
+  );
+}
+
 /** Comparte las exclusiones entre errores y resultados parciales sin convertirlas en una compra. */
 export function ArticulosSinCobertura({
   identificadores,
   nombres,
+  motivos = {},
 }: {
   identificadores: string[];
   nombres: Record<string, string>;
+  /** Motivo informado por el Motor; sin él se asume falta de oferta. */
+  motivos?: Record<string, MotivoNoCubierto>;
 }) {
   return (
     <ul className="space-y-2">
@@ -64,7 +91,9 @@ export function ArticulosSinCobertura({
               {nombres[identificador] ?? `Producto ${identificador}`}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Sin oferta vigente disponible en las sucursales evaluadas.
+              {DETALLE_MOTIVO_NO_CUBIERTO[
+                motivos[identificador] ?? "sin_oferta_en_radio"
+              ]}
             </p>
           </div>
         </li>
@@ -275,16 +304,22 @@ export function ResultadoRuta({
             Compra parcial: artículos no cubiertos
           </h2>
           <p className="text-sm leading-relaxed text-muted-foreground">
-            Estos productos no tienen una oferta vigente disponible en el radio
-            de búsqueda y no están incluidos en el total. Puede deberse a falta
-            de stock, precios vencidos o ausencia de ofertas cercanas; no se
-            confirmó una causa individual.
+            Estos productos no están incluidos en el total. Cada uno indica el
+            motivo informado por el motor; cuando falta una oferta, puede
+            deberse a falta de stock, precios vencidos o ausencia de ofertas
+            cercanas, sin que se confirme una causa individual.
           </p>
           <ArticulosSinCobertura
             identificadores={datos.no_cubiertos.map(
               (articulo) => articulo.producto_id,
             )}
-            nombres={nombres}
+            nombres={{ ...nombresNoCubiertos(datos.no_cubiertos), ...nombres }}
+            motivos={Object.fromEntries(
+              datos.no_cubiertos.map((articulo) => [
+                articulo.producto_id,
+                articulo.motivo,
+              ]),
+            )}
           />
         </section>
       )}

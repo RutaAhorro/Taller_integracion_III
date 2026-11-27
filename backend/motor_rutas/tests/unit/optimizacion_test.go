@@ -275,16 +275,63 @@ func TestOrdenDeVisitaConTresTiendas(prueba *testing.T) {
 	}
 }
 
-// TestNingunConjuntoCubreLaCompra: si hacen falta tres tiendas y el máximo es
-// dos, no se inventa una ruta parcial.
-func TestNingunConjuntoCubreLaCompra(prueba *testing.T) {
+// TestNingunConjuntoCubreLaCompraDevuelveRutaParcial: si hacen falta tres
+// tiendas y el máximo es dos, se recomienda lo que sí se puede comprar. De los
+// tres pares que cubren dos artículos gana {Jumbo, Unimarc} (leche + arroz,
+// $2.480), el detergente queda fuera con su nombre y, como ninguna tienda sola
+// compra esos mismos dos artículos, no hay base ni ahorro.
+func TestNingunConjuntoCubreLaCompraDevuelveRutaParcial(prueba *testing.T) {
 	parametros := parametrosContrato(umbralContrato)
 	parametros.MaxParadas = 2
-	_, errorCalculo := optimizacion.Calcular(armarEntrada(listaExclusiva, preciosExclusivos, parametros))
+	entrada := armarEntrada(listaExclusiva, preciosExclusivos, parametros)
+	for indice := range entrada.Ofertas {
+		entrada.Ofertas[indice].Nombre = "Producto " + entrada.Ofertas[indice].ProductoID
+	}
+	resultado := calcularSinError(prueba, entrada)
 
-	var sinCobertura *optimizacion.ErrorSinCobertura
-	if !errors.As(errorCalculo, &sinCobertura) || len(sinCobertura.NoCubiertos) != 0 {
-		prueba.Fatalf("error = %v, se esperaba ErrorSinCobertura sin productos faltantes", errorCalculo)
+	if obtenidas := idsParadas(resultado.Ruta); !slices.Equal(obtenidas, []int{sucursalJumbo, sucursalUnimarc}) {
+		prueba.Fatalf("paradas = %v, se esperaba Jumbo y Unimarc", obtenidas)
+	}
+	if resultado.Ruta.CostoProductos != 990+1490 {
+		prueba.Fatalf("costo_productos = %d, se esperaba 2480 (sin el detergente)", resultado.Ruta.CostoProductos)
+	}
+	esperado := []optimizacion.NoCubierto{{ProductoID: "detergente", Nombre: "Producto detergente", Motivo: optimizacion.MotivoFueraDelMaximoDeParadas}}
+	if !slices.Equal(resultado.NoCubiertos, esperado) {
+		prueba.Fatalf("no_cubiertos = %+v, se esperaba %+v", resultado.NoCubiertos, esperado)
+	}
+	if resultado.BaseUnaTienda != nil || resultado.Ahorro != nil {
+		prueba.Fatalf("una compra parcial sin tienda sola equivalente no tiene base: %+v, %v", resultado.BaseUnaTienda, resultado.Ahorro)
+	}
+}
+
+// TestRutaParcialConArticuloSinOferta: con una sola parada permitida, la
+// quinoa (sin oferta) y lo que no cabe en esa tienda salen en no_cubiertos con
+// su motivo; primero los sin oferta y luego los que exceden las paradas. Gana
+// Lider: compra leche, arroz y detergente igual que Jumbo pero más barato.
+func TestRutaParcialConArticuloSinOferta(prueba *testing.T) {
+	parametros := parametrosContrato(umbralContrato)
+	parametros.MaxParadas = 1
+	articulos := append(slices.Clone(listaCasoB), optimizacion.Articulo{ProductoID: "aceite", Cantidad: 1})
+	precios := preciosCasoB(690)
+	precios["aceite"] = preciosPorSucursal{sucursalUnimarc: 2990}
+	resultado := calcularSinError(prueba, armarEntrada(articulos, precios, parametros))
+
+	if obtenidas := idsParadas(resultado.Ruta); !slices.Equal(obtenidas, []int{sucursalLider}) {
+		prueba.Fatalf("paradas = %v, se esperaba solo Lider", obtenidas)
+	}
+	motivos := map[string]string{}
+	orden := []string{}
+	for _, noCubierto := range resultado.NoCubiertos {
+		motivos[noCubierto.ProductoID] = noCubierto.Motivo
+		orden = append(orden, noCubierto.ProductoID)
+	}
+	if !slices.Equal(orden, []string{"quinoa", "aceite"}) ||
+		motivos["quinoa"] != optimizacion.MotivoSinOfertaEnRadio ||
+		motivos["aceite"] != optimizacion.MotivoFueraDelMaximoDeParadas {
+		prueba.Fatalf("no_cubiertos = %+v, se esperaba quinoa sin oferta y aceite fuera de las paradas", resultado.NoCubiertos)
+	}
+	if resultado.BaseUnaTienda == nil || resultado.BaseUnaTienda.SucursalID != sucursalLider || resultado.Ahorro == nil || *resultado.Ahorro != 0 {
+		prueba.Fatalf("la base debe ser la misma tienda elegida y el ahorro 0: %+v, %v", resultado.BaseUnaTienda, resultado.Ahorro)
 	}
 }
 
