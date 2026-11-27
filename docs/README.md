@@ -24,6 +24,7 @@ corrige el documento.
 | [Requisitos](Requisitos/README.md) | Requisitos, reglas de negocio y términos. Describen objetivos, no funciones ya terminadas |
 | [Diagramas](Diagramas/README.md) | Arquitectura, MER, casos de uso y flujos, con el estado de cada uno |
 | [Glosario](Glosario.md) | Siglas y términos técnicos |
+| Estado | [Reporte de estado de `develop` (27-11-2026)](Estado/REPORTE_ESTADO_DEVELOP_2026-11-27.md) y [lote único de arreglos del MVP (27-11-2026)](Estado/LOTE_UNICO_ARREGLOS_MVP_2026-11-27.md) |
 
 ## Guías de trabajo
 
