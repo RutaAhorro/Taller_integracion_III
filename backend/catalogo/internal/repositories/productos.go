@@ -300,19 +300,27 @@ func ordenSeguro(filtro domain.FiltroProductosDTO) string {
 	}
 }
 
+// paginaInicialRepositorio es la primera página; el servicio garantiza Page >= 1.
+const paginaInicialRepositorio = 1
+
 // paginar aplica Limit/Offset; el servicio garantiza Page >= 1.
 func paginar(consulta *gorm.DB, filtro domain.FiltroProductosDTO) *gorm.DB {
 	return consulta.Limit(filtro.Limit).Offset((filtro.Page - 1) * filtro.Limit)
 }
 
-// Listar ejecuta la consulta pública del catálogo. Los productos con stock se muestran primero.
+// filaProductoConTotal es una fila de la página con el total del filtro que
+// calcula la misma consulta (count(*) OVER ()).
+type filaProductoConTotal struct {
+	domain.ProductoDTO
+	TotalRegistros int64
+}
+
+// Listar ejecuta la consulta pública del catálogo. Los productos con stock se
+// muestran primero. El total sale de la misma consulta que la página
+// (count(*) OVER ()): así la última captura de cada producto se evalúa una vez
+// y no dos, que era la mitad del costo de la primera página sin filtros.
 func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro domain.FiltroProductosDTO) ([]domain.ProductoDTO, int64, error) {
 	consulta := repositorio.consultaPublica(contexto, filtro, opcionesConsulta{})
-
-	var total int64
-	if errorConteo := consulta.Session(&gorm.Session{}).Count(&total).Error; errorConteo != nil {
-		return nil, 0, errorConteo
-	}
 
 	columnas := `
 		pc.id::text AS id,
@@ -326,20 +334,37 @@ func (repositorio *RepositorioProductos) Listar(contexto context.Context, filtro
 		(cp.precio_oferta IS NOT NULL AND cp.precio_oferta < cp.precio_normal) AS en_oferta,
 		COALESCE(pc.url_imagen, '') AS url_imagen,
 		COALESCE(pc.formato_crudo, '') AS unidad,
-		pc.en_stock
+		pc.en_stock,
+		count(*) OVER () AS total_registros
 	`
 
-	items := []domain.ProductoDTO{}
-	consultaOrdenada := consulta.Select(columnas)
+	filas := []filaProductoConTotal{}
+	consultaOrdenada := consulta.Session(&gorm.Session{}).Select(columnas)
 	if strings.TrimSpace(filtro.Query) != "" {
 		consultaOrdenada = consultaOrdenada.Clauses(ordenConRelevancia(filtro))
 	} else {
 		consultaOrdenada = consultaOrdenada.Order("pc.en_stock DESC").Order(ordenSeguro(filtro))
 	}
-	errorConsulta := paginar(consultaOrdenada, filtro).
-		Scan(&items).Error
-	if errorConsulta != nil {
+	if errorConsulta := paginar(consultaOrdenada, filtro).Scan(&filas).Error; errorConsulta != nil {
 		return nil, 0, errorConsulta
+	}
+
+	items := make([]domain.ProductoDTO, 0, len(filas))
+	for _, fila := range filas {
+		items = append(items, fila.ProductoDTO)
+	}
+	if len(filas) > 0 {
+		return items, filas[0].TotalRegistros, nil
+	}
+	if filtro.Page <= paginaInicialRepositorio {
+		return items, 0, nil // primera página vacía: el filtro no tiene coincidencias
+	}
+
+	// Una página posterior al final no trae filas ni total: sólo entonces se
+	// cuenta aparte para que la paginación siga informando el total real.
+	var total int64
+	if errorConteo := consulta.Session(&gorm.Session{}).Count(&total).Error; errorConteo != nil {
+		return nil, 0, errorConteo
 	}
 	return items, total, nil
 }

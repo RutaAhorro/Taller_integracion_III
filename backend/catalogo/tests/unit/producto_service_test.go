@@ -27,6 +27,8 @@ type mockProductoRepository struct {
 	// errorSupermercados falla sólo la agregación, para probar esa rama aunque
 	// Listar haya respondido bien.
 	errorSupermercados error
+	// llamadasSupermercados cuenta las consultas reales, para probar la caché.
+	llamadasSupermercados int
 }
 
 // ListarCategorias entrega valores controlados sin consultar una BD compartida.
@@ -51,6 +53,7 @@ func (repositorio *mockProductoRepository) Listar(ctx context.Context, filtro do
 
 func (repositorio *mockProductoRepository) ListarSupermercados(ctx context.Context, filtro domain.FiltroProductosDTO) ([]domain.SupermercadoDTO, error) {
 	repositorio.filtroSupermercados = filtro
+	repositorio.llamadasSupermercados++
 	if repositorio.errorSupermercados != nil {
 		return nil, repositorio.errorSupermercados
 	}

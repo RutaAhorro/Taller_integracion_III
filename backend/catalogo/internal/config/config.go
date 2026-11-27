@@ -55,6 +55,10 @@ const (
 	vidaConexionPredeterminada         = 30 * time.Minute
 	productosConsultaPredeterminados   = 1000
 	antiguedadPredeterminada           = 48 * time.Hour
+	// vigenciaCacheSupermercadosPredeterminada acota cuánto tarda en verse una
+	// cadena nueva o agotada en el filtro lateral; evita recorrer todo el
+	// catálogo en cada página.
+	vigenciaCacheSupermercadosPredeterminada = 2 * time.Minute // CATALOGO_CACHE_SUPERMERCADOS
 )
 
 // ===== Configuración del servicio =====
@@ -96,6 +100,9 @@ type Configuracion struct {
 	AntiguedadMaximaDisponibilidad time.Duration
 	// RadioMaximoKm acota la consulta de precios comparables por sucursal.
 	RadioMaximoKm int
+	// VigenciaCacheSupermercados es cuánto se reutilizan los supermercados
+	// disponibles de un mismo filtro en el listado público.
+	VigenciaCacheSupermercados time.Duration
 }
 
 // Cargar lee y valida el entorno del proceso. Los mensajes de error nombran la
@@ -186,6 +193,13 @@ func Cargar() (Configuracion, error) {
 		}
 		*variable.destino = valor
 	}
+
+	// La caché admite 0 para apagarla sin cambiar código (diagnóstico).
+	vigenciaCache, errorVigencia := leerDuracionNoNegativa("CATALOGO_CACHE_SUPERMERCADOS", vigenciaCacheSupermercadosPredeterminada)
+	if errorVigencia != nil {
+		return Configuracion{}, errorVigencia
+	}
+	configuracion.VigenciaCacheSupermercados = vigenciaCache
 	return configuracion, nil
 }
 
@@ -264,6 +278,20 @@ func leerDuracionPositiva(nombre string, predeterminada time.Duration) (time.Dur
 	duracion, errorConversion := time.ParseDuration(texto)
 	if errorConversion != nil || duracion <= 0 {
 		return 0, errors.New(nombre + " debe ser una duración positiva, por ejemplo 5s")
+	}
+	return duracion, nil
+}
+
+// leerDuracionNoNegativa es como leerDuracionPositiva pero acepta 0, que
+// desactiva la función asociada.
+func leerDuracionNoNegativa(nombre string, predeterminada time.Duration) (time.Duration, error) {
+	texto := os.Getenv(nombre)
+	if texto == "" {
+		return predeterminada, nil
+	}
+	duracion, errorConversion := time.ParseDuration(texto)
+	if errorConversion != nil || duracion < 0 {
+		return 0, errors.New(nombre + " debe ser una duración mayor o igual a 0, por ejemplo 2m o 0s")
 	}
 	return duracion, nil
 }

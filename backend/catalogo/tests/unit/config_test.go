@@ -67,7 +67,8 @@ func TestCargarAplicaValoresPorDefecto(prueba *testing.T) {
 		configuracion.PlazoApagado != 15*time.Second || configuracion.PlazoInicio != 5*time.Second ||
 		configuracion.PlazoReadiness != 2*time.Second || configuracion.TamanoPagina != 20 || configuracion.TamanoPaginaMaximo != 100 ||
 		configuracion.LargoMaximoBusqueda != 100 || configuracion.MaximoProductosPorLote != 1000 ||
-		configuracion.MaximoBytesCuerpo != 8<<20 || configuracion.RadioMaximoKm != 50 {
+		configuracion.MaximoBytesCuerpo != 8<<20 || configuracion.RadioMaximoKm != 50 ||
+		configuracion.VigenciaCacheSupermercados != 2*time.Minute {
 		prueba.Fatalf("configuración predeterminada incorrecta: %+v", configuracion)
 	}
 }
@@ -78,13 +79,30 @@ func TestCargarAplicaValoresConfigurados(prueba *testing.T) {
 	prueba.Setenv("CATALOGO_MAX_PRODUCTOS_CONSULTA", "75")
 	prueba.Setenv("CATALOGO_DISPONIBILIDAD_ANTIGUEDAD_MAXIMA", "36h")
 	prueba.Setenv("CATALOGO_MAX_RADIO_KM", "25")
+	prueba.Setenv("CATALOGO_CACHE_SUPERMERCADOS", "30s")
 	configuracion, errorCarga := config.Cargar()
 	if errorCarga != nil {
 		prueba.Fatal(errorCarga)
 	}
 	if configuracion.DireccionEscucha != ":9090" || configuracion.MaximoProductosConsulta != 75 ||
-		configuracion.AntiguedadMaximaDisponibilidad != 36*time.Hour || configuracion.RadioMaximoKm != 25 {
+		configuracion.AntiguedadMaximaDisponibilidad != 36*time.Hour || configuracion.RadioMaximoKm != 25 ||
+		configuracion.VigenciaCacheSupermercados != 30*time.Second {
 		prueba.Fatalf("no se aplicaron los valores configurados: %+v", configuracion)
+	}
+}
+
+// TestCargarCacheSupermercadosAdmiteCero comprueba que 0 apaga la caché y que
+// una duración negativa se rechaza.
+func TestCargarCacheSupermercadosAdmiteCero(prueba *testing.T) {
+	prepararEntornoMinimo(prueba)
+	prueba.Setenv("CATALOGO_CACHE_SUPERMERCADOS", "0s")
+	configuracion, errorCarga := config.Cargar()
+	if errorCarga != nil || configuracion.VigenciaCacheSupermercados != 0 {
+		prueba.Fatalf("0s debe apagar la caché: %v %v", configuracion.VigenciaCacheSupermercados, errorCarga)
+	}
+	prueba.Setenv("CATALOGO_CACHE_SUPERMERCADOS", "-1m")
+	if _, errorCarga = config.Cargar(); errorCarga == nil {
+		prueba.Fatal("una vigencia negativa debe rechazarse")
 	}
 }
 

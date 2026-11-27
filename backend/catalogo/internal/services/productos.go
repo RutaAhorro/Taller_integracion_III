@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/catalogo/internal/domain"
 )
@@ -21,6 +22,12 @@ type LimitesProductos struct {
 	TamanoPagina        int // limit cuando el cliente no lo envía
 	TamanoPaginaMaximo  int // tope de limit
 	LargoMaximoBusqueda int // bytes conservados de cada texto de búsqueda
+	// VigenciaCacheSupermercados reutiliza las cadenas disponibles de un mismo
+	// filtro; 0 consulta siempre (sin caché).
+	VigenciaCacheSupermercados time.Duration
+	// Reloj de la caché; nil usa time.Now. Las pruebas lo fijan para
+	// comprobar el vencimiento sin esperar.
+	Reloj func() time.Time
 }
 
 // Límites propios del contrato, no configurables.
@@ -52,13 +59,22 @@ var (
 
 // ServicioProductos expone el catálogo público, el administrativo y el detalle.
 type ServicioProductos struct {
-	repositorio domain.RepositorioProductos
-	limites     LimitesProductos
+	repositorio   domain.RepositorioProductos
+	limites       LimitesProductos
+	supermercados *cacheSupermercados
 }
 
 // NuevoServicioProductos inyecta el repositorio y los límites ya validados.
 func NuevoServicioProductos(repositorio domain.RepositorioProductos, limites LimitesProductos) *ServicioProductos {
-	return &ServicioProductos{repositorio: repositorio, limites: limites}
+	reloj := limites.Reloj
+	if reloj == nil {
+		reloj = time.Now
+	}
+	return &ServicioProductos{
+		repositorio:   repositorio,
+		limites:       limites,
+		supermercados: nuevaCacheSupermercados(limites.VigenciaCacheSupermercados, reloj),
+	}
 }
 
 // ObtenerCatalogo normaliza el filtro público y devuelve la página pedida junto
@@ -73,12 +89,11 @@ func (servicio *ServicioProductos) ObtenerCatalogo(contexto context.Context, fil
 		return nil, errorConsulta
 	}
 	// Las cadenas se calculan sobre todos los resultados, no sobre la página.
-	supermercados, errorSupermercados := servicio.repositorio.ListarSupermercados(contexto, filtro)
+	// Se reutilizan por un plazo corto: la lista casi no cambia y su consulta
+	// recorre todo el catálogo.
+	supermercados, errorSupermercados := servicio.supermercados.obtener(contexto, filtro, servicio.repositorio.ListarSupermercados)
 	if errorSupermercados != nil {
 		return nil, errorSupermercados
-	}
-	if supermercados == nil {
-		supermercados = []domain.SupermercadoDTO{} // JSON [] y no null
 	}
 	paginacion := metadatos(filtro, total)
 	return &domain.PaginaProductosDTO{
