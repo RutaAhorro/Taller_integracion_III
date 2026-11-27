@@ -57,8 +57,12 @@ const {
 } = api.modulo;
 const listas = await cargar("../src/features/listas/listas-api.ts");
 const formato = await cargar("../src/features/catalogo/formatters.ts");
+const presentacion = await cargar("../src/features/rutas/presentacion-ruta.ts");
+const { agruparArticulosParada } = presentacion.modulo;
 const resultado = await cargar("../src/features/rutas/ResultadoRuta.tsx", {
+  "lucide-react": import.meta.resolve("lucide-react"),
   "@/features/catalogo/formatters": formato.url,
+  "./presentacion-ruta": presentacion.url,
 });
 const { ResultadoRuta, enlaceGoogleMaps } = resultado.modulo;
 
@@ -295,7 +299,10 @@ test("presenta dos paradas, montos confirmados, origen y avisos de estimación y
   const html = presentar(ejemplo, {
     [ejemplo.no_cubiertos[0].producto_id]: "Quinoa",
   });
-  assert.ok(html.indexOf("A Cuenta") < html.indexOf("2. Cugat"));
+  assert.ok(
+    html.indexOf('aria-label="Parada 1: A Cuenta"') <
+      html.indexOf('aria-label="Parada 2: Cugat"'),
+  );
   for (const texto of [
     "8.670",
     "920",
@@ -337,7 +344,116 @@ test("pluraliza envases sin alterar cantidad, importes ni el orden de Motor", ()
   assert.match(html, /1 envase ×/);
   assert.match(html, /2 envases ×/);
   assert.doesNotMatch(html, /1 envases/);
-  assert.ok(html.indexOf("1. A Cuenta") < html.indexOf("2. Cugat"));
+  assert.ok(
+    html.indexOf('aria-label="Parada 1: A Cuenta"') <
+      html.indexOf('aria-label="Parada 2: Cugat"'),
+  );
+});
+
+test("diez repeticiones de la misma oferta se presentan como una compra con diez envases", () => {
+  const base = {
+    ...ejemplo.ruta.paradas[0].articulos[0],
+    cantidad: 1,
+    subtotal: 1090,
+  };
+  const articulos = Object.freeze(
+    Array.from({ length: 10 }, () => Object.freeze({ ...base })),
+  );
+  const agrupados = agruparArticulosParada(articulos);
+  assert.equal(agrupados.length, 1);
+  assert.equal(agrupados[0].cantidad, 10);
+  assert.equal(agrupados[0].subtotal, 10900);
+  assert.equal(articulos[0].cantidad, 1);
+  const datos = structuredClone(ejemplo);
+  datos.ruta.paradas = [
+    { ...datos.ruta.paradas[0], articulos, subtotal: 10900 },
+  ];
+  datos.ruta.total = 10900;
+  const html = presentar(datos);
+  assert.equal(html.split(base.nombre).length - 1, 1);
+  assert.match(html, /10 envases ×/);
+  assert.match(html, /1 producto · 10 envases/);
+  assert.match(html, /10\.900/);
+});
+
+test("equivalentes enviados por Motor se agrupan por oferta, preservando referencias e importes", () => {
+  const articulo = ejemplo.ruta.paradas[0].articulos[0];
+  const agrupados = agruparArticulosParada([
+    {
+      ...articulo,
+      nombre: undefined,
+      producto_id: "lista-primero",
+      cantidad: 2,
+      subtotal: 2180,
+    },
+    { ...articulo, producto_id: "lista-segundo", cantidad: 3, subtotal: 3270 },
+  ]);
+  assert.equal(agrupados.length, 1);
+  assert.deepEqual(agrupados[0].producto_ids, [
+    "lista-primero",
+    "lista-segundo",
+  ]);
+  assert.equal(agrupados[0].cantidad, 5);
+  assert.equal(agrupados[0].subtotal, 5450);
+  assert.equal(agrupados[0].nombre, articulo.nombre);
+});
+
+test("nombres iguales no prueban equivalencia; ofertas y precios distintos no se mezclan", () => {
+  const articulo = ejemplo.ruta.paradas[0].articulos[0];
+  const agrupados = agruparArticulosParada([
+    articulo,
+    { ...articulo, producto_id_oferta: "otra-oferta" },
+    { ...articulo, precio_unitario: articulo.precio_unitario + 100 },
+  ]);
+  assert.equal(agrupados.length, 3);
+  assert.equal(new Set(agrupados.map((agrupado) => agrupado.clave)).size, 3);
+  const subtotales = agruparArticulosParada([
+    { ...articulo, subtotal: 2000 },
+    { ...articulo, subtotal: 3000 },
+  ]);
+  assert.equal(
+    subtotales[0].subtotal,
+    5000,
+    "no recalcula precio × cantidad para sustituir el subtotal recibido",
+  );
+  assert.equal(
+    agruparArticulosParada([
+      { ...articulo, producto_id_oferta: "", producto_id: "origen-uno" },
+      { ...articulo, producto_id_oferta: "", producto_id: "origen-dos" },
+    ]).length,
+    2,
+    "sin oferta identificada no se deduce equivalencia por nombre",
+  );
+  assert.deepEqual(agruparArticulosParada([]), []);
+});
+
+test("las compras se agrupan dentro de cada parada, sin borrar productos de otra tienda", () => {
+  const datos = structuredClone(ejemplo);
+  const articulo = datos.ruta.paradas[0].articulos[0];
+  datos.ruta.paradas[1].articulos = [{ ...articulo }];
+  const html = presentar(datos);
+  assert.equal(html.split(articulo.nombre).length - 1, 2);
+});
+
+test("una parada larga conserva totales y deja los productos adicionales en un desplegable nativo", () => {
+  const datos = structuredClone(ejemplo);
+  const parada = datos.ruta.paradas[0];
+  parada.articulos = Array.from({ length: 10 }, (_, indice) => ({
+    ...parada.articulos[0],
+    producto_id: `producto-${indice}`,
+    producto_id_oferta: `oferta-${indice}`,
+    nombre: `Producto de prueba ${indice}`,
+    cantidad: 1,
+    subtotal: 1090,
+  }));
+  parada.subtotal = 10900;
+  const html = presentar(datos);
+  assert.match(html, /10 productos · 10 envases/);
+  assert.match(html, /Ver 6 productos más/);
+  assert.match(html, /aria-label="Más productos en/);
+  assert.match(html, /Producto de prueba 9/);
+  assert.doesNotMatch(html, /<details[^>]*\bopen(?:=|>)/);
+  assert.match(html, /10\.900/);
 });
 
 test("sin base comparativa no presenta ahorro cero y conserva referencias sin nombre", () => {

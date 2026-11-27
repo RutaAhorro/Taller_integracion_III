@@ -149,108 +149,119 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
       <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-4 py-6 md:px-6">
         <div className="min-h-0 flex-1 overflow-y-auto pb-2 pr-1 -mr-1 scrollbar-hide">
           <div className="mx-auto w-full max-w-5xl space-y-6 p-4 pb-24 md:p-8">
-      <header className="relative isolate overflow-hidden rounded-xl border-2 border-border bg-primary px-6 py-6 text-primary-foreground shadow-[8px_8px_0px_var(--color-border)] sm:px-8 sm:py-7">
-        <div
-          className="absolute inset-0 -z-20 bg-[url('/images/dashboard-seamless.jpg')] bg-cover bg-center opacity-25"
-          aria-hidden="true"
-        />
-        <div
-          className="absolute inset-0 -z-10 bg-primary/85"
-          aria-hidden="true"
-        />
-        <div
-          className="pointer-events-none absolute inset-y-0 right-0 z-0 hidden w-[38%] overflow-hidden sm:block"
-          aria-hidden="true"
-        >
-          <img
-            src="/mapa_isometrico_ruta_supermercado.png"
-            alt=""
-            className="absolute -bottom-[25%] -right-[28%] w-[135%] max-w-none opacity-35 grayscale mix-blend-multiply"
-          />
-        </div>
-        <div className="relative z-10 max-w-2xl space-y-4">
-          <span className="inline-flex rounded-full border border-primary-foreground/30 bg-primary-foreground/10 px-3 py-1 text-xs font-bold">
-            Tu lista, tienda por tienda
-          </span>
-          <h1 className="font-display text-3xl font-extrabold text-balance sm:text-4xl">
-            Ruta recomendada
-          </h1>
-          <p className="max-w-xl text-sm leading-relaxed text-primary-foreground/90">
-            Descubre dónde comprar los artículos pendientes y cómo se reparte tu
-            compra. La recomendación usa los precios y sucursales disponibles al
-            calcular.
-          </p>
-          <div className="flex flex-wrap items-center gap-4 border-t border-primary-foreground/30 pt-4">
-            <Link
-              className="font-semibold underline underline-offset-4"
-              to={
-                seleccionValida
-                  ? `${ROUTES.LISTAS}?lista=${encodeURIComponent(listaID)}`
-                  : ROUTES.LISTAS
-              }
-            >
-              {seleccionValida ? "Volver a mi lista" : "Ir a mis listas"}
-            </Link>
-            {estado.tipo === "resultado" && (
-              <Button
-                variant="outline"
-                onClick={recalcular}
-                className="border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground"
+            <header className="relative isolate overflow-hidden rounded-xl border-2 border-border bg-primary px-6 py-6 text-primary-foreground shadow-[8px_8px_0px_var(--color-border)] sm:px-8 sm:py-7">
+              <div
+                className="absolute inset-0 -z-20 bg-[url('/images/dashboard-seamless.jpg')] bg-cover bg-center opacity-25"
+                aria-hidden="true"
+              />
+              <div
+                className="absolute inset-0 -z-10 bg-primary/85"
+                aria-hidden="true"
+              />
+              <div
+                className="pointer-events-none absolute inset-y-0 right-0 z-0 hidden w-[38%] overflow-hidden sm:block"
+                aria-hidden="true"
               >
-                Recalcular ruta
-              </Button>
-            )}
-          </div>
-        </div>
-      </header>
-      {seleccionValida && (
-        <section aria-labelledby="medio-transporte-titulo" className="space-y-3">
-          <div>
-            <h2
-              id="medio-transporte-titulo"
-              className="font-display text-lg font-bold"
-            >
-              Medio de transporte
-            </h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Selecciona cómo planeas llegar a las tiendas.
-            </p>
-          </div>
-          <fieldset>
-            <legend className="sr-only">Elige un medio de transporte</legend>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {OPCIONES_TRANSPORTE.map(({ valor, etiqueta, Icono }) => (
-                <label
-                  key={valor}
-                  className={`flex min-h-16 cursor-pointer items-center gap-3 rounded-lg border-2 px-3 py-3 text-sm font-semibold transition-colors focus-within:ring-4 focus-within:ring-ring/20 ${medioTransporteSeleccionado === valor ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card hover:border-primary/50"}`}
-                >
-                  <input
-                    type="radio"
-                    name="medio-transporte"
-                    value={valor}
-                    checked={medioTransporteSeleccionado === valor}
-                    onChange={() => setMedioTransporteSeleccionado(valor)}
-                    className="sr-only"
-                  />
-                  <span className="grid size-9 shrink-0 place-items-center rounded-md bg-secondary text-primary">
-                    <Icono className="size-5" aria-hidden="true" />
+                <img
+                  src="/mapa_isometrico_ruta_supermercado.png"
+                  alt=""
+                  className="absolute -bottom-[25%] -right-[28%] w-[135%] max-w-none opacity-35 grayscale mix-blend-multiply"
+                />
+              </div>
+              <div className="relative z-10 max-w-2xl space-y-4">
+                <span className="inline-flex rounded-full border border-primary-foreground/30 bg-primary-foreground/10 px-3 py-1 text-xs font-bold">
+                  Tu lista, tienda por tienda
+                </span>
+                <h1 className="font-display text-3xl font-extrabold text-balance sm:text-4xl">
+                  Ruta recomendada
+                </h1>
+                <p className="max-w-xl text-sm leading-relaxed text-primary-foreground/90">
+                  Descubre dónde comprar los artículos pendientes y cómo se
+                  reparte tu compra. La recomendación usa los precios y
+                  sucursales disponibles al calcular.
+                </p>
+                <div className="flex flex-wrap items-center gap-4 border-t border-primary-foreground/30 pt-4">
+                  <Link
+                    className="font-semibold underline underline-offset-4"
+                    to={
+                      seleccionValida
+                        ? `${ROUTES.LISTAS}?lista=${encodeURIComponent(listaID)}`
+                        : ROUTES.LISTAS
+                    }
+                  >
+                    {seleccionValida ? "Volver a mi lista" : "Ir a mis listas"}
+                  </Link>
+                  {estado.tipo === "resultado" && (
+                    <Button
+                      variant="outline"
+                      onClick={recalcular}
+                      className="border-primary-foreground/40 bg-primary-foreground/10 text-primary-foreground hover:bg-primary-foreground/20 hover:text-primary-foreground"
+                    >
+                      Recalcular ruta
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </header>
+            {seleccionValida && (
+              <section
+                aria-labelledby="medio-transporte-titulo"
+                className="space-y-3 rounded-2xl border border-border bg-card p-4 sm:p-5"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <h2
+                      id="medio-transporte-titulo"
+                      className="font-display text-lg font-bold"
+                    >
+                      Medio de transporte
+                    </h2>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Puedes explorar estas opciones visuales; no modifican el
+                      cálculo.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-border bg-secondary/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                    Vista previa
                   </span>
-                  <span>{etiqueta}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
-          <p className="border-l-4 border-primary bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-            La selección es visual por ahora. La ruta y las distancias todavía
-            no cambian según el medio de transporte.
-          </p>
-        </section>
-      )}
-      <EstadoRecomendacion
-        estado={estado}
-        nombres={nombres}
-        recalcular={recalcular}
-      />
+                </div>
+                <fieldset>
+                  <legend className="sr-only">
+                    Elige un medio de transporte
+                  </legend>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {OPCIONES_TRANSPORTE.map(({ valor, etiqueta, Icono }) => (
+                      <label
+                        key={valor}
+                        className={`flex min-h-14 cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-colors focus-within:ring-4 focus-within:ring-ring/20 ${medioTransporteSeleccionado === valor ? "border-primary bg-primary/10 text-foreground" : "border-border bg-card hover:border-primary/50"}`}
+                      >
+                        <input
+                          type="radio"
+                          name="medio-transporte"
+                          value={valor}
+                          checked={medioTransporteSeleccionado === valor}
+                          onChange={() => setMedioTransporteSeleccionado(valor)}
+                          className="sr-only"
+                        />
+                        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-secondary text-primary">
+                          <Icono className="size-5" aria-hidden="true" />
+                        </span>
+                        <span>{etiqueta}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <p className="border-l-4 border-primary bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+                  La selección es visual por ahora. La ruta y las distancias
+                  todavía no cambian según el medio de transporte.
+                </p>
+              </section>
+            )}
+            <EstadoRecomendacion
+              estado={estado}
+              nombres={nombres}
+              recalcular={recalcular}
+            />
           </div>
         </div>
       </main>

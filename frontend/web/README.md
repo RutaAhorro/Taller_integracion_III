@@ -35,6 +35,13 @@ en Google Maps sin API key. Los artículos `no_cubiertos` se advierten como
 excluidos del total; sus nombres se consultan como complemento en el detalle de
 la lista y, si no se pueden recuperar, se conserva su identificador.
 
+Cada parada presenta una compra compacta: cantidad, precio por envase y subtotal.
+Las líneas de una misma **oferta y precio unitario** se muestran juntas, sumando
+las cantidades y los subtotales recibidos, sin modificar los totales ni el orden
+calculados por Motor. No se agrupan productos solo porque sus nombres se parezcan
+ni compras de tiendas diferentes. Una parada con más de cuatro líneas agrupadas
+permite desplegar las restantes; el total siempre incluye toda su compra.
+
 Una sola parada puede tener ahorro cero; ahorro `null` significa que no hay
 base de una tienda, no que el ahorro sea cero. La pantalla distingue sesión
 vencida (401), lista ausente (404), restricciones o falta de cobertura (422),
