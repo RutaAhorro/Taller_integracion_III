@@ -39,6 +39,15 @@ RUTAS_DE_ORIGEN_PERMITIDAS = ("", "/")
 # ===== Lectores de variables de entorno =====
 
 
+def _leer_env_opcional(nombre_variable: str) -> str | None:
+    """Lee una variable opcional limpiando espacios en los bordes; devuelve None si falta o queda vacía."""
+    valor_crudo = os.getenv(nombre_variable)
+    if valor_crudo is None:
+        return None
+    valor_limpio = valor_crudo.strip()
+    return valor_limpio or None
+
+
 def _leer_env_str(nombre_variable: str, valor_defecto: str) -> str:
     """Lee una variable de texto; devuelve el valor por defecto si falta o viene vacía."""
     valor_crudo = os.getenv(nombre_variable)
@@ -102,23 +111,23 @@ CATALOGO_BUSQUEDA_LIMITE = _leer_env_int("IA_CATALOGO_BUSQUEDA_LIMITE", 100)
 CATALOGO_BUSQUEDA_MAX_CONSULTAS = _leer_env_int("IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS", 12)
 # Búsquedas simultáneas contra Catálogo: acota hilos, conexiones y carga SQL por mensaje.
 CATALOGO_BUSQUEDA_CONCURRENCIA = _leer_env_int("IA_CATALOGO_BUSQUEDA_CONCURRENCIA", 4)
-CATALOGO_CONSULTA_TOKEN = os.getenv("CATALOGO_CONSULTA_TOKEN", "").strip() or None
+CATALOGO_CONSULTA_TOKEN = _leer_env_opcional("CATALOGO_CONSULTA_TOKEN")
 
 # ===== Proveedor Groq (secundario) =====
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_KEY = _leer_env_opcional("GROQ_API_KEY")
 GROQ_ENDPOINT = _leer_env_str("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
 # Groq retiró llama-3.1-8b-instant y llama-3.3-70b-versatile el 16-ago-2026.
 GROQ_MODEL_EXTRACCION = _leer_env_str("GROQ_MODEL_EXTRACCION", "openai/gpt-oss-20b")
 GROQ_MODEL_EXPLICACION = _leer_env_str("GROQ_MODEL_EXPLICACION", "openai/gpt-oss-120b")
 GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 6.0)
 GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 512)
-GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 200)
+GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 600)
 GROQ_FREQUENCY_PENALTY = _leer_env_float("IA_GROQ_FREQUENCY_PENALTY", 0.4)
 
 # ===== Proveedor Gemini (primario) =====
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = _leer_env_opcional("GEMINI_API_KEY")
 GEMINI_MODEL = _leer_env_str("GEMINI_MODEL", "gemini-3.1-flash-lite")
 GEMINI_API_BASE_URL = _leer_env_str("GEMINI_API_BASE_URL", "https://generativelanguage.googleapis.com/v1beta").rstrip(
     "/"

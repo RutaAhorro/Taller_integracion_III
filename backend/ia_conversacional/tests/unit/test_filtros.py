@@ -11,7 +11,12 @@ from unittest.mock import MagicMock
 
 import httpx
 
-from app.domain.filtros import filtrar_productos, sanitizar_filtros_crudos, vincular_ingredientes_catalogo
+from app.domain.filtros import (
+    extraer_terminos_respaldo,
+    filtrar_productos,
+    sanitizar_filtros_crudos,
+    vincular_ingredientes_catalogo,
+)
 from app.repositories.groq import rescatar_filtros_de_error_groq
 
 
@@ -307,3 +312,100 @@ def test_filtrar_productos_categoria_compuesta_frutas_y_verduras():
     assert "Manzana" in nombres
     assert "Tomate" in nombres
     assert "Leche Entera" not in nombres
+
+
+def test_filtrar_productos_palabra_completa_o_prefijo_no_subcadena_interna():
+    """'leche' no debe calzar con 'Loncoleche', pero sí con 'Leche Entera' y su plural 'Leches'."""
+    catalogo = [
+        {"id": 1, "nombre": "Yoghurt Batido Loncoleche", "categoria": "lacteos", "precio": 350.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Leche Entera 1 L", "categoria": "lacteos", "precio": 1190.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Leches Vegetales Pack", "categoria": "lacteos", "precio": 1890.0, "distancia_km": 1.0},
+    ]
+    filtrados = filtrar_productos(catalogo, {"palabras_clave": ["leche"]})
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert nombres == ["Leche Entera 1 L", "Leches Vegetales Pack"]
+
+
+def test_filtrar_productos_prioriza_relevancia_antes_que_precio():
+    """Con palabra clave, coincidencia en primera palabra o categoría va antes que mención secundaria, manteniendo precio ascendente dentro de cada nivel."""
+    catalogo = [
+        {"id": 1, "nombre": "Bebida Leche Láctea", "categoria": "lacteos", "precio": 790.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Leche Entera 1 L", "categoria": "lacteos", "precio": 1190.0, "distancia_km": 1.0},
+        {"id": 3, "nombre": "Leche Descremada 1 L", "categoria": "lacteos", "precio": 990.0, "distancia_km": 1.0},
+        {"id": 4, "nombre": "Pack Desayuno", "categoria": "leches", "precio": 1490.0, "distancia_km": 1.0},
+        {"id": 5, "nombre": "Postre de Leche Asada", "categoria": "postres", "precio": 650.0, "distancia_km": 1.0},
+    ]
+    filtrados = filtrar_productos(catalogo, {"palabras_clave": ["leche"]})
+
+    nombres = [producto["nombre"] for producto in filtrados]
+    assert nombres == [
+        "Leche Descremada 1 L",
+        "Leche Entera 1 L",
+        "Pack Desayuno",
+        "Postre de Leche Asada",
+        "Bebida Leche Láctea",
+    ]
+
+
+def test_extraer_terminos_respaldo_quita_palabras_vacias_y_precios():
+    """Conserva la frase completa de cada producto y devuelve vacío si el mensaje solo habla de precio o disponibilidad."""
+    assert extraer_terminos_respaldo("Busco leche por menos de $2.000") == ["leche"]
+    assert extraer_terminos_respaldo("Busco harina de almendras") == ["harina almendras"]
+    assert extraer_terminos_respaldo("¿Tienen harina de almendras disponibles en stock por menos de $5.000?") == [
+        "harina almendras"
+    ]
+    assert extraer_terminos_respaldo("Quiero pan y queso bajo 3000 pesos") == ["pan", "queso"]
+    assert extraer_terminos_respaldo("Busco harina de almendras y leche de avena") == [
+        "harina almendras",
+        "leche avena",
+    ]
+    assert extraer_terminos_respaldo("Algo barato por menos de $2.000") == []
+    assert extraer_terminos_respaldo("¿Qué productos hay disponibles en catálogo ahora?") == []
+    assert extraer_terminos_respaldo("   ") == []
+
+
+def test_respaldo_harina_de_almendras_no_devuelve_harina_tostada():
+    """Al priorizar el mayor número de términos coincidentes, 'Busco harina de almendras' descarta harina tostada si existe harina de almendras."""
+    catalogo = [
+        {"id": 1, "nombre": "Harina Tostada Granel", "categoria": "despensa", "precio": 1200.0, "distancia_km": 1.0},
+        {
+            "id": 2,
+            "nombre": "Harina de Almendras 500 g",
+            "categoria": "despensa",
+            "precio": 4990.0,
+            "distancia_km": 1.0,
+        },
+    ]
+    terminos = extraer_terminos_respaldo("Busco harina de almendras")
+    filtrados = filtrar_productos(catalogo, {"palabras_clave": terminos})
+
+    assert terminos == ["harina almendras"]
+    assert [producto["nombre"] for producto in filtrados] == ["Harina de Almendras 500 g"]
+
+
+def test_respaldo_recomiendas_leche_y_leche_de_un_litro_devuelven_leche():
+    """'¿Me recomiendas leche?' y 'Busco leche de 1 litro' devuelven leche incluso cuando sobran términos como 'litro'."""
+    catalogo = [
+        {"id": 1, "nombre": "Leche Entera 1 L", "categoria": "lacteos", "precio": 1190.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Pan Marraqueta", "categoria": "panaderia", "precio": 1400.0, "distancia_km": 1.0},
+    ]
+
+    terminos_recomiendas = extraer_terminos_respaldo("¿Me recomiendas leche?")
+    assert terminos_recomiendas == ["leche"]
+    assert [
+        producto["nombre"] for producto in filtrar_productos(catalogo, {"palabras_clave": terminos_recomiendas})
+    ] == ["Leche Entera 1 L"]
+
+    terminos_litro = extraer_terminos_respaldo("Busco leche de 1 litro")
+    assert terminos_litro == ["leche litro"]
+    assert [producto["nombre"] for producto in filtrar_productos(catalogo, {"palabras_clave": terminos_litro})] == [
+        "Leche Entera 1 L"
+    ]
+
+
+def test_extraer_terminos_respaldo_descarta_verbos_conversacionales_adicionales():
+    """Verbos frecuentes como recomiendas, recomiendo, quisiera, busca y necesita se descartan como palabras vacías."""
+    assert extraer_terminos_respaldo("Quisiera queso gauda") == ["queso gauda"]
+    assert extraer_terminos_respaldo("Recomiendo pan integral") == ["pan integral"]
+    assert extraer_terminos_respaldo("Busca arroz y necesita fideos") == ["arroz", "fideos"]

@@ -10,6 +10,8 @@ Verifica:
 6. Ausencia de llaves de API (GEMINI_API_KEY / GROQ_API_KEY) emite advertencia pero no lanza excepción en validar_configuracion.
 """
 
+import importlib
+
 import pytest
 
 from app import config
@@ -27,7 +29,7 @@ def configuracion_valida_base(monkeypatch):
     monkeypatch.setattr(config, "CATALOGO_CACHE_TTL", 60.0)
     monkeypatch.setattr(config, "GROQ_TIMEOUT", 15.0)
     monkeypatch.setattr(config, "GROQ_MAX_TOKENS_EXTRACCION", 512)
-    monkeypatch.setattr(config, "GROQ_MAX_TOKENS_EXPLICACION", 200)
+    monkeypatch.setattr(config, "GROQ_MAX_TOKENS_EXPLICACION", 600)
     monkeypatch.setattr(config, "GEMINI_TIMEOUT", 15.0)
     monkeypatch.setattr(config, "GEMINI_MAX_TOKENS_EXTRACCION", 1200)
     monkeypatch.setattr(config, "GEMINI_MAX_TOKENS_EXPLICACION", 2048)
@@ -239,6 +241,34 @@ def test_validar_configuracion_advertencia_gemini_endpoint_vs_modelo(monkeypatch
 
 
 def test_defaults_modelos_groq_actualizados():
-    """Verifica que los modelos por defecto de Groq usen los vigentes de OpenAI OSS."""
+    """Verifica que los modelos y tokens por defecto de Groq usen los valores vigentes."""
     assert config.GROQ_MODEL_EXTRACCION == "openai/gpt-oss-20b"
     assert config.GROQ_MODEL_EXPLICACION == "openai/gpt-oss-120b"
+    assert config.GROQ_MAX_TOKENS_EXPLICACION == 600
+
+
+def test_claves_api_se_limpian_con_strip_al_leer_configuracion(monkeypatch):
+    """Espacios o saltos de línea en GEMINI_API_KEY, GROQ_API_KEY y CATALOGO_CONSULTA_TOKEN se eliminan al cargar."""
+    monkeypatch.setenv("GEMINI_API_KEY", "  clave-gemini-falsa \n")
+    monkeypatch.setenv("GROQ_API_KEY", "\t clave-groq-falsa  ")
+    monkeypatch.setenv("CATALOGO_CONSULTA_TOKEN", "  token-catalogo-falso \n")
+    try:
+        importlib.reload(config)
+        assert config.GEMINI_API_KEY == "clave-gemini-falsa"
+        assert config.GROQ_API_KEY == "clave-groq-falsa"
+        assert config.CATALOGO_CONSULTA_TOKEN == "token-catalogo-falso"
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)
+
+
+def test_leer_env_opcional_devuelve_none_si_solo_tiene_espacios(monkeypatch):
+    """Una clave o token con solo espacios en blanco se trata como ausente (None)."""
+    monkeypatch.setenv("GEMINI_API_KEY", "   \n ")
+    assert config._leer_env_opcional("GEMINI_API_KEY") is None
+
+    monkeypatch.setenv("CATALOGO_CONSULTA_TOKEN", " \t \n ")
+    assert config._leer_env_opcional("CATALOGO_CONSULTA_TOKEN") is None
+
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert config._leer_env_opcional("GEMINI_API_KEY") is None

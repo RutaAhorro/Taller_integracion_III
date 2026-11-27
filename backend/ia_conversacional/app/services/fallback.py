@@ -26,7 +26,16 @@ logger = logging.getLogger(__name__)
 # 429 = cuota, 5xx = servidor caído o sobrecargado (a veces transitorio).
 CODIGOS_HTTP_RECUPERABLES = {429, 500, 502, 503, 504}
 FACTOR_BACKOFF = 2
+ETAPA_EXTRACCION = "extracción"
+ETAPA_EXPLICACION = "explicación"
 PATRON_PARAMETRO_CLAVE = re.compile(r"([?&]key=)[^&\s'\"]+")
+PATRON_VALOR_CABECERA_ILEGAL = re.compile(r"(?is)(illegal header value\s+b?)(['\"])(?:\\.|(?!\2).)*\2")
+PATRON_CABECERA_DICCIONARIO = re.compile(
+    r"""(?i)(['"](?:authorization|x-goog-api-key|x-api-key)['"]\s*:\s*b?)(['"])(?:\\.|(?!\2).)*\2"""
+)
+PATRON_CABECERA_SECRETA = re.compile(
+    r"(?i)(authorization\s*[:=]\s*(?:bearer|basic)\s+|(?:x-goog-api-key|x-api-key)\s*[:=]\s*|bearer\s+)[^\s,'\"}\]]+"
+)
 
 Resultado = TypeVar("Resultado")
 
@@ -34,12 +43,15 @@ Resultado = TypeVar("Resultado")
 # ===== Utilidades de registro =====
 
 
-def _formatear_error_seguro(error: Exception | None) -> str:
-    """Devuelve tipo y detalle del error sin exponer parámetros `key=` en URLs."""
+def formatear_error_seguro(error: Exception | None) -> str:
+    """Devuelve tipo y detalle del error ocultando claves en URLs, diccionarios y cabeceras HTTP."""
     if error is None:
         return "ErrorDesconocido"
     tipo_error = type(error).__name__
-    detalle_sanitizado = PATRON_PARAMETRO_CLAVE.sub(r"\1***", str(error)).strip()
+    detalle_sanitizado = PATRON_PARAMETRO_CLAVE.sub(r"\1***", str(error))
+    detalle_sanitizado = PATRON_VALOR_CABECERA_ILEGAL.sub(r"\1\2***\2", detalle_sanitizado)
+    detalle_sanitizado = PATRON_CABECERA_DICCIONARIO.sub(r"\1\2***\2", detalle_sanitizado)
+    detalle_sanitizado = PATRON_CABECERA_SECRETA.sub(r"\1***", detalle_sanitizado).strip()
     if not detalle_sanitizado:
         return tipo_error
     return f"{tipo_error}: {detalle_sanitizado}"
@@ -88,22 +100,32 @@ class FallbackProveedor(ProveedorIA):
         proveedor: ProveedorIA,
         operacion: Callable[[], Awaitable[Resultado]],
         reintentos: int,
+        etapa: str,
     ) -> Resultado:
         """Ejecuta la operación, reintentando solo los errores recuperables con backoff y variación aleatoria."""
         for intento in range(reintentos + 1):
             try:
                 return await operacion()
             except Exception as error:
-                detalle_error = _formatear_error_seguro(error)
+                detalle_error = formatear_error_seguro(error)
                 if not self._es_error_recuperable(error):
-                    logger.warning("Error no recuperable en %s: %s", proveedor.nombre, detalle_error)
+                    logger.warning(
+                        "Falló la %s (error no recuperable) en %s: %s", etapa, proveedor.nombre, detalle_error
+                    )
                     raise
                 if intento == reintentos:
-                    logger.error("%s falló tras %d intentos: %s", proveedor.nombre, reintentos + 1, detalle_error)
+                    logger.error(
+                        "Falló la %s en %s tras %d intentos: %s",
+                        etapa,
+                        proveedor.nombre,
+                        reintentos + 1,
+                        detalle_error,
+                    )
                     raise
                 espera = self.espera_base * (FACTOR_BACKOFF**intento) + random.uniform(0, self.variacion_maxima)
                 logger.info(
-                    "Error recuperable en %s (intento %d/%d): %s. Reintentando en %.2fs...",
+                    "Falló la %s (error recuperable) en %s (intento %d/%d): %s. Reintentando en %.2fs...",
+                    etapa,
                     proveedor.nombre,
                     intento + 1,
                     reintentos + 1,
@@ -122,15 +144,18 @@ class FallbackProveedor(ProveedorIA):
                     proveedor,
                     lambda proveedor=proveedor: proveedor.extraer_filtros(mensaje),
                     self._reintentos_para(indice_proveedor),
+                    ETAPA_EXTRACCION,
                 )
                 logger.info("Extracción resuelta por %s", proveedor.nombre)
                 return resultado
             except Exception as error:
                 ultimo_error = error
-                logger.warning("%s falló definitivamente, pasando al siguiente...", proveedor.nombre)
+                logger.warning(
+                    "Falló la %s en %s definitivamente, pasando al siguiente...", ETAPA_EXTRACCION, proveedor.nombre
+                )
 
         return ResultadoExtraccion(
-            error=f"Todos los proveedores fallaron. Último error: {_formatear_error_seguro(ultimo_error)}"
+            error=f"Todos los proveedores fallaron en {ETAPA_EXTRACCION}. Último error: {formatear_error_seguro(ultimo_error)}"
         )
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
@@ -142,6 +167,7 @@ class FallbackProveedor(ProveedorIA):
                     proveedor,
                     lambda proveedor=proveedor: proveedor.generar_explicacion(mensaje_usuario, productos_filtrados),
                     self._reintentos_para(indice_proveedor),
+                    ETAPA_EXPLICACION,
                 )
                 if not explicacion or not explicacion.strip():
                     raise ValueError("Explicación vacía o None")
@@ -149,8 +175,10 @@ class FallbackProveedor(ProveedorIA):
                 return explicacion
             except Exception as error:
                 ultimo_error = error
-                logger.warning("%s falló generando explicación, pasando al siguiente...", proveedor.nombre)
+                logger.warning(
+                    "Falló la %s en %s definitivamente, pasando al siguiente...", ETAPA_EXPLICACION, proveedor.nombre
+                )
 
         raise RuntimeError(
-            f"Todos los proveedores fallaron al generar explicación. Último error: {_formatear_error_seguro(ultimo_error)}"
+            f"Todos los proveedores fallaron en {ETAPA_EXPLICACION}. Último error: {formatear_error_seguro(ultimo_error)}"
         )

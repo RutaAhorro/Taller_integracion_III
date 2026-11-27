@@ -131,7 +131,7 @@ class GroqProveedor(ProveedorIA):
                 logger.info("Groq rechazo el schema; filtros rescatados del failed_generation: %s", rescatados)
                 return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms)
             estado_http = error_http.response.status_code
-            logger.warning("Groq respondio %s: %s", estado_http, error_http.response.text)
+            logger.warning("Groq respondió HTTP %s sin filtros rescatables.", estado_http)
             # Sin filtros rescatables el error debe relanzarse: el respaldo ya decide reintentar/conmutar.
             raise
 
