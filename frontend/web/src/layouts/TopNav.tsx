@@ -27,6 +27,15 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
         setConsultaLocal(query || '');
     }, [query]);
 
+    useEffect(() => {
+        if (!menuDesplegableAbierto) return;
+        const cerrarConEscape = (evento: KeyboardEvent) => {
+            if (evento.key === 'Escape') setMenuDesplegableAbierto(false);
+        };
+        window.addEventListener('keydown', cerrarConEscape);
+        return () => window.removeEventListener('keydown', cerrarConEscape);
+    }, [menuDesplegableAbierto]);
+
     const manejarBusqueda = (evento: FormEvent) => {
         evento.preventDefault();
         onQueryChange(consultaLocal);
@@ -119,6 +128,7 @@ export function TopNav({ query, onQueryChange, onMenuClick, sidebarOpen, onReset
                             size="icon"
                             className="h-10 w-10 rounded-full border border-border shadow-sm bg-background hover:bg-accent transition-colors"
                             aria-label="Menú de usuario"
+                            aria-expanded={menuDesplegableAbierto}
                             onClick={() => setMenuDesplegableAbierto(!menuDesplegableAbierto)}
                         >
                             <CircleUserRound className="h-6 w-6 text-foreground/80" aria-hidden="true" />

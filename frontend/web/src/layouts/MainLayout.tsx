@@ -51,6 +51,10 @@ export function MainLayout() {
   const [intentoCategorias, setIntentoCategorias] = useState(0);
 
   useEffect(() => {
+    if (!pathname.startsWith("/dashboard")) setConsulta("");
+  }, [pathname]);
+
+  useEffect(() => {
     // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
     if (
       catalogo.marketsReady &&
@@ -112,9 +116,10 @@ export function MainLayout() {
             : "dashboard";
 
   return (
-    <div className="flex h-dvh flex-col bg-background">
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <CartSidebar />
       <SideBar
+        activeCity="Temuco"
         open={barraLateralAbierta}
         onClose={cerrarBarraLateral}
         onResetFilters={restablecerFiltros}
@@ -150,7 +155,9 @@ export function MainLayout() {
         onResetFilters={restablecerFiltros}
       />
 
-      <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden pb-[calc(4rem+env(safe-area-inset-bottom,0px))] md:pb-0">
+      <div
+        className={`min-h-0 flex-1 flex flex-col overflow-y-auto overflow-x-hidden ${pathname.startsWith("/chat") ? "pb-[calc(4rem+env(safe-area-inset-bottom,0px))]" : "pb-[calc(9.5rem+env(safe-area-inset-bottom,0px))]"} md:pb-0`}
+      >
         <Outlet
           context={
             {

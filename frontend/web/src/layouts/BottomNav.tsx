@@ -1,6 +1,6 @@
 // Navegación móvil: resalta la sección actual y respeta los permisos del usuario.
 import { Link } from 'react-router-dom';
-import { MessageSquare, Clock, Map, User, Home } from 'lucide-react';
+import { MessageSquare, List, Map, User, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface PropiedadesNavegacionInferior {
@@ -11,7 +11,7 @@ export default function BottomNav({ active }: PropiedadesNavegacionInferior) {
   const elementosNavegacion = [
     { id: 'dashboard', label: 'Inicio', icon: Home, to: '/dashboard' },
     { id: 'chat', label: 'Chat IA', icon: MessageSquare, to: '/chat' },
-    { id: 'history', label: 'Listas', icon: Clock, to: '/listas' },
+    { id: 'history', label: 'Listas', icon: List, to: '/listas' },
     { id: 'route', label: 'Ruta', icon: Map, to: '/route' },
     { id: 'profile', label: 'Perfil', icon: User, to: '/profile' }
   ];
