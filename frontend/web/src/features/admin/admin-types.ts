@@ -30,7 +30,7 @@ export type AdminSource = {
   id: string;
   name: string;
   type: 'Supermercado' | 'API externa' | 'Carga manual';
-  status: 'Operativa' | 'Advertencia' | 'Inactiva';
+  status: 'Operativa' | 'Sin datos' | 'Advertencia' | 'Inactiva';
   lastSync: string;
   products: number;
   branches: number;

@@ -6,13 +6,14 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/features/autenticacion/useAuth';
 import { AdminLayout } from './AdminLayout';
 import { ADMIN_HAS_BACKEND } from './admin-api';
-import { ADMIN_PLANS, ADMIN_ROLES, type AdminSection } from './admin-types';
+import { ADMIN_ROLES, type AdminSection } from './admin-types';
 import { useAdminSources, useAdminUsers } from './useAdminData';
 
 const estilosEstado = {
   Activo: 'bg-[#e3f1e4] text-[#376344]',
   Inactivo: 'bg-[#eef0ed] text-[#667061]',
   Operativa: 'bg-[#e3f1e4] text-[#376344]',
+  'Sin datos': 'bg-[#fff0d8] text-[#9a641c]',
   Advertencia: 'bg-[#fff0d8] text-[#9a641c]',
   Inactiva: 'bg-[#eef0ed] text-[#667061]',
 };
@@ -54,9 +55,8 @@ function AvisoError({ mensaje, alReintentar }: { mensaje: string; alReintentar: 
   );
 }
 
-// SUP-255: listado de usuarios con activar/desactivar, asignación de rol RBAC
-// y plan comercial en columnas separadas (auditoría H-06: el plan nunca viaja
-// en `rol`). En la sección Usuarios se usa con mostrarAcciones para gestionar (SUP-242).
+// SUP-255: listado de usuarios con activar/desactivar y asignación de rol RBAC.
+// En el MVP la columna de plan queda oculta, aunque sus funciones conservan el contrato (SUP-242).
 function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean }) {
   const [consulta, setConsulta] = useState('');
   const [consultaDiferida, setConsultaDiferida] = useState('');
@@ -73,7 +73,6 @@ function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean 
     refresh: recargar,
     toggleUserStatus: alternarEstadoUsuario,
     changeUserRole: cambiarRolUsuario,
-    changeUserPlan: cambiarPlanUsuario,
   } = useAdminUsers({
     page: pagina,
     limit: limite,
@@ -118,7 +117,7 @@ function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean 
         </div>
       </div>
       {error && <AvisoError mensaje={error} alReintentar={recargar} />}
-      {cargando ? <EsqueletoTabla filas={4} columnas={mostrarAcciones ? 6 : 5} /> : (
+      {cargando ? <EsqueletoTabla filas={4} columnas={mostrarAcciones ? 5 : 4} /> : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[840px] text-left text-sm">
@@ -126,7 +125,6 @@ function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean 
                 <tr>
                   <th className="px-5 py-3 font-bold">Usuario</th>
                   <th className="px-5 py-3 font-bold">Rol</th>
-                  <th className="px-5 py-3 font-bold">Plan</th>
                   <th className="px-5 py-3 font-bold">Estado</th>
                   <th className="px-5 py-3 font-bold">Último acceso</th>
                   {mostrarAcciones && <th className="px-5 py-3 font-bold">Acción</th>}
@@ -159,23 +157,6 @@ function TablaUsuarios({ mostrarAcciones = false }: { mostrarAcciones?: boolean 
                             {ADMIN_ROLES.map((rol) => <option key={rol}>{rol}</option>)}
                           </select>
                         ) : usuario.role}
-                      </td>
-                      <td className="px-5 py-4 text-muted-foreground">
-                        {mostrarAcciones ? (
-                          <select
-                            value={usuario.plan ?? ''}
-                            disabled={hayMutacionPendiente}
-                            onChange={(evento) => void cambiarPlanUsuario(usuario.id, evento.target.value as (typeof ADMIN_PLANS)[number])}
-                            aria-label={`Asignar plan a ${usuario.name}`}
-                            title="Asignar plan comercial (campo aparte, nunca en `rol`)"
-                            className="h-9 rounded-md border-2 border-border bg-background px-2 text-xs font-bold outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
-                          >
-                            {!usuario.plan && <option value="">—</option>}
-                            {ADMIN_PLANS.map((plan) => <option key={plan}>{plan}</option>)}
-                          </select>
-                        ) : (
-                          <span>{usuario.plan ?? '—'}</span>
-                        )}
                       </td>
                       <td className="px-5 py-4"><EtiquetaEstado estado={usuario.status} /></td>
                       <td className="px-5 py-4 text-muted-foreground">{usuario.lastAccess}</td>

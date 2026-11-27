@@ -188,3 +188,23 @@ test('rol y plan solo aceptan los valores reales de Identidad, sin alias heredad
   assert.equal(api.adminPlanFromBackend('plus'), null);
   assert.equal(api.adminPlanFromBackend('básico'), null);
 });
+
+test('fuentes habilitadas sin productos se muestran como Sin datos', () => {
+  const casos = [
+    { habilitada: true, productos: 0, estadoEsperado: 'Sin datos' },
+    { habilitada: true, productos: 5, estadoEsperado: 'Operativa' },
+    { habilitada: false, productos: 0, estadoEsperado: 'Inactiva' },
+    { habilitada: false, productos: 5, estadoEsperado: 'Inactiva' },
+  ];
+
+  for (const caso of casos) {
+    const fuente = api.adminSourceFromBackend({
+      id: 1,
+      nombre: 'Fuente de prueba',
+      habilitada: caso.habilitada,
+      sucursales: 0,
+      productos: caso.productos,
+    });
+    assert.equal(fuente.status, caso.estadoEsperado);
+  }
+});

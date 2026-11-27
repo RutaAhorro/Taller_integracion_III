@@ -365,7 +365,7 @@ export function useAdminSources() {
     setFuentes((anteriores) =>
       anteriores.map((fuente): AdminSource => (
         fuente.id === id
-          ? { ...fuente, habilitada, status: habilitada ? (fuente.status === 'Inactiva' ? 'Operativa' : fuente.status) : 'Inactiva' }
+          ? { ...fuente, habilitada, status: habilitada ? (fuente.products > 0 ? 'Operativa' : 'Sin datos') : 'Inactiva' }
           : fuente
       )),
     );
