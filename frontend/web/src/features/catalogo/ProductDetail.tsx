@@ -1,7 +1,7 @@
 // Consulta el producto seleccionado y muestra precios e historial recibidos del backend.
 import { useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { PackageCheck, Plus, ShoppingCart, Store, Tag } from 'lucide-react'
+import { PackageCheck, ShoppingCart, Store, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatPrice, calculateDiscountPct } from '@/features/catalogo/formatters'
 import { getProductDetail, getProducts } from '@/features/catalogo/products-api'
@@ -193,14 +193,9 @@ export default function ProductDetail() {
             </div>
             
             <div className="flex gap-3 flex-row w-full">
-              <Button size="lg" variant="outline" className="flex-1 gap-1.5 rounded-xl text-sm sm:text-base h-12 sm:h-14">
-                <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
-                <span className="hidden sm:inline">Comparar precio</span>
-                <span className="sm:hidden">Comparar</span>
-              </Button>
               <Button 
                 size="lg" 
-                className="flex-[1.5] gap-1.5 rounded-xl text-sm sm:text-base h-12 sm:h-14 shadow-[4px_4px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)]"
+                className="w-full gap-1.5 rounded-xl text-sm sm:text-base h-12 sm:h-14 shadow-[4px_4px_0px_var(--color-border)] sm:shadow-[4px_4px_0px_var(--color-border)]"
                 onClick={() => addToCart(producto)}
               >
                 <ShoppingCart className="h-4 w-4 sm:h-5 sm:w-5" />

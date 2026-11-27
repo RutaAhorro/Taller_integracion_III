@@ -1,6 +1,6 @@
 // Muestra la cuenta de la sesión y avisa qué ajustes del perfil todavía no tienen integración.
 import { useState } from 'react';
-import { User, ShieldAlert, Zap, Settings, Key } from 'lucide-react';
+import { User, ShieldAlert, Zap, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/features/autenticacion/useAuth';
@@ -83,10 +83,7 @@ export default function Profile() {
                                                 <input type="email" defaultValue={user.correo} disabled className="w-full bg-background border border-border rounded-xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-ring opacity-70 cursor-not-allowed" />
                                             </div>
                                         </div>
-                                        <button disabled className="text-sm font-bold text-muted-foreground flex items-center gap-2 mt-4 cursor-not-allowed">
-                                            <Key className="h-4 w-4" /> Cambiar Contraseña
-                                        </button>
-                                        <p className="text-xs text-muted-foreground">La edición de cuenta y el cambio de contraseña no están disponibles en esta vista.</p>
+                                        <p className="text-xs text-muted-foreground">Tu acceso se gestiona con tu cuenta de Google. La edición de datos personales no está disponible en esta vista.</p>
                                     </div>
                                 </section>
                             </div>

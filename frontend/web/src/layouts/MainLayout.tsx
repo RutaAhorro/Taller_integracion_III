@@ -43,7 +43,7 @@ export function MainLayout() {
   const { pathname } = useLocation();
   const pestanaActiva = pathname.startsWith("/chat")
     ? "chat"
-    : pathname.startsWith("/history")
+    : pathname.startsWith("/listas")
       ? "history"
       : pathname.startsWith("/route")
         ? "route"
