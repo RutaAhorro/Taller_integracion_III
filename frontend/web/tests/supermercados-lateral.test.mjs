@@ -25,6 +25,9 @@ const dependencias = {
     export const PREFIJO_CATEGORIA = "categoria:";
     export const obtenerCategorias = async () => [];
   `),
+  '@/features/catalogo/formatters': crearModulo(`
+    export const formatearCategoria = (categoria) => String(categoria ?? '');
+  `),
 };
 let fuente = await readFile(new URL('../src/layouts/Sidebar.tsx', import.meta.url), 'utf8');
 for (const [nombre, ruta] of Object.entries(dependencias)) {

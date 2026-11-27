@@ -7,7 +7,7 @@ import {
 import { cn } from '@/lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '@/features/catalogo/CartContext';
-import { formatPrice } from '@/features/catalogo/formatters';
+import { formatPrice, formatearUnidad } from '@/features/catalogo/formatters';
 import { slugifyMarket } from '@/features/catalogo/products-api';
 import { type UiProduct } from '@/features/catalogo/tipos';
 import { useChatbot, type ProductoRecomendadoChat } from '@/features/chat/useChatbot';
@@ -66,10 +66,6 @@ export default function Chatbot() {
           </div>
           <div className="flex flex-wrap items-center gap-2 min-w-0">
             <h1 className="font-semibold text-sm sm:text-base leading-tight">Chef & Shopper IA</h1>
-            <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold transition-colors border-2 border-border bg-primary text-primary-foreground shadow-[2px_2px_0px_var(--color-border)] whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary-foreground/50 mr-1.5"></span>
-              Consultas vía Gateway
-            </span>
           </div>
         </div>
 
@@ -136,7 +132,7 @@ export default function Chatbot() {
                               )}
                               <div className="min-w-0 flex-1">
                                 <p className="line-clamp-2 text-xs font-semibold leading-snug text-foreground">{producto.nombre}</p>
-                                <p className="truncate text-xs text-muted-foreground">{[producto.marca, producto.unidad].filter((detalle) => detalle).join(' · ')}</p>
+                                <p className="truncate text-xs text-muted-foreground">{[producto.marca, formatearUnidad(producto.unidad)].filter((detalle) => detalle).join(' · ')}</p>
                                 {producto.supermercado && (
                                   <span className="mt-1 inline-flex items-center rounded-full border border-border bg-card px-2 py-0.5 text-[10px] font-bold text-foreground shadow-[2px_2px_0px_var(--color-border)]">
                                     {producto.supermercado}

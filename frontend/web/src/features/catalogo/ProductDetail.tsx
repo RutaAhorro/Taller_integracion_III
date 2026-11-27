@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { PackageCheck, ShoppingCart, Store, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatPrice, calculateDiscountPct } from '@/features/catalogo/formatters'
+import { formatPrice, calculateDiscountPct, formatearCategoria, formatearUnidad } from '@/features/catalogo/formatters'
 import { getProductDetail, getProducts } from '@/features/catalogo/products-api'
 import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { ProductCarousel } from '@/features/catalogo/ProductCarousel'
@@ -83,6 +83,7 @@ export default function ProductDetail() {
 
   const nombreSupermercado = producto.supermarketName || 'Tienda'
   const porcentajeDescuento = calculateDiscountPct(producto.originalPrice, producto.price)
+  const unidadVisible = formatearUnidad(producto.unit)
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 py-6 pb-32 sm:pb-6 md:px-6">
@@ -118,7 +119,9 @@ export default function ProductDetail() {
             <h1 className="text-2xl font-bold tracking-tight sm:text-3xl lg:text-4xl">
               {producto.name}
             </h1>
-            <p className="mt-3 text-lg text-muted-foreground">{producto.unit}</p>
+            {unidadVisible !== null && (
+              <p className="mt-3 text-lg text-muted-foreground">{unidadVisible}</p>
+            )}
           </div>
 
           <div className="my-8 h-px w-full bg-border" />
@@ -152,7 +155,7 @@ export default function ProductDetail() {
               <Tag className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden="true" />
               <div>
                 <p className="text-xs text-muted-foreground">Categoría</p>
-                <p className="font-semibold">{producto.category || 'Sin categoría'}</p>
+                <p className="font-semibold">{formatearCategoria(producto.category) || 'Sin categoría'}</p>
               </div>
             </div>
             <div className="flex items-start gap-2">

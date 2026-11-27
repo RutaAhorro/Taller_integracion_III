@@ -4,7 +4,7 @@
 import { Link } from 'react-router-dom'
 import { Plus, Package, AlertCircle, TrendingDown, Store } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatPrice, calculateDiscountPct, calculateSavings } from '@/features/catalogo/formatters'
+import { formatPrice, calculateDiscountPct, calculateSavings, formatearUnidad } from '@/features/catalogo/formatters'
 import type { UiProduct as Producto } from '@/features/catalogo/tipos'
 import { ROUTES } from '@/app/routes'
 import { cn } from '@/lib/utils'
@@ -33,6 +33,7 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: Propieda
   
   const ahorro = calculateSavings(product.originalPrice, product.price)
   const porcentajeDescuento = calculateDiscountPct(product.originalPrice, product.price)
+  const unidadVisible = formatearUnidad(product.unit)
 
   return (
     <Link 
@@ -78,7 +79,9 @@ export function ProductCard({ product, marketName, marketLogo, onAdd }: Propieda
           <h3 className="text-sm font-semibold leading-tight line-clamp-2" title={product.name}>
             {product.name}
           </h3>
-          <p className="text-xs text-muted-foreground">{product.unit}</p>
+          {unidadVisible !== null && (
+            <p className="text-xs text-muted-foreground">{unidadVisible}</p>
+          )}
         </div>
 
         {/* Meta: stock + ahorro */}
