@@ -41,13 +41,18 @@ function estadoInicial(clave: string, cargando: boolean): EstadoCatalogo {
 const calcularAhorro = (producto: Producto) => producto.originalPrice - producto.price;
 
 /** Coordina productos y facetas; sólo una respuesta de los filtros vigentes puede actualizar la vista. */
-export function useCatalog(consulta: string, categoria: string | null, supermercadoActivo: UiSupermarket | null) {
+export function useCatalog(
+  consulta: string,
+  categoria: string | null,
+  supermercadoActivo: UiSupermarket | null,
+  habilitado = true,
+) {
   const [intento, setIntento] = useState(0);
   const textoBusqueda = consulta.trim();
   const nombreSupermercado = supermercadoActivo?.name ?? null;
   const busquedaCorta = textoBusqueda !== '' && new TextEncoder().encode(textoBusqueda).length < MINIMO_BYTES_BUSQUEDA;
-  const claveConsulta = JSON.stringify([textoBusqueda, categoria, nombreSupermercado, intento]);
-  const [estado, setEstado] = useState<EstadoCatalogo>(() => estadoInicial(claveConsulta, !busquedaCorta));
+  const claveConsulta = JSON.stringify([textoBusqueda, categoria, nombreSupermercado, intento, habilitado]);
+  const [estado, setEstado] = useState<EstadoCatalogo>(() => estadoInicial(claveConsulta, habilitado && !busquedaCorta));
   const versionPeticion = useRef(0);
   const controladorConsulta = useRef<AbortController | null>(null);
   // El ref bloquea dos eventos de scroll antes de que React publique cargandoMas.
@@ -77,10 +82,10 @@ export function useCatalog(consulta: string, categoria: string | null, supermerc
     const controlador = new AbortController();
     controladorConsulta.current = controlador;
     cargaMasEnCurso.current = false;
-    setEstado(estadoInicial(claveConsulta, !busquedaCorta));
+    setEstado(estadoInicial(claveConsulta, habilitado && !busquedaCorta));
 
     // No se sustituye una búsqueda corta por un filtro local de la primera página.
-    if (!busquedaCorta) {
+    if (habilitado && !busquedaCorta) {
       cargarPagina(1, controlador.signal)
         .then((resultado) => {
           if (controlador.signal.aborted || versionPeticion.current !== versionActual) return;
@@ -112,6 +117,7 @@ export function useCatalog(consulta: string, categoria: string | null, supermerc
   const cargarMas = () => {
     const controlador = controladorConsulta.current;
     if (
+      !habilitado ||
       busquedaCorta ||
       cargando ||
       cargaMasEnCurso.current ||
@@ -176,9 +182,9 @@ export function useCatalog(consulta: string, categoria: string | null, supermerc
     error: resultadoVigente ? estado.error : null,
     filtered: filtrados,
     markets: supermercados,
-    marketsReady: resultadoVigente && !estado.cargando && !estado.error && !busquedaCorta,
+    marketsReady: habilitado && resultadoVigente && !estado.cargando && !estado.error && !busquedaCorta,
     supermarketCount: cargando ? 0 : supermercadoActivo ? (filtrados.length > 0 ? 1 : 0) : supermercados.length,
-    notice: busquedaCorta ? 'Escribe una búsqueda más larga para consultar productos y supermercados.' : null,
+    notice: habilitado && busquedaCorta ? 'Escribe una búsqueda más larga para consultar productos y supermercados.' : null,
     isFetchingMore: resultadoVigente && estado.cargandoMas,
     loadMoreError: resultadoVigente ? estado.errorMas : null,
     fetchMore: cargarMas,

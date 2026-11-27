@@ -6,14 +6,20 @@ import { SideBar } from "@/layouts/Sidebar";
 import { CartSidebar } from "@/features/catalogo/CartSidebar";
 import BottomNav from "@/layouts/BottomNav";
 import { useCatalog } from "@/features/catalogo/useCatalog";
+import { obtenerCategorias } from "@/features/catalogo/products-api";
 import type { UiSupermarket } from "@/features/catalogo/tipos";
 import { ShoppingBasket } from "lucide-react";
 import { useCart } from "@/features/catalogo/CartContext";
 type TipoContextoDiseno = {
   query: string;
   activeMarket: string | null;
+  activeMarketName: string | null;
   category: string;
   markets: UiSupermarket[];
+  categorias: string[];
+  cargandoCategorias: boolean;
+  errorCategorias: boolean;
+  reintentarCategorias: () => void;
   catalogo: ReturnType<typeof useCatalog>;
   onSelectCategory: (categoria: string) => void;
   onResetFilters: () => void;
@@ -33,7 +39,50 @@ export function MainLayout() {
   // El nombre seleccionado no depende de las facetas que se vacían durante una carga.
   const [supermercadoActivo, setSupermercadoActivo] =
     useState<UiSupermarket | null>(null);
-  const catalogo = useCatalog(consulta, categoria, supermercadoActivo);
+  const { pathname, search } = useLocation();
+  const vistaCatalogoActiva = new URLSearchParams(search).get("vista") === "catalogo";
+  const catalogoHabilitado = Boolean(
+    consulta.trim() || categoria || supermercadoActivo || vistaCatalogoActiva || barraLateralAbierta,
+  );
+  const catalogo = useCatalog(consulta, categoria, supermercadoActivo, catalogoHabilitado);
+  const [categorias, setCategorias] = useState<string[]>([]);
+  const [cargandoCategorias, setCargandoCategorias] = useState(true);
+  const [errorCategorias, setErrorCategorias] = useState(false);
+  const [intentoCategorias, setIntentoCategorias] = useState(0);
+
+  useEffect(() => {
+    // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
+    if (
+      catalogo.marketsReady &&
+      supermercadoActivo &&
+      !catalogo.markets.some(
+        (supermercado) => supermercado.id === supermercadoActivo.id,
+      )
+    ) {
+      setSupermercadoActivo(null);
+    }
+  }, [catalogo.marketsReady, catalogo.markets, supermercadoActivo]);
+
+  useEffect(() => {
+    // Una sola carga de categorías comparte estado con el lateral y la portada del catálogo.
+    const controlador = new AbortController();
+    setCargandoCategorias(true);
+    setErrorCategorias(false);
+    obtenerCategorias(controlador.signal)
+      .then((resultado) => {
+        if (!controlador.signal.aborted) setCategorias(resultado);
+      })
+      .catch(() => {
+        if (!controlador.signal.aborted) {
+          setCategorias([]);
+          setErrorCategorias(true);
+        }
+      })
+      .finally(() => {
+        if (!controlador.signal.aborted) setCargandoCategorias(false);
+      });
+    return () => controlador.abort();
+  }, [intentoCategorias]);
   const cerrarBarraLateral = useCallback(
     () => setBarraLateralAbierta(false),
     [],
@@ -50,7 +99,6 @@ export function MainLayout() {
     setCategoria(valor);
   }, []);
   const { totalItems, totalPrice, isCartOpen, setIsCartOpen } = useCart();
-  const { pathname } = useLocation();
   const pestanaActiva = pathname.startsWith("/chat")
     ? "chat"
     : pathname.startsWith("/listas")
@@ -62,19 +110,6 @@ export function MainLayout() {
           : pathname.startsWith("/profile")
             ? "profile"
             : "dashboard";
-
-  useEffect(() => {
-    // Sólo una respuesta confirmada puede invalidar la selección, nunca una carga o un error.
-    if (
-      catalogo.marketsReady &&
-      supermercadoActivo &&
-      !catalogo.markets.some(
-        (supermercado) => supermercado.id === supermercadoActivo.id,
-      )
-    ) {
-      setSupermercadoActivo(null);
-    }
-  }, [catalogo.marketsReady, catalogo.markets, supermercadoActivo]);
 
   return (
     <div className="flex h-dvh flex-col bg-background">
@@ -98,6 +133,10 @@ export function MainLayout() {
           setBarraLateralAbierta(false);
         }}
         activeCategory={categoria}
+        categoriasDisponibles={categorias}
+        cargandoCategorias={cargandoCategorias}
+        errorCategorias={errorCategorias}
+        alReintentarCategorias={() => setIntentoCategorias((anterior) => anterior + 1)}
       />
 
       <TopNav
@@ -117,8 +156,13 @@ export function MainLayout() {
             {
               query: consulta,
               activeMarket: supermercadoActivo?.id ?? null,
+              activeMarketName: supermercadoActivo?.name ?? null,
               category: categoria,
               markets: catalogo.markets,
+              categorias,
+              cargandoCategorias,
+              errorCategorias,
+              reintentarCategorias: () => setIntentoCategorias((anterior) => anterior + 1),
               catalogo,
               onSelectCategory: seleccionarCategoria,
               onResetFilters: restablecerFiltros,
