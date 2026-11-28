@@ -148,7 +148,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
     <div className="relative flex h-full w-full flex-1 overflow-hidden bg-background">
       <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-4 py-6 md:px-6">
         <div className="min-h-0 flex-1 overflow-y-auto pb-2 pr-1 -mr-1 scrollbar-hide">
-          <div className="mx-auto w-full max-w-5xl space-y-6 p-4 pb-24 md:p-8">
+          <div className="mx-auto w-full max-w-5xl space-y-6 p-4 pb-24 md:px-8 md:pt-8 md:pb-16">
             <header className="relative isolate overflow-hidden rounded-xl border-2 border-border bg-primary px-6 py-6 text-primary-foreground shadow-[8px_8px_0px_var(--color-border)] sm:px-8 sm:py-7">
               <div
                 className="absolute inset-0 -z-20 bg-[url('/images/dashboard-seamless.jpg')] bg-cover bg-center opacity-25"
