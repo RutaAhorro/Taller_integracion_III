@@ -194,6 +194,7 @@ requiere reiniciar el proceso.
 | `ADMIN_EMAILS` | Lista opcional de correos separados por coma que reciben rol `admin` tras validar `email_verified=true` en `POST /api/v1/auth/google` (promueve `registrado` a `admin`, nunca degrada ni altera `colaborador`); `POST /api/v1/auth/register` rechaza esos correos con 409 |
 | `CORS_ALLOWED_ORIGINS` | Orígenes HTTP(S) exactos separados por comas, sin path ni comodines |
 | `IDENTIDAD_COOKIE_SECURE` | `true` por defecto; `false` sólo para HTTP local |
+| `AUTH_LOCAL_HABILITADO` | `false` por defecto; `true` habilita registro y login con contraseña local en desarrollo |
 | `IDENTIDAD_TRUSTED_PROXIES` | IP/CIDR de los proxies reales; obligatorio, sin redes universales |
 | `PORT` | 8080 por defecto |
 

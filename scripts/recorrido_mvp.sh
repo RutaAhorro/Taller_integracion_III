@@ -238,6 +238,8 @@ if [[ "${MODO_AUTH}" == "registro" ]]; then
 
   if [[ "${CODIGO_REGISTRO}" == "201" ]]; then
     imprimir_resultado "1. Registro local" "OK" "HTTP 201 (usuario ${CORREO_UNICO} creado y sesión guardada en cookie jar)"
+  elif [[ "${CODIGO_REGISTRO}" == "403" ]]; then
+    imprimir_resultado "1. Registro local" "FALLO" "HTTP 403 - acceso local deshabilitado (activa AUTH_LOCAL_HABILITADO=true en entorno local o usa --jwt)"
   else
     imprimir_resultado "1. Registro local" "FALLO" "HTTP ${CODIGO_REGISTRO} - $(resumir_cuerpo)"
   fi

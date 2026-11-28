@@ -137,6 +137,8 @@ jobs:
           go-version: '1.26.x'
           cache: false
       - name: Compose data ownership, recovery and worker leases
+        env:
+          AUTH_LOCAL_HABILITADO: "true"
         run: bash scripts/smoke_control_scraping_compose.sh
 
   manifests:
