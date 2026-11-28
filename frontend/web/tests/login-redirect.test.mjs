@@ -92,7 +92,7 @@ test('entrar a /login muestra el formulario aunque auth_user conserve una sesió
   }
 });
 
-test('login devuelve la identidad nueva y el destino depende de su rol, no del usuario guardado', async prueba => {
+test('Google devuelve la identidad nueva y el destino depende de su rol, no del usuario guardado', async prueba => {
   for (const [rol, destino] of [
     ['registrado', '/dashboard'], ['admin', '/admin'], [' ADMIN ', '/admin'],
     ['colaborador', '/dashboard'], ['', '/dashboard'], ['desconocido', '/dashboard'],
@@ -100,11 +100,11 @@ test('login devuelve la identidad nueva y el destino depende de su rol, no del u
     const contexto = iniciarContexto({ id: 'anterior', rol: rol === 'admin' ? 'registrado' : 'admin' });
     const usuario = { id: 'nuevo', rol };
     const peticion = prueba.mock.method(globalThis, 'fetch', async (url, opciones) => {
-      assert.equal(url, '/api/v1/auth/login');
+      assert.equal(url, '/api/v1/auth/google');
       assert.equal(opciones.credentials, 'include');
       return Response.json({ usuario });
     });
-    const recibido = await contexto.login({ correo: 'cuenta@example.com', password: 'clave-de-prueba' });
+    const recibido = await contexto.googleLogin('credencial-de-prueba');
     assert.deepEqual(recibido, usuario);
     assert.equal(rutaTrasAutenticacion(recibido.rol), destino);
     peticion.mock.restore();
@@ -127,19 +127,18 @@ test('Google redirige solo después de una respuesta exitosa y usa el mismo crit
   }
 });
 
-test('un login rechazado no devuelve la identidad antigua ni Google redirige por ella', async prueba => {
+test('un Google Login rechazado no devuelve la identidad antigua ni redirige por ella', async prueba => {
   const contexto = iniciarContexto({ id: 'antiguo', rol: 'admin' });
   prueba.mock.method(globalThis, 'fetch', async () => Response.json({ mensaje: 'Credenciales inválidas.' }, { status: 401 }));
-  assert.equal(await contexto.login({ correo: 'cuenta@example.com', password: 'incorrecta' }), null);
+  assert.equal(await contexto.googleLogin('credencial-rechazada'), null);
   await useGoogleAuth().handleGoogleSuccess({ credential: 'credencial-rechazada' });
   assert.deepEqual(navegaciones, []);
 });
 
-test('el registro conserva su resultado booleano y una identidad inválida no autentica', async prueba => {
+test('una identidad de Google inválida no autentica ni expone login local o registro', async prueba => {
   const contexto = iniciarContexto(null);
-  prueba.mock.method(globalThis, 'fetch', async url => url.endsWith('/register')
-    ? Response.json({ mensaje: 'Cuenta creada.' }, { status: 201 })
-    : Response.json({ mensaje: 'Sin identidad.' }));
-  assert.equal(await contexto.register({ correo: 'cuenta@example.com', password: 'clave-de-prueba', nombre_completo: 'Cuenta de prueba' }), true);
-  assert.equal(await contexto.login({ correo: 'cuenta@example.com', password: 'clave-de-prueba' }), null);
+  prueba.mock.method(globalThis, 'fetch', async () => Response.json({ mensaje: 'Sin identidad.' }));
+  assert.equal(await contexto.googleLogin('credencial-sin-id'), null);
+  assert.equal('login' in contexto, false);
+  assert.equal('register' in contexto, false);
 });

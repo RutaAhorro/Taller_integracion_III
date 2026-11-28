@@ -1,6 +1,6 @@
 // Comparte la sesión de Identidad; el usuario local no sustituye la autorización por cookie del servidor.
 import { createContext, useState, useEffect, useCallback, useRef, type ReactNode } from 'react';
-import type { Usuario, LoginPayload, RegisterPayload } from '@/features/autenticacion/tipos';
+import type { Usuario } from '@/features/autenticacion/tipos';
 import { useToast } from '@/components/ToastContext';
 
 // Clave del usuario de interfaz almacenado entre recargas.
@@ -12,8 +12,6 @@ interface TipoContextoAutenticacion {
   isLoading: boolean;
   isLoggingOut: boolean;
   error: string | null;
-  login: (datosAcceso: LoginPayload) => Promise<Usuario | null>;
-  register: (datosRegistro: RegisterPayload) => Promise<boolean>;
   googleLogin: (tokenId: string) => Promise<Usuario | null>;
   logout: () => Promise<void>;
 }
@@ -88,15 +86,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return usuario;
     });
 
-  const login = (datosAcceso: LoginPayload) =>
-    autenticar('/auth/login', datosAcceso, 'Error al iniciar sesión');
-
-  const register = async (datosRegistro: RegisterPayload) =>
-    Boolean(await ejecutar(async () => {
-      await enviarAutenticacion('/auth/register', datosRegistro, 'Error al crear la cuenta');
-      return true;
-    }));
-
   const googleLogin = (tokenId: string) =>
     autenticar('/auth/google', { id_token: tokenId }, 'Error en Google Login');
 
@@ -136,8 +125,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading: cargando || cerrandoSesion,
         isLoggingOut: cerrandoSesion,
         error,
-        login,
-        register,
         googleLogin,
         logout,
       }}
