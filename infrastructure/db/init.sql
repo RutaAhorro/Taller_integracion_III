@@ -44,6 +44,8 @@ ON CONFLICT (id) DO NOTHING;
 SELECT setval('scraper.cadenas_supermercado_id_seq', (SELECT MAX(id) FROM scraper.cadenas_supermercado));
 
 -- ===== Sucursales de supermercado (scraper.sucursales_supermercado) =====
+-- SANTA-ISABEL-SAN-MARTIN se conserva como clave estable aunque la dirección
+-- real sea Carrera 499; renombrar el código rompería referencias existentes.
 INSERT INTO scraper.sucursales_supermercado (id, cadena_id, codigo_sucursal, nombre, direccion, comuna, ciudad, lat, lon, hora_apertura, hora_cierre, esta_activa) VALUES
 (1, 1, 'JUMBO-LOS-PABLOS', 'Jumbo Los Pablos', 'Av. Los Pablos 01860', 'Temuco', 'Temuco', -38.74100000, -72.60000000, '08:30:00', '21:00:00', true),
 (2, 2, 'LIDER-PRIETO-NORTE', 'Lider Temuco Prieto Norte', 'Prieto Norte 0320', 'Temuco', 'Temuco', -38.72886760, -72.60039270, '08:00:00', '21:30:00', true),

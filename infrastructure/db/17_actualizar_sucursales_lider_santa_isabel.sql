@@ -14,7 +14,8 @@
 -- Fuentes de los datos (no inventados):
 --   Lider: listado oficial de tiendas
 --     https://apps.lider.cl/landing/json/storeListHtml.html
---     "Lider | Temuco | Prieto Norte 0320, Temuco", horario 08:00-21:30.
+--     "Lider | Temuco | Prieto Norte 0320, Temuco", horario 08:00-21:30 de
+--     lunes a sábado y 08:30-21:00 el domingo.
 --     El comunicado oficial de Walmart Chile
 --     https://www.walmartchile.cl/un-nuevo-comienzo-en-temuco-reabrimos-nuestro-supermercado-lider-prieto
 --     confirma la dirección "Avenida Prieto Norte 0320, Temuco" y su reapertura
@@ -31,8 +32,9 @@
 --     ChIJfebhjeXTFJYRzDLjjBbkmP4). Coordenada de OSM way 413350087 (Santa
 --     Isabel), datos © OpenStreetMap contributors, ODbL. Horario 08:30-21:00
 --     de lunes a sábado y 09:00-21:00 domingo y feriados.
--- El esquema guarda un solo par de horarios: se consigna el de lunes a sábado
--- y el domingo queda documentado aquí para no perderlo.
+-- El esquema guarda un solo par de horarios por sucursal: se consigna el de
+-- lunes a sábado y el horario de domingo/feriados queda documentado aquí para
+-- no perderlo.
 
 BEGIN;
 SET LOCAL lock_timeout = '5s';
@@ -42,26 +44,54 @@ SET LOCAL statement_timeout = '60s';
 -- migración sola sobre un volumen existente que ya tenga las extensiones o no.
 CREATE EXTENSION IF NOT EXISTS postgis;
 
-UPDATE scraper.sucursales_supermercado
-SET nombre        = 'Lider Temuco Prieto Norte',
-    direccion     = 'Prieto Norte 0320',
-    comuna        = 'Temuco',
-    ciudad        = 'Temuco',
-    lat           = -38.7288676,
-    lon           = -72.6003927,
-    hora_apertura = '08:00:00',
-    hora_cierre   = '21:30:00'
-WHERE codigo_sucursal = 'LIDER-PRIETO-NORTE';
+DO $$
+DECLARE
+  cadenas_base_existentes boolean;
+  filas_lider integer;
+  filas_santa_isabel integer;
+BEGIN
+  -- En una base nueva las cadenas aún no existen (init.sql corre después) y
+  -- estos UPDATE no afectan filas: el seed ya nace con los valores corregidos.
+  -- En un clúster existente las cadenas 2 y 4 ya están, así que ambas sucursales
+  -- deben existir y actualizarse exactamente una vez cada una.
+  SELECT EXISTS (
+    SELECT 1 FROM scraper.cadenas_supermercado WHERE id IN (2, 4)
+  ) INTO cadenas_base_existentes;
 
-UPDATE scraper.sucursales_supermercado
-SET nombre        = 'Santa Isabel Temuco Carrera',
-    direccion     = 'Carrera 499',
-    comuna        = 'Temuco',
-    ciudad        = 'Temuco',
-    lat           = -38.7371240,
-    lon           = -72.5966257,
-    hora_apertura = '08:30:00',
-    hora_cierre   = '21:00:00'
-WHERE codigo_sucursal = 'SANTA-ISABEL-SAN-MARTIN';
+  UPDATE scraper.sucursales_supermercado
+  SET nombre        = 'Lider Temuco Prieto Norte',
+      direccion     = 'Prieto Norte 0320',
+      comuna        = 'Temuco',
+      ciudad        = 'Temuco',
+      lat           = -38.72886760,
+      lon           = -72.60039270,
+      hora_apertura = '08:00:00',
+      hora_cierre   = '21:30:00'
+  WHERE codigo_sucursal = 'LIDER-PRIETO-NORTE';
+  GET DIAGNOSTICS filas_lider = ROW_COUNT;
+
+  -- SANTA-ISABEL-SAN-MARTIN se conserva deliberadamente como clave estable
+  -- aunque la dirección pase a Carrera 499: cambiar el código rompería las
+  -- referencias existentes a esa sucursal.
+  UPDATE scraper.sucursales_supermercado
+  SET nombre        = 'Santa Isabel Temuco Carrera',
+      direccion     = 'Carrera 499',
+      comuna        = 'Temuco',
+      ciudad        = 'Temuco',
+      lat           = -38.73712400,
+      lon           = -72.59662570,
+      hora_apertura = '08:30:00',
+      hora_cierre   = '21:00:00'
+  WHERE codigo_sucursal = 'SANTA-ISABEL-SAN-MARTIN';
+  GET DIAGNOSTICS filas_santa_isabel = ROW_COUNT;
+
+  IF filas_lider > 1 OR filas_santa_isabel > 1 THEN
+    RAISE EXCEPTION 'código de sucursal duplicado: LIDER-PRIETO-NORTE=% filas, SANTA-ISABEL-SAN-MARTIN=% filas', filas_lider, filas_santa_isabel;
+  END IF;
+
+  IF cadenas_base_existentes AND (filas_lider <> 1 OR filas_santa_isabel <> 1) THEN
+    RAISE EXCEPTION 'base existente requiere exactamente una fila por sucursal: LIDER-PRIETO-NORTE=% filas, SANTA-ISABEL-SAN-MARTIN=% filas', filas_lider, filas_santa_isabel;
+  END IF;
+END $$;
 
 COMMIT;
