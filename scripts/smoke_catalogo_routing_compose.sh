@@ -18,6 +18,7 @@ compose() {
     -u CATALOGO_INTERNAL_TOKEN -u CATALOGO_CONSULTA_TOKEN -u SCRAPING_SERVICE_TOKEN -u SUP269_COORDINATOR_PASSWORD \
     -u IDENTITY_DB_PASSWORD -u SCRAPING_DB_PASSWORD -u CATALOGO_DB_PASSWORD -u RUTAS_DB_PASSWORD \
     -u IDENTIDAD_EDGE_SUBNET -u IDENTIDAD_EDGE_RANGE -u IDENTIDAD_GATEWAY_IP -u IDENTIDAD_CORS_ALLOWED_ORIGINS -u IDENTIDAD_COOKIE_SECURE \
+    -u AUTH_LOCAL_HABILITADO \
     docker compose --project-name "$test_project" --env-file "$test_env" \
     -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.catalogo-routing-test.yml" "$@"
 }
@@ -76,6 +77,9 @@ p.write_text('DB_USER=sup268\nDB_NAME=sup268\nDB_PASSWORD=' + password + '\nJWT_
     '\nSCRAPING_DB_PASSWORD=' + coordinator + '\nIDENTITY_DB_PASSWORD=' + identity +
     '\nRUTAS_DB_PASSWORD=' + rutas +
     '\nGOOGLE_CLIENT_ID=\nGATEWAY_TRUSTED_PROXIES=\n' +
+    # El smoke de identidad usa registro/login local; fijar la bandera aquí evita
+    # depender de que quien ejecuta el script la exporte en su entorno.
+    'AUTH_LOCAL_HABILITADO=true\n' +
     'CATALOGO_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
     'IDENTIDAD_CORS_ALLOWED_ORIGINS=https://frontend.example,http://localhost:3000\n' +
     'IDENTIDAD_EDGE_SUBNET=172.31.253.0/24\nIDENTIDAD_EDGE_RANGE=172.31.253.128/25\nIDENTIDAD_GATEWAY_IP=172.31.253.2\n')

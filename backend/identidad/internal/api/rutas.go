@@ -195,7 +195,7 @@ func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *ManejadorAuth, maneja
 // rechazarAccesoLocal responde 403 cuando el registro y el login con contraseña
 // local están deshabilitados por configuración, sin consultar la base de datos.
 func rechazarAccesoLocal(contexto *gin.Context) {
-	contexto.JSON(http.StatusForbidden, gin.H{"error": "el acceso con contraseña local está deshabilitado"})
+	ResponderError(contexto, http.StatusForbidden, "el acceso con contraseña local está deshabilitado", nil)
 }
 
 // ===== Administración de cuentas =====

@@ -16,8 +16,8 @@ monolito de SUP-272 y su procedimiento de corte quedan en el historial de Git.
 
 | Método | Ruta pública | Comportamiento |
 | --- | --- | --- |
-| POST | `/api/v1/auth/register` | Registro local con auto-login y cookie de sesión |
-| POST | `/api/v1/auth/login` | Login local; errores de credenciales no revelan si existe la cuenta |
+| POST | `/api/v1/auth/register` | Registro local con auto-login y cookie de sesión; con `AUTH_LOCAL_HABILITADO=false` (por defecto) responde 403 con el envoltorio `estado`/`mensaje`, sin consultar la BD |
+| POST | `/api/v1/auth/login` | Login local; errores de credenciales no revelan si existe la cuenta. Con `AUTH_LOCAL_HABILITADO=false` (por defecto) responde 403 con el mismo envoltorio, sin consultar la BD |
 | POST | `/api/v1/auth/google` | Valida criptográficamente el token de Google y emite sesión |
 | POST | `/api/v1/auth/restablecer` | Cambia la contraseña con un token de un solo uso; sin sesión previa |
 | POST | `/api/v1/auth/logout` | Expira la cookie `jwt`; responde 204 sin cuerpo |
@@ -194,7 +194,7 @@ requiere reiniciar el proceso.
 | `ADMIN_EMAILS` | Lista opcional de correos separados por coma que reciben rol `admin` tras validar `email_verified=true` en `POST /api/v1/auth/google` (promueve `registrado` a `admin`, nunca degrada ni altera `colaborador`); `POST /api/v1/auth/register` rechaza esos correos con 409 |
 | `CORS_ALLOWED_ORIGINS` | Orígenes HTTP(S) exactos separados por comas, sin path ni comodines |
 | `IDENTIDAD_COOKIE_SECURE` | `true` por defecto; `false` sólo para HTTP local |
-| `AUTH_LOCAL_HABILITADO` | `false` por defecto; `true` habilita registro y login con contraseña local en desarrollo |
+| `AUTH_LOCAL_HABILITADO` | `false` por defecto; sólo admite `true` o `false`. `true` habilita registro y login con contraseña local en desarrollo; cualquier otro valor impide el arranque |
 | `IDENTIDAD_TRUSTED_PROXIES` | IP/CIDR de los proxies reales; obligatorio, sin redes universales |
 | `PORT` | 8080 por defecto |
 
