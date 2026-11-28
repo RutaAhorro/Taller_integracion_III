@@ -3,10 +3,14 @@ const URL_API = (import.meta.env.VITE_API_URL || "/api/v1").replace(/\/$/, "");
 
 // ===== Contrato MVP (sección 0 de CONTRATO_MOTOR_RUTAS.md) =====
 
+/** Perfiles viales admitidos; sin alias de scooter ni transporte público. */
+export type MedioTransporte = "vehiculo" | "bicicleta" | "pie";
+
 /** El origen se omite normalmente para que Motor aplique su valor por defecto. */
 export type SolicitudOptimizacion = {
   lista_id: string;
   origen?: { lat: number; lon: number } | null;
+  medio_transporte?: MedioTransporte;
 };
 
 /** Conserva la identidad de la lista y la oferta equivalente elegida por Motor. */
@@ -36,6 +40,8 @@ export type TramoRuta = {
   desde: number | "origen";
   hasta: number | "origen";
   distancia_km: number;
+  duracion_segundos?: number;
+  geometrias?: string[];
 };
 
 /** Total confirmado para los artículos cubiertos, sin combustible en este MVP. */
@@ -46,6 +52,7 @@ export type RutaCalculada = {
   costo_productos: number;
   costo_traslado: number;
   total: number;
+  duracion_segundos?: number;
 };
 
 /** Puede no existir una tienda que cubra todos los artículos comparados. */
@@ -74,6 +81,8 @@ export type ArticuloNoCubierto = {
 
 /** Respuesta vigente; no incluye los parámetros históricos de combustible. */
 export type RespuestaOptimizacion = {
+  fuente_recorrido?: "otp_osm" | "haversine";
+  medio_transporte?: MedioTransporte;
   estimado: true;
   origen: { lat: number; lon: number; por_defecto: boolean };
   parametros: {
@@ -170,6 +179,12 @@ export function orientacionErrorRuta(errorObtenido: unknown): string {
     }
     return "Revisa los artículos pendientes y su disponibilidad en tu lista antes de volver a calcular.";
   }
+  if (
+    errorObtenido.estado === 503 &&
+    errorObtenido.message ===
+      "El servicio de recorridos por calles no está disponible."
+  )
+    return "No se obtuvo un recorrido por calles. Revisa que OTP esté iniciado y conectado al Motor; no se ha sustituido por líneas rectas.";
   if (errorObtenido.estado === 503)
     return "El servicio de precios no está disponible ahora. Tu lista sigue guardada; vuelve a intentarlo más tarde.";
   if (errorObtenido.estado === 404)
@@ -197,6 +212,12 @@ export function mensajeErrorRuta(errorObtenido: unknown): string {
           : "No pudimos cubrir tu compra en las tiendas cercanas.";
       return errorObtenido.message;
     }
+    if (
+      errorObtenido.estado === 503 &&
+      errorObtenido.message ===
+        "El servicio de recorridos por calles no está disponible."
+    )
+      return "No pudimos consultar el recorrido por calles.";
     if (errorObtenido.estado === 503)
       return "No pudimos consultar los precios. Intenta nuevamente.";
   }

@@ -6,6 +6,7 @@ import {
   productosSinCobertura,
   rutasApi,
   type RespuestaOptimizacion,
+  type MedioTransporte,
 } from "./rutas-api";
 
 /** El estado único evita presentar simultáneamente un resultado anterior y un error nuevo. */
@@ -17,8 +18,13 @@ export type EstadoRuta =
   | { tipo: "resultado"; datos: RespuestaOptimizacion };
 
 /** Lee los nombres faltantes como complemento; la recomendación no depende de esa segunda lectura. */
-export function useRutaLista(listaID: string | null) {
-  const [estado, setEstado] = useState<EstadoRuta>(
+export function useRutaLista(
+  listaID: string | null,
+  medio?: MedioTransporte,
+  origen?: { lat: number; lon: number } | null,
+) {
+  const firma = JSON.stringify({ listaID, medio, origen });
+  const [estado, setEstado] = useState<EstadoRuta & { firma?: string }>(
     !listaID
       ? { tipo: "sin_lista" }
       : esListaIDValida(listaID)
@@ -60,23 +66,34 @@ export function useRutaLista(listaID: string | null) {
         });
     }
     rutasApi
-      .optimizar({ lista_id: listaID }, controlador.signal)
+      .optimizar(
+        {
+          lista_id: listaID,
+          ...(medio ? { medio_transporte: medio } : {}),
+          ...(origen ? { origen } : {}),
+        },
+        controlador.signal,
+      )
       .then((datos) => {
         if (controlador.signal.aborted) return;
-        setEstado({ tipo: "resultado", datos });
+        setEstado({ tipo: "resultado", datos, firma });
         if (datos.no_cubiertos.length === 0) return;
         cargarNombres();
       })
       .catch((errorObtenido: unknown) => {
         if (controlador.signal.aborted) return;
-        setEstado({ tipo: "error", error: errorObtenido });
+        setEstado({ tipo: "error", error: errorObtenido, firma });
         if (productosSinCobertura(errorObtenido).length > 0) cargarNombres();
       });
     return () => controlador.abort();
-  }, [listaID, revision]);
+  }, [listaID, revision, medio, origen, firma]);
 
   return {
-    estado,
+    // No mostrar un resultado del perfil/origen anterior mientras se confirma el efecto.
+    estado:
+      estado.firma && estado.firma !== firma
+        ? ({ tipo: "cargando" } as EstadoRuta)
+        : estado,
     nombres,
     recalcular: () => setRevision((actual) => actual + 1),
   };

@@ -1,14 +1,70 @@
 # Motor de rutas
 
+## Recorridos viales locales
+
+`POST /api/v1/rutas/optimizar` admite `medio_transporte` (`vehiculo`, `bicicleta`,
+`pie`) y `origen: {lat, lon}` junto con `lista_id`. Sigue filtrando por el dueño
+de la lista. Con modo explícito exige OTP: sin proveedor o con fallo devuelve
+503; sin conexión vial para las alternativas devuelve 422. No hay respaldo
+silencioso a Haversine. Las solicitudes antiguas sin modo conservan el cálculo
+estimado anterior (`fuente_recorrido: "haversine"`).
+
+OTP se consulta por HTTP antes de elegir visitas, con matriz **dirigida** de
+origen/sucursales/retorno, plazo global de 8 s y concurrencia de cuatro consultas.
+Se conserva el algoritmo puro sin HTTP ni SQL, con hasta dos paradas en modo
+vial. Gana el menor costo de productos y se desempata por recorrido; el traslado
+monetario continúa en cero. No se afirma ahorro neto ni tiempos reales.
+La respuesta vial identifica `fuente_recorrido: "otp_osm"`, el modo, duraciones
+en segundos y polilíneas codificadas OTP de cinco decimales en `tramos[].geometrias`.
+
+La configuración adicional `docker-compose.rutas-viales.yml` es opt-in local:
+añade OTP 2.8.1, configura `RUTAS_OTP_URL=http://otp-vial:8080` y usa un grafo
+solo de calles, sin GTFS. El puerto de inspección es `127.0.0.1:8092`.
+No acredita despliegue ni presupuesto de memoria en Kubernetes.
+
+El servicio Compose se llama `otp_vial`, pero la URL usa su alias DNS
+`otp-vial`: el servidor Grizzly de OTP rechaza el encabezado `Host` con guion
+bajo y devuelve HTTP 500. No usar `http://otp_vial:8080`.
+
+### Preparar el grafo una sola vez
+
+Guardar el PBF de Temuco en `datos-locales/mapas/`, excluido de Git. Para este
+equipo ya se preparó `streetGraph.obj`. Si se prepara desde otra máquina:
+
+```sh
+docker run --rm --network none --memory 3g --memory-swap 3g --cpus 2 \
+  -e JAVA_TOOL_OPTIONS="-Xmx2g -XX:ActiveProcessorCount=2" \
+  -v "$PWD/datos-locales/mapas:/var/opentripplanner" \
+  opentripplanner/opentripplanner:2.8.1 --buildStreet
+```
+
+No colocar GTFS ni configuraciones históricas en esa carpeta. No reconstruir
+encima de un grafo que esté sirviendo: preparar otro directorio y reemplazarlo
+solo con OTP detenido. El servidor monta `streetGraph.obj` como `graph.obj`
+en modo solo lectura y usa `--load`, no `--loadStreet`.
+Mapas, grafos y logs no se suben al repositorio.
+
+Con los servicios base ya activos:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml up -d --build --no-deps otp_vial motor_rutas frontend
+```
+
+Las pruebas `go test ./...` no usan BD compartida ni requieren OTP. El test
+`TestEndpointConOTPReal` se habilita con `OTP_VIAL_TEST_URL`: conecta el adaptador,
+el algoritmo y el handler reales con listas y precios controlados en memoria.
+Esto no equivale a un E2E con Catálogo/PostgreSQL reales.
+
 Servicio Go (`net/http`) que implementa el CRUD de listas de compra y de sus
 artículos sobre tablas de `rutas.*` (SUP-240, SUP-241). Se reescribió desde Python en SUP-348
 ([D11](../../docs/Decisiones/11_Motor_de_rutas_en_Go.md)) sin cambiar el
-contrato HTTP ni la base. El cálculo de rutas todavía no existe (SUP-313 y
-SUP-328); las ejecuciones y paradas aún no tienen permisos runtime.
+contrato HTTP ni la base. El cálculo de rutas ya está implementado; OTP vial es
+opcional mediante la configuración local anterior. No se persisten ejecuciones
+de optimización ni se amplían permisos de base de datos.
 
-El servicio es opcional en Compose y no forma parte del inventario de nueve pods
-informado por el equipo para el cierre del Sprint 2. Tener código y manifiestos
-no acredita un despliegue activo.
+El Motor se levanta por defecto en el Compose vigente. No formó parte del
+inventario de nueve pods informado para el cierre del Sprint 2. Tener código
+y manifiestos no acredita un despliegue activo ni un OTP operativo en Kubernetes.
 
 ## API (tras el Gateway)
 

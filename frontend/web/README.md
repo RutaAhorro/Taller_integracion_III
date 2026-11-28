@@ -23,15 +23,21 @@ Vite se utiliza para desarrollo y compilación.
 
 En **Mis listas**, seleccionar una lista y pulsar **Calcular ruta** abre
 `/route?lista=<UUID>`, protegida por sesión. La pantalla consulta
-`POST /api/v1/rutas/optimizar` por Gateway, enviando solo `lista_id` y la cookie
-HttpOnly. Motor aplica el origen por defecto (centro de Temuco); no se pide
-geolocalización ni se envían claves o tokens internos desde el navegador.
+`POST /api/v1/rutas/optimizar` por Gateway, enviando `lista_id`, `medio_transporte`,
+el origen opcional y la cookie HttpOnly. **Usar mi ubicación actual** solicita
+permiso solo al pulsar; no guarda las coordenadas en el perfil. Se puede volver
+al centro de Temuco. Si se rechaza el permiso o vence la solicitud, se informa
+y se conserva el origen anterior. En móvil se requiere HTTPS; localhost sirve
+para probar desde el mismo equipo.
 
 La recomendación muestra total de los artículos incluidos, ahorro frente a una
 sola tienda (o ausencia de comparación), distancia estimada con retorno al
-origen, paradas ordenadas y compra por sucursal. **No es un mapa ni un recorrido
-por calles y no incluye combustible.** Cada parada permite abrir su ubicación
-en Google Maps sin API key. Los artículos `no_cubiertos` se advierten como
+origen, paradas ordenadas y compra por sucursal. Con OTP vial configurado, muestra
+el mapa Leaflet/OpenStreetMap, geometría por calles y tiempo estimado del perfil,
+con máximo dos tiendas. **No incluye combustible ni costo del tiempo.**
+**Ver recorrido en el mapa** y los enlaces de cada parada llevan al mapa integrado.
+También se conserva la ubicación externa en Google Maps sin API key.
+Los artículos `no_cubiertos` se advierten como
 excluidos del total; sus nombres se consultan como complemento en el detalle de
 la lista y, si no se pueden recuperar, se conserva su identificador.
 
@@ -73,13 +79,37 @@ paradas numeradas, carga y errores diferenciados. Se conserva el formato actual
 de `router.tsx`, sin otra reformateada global, y no se modifica el catálogo ni el
 layout compartido del PR #209.
 
-El alcance acordado conserva **vehículo particular, bicicleta y a pie**; se
-retiró transporte público y no se ofrece scooter. El selector continúa siendo
-una vista previa y no envía el modo al Motor. Se validaron los perfiles
-`CAR`, `BICYCLE` y `WALK` en una instancia aislada de OTP 2.8.1, sin GTFS.
-La prueba no constituye integración con esta pantalla ni reemplaza Haversine
-en la recomendación. El mapa local se conserva en `datos-locales/mapas/`,
-excluido de Git.
+El alcance acordado conserva **vehículo particular, bicicleta y a pie**; sin
+transporte público ni scooter. Cambiar el perfil o el origen recalcula y cancela
+la petición anterior; no se reutilizan sus resultados. Motor usa una matriz
+dirigida OTP antes de elegir el orden y devuelve las geometrías del mismo perfil.
+Las duraciones son estimaciones sin tráfico ni tiempo de compra. El fondo OSM
+es externo y requiere conexión: se muestra atribución y no se precargan tiles.
+Se respeta la [política del servidor de tiles](https://operations.osmfoundation.org/policies/tiles/).
+Un fallo de OTP no produce una polilínea ficticia; un fallo del fondo no borra
+la compra confirmada. El mapa local queda en `datos-locales/mapas/`, fuera de Git.
+
+### Probar las conexiones localmente
+
+Se necesitan **Motor y frontend reconstruidos, más OTP**, no toda la plataforma.
+Con PostgreSQL, Catálogo y Gateway ya activos y `streetGraph.obj` preparado:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml up -d --build --no-deps otp_vial motor_rutas frontend
+```
+
+Esperar que OTP termine de cargar; revisar con
+`docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml logs --tail=30 otp_vial`.
+Abrir `http://localhost:3000`, seleccionar una lista, calcular, probar los tres
+perfiles, pedir ubicación y pulsar **Ver recorrido en el mapa**. Comprobar en
+Network el cuerpo con modo/origen y la respuesta con `fuente_recorrido: "otp_osm"`,
+tramos con geometría y `max_paradas: 2`. Probar también permiso denegado.
+No copiar cookies ni coordenadas personales a capturas de diagnóstico.
+
+Usar siempre ambos archivos Compose al recrear Motor; el archivo base solo no
+configura `RUTAS_OTP_URL` y la nueva pantalla responderá con error de recorrido.
+No se requieren migraciones ni reconstrucción de Gateway, Catálogo o BD.
+Ver la preparación del grafo en el [README de Motor](../../backend/motor_rutas/README.md#recorridos-viales-locales).
 
 ### Desarrollo y pruebas sin backend
 

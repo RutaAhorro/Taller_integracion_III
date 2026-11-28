@@ -518,9 +518,9 @@ const hook = await cargar("../src/features/rutas/useRutaLista.ts", {
 const { useRutaLista } = hook.modulo;
 
 /** Simula un render y la confirmación de sus efectos como los demás tests de hooks del proyecto. */
-function renderHook(listaID, reiniciar = false) {
+function renderHook(listaID, reiniciar = false, medio, origen) {
   ciclo.preparar(reiniciar);
-  const estado = useRutaLista(listaID);
+  const estado = useRutaLista(listaID, medio, origen);
   ciclo.confirmar();
   return estado;
 }
@@ -540,6 +540,31 @@ test("el hook no consulta ni optimización ni detalle con selección inválida",
   assert.equal(renderHook("lista-invalida").estado.tipo, "lista_invalida");
   assert.equal(renderHook(null).estado.tipo, "lista_invalida");
   assert.equal(renderHook(null).estado.tipo, "sin_lista");
+  ciclo.desmontar();
+});
+
+test("el hook envía modo y origen y cancela el cálculo anterior al cambiar de perfil", async (prueba) => {
+  const llamadas = [];
+  prueba.mock.method(globalThis, "fetch", async (url, opciones) => {
+    llamadas.push({
+      cuerpo: JSON.parse(opciones.body),
+      senal: opciones.signal,
+    });
+    return Response.json({ ...ejemplo, no_cubiertos: [] });
+  });
+  const origen = { lat: -38.7359, lon: -72.5904 };
+  renderHook(LISTA_ID, true, "vehiculo", origen);
+  await resolver();
+  renderHook(LISTA_ID, false, "bicicleta", origen);
+  await resolver();
+  assert.deepEqual(
+    llamadas.map((llamada) => llamada.cuerpo),
+    [
+      { lista_id: LISTA_ID, medio_transporte: "vehiculo", origen },
+      { lista_id: LISTA_ID, medio_transporte: "bicicleta", origen },
+    ],
+  );
+  assert.equal(llamadas[0].senal.aborted, true);
   ciclo.desmontar();
 });
 
@@ -731,6 +756,7 @@ const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
   ),
   "./rutas-api": api.url,
   "./ResultadoRuta": resultado.url,
+  "./MapaRuta": crearModulo("export const MapaRuta = () => null;"),
   "./useRutaLista": crearModulo(
     'export const useRutaLista = () => ({ estado: { tipo: "sin_lista" }, nombres: {}, recalcular() {} });',
   ),
@@ -778,16 +804,13 @@ test("la página de rutas presenta solo los tres medios viales con selección ac
     ),
   );
 
-  for (const etiqueta of [
-    "Vehículo particular",
-    "Bicicleta",
-    "A pie",
-  ])
+  for (const etiqueta of ["Vehículo particular", "Bicicleta", "A pie"])
     assert.ok(html.includes(etiqueta));
   assert.match(html, /type="radio"/);
   assert.equal((html.match(/type="radio"/g) || []).length, 3);
   assert.doesNotMatch(html, /Transporte público|scooter/i);
-  assert.match(html, /La selección es visual por ahora/);
+  assert.match(html, /Usar mi ubicación actual/);
+  assert.match(html, /Recorrido vial/);
 });
 
 test("un error de cobertura muestra nombres, alcance y acciones, nunca el detalle técnico arbitrario", () => {
@@ -974,6 +997,9 @@ test("ruta parcial explica el motivo de cada artículo y usa el nombre del motor
   assert.match(html, /Compra parcial/);
   assert.match(html, /Aceite maravilla 1 L/);
   assert.match(html, /exigiría visitar más tiendas que el máximo de paradas/);
-  assert.match(html, /Sin oferta vigente disponible en las sucursales evaluadas/);
+  assert.match(
+    html,
+    /Sin oferta vigente disponible en las sucursales evaluadas/,
+  );
   assert.ok(html.includes("Producto sin-oferta"));
 });

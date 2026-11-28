@@ -23,6 +23,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/db"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/httpapi"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/listas"
+	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/vial"
 )
 
 // =============================================================================
@@ -74,7 +75,12 @@ func ejecutar(log *slog.Logger) error {
 
 	// --- 3. Servidor HTTP --------------------------------------------------------
 	clienteCatalogo := listas.NuevoClienteCatalogo(configuracion.CatalogoURL, configuracion.CatalogoToken, configuracion.CatalogoPlazo)
+	var proveedorVial vial.Proveedor
+	if configuracion.OTPURL != "" {
+		proveedorVial = vial.Nuevo(configuracion.OTPURL)
+	}
 	manejadorHTTP := httpapi.Nuevo(httpapi.Opciones{
+		Vial:     proveedorVial,
 		Repo:     listas.NuevoPostgres(pool),
 		Carritos: listas.NuevoPostgres(pool),
 		Catalogo: clienteCatalogo,

@@ -91,9 +91,11 @@ export function ArticulosSinCobertura({
               {nombres[identificador] ?? `Producto ${identificador}`}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
-              {DETALLE_MOTIVO_NO_CUBIERTO[
-                motivos[identificador] ?? "sin_oferta_en_radio"
-              ]}
+              {
+                DETALLE_MOTIVO_NO_CUBIERTO[
+                  motivos[identificador] ?? "sin_oferta_en_radio"
+                ]
+              }
             </p>
           </div>
         </li>
@@ -144,9 +146,11 @@ function FilaCompra({
 function TarjetaParada({
   parada,
   nombres,
+  conMapa = false,
 }: {
   parada: ParadaRuta;
   nombres: Record<string, string>;
+  conMapa?: boolean;
 }) {
   const articulos = agruparArticulosParada(parada.articulos);
   const cantidadEnvases = articulos.reduce(
@@ -265,13 +269,21 @@ function TarjetaParada({
               Ubicación no disponible.
             </p>
           )}
+          {conMapa && (
+            <a
+              href="#mapa-ruta"
+              className="inline-flex min-h-10 items-center gap-2 px-4 py-2 text-xs font-bold text-primary underline"
+            >
+              Ver parada {parada.orden} en el mapa
+            </a>
+          )}
         </footer>
       </article>
     </li>
   );
 }
 
-/** Resume importes confirmados y convierte las paradas del Motor en una secuencia de compra, no un mapa. */
+/** Resume la compra y enlaza al mapa solo cuando Motor confirma geometría vial. */
 export function ResultadoRuta({
   datos,
   nombres = {},
@@ -280,6 +292,7 @@ export function ResultadoRuta({
   nombres?: Record<string, string>;
 }) {
   const { ruta, base_una_tienda: base, ahorro } = datos;
+  const vial = datos.fuente_recorrido === "otp_osm";
   const cantidadEnvases = ruta.paradas.reduce(
     (cantidad, parada) =>
       cantidad +
@@ -294,6 +307,22 @@ export function ResultadoRuta({
     : `${datos.origen.lat}, ${datos.origen.lon}`;
   return (
     <div className="space-y-7">
+      {vial && (
+        <a
+          href="#mapa-ruta"
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-primary bg-primary px-5 py-3 font-semibold text-primary-foreground"
+          onClick={(evento) => {
+            const mapa = document.getElementById("mapa-ruta");
+            if (!mapa) return;
+            evento.preventDefault();
+            mapa.scrollIntoView({ behavior: "smooth", block: "start" });
+            mapa.focus({ preventScroll: true });
+          }}
+        >
+          <MapPin className="size-4" aria-hidden="true" /> Ver recorrido en el
+          mapa
+        </a>
+      )}
       {datos.no_cubiertos.length > 0 && (
         <section
           role="alert"
@@ -380,6 +409,13 @@ export function ResultadoRuta({
             {ruta.paradas.length}{" "}
             {ruta.paradas.length === 1 ? "parada" : "paradas"} · Incluye el
             retorno al origen
+            {vial && ruta.duracion_segundos !== undefined && (
+              <>
+                {" "}
+                · Aproximadamente {Math.ceil(ruta.duracion_segundos / 60)} min
+                de viaje, sin tiempo de compra
+              </>
+            )}
           </p>
         </div>
       </section>
@@ -394,8 +430,10 @@ export function ResultadoRuta({
             aria-hidden="true"
           />
           <span>
-            Distancias estimadas; no representan un recorrido por calles. El
-            total no incluye combustible ni otros gastos de traslado.
+            {vial
+              ? "Recorrido por calles según OpenStreetMap y el medio elegido; tiempos estimados, sin tráfico en vivo. "
+              : "Distancias estimadas; no representan un recorrido por calles. "}
+            El total no incluye combustible ni otros gastos de traslado.
           </span>
         </p>
         <details className="group border-t border-border/70 pt-2">
@@ -450,8 +488,10 @@ export function ResultadoRuta({
           </span>
         </div>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Google Maps abre la ubicación de la tienda, no un recorrido calculado
-          por calles.
+          Google Maps abre la ubicación de la tienda.
+          {vial
+            ? " Para ver el recorrido calculado, usa el mapa integrado."
+            : " No es un recorrido calculado por calles."}
         </p>
 
         <div className="flex items-start gap-2.5 text-xs text-muted-foreground sm:ml-0.5">
@@ -469,6 +509,7 @@ export function ResultadoRuta({
               key={parada.sucursal_id}
               parada={parada}
               nombres={nombres}
+              conMapa={vial}
             />
           ))}
         </ol>

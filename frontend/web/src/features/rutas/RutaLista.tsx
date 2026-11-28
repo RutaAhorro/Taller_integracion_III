@@ -1,5 +1,5 @@
-// Integra la recomendación con la lista seleccionada y la sesión, sin mapa ni resultados simulados.
-import { useState } from "react";
+// Conecta lista, origen y perfil con Motor; pide ubicación únicamente por acción explícita.
+import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Bike, CarFront, Footprints } from "lucide-react";
 import { ROUTES } from "@/app/routes";
@@ -11,11 +11,11 @@ import {
   mensajeErrorRuta,
   orientacionErrorRuta,
   productosSinCobertura,
+  type MedioTransporte,
 } from "./rutas-api";
+import { MapaRuta } from "./MapaRuta";
 import { ArticulosSinCobertura, ResultadoRuta } from "./ResultadoRuta";
 import { useRutaLista, type EstadoRuta } from "./useRutaLista";
-
-type MedioTransporte = "vehiculo" | "bicicleta" | "pie";
 
 const OPCIONES_TRANSPORTE: {
   valor: MedioTransporte;
@@ -139,10 +139,61 @@ export function EstadoRecomendacion({
 
 /** El enlace de regreso conserva la selección; recalcular nunca modifica la lista. */
 function ContenidoRuta({ listaID }: { listaID: string | null }) {
-  const { estado, nombres, recalcular } = useRutaLista(listaID);
   const seleccionValida = esListaIDValida(listaID);
   const [medioTransporteSeleccionado, setMedioTransporteSeleccionado] =
     useState<MedioTransporte>("vehiculo");
+  const [origen, setOrigen] = useState<{ lat: number; lon: number } | null>(
+    null,
+  );
+  const [ubicando, setUbicando] = useState(false);
+  const [avisoUbicacion, setAvisoUbicacion] = useState("");
+  const solicitudUbicacion = useRef(0);
+  useEffect(
+    () => () => {
+      solicitudUbicacion.current++;
+    },
+    [],
+  );
+  const { estado, nombres, recalcular } = useRutaLista(
+    listaID,
+    medioTransporteSeleccionado,
+    origen,
+  );
+  /** Solicita permiso sin persistir coordenadas ni consultar ubicación al entrar. */
+  function usarUbicacion() {
+    if (!navigator.geolocation) {
+      setAvisoUbicacion(
+        "Este navegador no permite obtener tu ubicación. Puedes usar el centro de Temuco.",
+      );
+      return;
+    }
+    const numeroSolicitud = ++solicitudUbicacion.current;
+    setUbicando(true);
+    setAvisoUbicacion("");
+    navigator.geolocation.getCurrentPosition(
+      (posicion) => {
+        if (numeroSolicitud !== solicitudUbicacion.current) return;
+        setUbicando(false);
+        setOrigen({
+          lat: posicion.coords.latitude,
+          lon: posicion.coords.longitude,
+        });
+        setAvisoUbicacion(
+          `Ubicación obtenida (precisión aproximada: ${Math.round(posicion.coords.accuracy)} m). Revisa el punto de partida en el mapa.`,
+        );
+      },
+      (errorObtenido) => {
+        if (numeroSolicitud !== solicitudUbicacion.current) return;
+        setUbicando(false);
+        setAvisoUbicacion(
+          errorObtenido.code === 1
+            ? "No concediste permiso de ubicación. Se conserva el origen indicado; puedes elegir el centro de Temuco."
+            : "No se pudo obtener tu ubicación. Se conserva el origen indicado.",
+        );
+      },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+    );
+  }
   return (
     <div className="relative flex h-full w-full flex-1 overflow-hidden bg-background">
       <main className="relative z-10 mx-auto flex w-full max-w-[1600px] flex-1 flex-col overflow-hidden px-4 py-6 md:px-6">
@@ -216,12 +267,13 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                       Medio de transporte
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
-                      Puedes explorar estas opciones visuales; no modifican el
-                      cálculo.
+                      Elige cómo viajar. Se recalcula el recorrido por calles
+                      para ese perfil, con hasta dos tiendas y regreso al
+                      origen.
                     </p>
                   </div>
                   <span className="rounded-full border border-border bg-secondary/60 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                    Vista previa
+                    Recorrido vial
                   </span>
                 </div>
                 <fieldset>
@@ -250,10 +302,46 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                     ))}
                   </div>
                 </fieldset>
-                <p className="border-l-4 border-primary bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
-                  La selección es visual por ahora. La ruta y las distancias
-                  todavía no cambian según el medio de transporte.
-                </p>
+                <div className="space-y-3 border-t border-border pt-3">
+                  <p className="text-sm">
+                    <strong>Punto de partida:</strong>{" "}
+                    {origen
+                      ? "Ubicación indicada desde este navegador"
+                      : "Centro de Temuco (por defecto)"}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={usarUbicacion}
+                      disabled={ubicando}
+                    >
+                      {ubicando
+                        ? "Obteniendo ubicación…"
+                        : "Usar mi ubicación actual"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        solicitudUbicacion.current++;
+                        setUbicando(false);
+                        setOrigen(null);
+                        setAvisoUbicacion("Se usará el centro de Temuco.");
+                      }}
+                    >
+                      Usar centro de Temuco
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    La ubicación solo se solicita con tu permiso y se envía al
+                    Motor para calcular. No se guarda en tu perfil. En móvil se
+                    necesita HTTPS; localhost permite la prueba local.
+                  </p>
+                  {avisoUbicacion && (
+                    <p role="status" className="text-sm">
+                      {avisoUbicacion}
+                    </p>
+                  )}
+                </div>
               </section>
             )}
             <EstadoRecomendacion
@@ -261,6 +349,10 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
               nombres={nombres}
               recalcular={recalcular}
             />
+            {estado.tipo === "resultado" &&
+              estado.datos.fuente_recorrido === "otp_osm" && (
+                <MapaRuta datos={estado.datos} />
+              )}
           </div>
         </div>
       </main>

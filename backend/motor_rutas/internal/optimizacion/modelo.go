@@ -74,6 +74,16 @@ type Entrada struct {
 	Sucursales []Sucursal
 	Ofertas    []Oferta
 	Parametros Parametros
+	// Viales contiene tramos dirigidos precalculados por HTTP fuera del algoritmo.
+	// nil conserva el contrato histórico estimado; una matriz vacía no inventa rutas.
+	Viales map[[2]int]TrayectoVial
+}
+
+// TrayectoVial es un resultado del proveedor para un par dirigido (0 = origen).
+type TrayectoVial struct {
+	DistanciaKm      float64
+	DuracionSegundos float64
+	Geometrias       []string
 }
 
 // =============================================================================
@@ -130,19 +140,22 @@ func (extremo ExtremoTramo) MarshalJSON() ([]byte, error) {
 
 // Tramo es un trayecto entre dos puntos del recorrido, ya corregido por el factor.
 type Tramo struct {
-	Desde       ExtremoTramo `json:"desde"`
-	Hasta       ExtremoTramo `json:"hasta"`
-	DistanciaKm float64      `json:"distancia_km"` // dos decimales
+	Desde            ExtremoTramo `json:"desde"`
+	Hasta            ExtremoTramo `json:"hasta"`
+	DistanciaKm      float64      `json:"distancia_km"` // dos decimales
+	DuracionSegundos float64      `json:"duracion_segundos,omitempty"`
+	Geometrias       []string     `json:"geometrias,omitempty"` // polilíneas codificadas OTP
 }
 
 // Ruta es la alternativa elegida: paradas en orden, tramos y costos.
 type Ruta struct {
-	Paradas        []Parada `json:"paradas"`
-	Tramos         []Tramo  `json:"tramos"`
-	DistanciaKm    float64  `json:"distancia_km"`    // dos decimales
-	CostoProductos int      `json:"costo_productos"` // CLP
-	CostoTraslado  int      `json:"costo_traslado"`  // CLP, redondeado al final
-	Total          int      `json:"total"`           // CLP, redondeado al final
+	Paradas          []Parada `json:"paradas"`
+	Tramos           []Tramo  `json:"tramos"`
+	DistanciaKm      float64  `json:"distancia_km"`    // dos decimales
+	CostoProductos   int      `json:"costo_productos"` // CLP
+	CostoTraslado    int      `json:"costo_traslado"`  // CLP, redondeado al final
+	Total            int      `json:"total"`           // CLP, redondeado al final
+	DuracionSegundos float64  `json:"duracion_segundos,omitempty"`
 }
 
 // BaseUnaTienda es la mejor alternativa de una sola tienda, usada para el ahorro.
@@ -180,6 +193,9 @@ var ErrSinArticulos = errors.New("la lista no tiene artículos por comprar")
 
 // ErrSinSucursales: no hay sucursales candidatas dentro del radio.
 var ErrSinSucursales = errors.New("no hay sucursales candidatas")
+
+// ErrSinRecorrido indica que el grafo no conecta las alternativas de compra.
+var ErrSinRecorrido = errors.New("no hay recorrido vial para las alternativas de compra")
 
 // ErrParametros: los parámetros o la entrada no permiten un cálculo válido.
 // Es un error de programación o de configuración, no del usuario.
