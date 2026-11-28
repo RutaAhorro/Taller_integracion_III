@@ -14,7 +14,7 @@ export default function Profile() {
     return (
         <div className="flex flex-col bg-background font-sans text-foreground relative">
 
-            <main className="p-4 pb-24 sm:p-8 bg-background">
+            <main className="p-4 pb-24 sm:px-8 sm:pt-8 md:pb-16 bg-background">
                 <div className="max-w-[1600px] mx-auto w-full mb-8">
                     <h1 className="text-3xl font-extrabold tracking-tight text-foreground">Perfil y Configuración</h1>
                 </div>
