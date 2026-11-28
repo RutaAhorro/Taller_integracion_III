@@ -153,10 +153,12 @@ del catálogo, ordenadas por precio ascendente, así que no cubre productos como
 (con `precio_max` si existe) sobre el catálogo completo, con un máximo de
 `IA_CATALOGO_BUSQUEDA_MAX_CONSULTAS` consultas, `IA_CATALOGO_BUSQUEDA_CONCURRENCIA`
 simultáneas por un cliente HTTP compartido y un plazo común de `CATALOGO_TIMEOUT`.
-Como Catálogo busca la subcadena literal, cada frase se envía completa, por su
-término más largo y sin tildes; el filtrado determinista exige después que calcen
-todos los términos. Se omiten los términos que Catálogo rechazaría con 400 (menos
-de 3 bytes tras sanear, como "te").
+Cada frase se consulta primero completa (`q=aceite de oliva`), porque Catálogo
+la trata como frase y ordena por relevancia. Solo si devuelve 0 resultados se
+buscan hasta 3 palabras significativas por separado y en paralelo (`aceite`,
+`oliva`); se unen los candidatos sin duplicados y el filtrado determinista exige
+después que calcen todas las palabras. Se omiten los términos que Catálogo
+rechazaría con 400 (menos de 3 bytes tras sanear, como "te").
 
 Si alguna búsqueda falla, vence o se recorta, los resultados se completan con la
 caché sin refrescarla y `estado_datos` refleja su estado. Una búsqueda exitosa sin resultados responde

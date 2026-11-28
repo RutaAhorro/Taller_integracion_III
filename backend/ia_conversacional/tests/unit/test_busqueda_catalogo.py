@@ -21,7 +21,7 @@ import httpx
 import pytest
 
 from app import config
-from app.domain.filtros import terminos_busqueda_catalogo
+from app.domain.filtros import terminos_busqueda_catalogo, terminos_fallback_busqueda_catalogo
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 from app.repositories.catalogo import FUENTE_CATALOGO, FUENTE_MEMORIA, ProductoRepositorio
 from app.services.chat import (
@@ -196,13 +196,33 @@ def test_terminos_busqueda_frase_simple():
     assert terminos_busqueda_catalogo("Leche") == ["leche"]
 
 
-def test_terminos_busqueda_frase_compuesta_usa_una_sola_palabra_y_su_singular():
-    """Una frase de varias palabras consulta solo la palabra más larga (y su singular si aplica)."""
-    assert terminos_busqueda_catalogo("harina de almendras") == ["almendras", "almendra"]
-    assert terminos_busqueda_catalogo("harina almendras") == ["almendras", "almendra"]
-    assert terminos_busqueda_catalogo("aceite de oliva") == ["aceite"]
-    assert terminos_busqueda_catalogo("leche sin lactosa") == ["lactosa"]
-    assert terminos_busqueda_catalogo("arroz grado 2") == ["arroz"]
+def test_terminos_busqueda_frase_compuesta_consulta_la_frase_completa():
+    """Una frase de varias palabras se envía completa: Catálogo la trata como frase y ordena por relevancia."""
+    assert terminos_busqueda_catalogo("harina de almendras") == ["harina de almendras"]
+    assert terminos_busqueda_catalogo("harina almendras") == ["harina almendras"]
+    assert terminos_busqueda_catalogo("aceite de oliva") == ["aceite de oliva"]
+    assert terminos_busqueda_catalogo("aceite oliva") == ["aceite oliva"]
+    assert terminos_busqueda_catalogo("leche sin lactosa") == ["leche sin lactosa"]
+    assert terminos_busqueda_catalogo("arroz grado 2") == ["arroz grado 2"]
+
+
+def test_terminos_fallback_desglosa_palabras_significativas():
+    """Si la frase completa falla, se buscan las palabras sueltas sin conectores ni 'sin'."""
+    assert terminos_fallback_busqueda_catalogo("aceite de oliva") == ["aceite", "oliva"]
+    assert terminos_fallback_busqueda_catalogo("aceite oliva") == ["aceite", "oliva"]
+    assert terminos_fallback_busqueda_catalogo("leche sin lactosa") == ["leche", "lactosa"]
+    assert terminos_fallback_busqueda_catalogo("arroz grado 2") == ["arroz", "grado"]
+    assert terminos_fallback_busqueda_catalogo("harina de almendras") == ["harina", "almendras", "almendra"]
+
+
+def test_terminos_fallback_respeta_el_tope_de_tres_terminos():
+    """El fallback nunca supera tres términos, aunque la frase tenga más palabras útiles."""
+    assert terminos_fallback_busqueda_catalogo("aceite de oliva extra virgen") == [
+        "aceite",
+        "oliva",
+        "extra",
+    ]
+    assert terminos_fallback_busqueda_catalogo("leche") == ["leche"]
 
 
 def test_terminos_busqueda_plurales_agrega_singular_despues_del_original():
@@ -213,8 +233,8 @@ def test_terminos_busqueda_plurales_agrega_singular_despues_del_original():
 
 
 def test_terminos_busqueda_agrega_variante_sin_tildes():
-    """Con tildes elige la palabra más larga y agrega su variante sin tildes, porque Catálogo distingue tildes."""
-    assert terminos_busqueda_catalogo("Azúcar flor") == ["azúcar", "azucar"]
+    """Con una sola palabra se mantiene la variante sin tildes, porque Catálogo distingue tildes."""
+    assert terminos_busqueda_catalogo("Azúcar") == ["azúcar", "azucar"]
 
 
 def test_terminos_busqueda_descarta_lo_que_catalogo_rechaza():
@@ -291,8 +311,13 @@ def _procesar(repositorio: RepositorioDoble, filtros: dict, mensaje: str = "mens
     return anyio.run(procesar_mensaje, ProveedorFijo(filtros), repositorio, mensaje)
 
 
+def _terminos_buscados(repositorio: RepositorioDoble) -> list[str]:
+    """Devuelve los términos consultados, sin el precio máximo."""
+    return [termino for termino, _precio in repositorio.terminos_buscados]
+
+
 def test_chat_encuentra_producto_fuera_de_la_cache():
-    """El caso del diagnóstico: 'harina de almendras' consulta Catálogo solo con `q=almendras` y filtra en IA."""
+    """'harina de almendras' prueba la frase completa y, al dar 0, encuentra la harina por las palabras sueltas."""
     repositorio = RepositorioDoble(
         cache=[_normalizar(YOGUR_BARATO)],
         busquedas={"almendras": [_normalizar(HARINA_ALMENDRAS)]},
@@ -302,11 +327,13 @@ def test_chat_encuentra_producto_fuera_de_la_cache():
 
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-almendras"]
     assert datos["estado_datos"] == ESTADO_VIGENTE
-    assert repositorio.terminos_buscados == [("almendras", None)]
+    terminos = _terminos_buscados(repositorio)
+    assert terminos[0] == "harina de almendras"
+    assert set(terminos[1:]) == {"harina", "almendras", "almendra"}
 
 
 def test_chat_aplica_filtro_determinista_sobre_lo_que_devuelve_catalogo():
-    """El término más largo trae productos de más ("almendras"); el filtro exige todos los términos."""
+    """El fallback por palabras trae productos de más; el filtro exige que calcen todas las palabras."""
     repositorio = RepositorioDoble(
         cache=[],
         busquedas={
@@ -795,11 +822,11 @@ def test_casos_chat_con_cliente_catalogo_simulado_pr208():
         assert datos["estado_datos"] == ESTADO_VIGENTE
 
 
-# ===== Búsqueda por palabra única, filtrado multipalabra, orden, plazos (~14 s) y log diagnóstico =====
+# ===== Frase completa, fallback multipalabra, orden, plazos (~14 s) y log diagnóstico =====
 
 
-def test_chat_harina_de_almendras_solo_catalogo_con_q_almendras():
-    """Con Catálogo que solo responde a `q=almendras`, encuentra la harina y descarta almendras sueltas."""
+def test_chat_harina_de_almendras_fallback_por_palabras():
+    """Con Catálogo que solo responde a `q=almendras`, la frase completa falla y el fallback encuentra la harina."""
     harina_con_piel = _producto("prod-harina-piel", "Harina de Almendras con Piel Libre de Gluten 500 g", 6990.0)
     almendras_tostadas = _producto("prod-almendras-solas", "Almendras Tostadas 200 g", 3990.0)
     consultas_realizadas: list[str] = []
@@ -815,61 +842,152 @@ def test_chat_harina_de_almendras_solo_catalogo_con_q_almendras():
     cliente_http.get.side_effect = simular_get_solo_almendras
     repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
 
-    for palabras in (["harina de almendras"], ["harina almendras"]):
+    for frase in ("harina de almendras", "harina almendras"):
         consultas_realizadas.clear()
         datos = anyio.run(
             procesar_mensaje,
-            ProveedorFijo({"palabras_clave": palabras}),
+            ProveedorFijo({"palabras_clave": [frase]}),
             repositorio,
             "Busco harina de almendras",
         )
-        assert consultas_realizadas == ["almendras"]
+        assert consultas_realizadas[0] == frase
+        assert set(consultas_realizadas[1:]) == {"harina", "almendras", "almendra"}
         assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-piel"]
 
 
-def test_chat_multipalabra_aceite_oliva_leche_sin_lactosa_y_arroz_grado_2():
-    """Consulta con una sola palabra y exige todas las palabras del término en el filtro de la IA."""
+def test_chat_multipalabra_frase_completa_primero_y_filtra_todas_las_palabras():
+    """La frase extraída se consulta primero; si da resultados, no se hacen consultas de fallback."""
     aceite_maravilla = _normalizar(_producto("prod-aceite-maravilla", "Aceite de Maravilla 1 L", 1890.0))
     aceite_oliva = _normalizar(_producto("prod-aceite-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0))
+    harina_almendras = _normalizar(HARINA_ALMENDRAS)
+    harina_tostada = _normalizar(HARINA_TRIGO)
     leche_sin_lactosa = _normalizar(_producto("prod-leche-sl", "Leche Descremada Sin Lactosa 1 L", 1390.0, "lacteos"))
     queso_sin_lactosa = _normalizar(_producto("prod-queso-sl", "Queso Gouda Sin Lactosa 200 g", 2490.0, "lacteos"))
-    leche_entera = _normalizar(_producto("prod-leche-con", "Leche Entera con Lactosa 1 L", 1190.0, "lacteos"))
     arroz_g1 = _normalizar(_producto("prod-arroz-1", "Arroz Grado 1 1 kg", 1490.0))
     arroz_g2 = _normalizar(_producto("prod-arroz-2", "Arroz Grado 2 1 kg", 1190.0))
-    arroz_basmati = _normalizar(_producto("prod-arroz-basmati", "Arroz Basmati 500 g", 2290.0))
 
     repositorio = RepositorioDoble(
         cache=[],
         busquedas={
-            "aceite": [aceite_maravilla, aceite_oliva],
-            "lactosa": [queso_sin_lactosa, leche_entera, leche_sin_lactosa],
-            "arroz": [arroz_g1, arroz_g2, arroz_basmati],
+            "aceite de oliva": [aceite_maravilla, aceite_oliva],
+            "harina de almendras": [harina_tostada, harina_almendras],
+            "leche sin lactosa": [queso_sin_lactosa, leche_sin_lactosa],
+            "arroz grado 2": [arroz_g1, arroz_g2],
         },
     )
 
-    datos_aceite = _procesar(repositorio, {"palabras_clave": ["aceite de oliva"]}, mensaje="aceite de oliva")
-    assert [producto["id"] for producto in datos_aceite["productos_recomendados"]] == ["prod-aceite-oliva"]
-    assert repositorio.terminos_buscados == [("aceite", None)]
-
-    repositorio.terminos_buscados.clear()
-    datos_leche = _procesar(repositorio, {"palabras_clave": ["leche sin lactosa"]}, mensaje="leche sin lactosa")
-    assert [producto["id"] for producto in datos_leche["productos_recomendados"]] == ["prod-leche-sl"]
-    assert repositorio.terminos_buscados == [("lactosa", None)]
-
-    repositorio.terminos_buscados.clear()
-    datos_arroz = _procesar(repositorio, {"palabras_clave": ["arroz grado 2"]}, mensaje="arroz grado 2")
-    assert [producto["id"] for producto in datos_arroz["productos_recomendados"]] == ["prod-arroz-2"]
-    assert repositorio.terminos_buscados == [("arroz", None)]
+    casos = [
+        (["aceite de oliva"], "aceite de oliva", "prod-aceite-oliva"),
+        (["harina de almendras"], "Busco harina de almendras", "prod-harina-almendras"),
+        (["leche sin lactosa"], "leche sin lactosa", "prod-leche-sl"),
+        (["arroz grado 2"], "arroz grado 2", "prod-arroz-2"),
+    ]
+    for palabras, mensaje, id_esperado in casos:
+        repositorio.terminos_buscados.clear()
+        datos = _procesar(repositorio, {"palabras_clave": palabras}, mensaje=mensaje)
+        assert [producto["id"] for producto in datos["productos_recomendados"]] == [id_esperado]
+        assert _terminos_buscados(repositorio) == palabras
 
 
-def test_chat_multipalabra_cae_a_singular_si_plural_no_trae_resultados():
-    """Si la palabra elegida en plural ('almendras') da 0 resultados, prueba su singular ('almendra')."""
+@pytest.mark.parametrize("frase", ["aceite oliva", "aceite de oliva"])
+def test_chat_aceite_oliva_fallback_encuentra_oliva_que_no_llega_con_aceite(frase: str):
+    """`q=aceite` no trae oliva: el fallback por `oliva` la trae y el filtro exige ambas palabras."""
+    aceite_vegetal = _normalizar(_producto("prod-aceite-vegetal", "Aceite Vegetal 1 L", 1890.0))
+    aceite_oliva = _normalizar(_producto("prod-aceite-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0))
+    repositorio = RepositorioDoble(cache=[], busquedas={"aceite": [aceite_vegetal], "oliva": [aceite_oliva]})
+
+    datos = _procesar(repositorio, {"palabras_clave": [frase]}, mensaje=f"Busco {frase}")
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-aceite-oliva"]
+    terminos = _terminos_buscados(repositorio)
+    assert terminos[0] == frase
+    assert set(terminos[1:]) == {"aceite", "oliva"}
+
+
+def test_chat_leche_sin_lactosa_fallback_exige_todas_las_palabras():
+    """Sin 'sin' en el fallback, 'leche' y 'lactosa' traen candidatos y solo calza la leche sin lactosa."""
+    leche_sin_lactosa = _normalizar(_producto("prod-leche-sl", "Leche Descremada Sin Lactosa 1 L", 1390.0, "lacteos"))
+    queso_sin_lactosa = _normalizar(_producto("prod-queso-sl", "Queso Gouda Sin Lactosa 200 g", 2490.0, "lacteos"))
+    leche_entera = _normalizar(_producto("prod-leche-con", "Leche Entera con Lactosa 1 L", 1190.0, "lacteos"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "leche": [leche_entera, leche_sin_lactosa],
+            "lactosa": [queso_sin_lactosa, leche_sin_lactosa],
+        },
+    )
+
+    datos = _procesar(repositorio, {"palabras_clave": ["leche sin lactosa"]}, mensaje="leche sin lactosa")
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche-sl"]
+    assert set(_terminos_buscados(repositorio)) == {"leche sin lactosa", "leche", "lactosa"}
+
+
+def test_chat_fallback_por_palabras_es_paralelo_y_esta_acotado(monkeypatch):
+    """El fallback consulta como máximo 3 palabras a la vez, sin exceder la concurrencia configurada."""
+    monkeypatch.setattr(config, "CATALOGO_BUSQUEDA_CONCURRENCIA", 3)
+
+    class RepositorioConcurrenciaFallback(RepositorioDoble):
+        """Mide cuántas consultas del fallback están en vuelo simultáneamente."""
+
+        def __init__(self) -> None:
+            super().__init__(cache=[], busquedas={})
+            self._candado = threading.Lock()
+            self.en_vuelo = 0
+            self.maximo_en_vuelo = 0
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list:
+            self.terminos_buscados.append((termino, precio_max))
+            with self._candado:
+                self.en_vuelo += 1
+                self.maximo_en_vuelo = max(self.maximo_en_vuelo, self.en_vuelo)
+            time.sleep(0.05)
+            with self._candado:
+                self.en_vuelo -= 1
+            return []
+
+    repositorio = RepositorioConcurrenciaFallback()
+    _procesar(repositorio, {"palabras_clave": ["aceite de oliva extra virgen"]})
+
+    terminos = _terminos_buscados(repositorio)
+    assert terminos[0] == "aceite de oliva extra virgen"
+    assert set(terminos[1:]) == {"aceite", "oliva", "extra"}
+    assert 2 <= repositorio.maximo_en_vuelo <= config.CATALOGO_BUSQUEDA_CONCURRENCIA
+
+
+def test_chat_fallback_con_fallo_de_red_no_usa_coincidencias_parciales():
+    """Si una palabra del fallback falla por red, se informa sin_datos aunque otra haya traído productos."""
+    aceite_oliva = _normalizar(_producto("prod-aceite-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0))
+
+    class RepositorioFalloParcial(RepositorioDoble):
+        """Simula un error de red solo en la consulta `q=aceite`."""
+
+        def buscar_productos(self, termino: str, precio_max: float | None = None) -> list | None:
+            if termino == "aceite":
+                return None
+            return super().buscar_productos(termino, precio_max)
+
+    repositorio = RepositorioFalloParcial(
+        cache=[_normalizar(LECHE_ENTERA)], busquedas={"oliva": [aceite_oliva]}, fuente=FUENTE_MEMORIA
+    )
+
+    datos = _procesar(repositorio, {"palabras_clave": ["aceite oliva"]})
+
+    assert datos["productos_recomendados"] == []
+    assert datos["estado_datos"] == ESTADO_SIN_DATOS
+    assert datos["respuesta"] == TEXTO_CATALOGO_NO_DISPONIBLE
+
+
+def test_chat_multipalabra_cae_a_singular_en_el_fallback():
+    """Si 'almendras' da 0 resultados, el fallback incluye su singular ('almendra') y devuelve el producto."""
     harina_singular = _normalizar(_producto("prod-harina-almendra", "Harina de Almendra 500 g", 5590.0))
     repositorio = RepositorioDoble(cache=[], busquedas={"almendra": [harina_singular]})
 
     datos = _procesar(repositorio, {"palabras_clave": ["harina de almendras"]}, mensaje="Busco harina de almendras")
 
-    assert repositorio.terminos_buscados == [("almendras", None), ("almendra", None)]
+    terminos = _terminos_buscados(repositorio)
+    assert terminos[0] == "harina de almendras"
+    assert set(terminos[1:]) == {"harina", "almendras", "almendra"}
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-almendra"]
 
 

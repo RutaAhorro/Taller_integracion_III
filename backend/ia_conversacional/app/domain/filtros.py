@@ -465,66 +465,57 @@ def admitido_por_catalogo(termino: str) -> bool:
     return len(saneado.encode("utf-8")) >= LARGO_MINIMO_BUSQUEDA_CATALOGO
 
 
-def _elegir_palabra_busqueda(frase_minuscula: str) -> str | None:
-    """
-    Elige la palabra única que se consultará en Catálogo para una frase.
+# Tope de términos sueltos que se prueban cuando la frase completa no devuelve resultados.
+MAXIMO_TERMINOS_FALLBACK_CATALOGO = 3
 
-    - Si la frase tiene una sola palabra, se devuelve tal cual (sin cambio de comportamiento).
-    - Si tiene varias palabras, descarta palabras vacías (`PALABRAS_VACIAS_BUSQUEDA`) y elige
-      la palabra más larga admitida por Catálogo (prefiriendo palabras con letras sobre
-      números sueltos; ante empate de longitud gana la primera, p. ej. "arroz" en "arroz grado 2").
-    """
-    partes = frase_minuscula.split()
-    if len(partes) <= 1:
-        return frase_minuscula or None
 
-    tokens = [token for token in PATRON_SEPARADOR_TERMINOS.split(frase_minuscula) if token]
-    palabras_utiles = [
-        token
-        for token in tokens
-        if _normalizar_texto(token) not in PALABRAS_VACIAS_BUSQUEDA and admitido_por_catalogo(token)
-    ]
-    if not palabras_utiles:
-        return frase_minuscula if admitido_por_catalogo(frase_minuscula) else None
-
-    palabras_con_letras = [token for token in palabras_utiles if any(caracter.isalpha() for caracter in token)]
-    candidatas = palabras_con_letras or palabras_utiles
-    return max(candidatas, key=len)
+def _terminos_una_palabra(frase_minuscula: str) -> list[str]:
+    """Conserva el comportamiento original de una sola palabra: tal cual, singular y sin tildes."""
+    candidatos = [frase_minuscula]
+    palabra_singular = singularizar_palabra(frase_minuscula)
+    if palabra_singular != frase_minuscula:
+        candidatos.append(palabra_singular)
+    candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
+    return list(dict.fromkeys(candidato for candidato in candidatos if candidato and admitido_por_catalogo(candidato)))
 
 
 def terminos_busqueda_catalogo(frase: str) -> list[str]:
     """
-    Devuelve la secuencia ordenada de términos `?q=` para buscar una frase en Catálogo.
+    Devuelve los términos iniciales `?q=` para buscar una frase en Catálogo.
 
-    Catálogo trata `q` como subcadena literal (`ILIKE '%q%'`), por lo que frases sin
-    conectores como "harina almendras" devuelven 0 resultados frente a "Harina de Almendras".
-    Por eso:
-    1. Para frases de varias palabras, se consulta UNA sola palabra (la más larga/específica,
-       descartando palabras vacías) y luego la IA filtra exigiendo todas las palabras.
-    2. Si con esa palabra no hay resultados, se prueba su forma singular (y variantes sin
-       tildes si difieren).
-    3. Para frases de una sola palabra, mantiene exactamente el comportamiento original
-       (palabra tal cual, luego su singular y variante sin tildes).
-    El llamador prueba cada término en orden y se detiene al obtener resultados.
+    - Una sola palabra mantiene el comportamiento original: la palabra tal cual, su
+      singular y las variantes sin tildes. El llamador las prueba en orden.
+    - Varias palabras envían la frase completa: Catálogo la trata como frase y ordena
+      por relevancia, así que los productos buenos llegan al filtro de la IA. Si no
+      hay coincidencias, el llamador usa `terminos_fallback_busqueda_catalogo`.
     """
     frase_minuscula = " ".join(frase.lower().split())
     if not frase_minuscula:
         return []
+    if " " not in frase_minuscula:
+        return _terminos_una_palabra(frase_minuscula)
+    return [frase_minuscula] if admitido_por_catalogo(frase_minuscula) else []
 
-    palabra_principal = _elegir_palabra_busqueda(frase_minuscula)
-    if not palabra_principal:
-        return []
 
-    candidatos = [palabra_principal]
-    palabra_singular = singularizar_palabra(palabra_principal)
-    if palabra_singular != palabra_principal:
-        candidatos.append(palabra_singular)
+def terminos_fallback_busqueda_catalogo(frase: str, maximo: int = MAXIMO_TERMINOS_FALLBACK_CATALOGO) -> list[str]:
+    """
+    Devuelve hasta `maximo` términos sueltos para cuando la frase completa dio 0 resultados.
 
-    candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
-
-    # Conserva el orden (primero la palabra elegida, luego singular y variantes sin tilde),
-    # quita repetidos y descarta lo que Catálogo rechazaría con 400 (< 3 bytes).
-    return list(dict.fromkeys(candidato for candidato in candidatos if candidato and admitido_por_catalogo(candidato)))
+    Descarta conectores y "sin" (`PALABRAS_VACIAS_BUSQUEDA`), agrega el singular de cada
+    palabra para no perder variantes como "harina de almendra" y omite lo que Catálogo
+    rechazaría con 400 (menos de 3 bytes tras sanear). "arroz" en "arroz grado 2" gana
+    antes que el número suelto por el propio filtro de admisión.
+    """
+    frase_minuscula = " ".join(frase.lower().split())
+    candidatos: list[str] = []
+    for token in PATRON_SEPARADOR_TERMINOS.split(frase_minuscula):
+        if not token or _normalizar_texto(token) in PALABRAS_VACIAS_BUSQUEDA or not admitido_por_catalogo(token):
+            continue
+        candidatos.append(token)
+        palabra_singular = singularizar_palabra(token)
+        if palabra_singular != token and admitido_por_catalogo(palabra_singular):
+            candidatos.append(palabra_singular)
+    return list(dict.fromkeys(candidatos))[:maximo]
 
 
 # ===== Filtrado del catálogo =====
