@@ -485,9 +485,12 @@ test("una parada larga conserva totales y deja los productos adicionales en un d
 test("sin base comparativa no presenta ahorro cero y conserva referencias sin nombre", () => {
   const datos = { ...ejemplo, base_una_tienda: null, ahorro: null };
   const html = presentar(datos);
-  assert.match(html, /Sin comparación disponible/);
-  assert.match(html, /Ninguna tienda sola/);
+  assert.match(html, /Sin tienda única para comparar/);
+  assert.match(html, /no hay una compra en un solo lugar con la cual comparar/);
   assert.doesNotMatch(html, /\$0/);
+  // La aclaración del total vale también para rutas parciales y no promete un precio menor.
+  assert.match(html, /Puede diferir del total de tu lista/);
+  assert.doesNotMatch(html, /siempre|más barat/i);
   assert.ok(html.includes(`Producto ${datos.no_cubiertos[0].producto_id}`));
 });
 

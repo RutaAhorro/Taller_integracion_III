@@ -373,6 +373,13 @@ export function ResultadoRuta({
             {cantidadEnvases} {cantidadEnvases === 1 ? "envase" : "envases"} ·
             Solo productos cubiertos · sin traslado
           </p>
+          {/* Motor suma solo artículos pendientes y cubiertos con el precio de la tienda asignada;
+              la lista suma todos sus artículos con el precio guardado, por eso pueden diferir. */}
+          <p className="mt-2 text-xs leading-relaxed text-primary-foreground/80">
+            Puede diferir del total de tu lista: aquí solo cuentan los artículos
+            pendientes que entran en la ruta, con el precio de la tienda donde
+            se compran.
+          </p>
         </div>
         <div className="flex flex-col rounded-2xl border border-border bg-card p-5 sm:p-6">
           <span className="mb-4 grid size-9 place-items-center rounded-xl bg-primary/10 text-primary">
@@ -384,12 +391,12 @@ export function ResultadoRuta({
           <p className="mt-2 text-xl font-bold tabular-nums tracking-tight sm:text-2xl">
             {base !== null && ahorro !== null
               ? formatPrice(ahorro)
-              : "Sin comparación disponible"}
+              : "Sin tienda única para comparar"}
           </p>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
             {base !== null && ahorro !== null
               ? `Comparado con ${base.cadena || base.nombre}: ${formatPrice(base.total)} para los mismos artículos cubiertos.`
-              : "Ninguna tienda sola cubre los mismos artículos."}
+              : "Estos artículos no están todos en una misma tienda cercana, así que no hay una compra en un solo lugar con la cual comparar."}
           </p>
         </div>
         <div className="flex flex-col rounded-2xl border border-border bg-card p-5 sm:p-6">

@@ -29,6 +29,8 @@ export type Message = {
   type: MessageType;
   content?: string;
   products?: ProductoRecomendadoChat[];
+  // Texto del envío fallido que puede reenviarse con "Reintentar"; solo en errores recuperables.
+  textoReintento?: string;
 };
 
 const ERROR_IA = 'Lo siento, en este momento no puedo procesar tu solicitud. Por favor intenta más tarde.';
@@ -50,6 +52,9 @@ function mensajeErrorHTTP(estado: number): string {
   if (estado === 429) return 'Hay demasiadas solicitudes. Espera un momento antes de volver a intentar.';
   return ERROR_IA;
 }
+
+// Estados HTTP que no se resuelven reenviando el mismo texto: sesión, permiso, ruta ausente o mensaje inválido.
+const ESTADOS_SIN_REINTENTO = new Set([401, 403, 404, 422]);
 
 // Normaliza los productos recomendados de la respuesta del asistente, descartando ítems inválidos.
 function normalizarProductosRecomendados(valor: unknown): ProductoRecomendadoChat[] {
@@ -106,37 +111,48 @@ export function useChatbot() {
   // Salir del chat cancela la espera, sin aplicar respuestas sobre una vista desmontada.
   useEffect(() => () => solicitudActiva.current?.abort(), []);
 
-  // Envía una sola consulta con sesión y conserva el texto si falla para permitir su reintento.
-  const manejarEnvio = async (texto: string) => {
-    const mensaje = texto.trim();
-    if (!mensaje || solicitudActiva.current) return;
-    if (isGuest) {
-      setMostrarModalAutenticacion(true);
-      return;
-    }
+  // ===== Solicitud al asistente =====
 
-    // El ref bloquea también dos envíos que ocurran antes del siguiente render.
+  // Ejecuta una consulta ya visible en la conversación. Un envío nuevo agrega el mensaje del
+  // usuario; un reintento lo reutiliza para no duplicarlo y sustituye el error anterior.
+  const solicitarRespuesta = async (mensaje: string, identificadorErrorPrevio: string | null) => {
+    // El ref bloquea también dos envíos o reintentos que ocurran antes del siguiente render.
     const controlador = new AbortController();
     solicitudActiva.current = controlador;
     const identificadorEspera = nuevoIdentificador();
     // Sustituye la espera por el resultado o error, ignorando respuestas de solicitudes canceladas.
-    const responder = (contenido: string, tipo: 'text' | 'error', productos: ProductoRecomendadoChat[] = []) => {
+    const responder = (
+      contenido: string,
+      tipo: 'text' | 'error',
+      productos: ProductoRecomendadoChat[] = [],
+      admiteReintento = false,
+    ) => {
       if (controlador.signal.aborted) return;
       const mensajeRespuesta: Message = { id: nuevoIdentificador(), role: 'assistant', type: tipo, content: contenido };
       if (productos.length > 0) mensajeRespuesta.products = productos;
+      if (tipo === 'error' && admiteReintento) mensajeRespuesta.textoReintento = mensaje;
       setMensajes((anteriores) => [
         ...anteriores.filter((anterior) => anterior.id !== identificadorEspera),
         mensajeRespuesta,
       ]);
-      if (tipo === 'error') setValorEntrada(mensaje);
+      // Sin reintento posible (p. ej. 422), devuelve el texto para corregirlo, pero nunca pisa un borrador nuevo.
+      if (tipo === 'error' && !admiteReintento) {
+        setValorEntrada((borrador) => (borrador.trim() ? borrador : mensaje));
+      }
     };
 
-    setMensajes((anteriores) => [
-      ...anteriores,
-      { id: nuevoIdentificador(), role: 'user', type: 'text', content: mensaje },
-      { id: identificadorEspera, role: 'assistant', type: 'processing' },
-    ]);
-    setValorEntrada('');
+    setMensajes((anteriores) =>
+      identificadorErrorPrevio === null
+        ? [
+            ...anteriores,
+            { id: nuevoIdentificador(), role: 'user', type: 'text', content: mensaje },
+            { id: identificadorEspera, role: 'assistant', type: 'processing' },
+          ]
+        : [
+            ...anteriores.filter((anterior) => anterior.id !== identificadorErrorPrevio),
+            { id: identificadorEspera, role: 'assistant', type: 'processing' },
+          ],
+    );
     setProcesando(true);
 
     try {
@@ -150,7 +166,7 @@ export function useChatbot() {
       if (controlador.signal.aborted) return;
       if (!respuesta.ok) {
         if (respuesta.status === 401) setMostrarModalAutenticacion(true);
-        responder(mensajeErrorHTTP(respuesta.status), 'error');
+        responder(mensajeErrorHTTP(respuesta.status), 'error', [], !ESTADOS_SIN_REINTENTO.has(respuesta.status));
         return;
       }
 
@@ -160,7 +176,7 @@ export function useChatbot() {
         !('respuesta' in datos) || typeof datos.respuesta !== 'string' ||
         !datos.respuesta.trim() || ('error' in datos && datos.error)
       ) {
-        responder(ERROR_IA, 'error');
+        responder(ERROR_IA, 'error', [], true);
         return;
       }
       const productosRecomendados = normalizarProductosRecomendados(
@@ -170,13 +186,40 @@ export function useChatbot() {
       );
       responder(datos.respuesta, 'text', productosRecomendados);
     } catch {
-      if (!controlador.signal.aborted) responder(ERROR_CONEXION, 'error');
+      if (!controlador.signal.aborted) responder(ERROR_CONEXION, 'error', [], true);
     } finally {
       if (solicitudActiva.current === controlador) {
         solicitudActiva.current = null;
         setProcesando(false);
       }
     }
+  };
+
+  // ===== Acciones de la vista =====
+
+  // Envía un mensaje nuevo escrito por el usuario y vacía el campo de entrada.
+  const manejarEnvio = async (texto: string) => {
+    const mensaje = texto.trim();
+    if (!mensaje || solicitudActiva.current) return;
+    if (isGuest) {
+      setMostrarModalAutenticacion(true);
+      return;
+    }
+    setValorEntrada('');
+    await solicitarRespuesta(mensaje, null);
+  };
+
+  // Reenvía a petición del usuario el texto de un error recuperable, sin tocar el borrador
+  // actual. Solo aplica al último mensaje: reintentar uno antiguo desordenaría la conversación.
+  const manejarReintento = async (identificadorError: string) => {
+    if (solicitudActiva.current) return;
+    const ultimoMensaje = mensajes.at(-1);
+    if (ultimoMensaje?.id !== identificadorError || !ultimoMensaje.textoReintento) return;
+    if (isGuest) {
+      setMostrarModalAutenticacion(true);
+      return;
+    }
+    await solicitarRespuesta(ultimoMensaje.textoReintento, identificadorError);
   };
 
   // Cancela la espera antes de reiniciar el chat para que una respuesta tardía no lo repueble.
@@ -196,6 +239,7 @@ export function useChatbot() {
     setShowAuthModal: setMostrarModalAutenticacion,
     scrollRef: referenciaDesplazamiento,
     handleSend: manejarEnvio,
+    handleRetry: manejarReintento,
     handleClear: manejarVaciado,
   };
 }

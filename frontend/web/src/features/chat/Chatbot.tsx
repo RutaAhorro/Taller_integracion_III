@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { 
   Trash2,
-  User, Bot, X, ShieldAlert, Info, Send, ShoppingCart, Package
+  User, Bot, X, ShieldAlert, Info, Send, ShoppingCart, Package, RotateCcw
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Link, useNavigate } from 'react-router-dom';
@@ -54,8 +54,11 @@ export default function Chatbot() {
     setShowAuthModal,
     scrollRef,
     handleSend,
+    handleRetry,
     handleClear
   } = useChatbot();
+  // Solo el último error ofrece reintento: reenviar uno antiguo desordenaría la conversación.
+  const identificadorUltimoMensaje = messages.at(-1)?.id;
 
   return (
     <div className="flex-1 flex flex-col bg-background text-foreground overflow-hidden relative">
@@ -100,7 +103,19 @@ export default function Chatbot() {
                     <ReactMarkdown>{mensaje.content || ''}</ReactMarkdown>
                   </div>
                 )}
-                
+
+                {mensaje.type === 'error' && mensaje.textoReintento && mensaje.id === identificadorUltimoMensaje && (
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => handleRetry(mensaje.id)}
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-lg border-2 border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground shadow-[2px_2px_0px_var(--color-border)] transition-colors hover:bg-accent cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                    Reintentar
+                  </button>
+                )}
+
                 {mensaje.type === 'text' && mensaje.products && mensaje.products.length > 0 && (() => {
                   const estaExpandido = Boolean(mensajesExpandidos[mensaje.id]);
                   const productosVisibles = estaExpandido
@@ -243,7 +258,7 @@ export default function Chatbot() {
                 }
               }}
               aria-label="Mensaje para el asistente"
-              placeholder="Consulta un producto o pide una recomendación..."
+              placeholder="Pregunta por un producto…"
               className="w-full max-h-28 min-h-[40px] bg-transparent resize-none outline-none py-2 px-3 text-sm text-foreground placeholder:text-muted-foreground"
               rows={1}
             />
