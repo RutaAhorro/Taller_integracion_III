@@ -39,10 +39,12 @@ DECLARACION_FUNCION_FILTROS = {
             "categoria": {
                 "type": "string",
                 "description": (
-                    "Categoria del producto buscado, por ejemplo: verduras, "
-                    "frutas, lacteos, panaderia, abarrotes, carnes. Si el "
-                    "usuario no menciona una categoria, NO incluyas esta "
-                    "clave."
+                    "Categoria amplia nombrada explicitamente por el usuario "
+                    "cuando NO pide un producto especifico, por ejemplo: "
+                    "'verduras', 'frutas', 'lacteos', 'panaderia'. Si el "
+                    "usuario pide un producto concreto (ej. 'aceite de oliva', "
+                    "'oliva', 'harina almendras', 'leche sin lactosa'), NO "
+                    "incluyas ni infieras esta clave; usa solo 'palabras_clave'."
                 ),
             },
             "distancia_max": {
@@ -60,33 +62,23 @@ DECLARACION_FUNCION_FILTROS = {
                 "type": "array",
                 "items": {"type": "string"},
                 "description": (
-                    "Lista de terminos de busqueda que ayudan a encontrar "
-                    "productos reales relacionados con el pedido, MAS ALLA "
-                    "de solo repetir palabras textuales del mensaje. Usa tu "
-                    "propio conocimiento general para asociar el pedido con "
-                    "productos o caracteristicas concretas, incluso si la "
-                    "conexion no es obvia o el pedido no es sobre comida. "
-                    "Ejemplos: 'algo con tomate' -> ['tomate']; 'receta con "
-                    "tomate y ajo' -> ['tomate', 'ajo']; 'comida salada que "
-                    "tenga platano' -> ['platano', 'tostones', 'chicharron "
-                    "de platano', 'platano frito'] (asociaciones reales de "
-                    "platano en preparaciones saladas, no solo la palabra "
-                    "literal); 'lavadora barata con bajo consumo' -> "
-                    "['lavadora', 'bajo consumo', 'eficiente']; 'quiero "
-                    "hacer pebre' -> ['tomate', 'cebolla', 'cilantro', "
-                    "'aji verde', 'limon'] (los ingredientes REALES de la "
-                    "receta chilena de pebre, nunca la palabra 'pebre' en "
-                    "si, porque esa palabra no es un producto de venta); "
+                    "Lista de terminos de busqueda de productos. Si el usuario "
+                    "pide un producto especifico (incluso de varias palabras, "
+                    "como 'aceite de oliva', 'harina almendras', 'leche sin "
+                    "lactosa', 'azucar flor' o 'jamon iberico'), conserva la "
+                    "frase completa en un solo elemento (ej. ['aceite de oliva'], "
+                    "['harina de almendras']) sin dividirla en palabras sueltas "
+                    "ni agregar genericos o sustitutos (no agregues 'aceite', "
+                    "'aceite vegetal' ni 'harina' suelta). Solo expande a "
+                    "productos relacionados cuando el pedido sea un plato, "
+                    "receta o concepto amplio (ej. 'quiero hacer pebre' -> "
+                    "['tomate', 'cebolla', 'cilantro', 'aji verde', 'limon']; "
                     "'quiero hacer cazuela' -> ['papa', 'zapallo', 'choclo', "
-                    "'carne', 'zanahoria']. Si el usuario menciona el "
-                    "nombre de una receta o plato que no reconoces con "
-                    "certeza, igual responde con tu mejor estimacion de "
-                    "ingredientes tipicos en vez de dejar el campo vacio -- "
-                    "una asociacion aproximada sirve mas que ninguna. "
-                    "Incluye tanto los terminos literales del usuario como "
-                    "asociaciones razonables. Si el pedido ya es una "
-                    "categoria amplia y generica (ej. 'verduras baratas'), "
-                    "usa 'categoria' en vez de esto y deja este campo vacio."
+                    "'carne', 'zanahoria']; 'comida salada con platano' -> "
+                    "['platano', 'tostones', 'platano frito']). Si el pedido es "
+                    "solo una categoria amplia y generica (ej. 'verduras "
+                    "baratas'), usa 'categoria' en vez de esto y deja este "
+                    "campo vacio."
                 ),
             },
             "ingredientes": {
@@ -130,32 +122,38 @@ DECLARACION_FUNCION_FILTROS = {
 # ===== Prompt de explicación (etapa 3) =====
 
 
+def _resumir_producto_para_explicacion(producto: dict) -> dict:
+    """Extrae solo nombre, marca, precio formateado y tienda; nunca distancia ni slugs de categoría."""
+    item = {
+        "nombre": str(producto.get("nombre", "")),
+        "precio": formatear_precio_clp(producto["precio"]),
+    }
+    marca = str(producto.get("marca") or "").strip()
+    if marca:
+        item["marca"] = marca
+    tienda = str(producto.get("supermercado") or "").strip()
+    if tienda:
+        item["tienda"] = tienda
+    return item
+
+
 def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list) -> str:
-    """Arma el prompt común a Gemini y Groq con un resumen de los productos validados y precios CLP formateados."""
-    # Ya vienen ordenados por precio: los primeros bastan y un prompt corto responde más rápido.
+    """Arma el prompt común a Groq y Gemini solo con datos verificables (nombre, marca, precio y tienda)."""
+    # Se limita a los primeros resultados más relevantes para mantener el prompt corto y rápido.
     resumen = [
-        {
-            "nombre": producto["nombre"],
-            "precio": formatear_precio_clp(producto["precio"]),
-            "categoria": producto["categoria"],
-            "distancia_km": producto["distancia_km"],
-        }
+        _resumir_producto_para_explicacion(producto)
         for producto in productos_filtrados[: config.EXPLICACION_MAX_PRODUCTOS]
     ]
 
     return (
-        f'El usuario pidio: "{mensaje_usuario}"\n\n'
-        "Estos son los UNICOS productos reales disponibles que calzan con "
-        "su busqueda (ya fueron filtrados por precio/categoria/distancia "
-        "por el sistema, ordenados del mas barato al mas caro):\n"
+        f'El usuario pidió: "{mensaje_usuario}"\n\n'
+        "Estos son los ÚNICOS productos reales devueltos por el catálogo "
+        "(ordenados por relevancia):\n"
         f"{json.dumps(resumen, ensure_ascii=False)}\n\n"
-        "Redacta una respuesta breve en espanol (sin maximo de oraciones) "
-        "explicando por que estos productos calzan con lo que pidio. "
-        "Responde en texto plano, sin formato Markdown. "
-        "Menciona nombres y precios reales de la lista copiando cada precio "
-        "exactamente como viene formateado (por ejemplo, $10.600), sin "
-        "agregar decimales ni espacios entre digitos. No inventes "
-        "productos, precios, tiendas ni caracteristicas que no esten en "
-        "la lista. No hagas preguntas de seguimiento, es una respuesta "
-        "unica."
+        "Reglas estrictas para redactar tu respuesta en español:\n"
+        "- Responde en texto plano, sin formato Markdown, en 2 o 3 oraciones breves y sin preguntas de seguimiento.\n"
+        "- Solo puedes afirmar nombre, marca, precio y tienda presentes en la lista entregada.\n"
+        "- Copia cada precio exactamente como viene formateado (por ejemplo, $10.600), sin agregar decimales ni espacios entre dígitos.\n"
+        "- Prohibido inventar propiedades, ingredientes, atributos nutricionales o usos que no figuren literalmente en el nombre del producto (por ejemplo: sin gluten, vegano, orgánico o sustituto), y no menciones distancias ni categorías.\n"
+        "- No repitas la lista completa de tarjetas: el usuario ya ve todos los productos debajo; resume brevemente o destaca solo 1 o 2 opciones relevantes."
     )

@@ -1,7 +1,7 @@
 """
 Proveedor Gemini (Google AI Studio) por la API REST `generateContent`.
 
-Primario del respaldo. Las claves se envían en un encabezado y nunca se
+Secundario del respaldo. Las claves se envían en un encabezado y nunca se
 registran en los logs.
 """
 
@@ -104,6 +104,8 @@ class GeminiProveedor(ProveedorIA):
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
         """Etapa 3; deja propagar los errores HTTP para que el respaldo los reintente."""
+        if not self.clave_api:
+            raise ValueError("GEMINI_API_KEY no configurada")
         cuerpo = {
             "contents": [
                 {

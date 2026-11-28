@@ -1,7 +1,7 @@
 """
 Proveedor de respaldo: reintentos con backoff exponencial y cambio de proveedor.
 
-Prueba los proveedores en orden (Gemini y luego Groq). Ante un error
+Prueba los proveedores en orden (Groq y luego Gemini). Ante un error
 transitorio reintenta con espera creciente; si se agotan los reintentos,
 pasa al siguiente. Los errores no recuperables cambian de proveedor sin
 reintentar.

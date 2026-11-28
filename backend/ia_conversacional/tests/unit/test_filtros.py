@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import httpx
 
 from app.domain.filtros import (
+    categoria_mencionada_en_mensaje,
     dividir_frases_compuestas,
     extraer_terminos_respaldo,
     filtrar_productos,
@@ -484,3 +485,81 @@ def test_filtrar_productos_preservar_orden_mantiene_orden_de_catalogo():
     filtrados = filtrar_productos(catalogo, {"palabras_clave": ["harina de almendras"]}, preservar_orden=True)
 
     assert [producto["id"] for producto in filtrados] == [1, 3]
+
+
+def test_filtrar_productos_categoria_incompatible_con_palabras_clave_no_descarta_coincidencias():
+    """Si el modelo infiere una categoría que no calza con los slugs de Catálogo, prevalecen las palabras clave y su orden."""
+    catalogo = [
+        {
+            "id": 10,
+            "nombre": "Aceite de Oliva Extra Virgen 500 ml",
+            "categoria": "despensa",
+            "precio": 5990.0,
+            "distancia_km": 0.0,
+        },
+        {
+            "id": 11,
+            "nombre": "Aceite de Oliva Clásico 1 L",
+            "categoria": "despensa",
+            "precio": 8990.0,
+            "distancia_km": 0.0,
+        },
+        {
+            "id": 12,
+            "nombre": "Aceite Vegetal 1 L",
+            "categoria": "despensa",
+            "precio": 1890.0,
+            "distancia_km": 0.0,
+        },
+    ]
+
+    filtrados = filtrar_productos(
+        catalogo,
+        {"categoria": "abarrotes", "palabras_clave": ["aceite de oliva"]},
+        preservar_orden=True,
+    )
+
+    assert [producto["id"] for producto in filtrados] == [10, 11]
+
+
+def test_categoria_mencionada_en_mensaje_distingue_explicita_de_inferida():
+    """Reconoce categorías nombradas por el usuario (con tildes/plurales) y rechaza categorías inventadas por el LLM."""
+    assert categoria_mencionada_en_mensaje("verduras", "Busco verduras bajo $2.000") is True
+    assert categoria_mencionada_en_mensaje("lácteos", "Quiero productos lacteos") is True
+    assert categoria_mencionada_en_mensaje("frutas y verduras", "Busco frutas baratas") is True
+    assert categoria_mencionada_en_mensaje("abarrotes", "Busco aceite de oliva") is False
+    assert categoria_mencionada_en_mensaje("despensa", "Busco oliva") is False
+    assert categoria_mencionada_en_mensaje("aceites", "Busco oliva") is False
+    assert categoria_mencionada_en_mensaje("lacteos", "leche sin lactosa bajo $2.000") is False
+
+
+def test_rescatar_filtros_de_error_groq_desenvuelve_arguments_de_tool_use_failed():
+    """Rescata filtros cuando Groq envuelve la llamada fallida en `{"name": ..., "arguments": ...}`."""
+    cuerpo_dict = {
+        "error": {
+            "code": "tool_use_failed",
+            "failed_generation": {
+                "name": "extraer_filtros_busqueda",
+                "arguments": {"palabras_clave": ["aceite de oliva"], "precio_max": "7000"},
+            },
+        }
+    }
+    respuesta_dict = MagicMock(spec=httpx.Response)
+    respuesta_dict.json.return_value = cuerpo_dict
+    assert rescatar_filtros_de_error_groq(respuesta_dict) == {
+        "palabras_clave": ["aceite de oliva"],
+        "precio_max": 7000.0,
+    }
+
+    cuerpo_texto = {
+        "error": {
+            "code": "tool_use_failed",
+            "failed_generation": (
+                '<function=extraer_filtros_busqueda>{"name": "extraer_filtros_busqueda", '
+                '"arguments": "{\\"palabras_clave\\": [\\"oliva\\"]}"}</function>'
+            ),
+        }
+    }
+    respuesta_texto = MagicMock(spec=httpx.Response)
+    respuesta_texto.json.return_value = cuerpo_texto
+    assert rescatar_filtros_de_error_groq(respuesta_texto) == {"palabras_clave": ["oliva"]}

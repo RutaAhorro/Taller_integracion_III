@@ -1,7 +1,7 @@
 """
 Proveedor Groq (GroqCloud, API compatible con OpenAI).
 
-Secundario del respaldo. Usa un modelo liviano para extraer filtros y uno
+Primario del respaldo. Usa un modelo liviano para extraer filtros y uno
 más capaz para redactar la explicación.
 """
 
@@ -65,6 +65,14 @@ def rescatar_filtros_de_error_groq(respuesta: httpx.Response) -> dict | None:
 
     if crudo is None:
         return None
+    # En errores `tool_use_failed`, Groq a veces envuelve los parámetros bajo `arguments`.
+    argumentos_envueltos = crudo.get("arguments")
+    if isinstance(argumentos_envueltos, dict):
+        crudo = argumentos_envueltos
+    elif isinstance(argumentos_envueltos, str):
+        argumentos_parseados = _extraer_json_de_texto(argumentos_envueltos)
+        if argumentos_parseados is not None:
+            crudo = argumentos_parseados
     return sanitizar_filtros_crudos(crudo)
 
 
@@ -132,7 +140,10 @@ class GroqProveedor(ProveedorIA):
             tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
             rescatados = rescatar_filtros_de_error_groq(error_http.response)
             if rescatados is not None:
-                logger.info("Groq rechazo el schema; filtros rescatados del failed_generation: %s", rescatados)
+                logger.info(
+                    "Groq rechazo el schema; claves rescatadas del failed_generation: %s",
+                    sorted(rescatados),
+                )
                 return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
             estado_http = error_http.response.status_code
             logger.warning("Groq respondió HTTP %s sin filtros rescatables.", estado_http)
@@ -157,6 +168,8 @@ class GroqProveedor(ProveedorIA):
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
         """Etapa 3; deja propagar los errores HTTP para que el respaldo los reintente."""
+        if not self.clave_api:
+            raise ValueError("GROQ_API_KEY no configurada")
         cuerpo: dict = {
             "model": self.modelo_explicacion,
             "messages": [

@@ -186,3 +186,67 @@ def test_construir_explicacion_respaldo_formatea_precio_clp():
         construir_explicacion_respaldo(productos, "harina de almendras")
         == "Estas son las opciones que encontré para «harina de almendras», desde $10.600."
     )
+
+
+def test_prompt_explicacion_omite_distancia_y_categoria_e_incluye_datos_verificables():
+    """El prompt solo entrega nombre, marca, precio CLP y tienda; jamás pasa distancia_km ni slugs de categoría."""
+    productos = [
+        {
+            "nombre": "Aceite de Oliva Extra Virgen 500 ml",
+            "marca": "Chef",
+            "precio": 5490.0,
+            "supermercado": "Jumbo",
+            "categoria": "despensa",
+            "distancia_km": 0.0,
+        },
+        {
+            "nombre": "Harina de Almendras 500 g",
+            "marca": "",
+            "precio": 10600.0,
+            "supermercado": "",
+            "categoria": "abarrotes-gourmet",
+            "distancia_km": 2.5,
+        },
+    ]
+
+    prompt = construir_prompt_explicacion("Busco harina almendras", productos)
+
+    assert '"nombre": "Aceite de Oliva Extra Virgen 500 ml"' in prompt
+    assert '"marca": "Chef"' in prompt
+    assert '"tienda": "Jumbo"' in prompt
+    assert '"precio": "$5.490"' in prompt
+    assert '"nombre": "Harina de Almendras 500 g"' in prompt
+    assert '"precio": "$10.600"' in prompt
+    assert '"marca": ""' not in prompt
+    assert '"tienda": ""' not in prompt
+    assert "distancia_km" not in prompt
+    assert "0.0" not in prompt
+    assert "2.5" not in prompt
+    assert "despensa" not in prompt
+    assert "abarrotes-gourmet" not in prompt
+
+
+def test_prompt_explicacion_receta_y_pedido_amplio_no_pide_negar_coincidencias():
+    """En recetas y pedidos amplios el prompt no ordena negar coincidencias cuando los nombres difieren del mensaje."""
+    prompt_receta = construir_prompt_explicacion(
+        "Quiero hacer pebre",
+        [
+            {"nombre": "Tomate Larga Vida 1 kg", "precio": 1290.0, "supermercado": "Lider"},
+            {"nombre": "Cebolla Granel 1 kg", "precio": 990.0, "supermercado": "Jumbo"},
+            {"nombre": "Cilantro Manojo", "precio": 790.0, "supermercado": "Lider"},
+        ],
+    )
+    prompt_amplio = construir_prompt_explicacion(
+        "Algo para el desayuno",
+        [
+            {"nombre": "Pan Marraqueta 1 kg", "precio": 1890.0, "supermercado": "Lider"},
+            {"nombre": "Leche Entera 1 L", "precio": 1190.0, "marca": "Colun", "supermercado": "Jumbo"},
+        ],
+    )
+
+    for prompt in (prompt_receta, prompt_amplio):
+        prompt_minuscula = prompt.lower()
+        assert "no encontré coincidencias exactas" not in prompt_minuscula
+        assert "coincidencias exactas" not in prompt_minuscula
+    assert "Tomate Larga Vida 1 kg" in prompt_receta
+    assert "Pan Marraqueta 1 kg" in prompt_amplio

@@ -18,6 +18,7 @@ import anyio
 
 from app import config
 from app.domain.filtros import (
+    categoria_mencionada_en_mensaje,
     dividir_frases_compuestas,
     extraer_terminos_respaldo,
     filtrar_productos,
@@ -543,6 +544,51 @@ def _tiene_criterio_busqueda(filtros: dict) -> bool:
     return bool(filtros.get("palabras_clave") or filtros.get("ingredientes") or filtros.get("categoria"))
 
 
+def _descartar_categoria_inferida(filtros: dict, mensaje: str) -> dict:
+    """
+    Elimina la categoría si hay un término de búsqueda y el usuario no la nombró en el mensaje.
+
+    Evita que una categoría inventada por el LLM (p. ej. "abarrotes" o "aceites" al buscar
+    "oliva", o "abarrotes" al buscar "aceite de oliva") descarte productos reales cuyos slugs
+    en Catálogo son otros (p. ej. "despensa").
+    """
+    categoria = filtros.get("categoria")
+    tiene_termino_busqueda = bool(filtros.get("palabras_clave") or filtros.get("ingredientes"))
+    if not tiene_termino_busqueda or not isinstance(categoria, str) or not categoria.strip():
+        return filtros
+    if categoria_mencionada_en_mensaje(categoria, mensaje):
+        return filtros
+
+    logger.debug("Categoría inferida '%s' descartada por no figurar en el mensaje con término presente.", categoria)
+    return {clave: valor for clave, valor in filtros.items() if clave != "categoria"}
+
+
+def _priorizar_terminos_ante_categoria_inferida(filtros: dict, mensaje: str) -> tuple[dict, dict | None]:
+    """
+    Si el modelo solo devolvió una categoría no mencionada en el mensaje y hay términos útiles,
+    busca primero esos términos y deja la categoría original únicamente como respaldo.
+
+    Catálogo también busca `?q=` sobre `categoria_cruda`: consultar primero una categoría inferida
+    como "despensa" para "Busco oliva" devuelve productos ajenos que el filtro por categoría conserva.
+    """
+    categoria = filtros.get("categoria")
+    if (
+        not isinstance(categoria, str)
+        or not categoria.strip()
+        or filtros.get("palabras_clave")
+        or filtros.get("ingredientes")
+        or categoria_mencionada_en_mensaje(categoria, mensaje)
+    ):
+        return filtros, None
+
+    terminos_respaldo = extraer_terminos_respaldo(mensaje)
+    if not terminos_respaldo:
+        return filtros, None
+
+    filtros_sin_categoria = {clave: valor for clave, valor in filtros.items() if clave != "categoria"}
+    return {**filtros_sin_categoria, "palabras_clave": terminos_respaldo}, filtros
+
+
 def _completar_filtros_con_respaldo(filtros: dict, mensaje: str) -> dict | None:
     """
     Garantiza un criterio de producto antes de consultar Catálogo.
@@ -614,6 +660,10 @@ async def _ejecutar_etapas_1_y_2(
                 0,
                 proveedor_extraccion,
             )
+        filtros_efectivos = _descartar_categoria_inferida(filtros_efectivos, mensaje)
+        filtros_efectivos, filtros_respaldo_categoria = _priorizar_terminos_ante_categoria_inferida(
+            filtros_efectivos, mensaje
+        )
 
         # Etapa 2: búsqueda directa en Catálogo acotada a su fracción del plazo y al tiempo restante.
         inicio_catalogo = time.perf_counter()
@@ -647,7 +697,16 @@ async def _ejecutar_etapas_1_y_2(
                 if clave in ("precio_max", "categoria", "distancia_max")
             }
             if filtros_base:
-                productos = filtrar_productos(productos, filtros_base)
+                productos_filtrados_base = filtrar_productos(productos, filtros_base)
+                if not productos_filtrados_base and "categoria" in filtros_base:
+                    filtros_sin_categoria = {
+                        clave: valor for clave, valor in filtros_base.items() if clave != "categoria"
+                    }
+                    productos = (
+                        filtrar_productos(productos, filtros_sin_categoria) if filtros_sin_categoria else productos
+                    )
+                else:
+                    productos = productos_filtrados_base
 
             # NOTE: limite_candidatos=None para no descartar un 4º candidato vigente antes de validar
             ingredientes_receta, ingredientes_faltantes = vincular_ingredientes_catalogo(
@@ -747,9 +806,31 @@ async def _ejecutar_etapas_1_y_2(
             )
 
         # Camino no-receta: filtrar exigiendo todas las palabras y mantener el orden de relevancia de Catálogo.
-        productos_filtrados = filtrar_productos(productos, filtros_efectivos, preservar_orden=True)[
-            : config.EXPLICACION_MAX_PRODUCTOS
-        ]
+        productos_filtrados = filtrar_productos(productos, filtros_efectivos, preservar_orden=True)
+
+        # Si se priorizaron términos del mensaje frente a una categoría inferida y tras filtrar
+        # quedaron 0 productos, hacer un único reintento con la categoría original dentro del presupuesto.
+        if not productos_filtrados and filtros_respaldo_categoria is not None and catalogo_disponible:
+            tiempo_consumido_catalogo = time.perf_counter() - inicio_catalogo
+            plazo_reintento = max(
+                0.0,
+                min(presupuesto.plazo_catalogo_max - tiempo_consumido_catalogo, limite_etapas_1_y_2 - time.monotonic()),
+            )
+            if plazo_reintento > 0:
+                productos_respaldo, estado_respaldo, _disponible_respaldo = await _obtener_candidatos(
+                    repositorio, filtros_respaldo_categoria, plazo_catalogo=plazo_reintento
+                )
+                tiempo_catalogo_ms = round((time.perf_counter() - inicio_catalogo) * MILISEGUNDOS_POR_SEGUNDO)
+                filtrados_respaldo = filtrar_productos(
+                    productos_respaldo, filtros_respaldo_categoria, preservar_orden=True
+                )
+                if filtrados_respaldo:
+                    productos_filtrados = filtrados_respaldo
+                    filtros_efectivos = filtros_respaldo_categoria
+                    estado_datos = estado_respaldo
+                    termino_buscado = _etiqueta_termino_buscado(filtros_efectivos)
+
+        productos_filtrados = productos_filtrados[: config.EXPLICACION_MAX_PRODUCTOS]
         return (
             None,
             DatosEtapa3(

@@ -113,7 +113,7 @@ CATALOGO_BUSQUEDA_MAX_CONSULTAS = _leer_env_int("IA_CATALOGO_BUSQUEDA_MAX_CONSUL
 CATALOGO_BUSQUEDA_CONCURRENCIA = _leer_env_int("IA_CATALOGO_BUSQUEDA_CONCURRENCIA", 4)
 CATALOGO_CONSULTA_TOKEN = _leer_env_opcional("CATALOGO_CONSULTA_TOKEN")
 
-# ===== Proveedor Groq (secundario) =====
+# ===== Proveedor Groq (primario) =====
 
 GROQ_API_KEY = _leer_env_opcional("GROQ_API_KEY")
 GROQ_ENDPOINT = _leer_env_str("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/chat/completions")
@@ -127,7 +127,7 @@ GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 256)
 GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 600)
 GROQ_FREQUENCY_PENALTY = _leer_env_float("IA_GROQ_FREQUENCY_PENALTY", 0.4)
 
-# ===== Proveedor Gemini (primario) =====
+# ===== Proveedor Gemini (secundario) =====
 
 GEMINI_API_KEY = _leer_env_opcional("GEMINI_API_KEY")
 GEMINI_MODEL = _leer_env_str("GEMINI_MODEL", "gemini-3.1-flash-lite")
@@ -135,7 +135,9 @@ GEMINI_API_BASE_URL = _leer_env_str("GEMINI_API_BASE_URL", "https://generativela
     "/"
 )
 GEMINI_ENDPOINT = _leer_env_str("GEMINI_ENDPOINT", f"{GEMINI_API_BASE_URL}/models/{GEMINI_MODEL}:generateContent")
-GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 4.0)
+# 5,0 s como respaldo evita ReadTimeout prematuros cuando Groq falla; el límite estricto
+# de etapas 1+2 lo impone `anyio.fail_after(plazo_etapas_1_y_2)` (httpx aplica su timeout por fase).
+GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 5.0)
 # gemini-3.1-flash-lite admite "minimal" (razonamiento casi nulo) para responder en 1-2 s.
 GEMINI_THINKING_LEVEL = _leer_env_str("IA_GEMINI_THINKING_LEVEL", "minimal")
 GEMINI_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXTRACCION", 256)

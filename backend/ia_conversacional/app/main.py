@@ -63,15 +63,16 @@ configurar_logging()
 
 repositorio_productos = ProductoRepositorio()
 
+# Orden Groq -> Gemini: Groq responde en ~0,8-1,9 s y evita pagar primero el ReadTimeout de Gemini.
 proveedor_respaldo = FallbackProveedor(
     proveedores=[
-        GeminiProveedor(clave_api=config.GEMINI_API_KEY, url_endpoint=config.GEMINI_ENDPOINT),
         GroqProveedor(
             clave_api=config.GROQ_API_KEY,
             url_endpoint=config.GROQ_ENDPOINT,
             modelo_extraccion=config.GROQ_MODEL_EXTRACCION,
             modelo_explicacion=config.GROQ_MODEL_EXPLICACION,
         ),
+        GeminiProveedor(clave_api=config.GEMINI_API_KEY, url_endpoint=config.GEMINI_ENDPOINT),
     ],
 )
 
