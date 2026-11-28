@@ -140,7 +140,10 @@ class GroqProveedor(ProveedorIA):
             tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
             rescatados = rescatar_filtros_de_error_groq(error_http.response)
             if rescatados is not None:
-                logger.info("Groq rechazo el schema; filtros rescatados del failed_generation: %s", rescatados)
+                logger.info(
+                    "Groq rechazo el schema; claves rescatadas del failed_generation: %s",
+                    sorted(rescatados),
+                )
                 return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
             estado_http = error_http.response.status_code
             logger.warning("Groq respondió HTTP %s sin filtros rescatables.", estado_http)

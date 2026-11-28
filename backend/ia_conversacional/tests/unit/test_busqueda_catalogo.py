@@ -465,10 +465,10 @@ def test_chat_busqueda_caida_y_cache_vacia_informa_catalogo_no_disponible():
 
 
 def test_chat_solo_categoria_busca_en_catalogo_sin_usar_cache():
-    """Con solo categoría se consulta Catálogo por `?q=` en vez de depender de la copia en memoria."""
+    """Con solo categoría nombrada por el usuario se consulta Catálogo por `?q=` sin depender de la copia en memoria."""
     repositorio = RepositorioDoble(cache=[], busquedas={"lacteos": [_normalizar(LECHE_ENTERA)]})
 
-    datos = _procesar(repositorio, {"categoria": "lacteos"})
+    datos = _procesar(repositorio, {"categoria": "lacteos"}, mensaje="Busco lacteos")
 
     assert repositorio.terminos_buscados == [("lacteos", None)]
     assert repositorio.recargas == 0
@@ -1216,8 +1216,8 @@ def test_chat_harina_almendras_con_y_sin_coincidencia_exacta_ignora_categoria_in
     assert datos_sin["respuesta"] == TEXTO_SIN_PRODUCTOS
 
 
-def test_chat_categoria_explicita_en_mensaje_reintenta_sin_categoria_si_da_cero():
-    """Si el usuario nombró una categoría que no calza con el slug de Catálogo, se reintenta sin categoría sin llamada extra."""
+def test_chat_categoria_explicita_en_mensaje_acota_suave_sin_dejar_cero():
+    """Si la categoría explícita no calza con el slug de Catálogo, filtrar_productos acota suave sin dejar 0 ni hacer otra llamada."""
     aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
     repositorio = RepositorioDoble(cache=[], busquedas={"aceite de oliva": [aceite_oliva]})
 
@@ -1231,16 +1231,81 @@ def test_chat_categoria_explicita_en_mensaje_reintenta_sin_categoria_si_da_cero(
     assert _terminos_buscados(repositorio) == ["aceite de oliva"]
 
 
-def test_chat_solo_categoria_inventada_con_cero_resultados_reintenta_con_mensaje():
-    """Si el modelo devolvió solo una categoría inventada ('abarrotes') y Catálogo dio 0, reintenta con los términos del mensaje."""
+def test_chat_solo_categoria_despensa_en_busco_oliva_prioriza_termino_del_mensaje():
+    """Con solo {'categoria': 'despensa'} para 'Busco oliva', busca primero 'oliva' y evita productos ajenos de despensa."""
     aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
-    repositorio = RepositorioDoble(cache=[], busquedas={"abarrotes": [], "oliva": [aceite_oliva]})
+    arroz = _normalizar(_producto("prod-arroz", "Arroz Grado 2 1 kg", 1190.0, "despensa"))
+    harina = _normalizar(_producto("prod-harina", "Harina de Trigo 1 kg", 1290.0, "despensa"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={"despensa": [arroz, harina], "oliva": [aceite_oliva]},
+    )
+
+    datos = _procesar(repositorio, {"categoria": "despensa"}, mensaje="Busco oliva")
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
+    assert datos["filtros_aplicados"] == {"palabras_clave": ["oliva"]}
+    assert _terminos_buscados(repositorio) == ["oliva"]
+
+
+def test_chat_solo_categoria_abarrotes_que_deja_cero_tras_filtrar_encuentra_oliva():
+    """Aunque Catálogo devolviera ítems en 'abarrotes' que el filtro descartaría a 0, priorizar 'oliva' resuelve el pedido."""
+    aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    fideos_despensa = _normalizar(_producto("prod-fideos", "Fideos Spaghetti 400 g", 990.0, "despensa"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={"abarrotes": [fideos_despensa], "oliva": [aceite_oliva]},
+    )
 
     datos = _procesar(repositorio, {"categoria": "abarrotes"}, mensaje="Busco oliva")
 
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
     assert datos["filtros_aplicados"] == {"palabras_clave": ["oliva"]}
-    assert _terminos_buscados(repositorio) == ["abarrotes", "abarrote", "oliva"]
+    assert _terminos_buscados(repositorio) == ["oliva"]
+
+
+def test_chat_solo_categoria_inferida_usa_categoria_como_respaldo_si_terminos_dan_cero():
+    """Si los términos del mensaje no dejan resultados tras filtrar, hace un único reintento con la categoría original."""
+    pan_sin_desayuno = _normalizar(_producto("prod-pan", "Pan Marraqueta 1 kg", 1890.0, "panaderia"))
+    leche = _normalizar(LECHE_ENTERA)
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={"desayuno": [pan_sin_desayuno], "lacteos": [leche]},
+    )
+
+    datos = _procesar(repositorio, {"categoria": "lacteos"}, mensaje="Algo para el desayuno")
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["filtros_aplicados"] == {"categoria": "lacteos"}
+    assert _terminos_buscados(repositorio) == ["desayuno", "lacteos"]
+
+
+def test_chat_receta_categoria_explicita_sin_coincidencias_reintenta_sin_categoria():
+    """En una receta con categoría explícita que deja 0 candidatos tras filtrar, reintenta sin categoría conservando precio_max."""
+    pollo_en_rango = _normalizar(_producto("prod-pollo-ok", "Pollo Entero 1 kg", 3590.0, "carnes"))
+    pollo_caro = _normalizar(_producto("prod-pollo-caro", "Pollo Orgánico 1 kg", 8990.0, "carnes"))
+    zapallo = _normalizar(_producto("prod-zapallo", "Zapallo Camote 1 kg", 1290.0, "hortalizas"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "pollo": [pollo_en_rango, pollo_caro],
+            "zapallo": [zapallo],
+        },
+    )
+    filtros = {
+        "categoria": "verduras",
+        "precio_max": 5000,
+        "ingredientes": [
+            {"nombre": "pollo", "cantidad_envases": 1},
+            {"nombre": "zapallo", "cantidad_envases": 1},
+        ],
+    }
+
+    datos = _procesar(repositorio, filtros, mensaje="Quiero una receta de pollo con verduras")
+
+    assert [ingrediente["ingrediente"] for ingrediente in datos["ingredientes_receta"]] == ["pollo", "zapallo"]
+    assert datos["ingredientes_faltantes"] == []
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-pollo-ok", "prod-zapallo"]
 
 
 def test_chat_peor_caso_ambos_proveedores_lentos_en_explicacion_responde_con_frase_fija_antes_del_plazo(monkeypatch):

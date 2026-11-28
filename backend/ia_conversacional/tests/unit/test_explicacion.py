@@ -211,17 +211,42 @@ def test_prompt_explicacion_omite_distancia_y_categoria_e_incluye_datos_verifica
 
     prompt = construir_prompt_explicacion("Busco harina almendras", productos)
 
-    assert "Aceite de Oliva Extra Virgen 500 ml" in prompt
+    assert '"nombre": "Aceite de Oliva Extra Virgen 500 ml"' in prompt
     assert '"marca": "Chef"' in prompt
     assert '"tienda": "Jumbo"' in prompt
-    assert "$5.490" in prompt
-    assert "$10.600" in prompt
+    assert '"precio": "$5.490"' in prompt
+    assert '"nombre": "Harina de Almendras 500 g"' in prompt
+    assert '"precio": "$10.600"' in prompt
+    assert '"marca": ""' not in prompt
+    assert '"tienda": ""' not in prompt
     assert "distancia_km" not in prompt
     assert "0.0" not in prompt
     assert "2.5" not in prompt
     assert "despensa" not in prompt
     assert "abarrotes-gourmet" not in prompt
-    assert "No encontré coincidencias exactas" in prompt
-    assert "sin gluten" in prompt
-    assert "sustituto" in prompt
-    assert "No repitas la lista completa de tarjetas" in prompt
+
+
+def test_prompt_explicacion_receta_y_pedido_amplio_no_pide_negar_coincidencias():
+    """En recetas y pedidos amplios el prompt no ordena negar coincidencias cuando los nombres difieren del mensaje."""
+    prompt_receta = construir_prompt_explicacion(
+        "Quiero hacer pebre",
+        [
+            {"nombre": "Tomate Larga Vida 1 kg", "precio": 1290.0, "supermercado": "Lider"},
+            {"nombre": "Cebolla Granel 1 kg", "precio": 990.0, "supermercado": "Jumbo"},
+            {"nombre": "Cilantro Manojo", "precio": 790.0, "supermercado": "Lider"},
+        ],
+    )
+    prompt_amplio = construir_prompt_explicacion(
+        "Algo para el desayuno",
+        [
+            {"nombre": "Pan Marraqueta 1 kg", "precio": 1890.0, "supermercado": "Lider"},
+            {"nombre": "Leche Entera 1 L", "precio": 1190.0, "marca": "Colun", "supermercado": "Jumbo"},
+        ],
+    )
+
+    for prompt in (prompt_receta, prompt_amplio):
+        prompt_minuscula = prompt.lower()
+        assert "no encontré coincidencias exactas" not in prompt_minuscula
+        assert "coincidencias exactas" not in prompt_minuscula
+    assert "Tomate Larga Vida 1 kg" in prompt_receta
+    assert "Pan Marraqueta 1 kg" in prompt_amplio

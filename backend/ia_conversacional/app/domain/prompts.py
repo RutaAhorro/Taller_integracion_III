@@ -155,6 +155,5 @@ def construir_prompt_explicacion(mensaje_usuario: str, productos_filtrados: list
         "- Solo puedes afirmar nombre, marca, precio y tienda presentes en la lista entregada.\n"
         "- Copia cada precio exactamente como viene formateado (por ejemplo, $10.600), sin agregar decimales ni espacios entre dígitos.\n"
         "- Prohibido inventar propiedades, ingredientes, atributos nutricionales o usos que no figuren literalmente en el nombre del producto (por ejemplo: sin gluten, vegano, orgánico o sustituto), y no menciones distancias ni categorías.\n"
-        "- Si ningún producto de la lista contiene el término que buscó el usuario, dilo claramente (por ejemplo: 'No encontré coincidencias exactas para lo que pediste') en lugar de presentar otros productos como equivalentes o sustitutos.\n"
         "- No repitas la lista completa de tarjetas: el usuario ya ve todos los productos debajo; resume brevemente o destaca solo 1 o 2 opciones relevantes."
     )

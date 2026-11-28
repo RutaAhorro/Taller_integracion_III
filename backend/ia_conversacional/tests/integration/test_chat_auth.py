@@ -352,7 +352,7 @@ def test_chat_etapa_3_falla_retorna_200_con_productos_y_fallback(cliente):
 
         assert respuesta.status_code == 200
         datos = respuesta.json()
-        assert datos["respuesta"] == "Estas son las opciones que encontré para «lacteos», desde $1.190."
+        assert datos["respuesta"] == "Estas son las opciones que encontré para «leche», desde $1.190."
         assert len(datos["productos_recomendados"]) > 0
 
 

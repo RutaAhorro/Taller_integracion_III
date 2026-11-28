@@ -135,8 +135,8 @@ GEMINI_API_BASE_URL = _leer_env_str("GEMINI_API_BASE_URL", "https://generativela
     "/"
 )
 GEMINI_ENDPOINT = _leer_env_str("GEMINI_ENDPOINT", f"{GEMINI_API_BASE_URL}/models/{GEMINI_MODEL}:generateContent")
-# 5,0 s como respaldo evita ReadTimeout prematuros cuando Groq falla; en el peor caso
-# GROQ_TIMEOUT (4,0 s) + GEMINI_TIMEOUT (5,0 s) = 9,0 s < plazo_etapas_1_y_2 (10,0 s).
+# 5,0 s como respaldo evita ReadTimeout prematuros cuando Groq falla; el límite estricto
+# de etapas 1+2 lo impone `anyio.fail_after(plazo_etapas_1_y_2)` (httpx aplica su timeout por fase).
 GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 5.0)
 # gemini-3.1-flash-lite admite "minimal" (razonamiento casi nulo) para responder en 1-2 s.
 GEMINI_THINKING_LEVEL = _leer_env_str("IA_GEMINI_THINKING_LEVEL", "minimal")

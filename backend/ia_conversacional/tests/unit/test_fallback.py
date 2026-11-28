@@ -422,8 +422,8 @@ async def test_fallback_groq_primario_no_llama_a_gemini_cuando_groq_responde():
 
 
 @pytest.mark.anyio
-async def test_groq_proveedor_rescata_tool_use_failed_sin_conmutar_a_gemini():
-    """Ante HTTP 400 `tool_use_failed` con JSON rescatable, Groq extrae filtros sin caer a Gemini."""
+async def test_groq_proveedor_rescata_tool_use_failed_sin_conmutar_a_gemini(caplog):
+    """Ante HTTP 400 `tool_use_failed` con JSON rescatable, Groq extrae filtros sin caer a Gemini ni loguear valores."""
     proveedor_groq = GroqProveedor(
         clave_api="clave-groq",
         url_endpoint="https://api.groq.test/v1/chat/completions",
@@ -456,9 +456,12 @@ async def test_groq_proveedor_rescata_tool_use_failed_sin_conmutar_a_gemini():
         reintentos_secundario=0,
     )
 
-    resultado = await orquestador.extraer_filtros("Busco aceite de oliva")
+    with caplog.at_level("INFO"):
+        resultado = await orquestador.extraer_filtros("Busco aceite de oliva")
 
     assert resultado.error is None
     assert resultado.proveedor == "groq"
     assert resultado.filtros == {"palabras_clave": ["aceite de oliva"]}
     assert proveedor_gemini.llamadas_extraccion == 0
+    assert "palabras_clave" in caplog.text
+    assert "aceite de oliva" not in caplog.text

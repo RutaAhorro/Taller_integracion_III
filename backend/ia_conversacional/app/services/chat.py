@@ -549,8 +549,8 @@ def _descartar_categoria_inferida(filtros: dict, mensaje: str) -> dict:
     Elimina la categoría si hay un término de búsqueda y el usuario no la nombró en el mensaje.
 
     Evita que una categoría inventada por el LLM (p. ej. "abarrotes" o "aceites" al buscar
-    "oliva" o "aceite de oliva") descarte productos reales cuyos slugs en Catálogo son otros
-    (p. ej. "despensa").
+    "oliva", o "abarrotes" al buscar "aceite de oliva") descarte productos reales cuyos slugs
+    en Catálogo son otros (p. ej. "despensa").
     """
     categoria = filtros.get("categoria")
     tiene_termino_busqueda = bool(filtros.get("palabras_clave") or filtros.get("ingredientes"))
@@ -561,6 +561,32 @@ def _descartar_categoria_inferida(filtros: dict, mensaje: str) -> dict:
 
     logger.debug("Categoría inferida '%s' descartada por no figurar en el mensaje con término presente.", categoria)
     return {clave: valor for clave, valor in filtros.items() if clave != "categoria"}
+
+
+def _priorizar_terminos_ante_categoria_inferida(filtros: dict, mensaje: str) -> tuple[dict, dict | None]:
+    """
+    Si el modelo solo devolvió una categoría no mencionada en el mensaje y hay términos útiles,
+    busca primero esos términos y deja la categoría original únicamente como respaldo.
+
+    Catálogo también busca `?q=` sobre `categoria_cruda`: consultar primero una categoría inferida
+    como "despensa" para "Busco oliva" devuelve productos ajenos que el filtro por categoría conserva.
+    """
+    categoria = filtros.get("categoria")
+    if (
+        not isinstance(categoria, str)
+        or not categoria.strip()
+        or filtros.get("palabras_clave")
+        or filtros.get("ingredientes")
+        or categoria_mencionada_en_mensaje(categoria, mensaje)
+    ):
+        return filtros, None
+
+    terminos_respaldo = extraer_terminos_respaldo(mensaje)
+    if not terminos_respaldo:
+        return filtros, None
+
+    filtros_sin_categoria = {clave: valor for clave, valor in filtros.items() if clave != "categoria"}
+    return {**filtros_sin_categoria, "palabras_clave": terminos_respaldo}, filtros
 
 
 def _completar_filtros_con_respaldo(filtros: dict, mensaje: str) -> dict | None:
@@ -635,6 +661,9 @@ async def _ejecutar_etapas_1_y_2(
                 proveedor_extraccion,
             )
         filtros_efectivos = _descartar_categoria_inferida(filtros_efectivos, mensaje)
+        filtros_efectivos, filtros_respaldo_categoria = _priorizar_terminos_ante_categoria_inferida(
+            filtros_efectivos, mensaje
+        )
 
         # Etapa 2: búsqueda directa en Catálogo acotada a su fracción del plazo y al tiempo restante.
         inicio_catalogo = time.perf_counter()
@@ -642,34 +671,6 @@ async def _ejecutar_etapas_1_y_2(
         productos, estado_datos, catalogo_disponible = await _obtener_candidatos(
             repositorio, filtros_efectivos, plazo_catalogo=plazo_catalogo
         )
-        # Si el modelo solo entregó una categoría inventada (sin palabras clave) y dio 0 resultados,
-        # reintenta una vez con los términos del mensaje dentro del plazo restante de Catálogo.
-        categoria_sola = filtros_efectivos.get("categoria")
-        if (
-            not productos
-            and catalogo_disponible
-            and isinstance(categoria_sola, str)
-            and categoria_sola.strip()
-            and not filtros_efectivos.get("palabras_clave")
-            and not filtros_efectivos.get("ingredientes")
-            and not categoria_mencionada_en_mensaje(categoria_sola, mensaje)
-        ):
-            terminos_respaldo = extraer_terminos_respaldo(mensaje)
-            tiempo_consumido_catalogo = time.perf_counter() - inicio_catalogo
-            plazo_reintento = max(
-                0.0,
-                min(presupuesto.plazo_catalogo_max - tiempo_consumido_catalogo, limite_etapas_1_y_2 - time.monotonic()),
-            )
-            if terminos_respaldo and plazo_reintento > 0:
-                filtros_sin_categoria = {
-                    clave: valor for clave, valor in filtros_efectivos.items() if clave != "categoria"
-                }
-                filtros_reintento = {**filtros_sin_categoria, "palabras_clave": terminos_respaldo}
-                productos, estado_datos, catalogo_disponible = await _obtener_candidatos(
-                    repositorio, filtros_reintento, plazo_catalogo=plazo_reintento
-                )
-                filtros_efectivos = filtros_reintento
-
         tiempo_catalogo_ms = round((time.perf_counter() - inicio_catalogo) * MILISEGUNDOS_POR_SEGUNDO)
         if not productos and not catalogo_disponible:
             return (
@@ -805,9 +806,31 @@ async def _ejecutar_etapas_1_y_2(
             )
 
         # Camino no-receta: filtrar exigiendo todas las palabras y mantener el orden de relevancia de Catálogo.
-        productos_filtrados = filtrar_productos(productos, filtros_efectivos, preservar_orden=True)[
-            : config.EXPLICACION_MAX_PRODUCTOS
-        ]
+        productos_filtrados = filtrar_productos(productos, filtros_efectivos, preservar_orden=True)
+
+        # Si se priorizaron términos del mensaje frente a una categoría inferida y tras filtrar
+        # quedaron 0 productos, hacer un único reintento con la categoría original dentro del presupuesto.
+        if not productos_filtrados and filtros_respaldo_categoria is not None and catalogo_disponible:
+            tiempo_consumido_catalogo = time.perf_counter() - inicio_catalogo
+            plazo_reintento = max(
+                0.0,
+                min(presupuesto.plazo_catalogo_max - tiempo_consumido_catalogo, limite_etapas_1_y_2 - time.monotonic()),
+            )
+            if plazo_reintento > 0:
+                productos_respaldo, estado_respaldo, _disponible_respaldo = await _obtener_candidatos(
+                    repositorio, filtros_respaldo_categoria, plazo_catalogo=plazo_reintento
+                )
+                tiempo_catalogo_ms = round((time.perf_counter() - inicio_catalogo) * MILISEGUNDOS_POR_SEGUNDO)
+                filtrados_respaldo = filtrar_productos(
+                    productos_respaldo, filtros_respaldo_categoria, preservar_orden=True
+                )
+                if filtrados_respaldo:
+                    productos_filtrados = filtrados_respaldo
+                    filtros_efectivos = filtros_respaldo_categoria
+                    estado_datos = estado_respaldo
+                    termino_buscado = _etiqueta_termino_buscado(filtros_efectivos)
+
+        productos_filtrados = productos_filtrados[: config.EXPLICACION_MAX_PRODUCTOS]
         return (
             None,
             DatosEtapa3(
