@@ -277,7 +277,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                     </h2>
                     <p className="mt-1 text-sm text-muted-foreground">
                       Elige cómo viajar. Se recalcula el recorrido por calles
-                      para ese perfil, con hasta dos tiendas y regreso al
+                      para ese perfil, con hasta tres tiendas y regreso al
                       origen.
                     </p>
                   </div>

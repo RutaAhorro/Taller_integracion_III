@@ -114,6 +114,40 @@ func TestPolilineaORS(prueba *testing.T) {
 	}
 }
 
+// TestTrazadoAdmiteHastaTresParadas traza tres tiendas con retorno y rechaza
+// una cuarta sin consultar a ORS, para no gastar cuota fuera del contrato.
+func TestTrazadoAdmiteHastaTresParadas(prueba *testing.T) {
+	llamadas := 0
+	servidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {
+		llamadas++
+		var cuerpo struct {
+			Coordenadas [][2]float64 `json:"coordinates"`
+		}
+		if json.NewDecoder(peticion.Body).Decode(&cuerpo) != nil || len(cuerpo.Coordenadas) != 5 || cuerpo.Coordenadas[0] != cuerpo.Coordenadas[4] {
+			prueba.Error("Directions debe recibir origen, tres paradas y retorno")
+		}
+		fmt.Fprint(respuesta, `{"type":"FeatureCollection","features":[{"geometry":{"type":"LineString","coordinates":[[-72,-38],[-72.1,-38.1],[-72.2,-38.2],[-72.3,-38.3],[-72,-38]]},"properties":{"way_points":[0,1,2,3,4],"segments":[{"distance":1000,"duration":60},{"distance":1000,"duration":60},{"distance":1000,"duration":60},{"distance":3000,"duration":180}]}}]}`)
+	}))
+	defer servidor.Close()
+	cliente := Nuevo(servidor.URL, "clave-de-prueba")
+	origen := optimizacion.Coordenada{Lat: -38, Lon: -72}
+	tresParadas := []optimizacion.Parada{{Lat: -38.1, Lon: -72.1}, {Lat: -38.2, Lon: -72.2}, {Lat: -38.3, Lon: -72.3}}
+
+	ruta := optimizacion.Ruta{Paradas: tresParadas, Tramos: make([]optimizacion.Tramo, 4)}
+	if errorObtenido := cliente.Trazar(context.Background(), "vehiculo", origen, &ruta); errorObtenido != nil {
+		prueba.Fatal(errorObtenido)
+	}
+	if ruta.DuracionSegundos != 360 || len(ruta.Tramos[3].Geometrias) != 1 {
+		prueba.Fatalf("trazado de tres paradas incompleto: %+v", ruta)
+	}
+
+	cuatroParadas := append(append([]optimizacion.Parada{}, tresParadas...), optimizacion.Parada{Lat: -38.4, Lon: -72.4})
+	rutaExcedida := optimizacion.Ruta{Paradas: cuatroParadas, Tramos: make([]optimizacion.Tramo, 5)}
+	if cliente.Trazar(context.Background(), "vehiculo", origen, &rutaExcedida) == nil || llamadas != 1 {
+		prueba.Fatal("aceptó o consultó una ruta con más de tres paradas")
+	}
+}
+
 // TestTrazadoIncompletoNoMutaRuta impide publicar distancias sin geometría válida.
 func TestTrazadoIncompletoNoMutaRuta(prueba *testing.T) {
 	servidor := httptest.NewServer(http.HandlerFunc(func(respuesta http.ResponseWriter, peticion *http.Request) {

@@ -24,6 +24,7 @@ const (
 	maximoRespuesta       = 8 << 20
 	metrosPorKilometro    = 1000
 	maximoSucursales      = 10
+	maximoParadasTrazado  = 3 // tiendas por recorrido vial; Directions recibe origen, paradas y retorno
 	maximoPuntosGeometria = 100000
 	precisionPolilinea    = 100000
 	decimalesKilometros   = 100
@@ -118,7 +119,7 @@ func (cliente *Cliente) Matriz(contexto context.Context, modo string, origen opt
 // Mantiene el orden elegido por Go; Directions y Matrix usan el mismo perfil.
 func (cliente *Cliente) Trazar(contexto context.Context, modo string, origen optimizacion.Coordenada, ruta *optimizacion.Ruta) error {
 	perfil := PerfilORS(modo)
-	if perfil == "" || len(ruta.Paradas) < 1 || len(ruta.Paradas) > 2 {
+	if perfil == "" || len(ruta.Paradas) < 1 || len(ruta.Paradas) > maximoParadasTrazado {
 		return errors.New("ruta ORS fuera de límites")
 	}
 	puntos := [][2]float64{{origen.Lon, origen.Lat}}

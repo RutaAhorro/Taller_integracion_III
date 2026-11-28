@@ -3,7 +3,7 @@
 > **Ampliación vial local (28-11-2026):** se admite `medio_transporte` opcional
 > (`vehiculo`, `bicicleta`, `pie`), además de `lista_id` y `origen`. Con modo
 > explícito se exige `RUTAS_ORS_URL` y `RUTAS_ORS_API_KEY`, se usa una matriz dirigida ORS/OSM **antes**
-> de seleccionar el orden y se limita la compra a dos tiendas. La respuesta añade
+> de seleccionar el orden y se limita la compra a tres tiendas. La respuesta añade
 > `fuente_recorrido: "ors_osm"`, `medio_transporte`, `ruta.duracion_segundos`,
 > `tramos[].duracion_segundos` y `tramos[].geometrias` (polilíneas codificadas
 > de cinco decimales). `factor_distancia` solo aplica al cálculo Haversine.

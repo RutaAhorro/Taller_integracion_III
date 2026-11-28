@@ -8,7 +8,7 @@ filtrando por el dueño de la lista y conserva el centro de Temuco como origen
 por defecto. Los perfiles ORS son `driving-car`, `cycling-regular` y `foot-walking`.
 
 Por cálculo se hace **una petición Matrix** con origen y sucursales. Go evalúa
-la matriz dirigida y las ofertas, con máximo dos tiendas. Después se hace
+la matriz dirigida y las ofertas, con máximo tres tiendas. Después se hace
 **una petición Directions** con el orden elegido y el retorno, usando el mismo
 perfil y criterio `fastest`. No se consulta cada pareja por separado. Hay un
 plazo global de 12 s para ambas peticiones; no hay reintentos automáticos.

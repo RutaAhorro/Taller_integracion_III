@@ -113,7 +113,7 @@ func comprobarEndpointVial(prueba *testing.T, proveedor vial.Proveedor, modo str
 		if json.Unmarshal(respuesta.Body.Bytes(), &datos) != nil {
 			prueba.Fatal("JSON inválido")
 		}
-		if datos.Fuente != "ors_osm" || datos.Modo != modo || datos.Origen.PorDefecto || datos.Parametros.MaxParadas != 2 ||
+		if datos.Fuente != "ors_osm" || datos.Modo != modo || datos.Origen.PorDefecto || datos.Parametros.MaxParadas != 3 ||
 			len(datos.Ruta.Tramos[0].Geometrias) == 0 || datos.Ruta.Total != 1100 {
 			prueba.Fatalf("respuesta vial incorrecta: %s", respuesta.Body)
 		}

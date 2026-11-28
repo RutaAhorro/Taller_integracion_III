@@ -31,7 +31,7 @@ const (
 
 	latitudMaximaGeo    = 90.0
 	longitudMaximaGeo   = 180.0
-	maximoParadasViales = 2
+	maximoParadasViales = 3
 )
 
 // OpcionesOptimizacion reúne los parámetros del cálculo de rutas inyectados
