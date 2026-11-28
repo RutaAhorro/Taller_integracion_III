@@ -1,7 +1,7 @@
 // Integra la recomendación con la lista seleccionada y la sesión, sin mapa ni resultados simulados.
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Bike, BusFront, CarFront, Footprints } from "lucide-react";
+import { Bike, CarFront, Footprints } from "lucide-react";
 import { ROUTES } from "@/app/routes";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/features/autenticacion/useAuth";
@@ -15,7 +15,7 @@ import {
 import { ArticulosSinCobertura, ResultadoRuta } from "./ResultadoRuta";
 import { useRutaLista, type EstadoRuta } from "./useRutaLista";
 
-type MedioTransporte = "vehiculo" | "publico" | "bicicleta" | "pie";
+type MedioTransporte = "vehiculo" | "bicicleta" | "pie";
 
 const OPCIONES_TRANSPORTE: {
   valor: MedioTransporte;
@@ -23,7 +23,6 @@ const OPCIONES_TRANSPORTE: {
   Icono: typeof CarFront;
 }[] = [
   { valor: "vehiculo", etiqueta: "Vehículo particular", Icono: CarFront },
-  { valor: "publico", etiqueta: "Transporte público", Icono: BusFront },
   { valor: "bicicleta", etiqueta: "Bicicleta", Icono: Bike },
   { valor: "pie", etiqueta: "A pie", Icono: Footprints },
 ];
@@ -229,7 +228,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                   <legend className="sr-only">
                     Elige un medio de transporte
                   </legend>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="grid gap-2 sm:grid-cols-3">
                     {OPCIONES_TRANSPORTE.map(({ valor, etiqueta, Icono }) => (
                       <label
                         key={valor}

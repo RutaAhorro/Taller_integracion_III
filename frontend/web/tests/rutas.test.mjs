@@ -769,7 +769,7 @@ test("página muestra carga, ausencia de selección y acciones adecuadas a cada 
   }
 });
 
-test("la página de rutas presenta los cuatro medios de transporte con selección accesible", () => {
+test("la página de rutas presenta solo los tres medios viales con selección accesible", () => {
   const html = renderToStaticMarkup(
     createElement(
       MemoryRouter,
@@ -780,12 +780,13 @@ test("la página de rutas presenta los cuatro medios de transporte con selecció
 
   for (const etiqueta of [
     "Vehículo particular",
-    "Transporte público",
     "Bicicleta",
     "A pie",
   ])
     assert.ok(html.includes(etiqueta));
   assert.match(html, /type="radio"/);
+  assert.equal((html.match(/type="radio"/g) || []).length, 3);
+  assert.doesNotMatch(html, /Transporte público|scooter/i);
   assert.match(html, /La selección es visual por ahora/);
 });
 

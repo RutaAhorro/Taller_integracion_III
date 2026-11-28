@@ -73,6 +73,14 @@ paradas numeradas, carga y errores diferenciados. Se conserva el formato actual
 de `router.tsx`, sin otra reformateada global, y no se modifica el catálogo ni el
 layout compartido del PR #209.
 
+El alcance acordado conserva **vehículo particular, bicicleta y a pie**; se
+retiró transporte público y no se ofrece scooter. El selector continúa siendo
+una vista previa y no envía el modo al Motor. Se validaron los perfiles
+`CAR`, `BICYCLE` y `WALK` en una instancia aislada de OTP 2.8.1, sin GTFS.
+La prueba no constituye integración con esta pantalla ni reemplaza Haversine
+en la recomendación. El mapa local se conserva en `datos-locales/mapas/`,
+excluido de Git.
+
 ### Desarrollo y pruebas sin backend
 
 `tests/fixtures/ruta-dos-paradas.json` reproduce el ejemplo de la sección 0 del
