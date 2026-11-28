@@ -118,9 +118,12 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.listas_compras TO app_rutas;
 GRANT SELECT, INSERT, UPDATE, DELETE ON rutas.articulos_lista_compras TO app_rutas;
 GRANT USAGE ON SEQUENCE rutas.articulos_lista_compras_id_seq TO app_rutas;
 
--- 14 se ejecuta después en bases nuevas; conservar sus grants al re-ejecutar 06.
+-- 12 y 14 se ejecutan después en bases nuevas; conservar sus grants al re-ejecutar 06.
 DO $$
 BEGIN
+    IF to_regclass('rutas.lotes_articulos_aplicados') IS NOT NULL THEN
+        GRANT SELECT, INSERT ON rutas.lotes_articulos_aplicados TO app_rutas;
+    END IF;
     IF to_regclass('rutas.carritos') IS NOT NULL THEN
         GRANT SELECT, INSERT, UPDATE ON rutas.carritos TO app_rutas;
     END IF;
