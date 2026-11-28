@@ -342,3 +342,57 @@ async def test_groq_proveedor_no_loguea_cuerpo_crudo_ante_error_http(caplog):
 
     assert "401" in caplog.text
     assert "clave-falsa-en-cuerpo" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_gemini_y_groq_envian_razonamiento_acotado_y_reportan_nombre_proveedor():
+    """Gemini usa thinkingLevel='minimal' y Groq usa reasoning_effort='low'; ambos informan su nombre."""
+    cuerpos_gemini: list[dict] = []
+    proveedor_gemini = GeminiProveedor(clave_api="clave-gemini", url_endpoint="https://ejemplo.invalid/gemini")
+
+    async def enviar_gemini(cuerpo: dict) -> dict:
+        cuerpos_gemini.append(cuerpo)
+        return {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "extraer_filtros_busqueda",
+                                    "args": {"palabras_clave": ["leche"]},
+                                }
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+
+    proveedor_gemini._enviar = enviar_gemini
+    resultado_gemini = await proveedor_gemini.extraer_filtros("Busco leche")
+
+    assert resultado_gemini.proveedor == "gemini"
+    assert cuerpos_gemini[0]["generationConfig"]["thinkingConfig"]["thinkingLevel"] == "minimal"
+    assert cuerpos_gemini[0]["generationConfig"]["maxOutputTokens"] == 256
+
+    cuerpos_groq: list[dict] = []
+    proveedor_groq = GroqProveedor(
+        clave_api="clave-groq",
+        url_endpoint="https://ejemplo.invalid/groq",
+        modelo_extraccion="openai/gpt-oss-20b",
+        modelo_explicacion="openai/gpt-oss-120b",
+    )
+
+    async def enviar_groq(cuerpo: dict) -> dict:
+        cuerpos_groq.append(cuerpo)
+        return {
+            "choices": [{"message": {"tool_calls": [{"function": {"arguments": '{"palabras_clave": ["leche"]}'}}]}}]
+        }
+
+    proveedor_groq._enviar = enviar_groq
+    resultado_groq = await proveedor_groq.extraer_filtros("Busco leche")
+
+    assert resultado_groq.proveedor == "groq"
+    assert cuerpos_groq[0]["reasoning_effort"] == "low"
+    assert cuerpos_groq[0]["max_tokens"] == 256

@@ -39,9 +39,10 @@ def configuracion_valida_base(monkeypatch):
     monkeypatch.setattr(config, "FALLBACK_JITTER_MAX", 0.5)
     monkeypatch.setattr(config, "CHAT_MAX_MENSAJE_LEN", 1000)
     monkeypatch.setattr(config, "EXPLICACION_MAX_PRODUCTOS", 8)
-    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 18.0)
-    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
-    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 5.0)
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 14.0)
+    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.25)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 4.0)
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
     monkeypatch.setattr(config, "GEMINI_API_KEY", "llave-gemini-prueba")
     monkeypatch.setattr(config, "GROQ_API_KEY", "llave-groq-prueba")
 
@@ -278,13 +279,55 @@ def test_leer_env_opcional_devuelve_none_si_solo_tiene_espacios(monkeypatch):
 
 
 def test_validar_configuracion_reparto_plazos_chat(monkeypatch):
-    """Valida que la fracción de Catálogo esté en (0, 1) y el mínimo de explicación sea > 0."""
+    """Valida que la fracción de Catálogo y el umbral de omisión estén en (0, 1) y el mínimo de explicación sea > 0."""
     for fraccion_invalida in (0.0, -0.1, 1.0, 1.5):
         monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", fraccion_invalida)
         with pytest.raises(RuntimeError, match="IA_CHAT_CATALOGO_FRACCION_PLAZO debe estar entre 0 y 1"):
             config.validar_configuracion()
 
-    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
+    monkeypatch.setattr(config, "CHAT_CATALOGO_FRACCION_PLAZO", 0.25)
+    for umbral_invalido in (0.0, -0.1, 1.0, 1.2):
+        monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", umbral_invalido)
+        with pytest.raises(RuntimeError, match="IA_CHAT_UMBRAL_OMITIR_EXPLICACION debe estar entre 0 y 1"):
+            config.validar_configuracion()
+
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
     monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.0)
     with pytest.raises(RuntimeError, match="IA_CHAT_EXPLICACION_PLAZO_MINIMO debe ser mayor a 0"):
         config.validar_configuracion()
+
+
+def test_defaults_plazos_razonamiento_y_tokens_acotados(monkeypatch):
+    """Verifica los defaults reducidos de plazo total (~14 s), razonamiento y tokens de extracción."""
+    for variable in (
+        "IA_CHAT_TIMEOUT_TOTAL",
+        "IA_CHAT_CATALOGO_FRACCION_PLAZO",
+        "IA_CHAT_EXPLICACION_PLAZO_MINIMO",
+        "IA_CHAT_UMBRAL_OMITIR_EXPLICACION",
+        "IA_GEMINI_TIMEOUT",
+        "IA_GEMINI_THINKING_LEVEL",
+        "IA_GEMINI_MAX_TOKENS_EXTRACCION",
+        "IA_GEMINI_MAX_TOKENS_EXPLICACION",
+        "IA_GROQ_TIMEOUT",
+        "IA_GROQ_REASONING_EFFORT",
+        "IA_GROQ_MAX_TOKENS_EXTRACCION",
+        "IA_GROQ_MAX_TOKENS_EXPLICACION",
+    ):
+        monkeypatch.delenv(variable, raising=False)
+    try:
+        importlib.reload(config)
+        assert config.CHAT_TIMEOUT_TOTAL == 14.0
+        assert config.CHAT_CATALOGO_FRACCION_PLAZO == 0.25
+        assert config.CHAT_EXPLICACION_PLAZO_MINIMO == 4.0
+        assert config.CHAT_UMBRAL_OMITIR_EXPLICACION == 0.5
+        assert config.GEMINI_TIMEOUT == 4.0
+        assert config.GEMINI_THINKING_LEVEL == "minimal"
+        assert config.GEMINI_MAX_TOKENS_EXTRACCION == 256
+        assert config.GEMINI_MAX_TOKENS_EXPLICACION == 600
+        assert config.GROQ_TIMEOUT == 4.0
+        assert config.GROQ_REASONING_EFFORT == "low"
+        assert config.GROQ_MAX_TOKENS_EXTRACCION == 256
+        assert config.GROQ_MAX_TOKENS_EXPLICACION == 600
+    finally:
+        monkeypatch.undo()
+        importlib.reload(config)

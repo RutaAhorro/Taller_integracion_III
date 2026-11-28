@@ -70,3 +70,18 @@ def test_repositorio_productos_modulo_main_no_autocarga_en_import(monkeypatch):
             respuesta = cliente_activo.get("/health")
             assert respuesta.status_code == 200
         mock_cargar.assert_not_called()
+
+
+def test_orden_proveedores_y_logging_app_sin_apagar_uvicorn_access():
+    """Verifica orden Gemini -> Groq y que el logger `app` emite INFO sin deshabilitar `uvicorn.access`."""
+    import logging
+
+    from app.main import configurar_logging, proveedor_respaldo
+
+    assert [proveedor.nombre for proveedor in proveedor_respaldo.proveedores] == ["gemini", "groq"]
+
+    configurar_logging()
+    logger_app = logging.getLogger("app")
+    assert logger_app.level == logging.INFO
+    assert len(logger_app.handlers) >= 1
+    assert not logging.getLogger("uvicorn.access").disabled
