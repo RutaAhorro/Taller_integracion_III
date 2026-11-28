@@ -400,7 +400,7 @@ def test_respaldo_recomiendas_leche_y_leche_de_un_litro_devuelven_leche():
     ] == ["Leche Entera 1 L"]
 
     terminos_litro = extraer_terminos_respaldo("Busco leche de 1 litro")
-    assert terminos_litro == ["leche litro"]
+    assert terminos_litro == ["leche"]
     assert [producto["nombre"] for producto in filtrar_productos(catalogo, {"palabras_clave": terminos_litro})] == [
         "Leche Entera 1 L"
     ]
@@ -433,3 +433,54 @@ def test_dividir_frases_compuestas_separa_o_y_comas():
     assert dividir_frases_compuestas("zanahorias o verduras") == ["zanahorias", "verduras"]
     assert dividir_frases_compuestas("tomate, cebolla y ajo") == ["tomate", "cebolla", "ajo"]
     assert dividir_frases_compuestas("harina de almendras") == ["harina de almendras"]
+
+
+def test_filtrar_productos_exige_todas_las_palabras_en_terminos_multipalabra():
+    """Los términos multipalabra exigen todas sus palabras (incluyendo dígitos como 'arroz grado 2' y 'sin' en 'leche sin lactosa')."""
+    catalogo = [
+        {"id": 1, "nombre": "Almendras Tostadas 200 g", "categoria": "despensa", "precio": 3990.0, "distancia_km": 1.0},
+        {"id": 2, "nombre": "Aceite de Maravilla 1 L", "categoria": "despensa", "precio": 1890.0, "distancia_km": 1.0},
+        {
+            "id": 3,
+            "nombre": "Aceite de Oliva Extra Virgen 500 ml",
+            "categoria": "despensa",
+            "precio": 5490.0,
+            "distancia_km": 1.0,
+        },
+        {"id": 4, "nombre": "Leche Entera 1 L", "categoria": "lacteos", "precio": 1190.0, "distancia_km": 1.0},
+        {"id": 5, "nombre": "Leche Sin Lactosa 1 L", "categoria": "lacteos", "precio": 1390.0, "distancia_km": 1.0},
+        {"id": 6, "nombre": "Arroz Grado 1 1 kg", "categoria": "despensa", "precio": 1490.0, "distancia_km": 1.0},
+        {"id": 7, "nombre": "Arroz Grado 2 1 kg", "categoria": "despensa", "precio": 1190.0, "distancia_km": 1.0},
+    ]
+
+    assert filtrar_productos(catalogo, {"palabras_clave": ["harina de almendras"]}) == []
+    assert [producto["id"] for producto in filtrar_productos(catalogo, {"palabras_clave": ["aceite de oliva"]})] == [3]
+    assert [producto["id"] for producto in filtrar_productos(catalogo, {"palabras_clave": ["leche sin lactosa"]})] == [
+        5
+    ]
+    assert [producto["id"] for producto in filtrar_productos(catalogo, {"palabras_clave": ["arroz grado 2"]})] == [7]
+
+
+def test_filtrar_productos_preservar_orden_mantiene_orden_de_catalogo():
+    """Con preservar_orden=True mantiene el orden de entrada (relevancia de Catálogo) sin reordenar por precio."""
+    catalogo = [
+        {
+            "id": 1,
+            "nombre": "Harina de Almendras Premium 500 g",
+            "categoria": "despensa",
+            "precio": 6990.0,
+            "distancia_km": 1.0,
+        },
+        {"id": 2, "nombre": "Almendras 200 g", "categoria": "despensa", "precio": 2990.0, "distancia_km": 1.0},
+        {
+            "id": 3,
+            "nombre": "Harina de Almendras Granel 500 g",
+            "categoria": "despensa",
+            "precio": 4990.0,
+            "distancia_km": 1.0,
+        },
+    ]
+
+    filtrados = filtrar_productos(catalogo, {"palabras_clave": ["harina de almendras"]}, preservar_orden=True)
+
+    assert [producto["id"] for producto in filtrados] == [1, 3]
