@@ -14,7 +14,7 @@ import (
 // valid fija un entorno mínimo válido; cada prueba cambia sólo lo que evalúa.
 func valid(prueba *testing.T) {
 	prueba.Helper()
-	for clave, valor := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": "", "ADMIN_EMAILS": ""} {
+	for clave, valor := range map[string]string{"IDENTITY_DB_URL": "postgres://app_identity:fixture-private@db/test", "JWT_SECRET": strings.Repeat("j", 32), "REDIS_URL": "redis://redis:6379/0", "PORT": "", "IDENTIDAD_COOKIE_SECURE": "", "AUTH_LOCAL_HABILITADO": "", "IDENTIDAD_TRUSTED_PROXIES": "172.30.0.2", "CORS_ALLOWED_ORIGINS": "", "ADMIN_EMAILS": ""} {
 		prueba.Setenv(clave, valor)
 	}
 }
@@ -29,6 +29,7 @@ func TestInvalidConfigFailsWithoutSecrets(prueba *testing.T) {
 	for _, caso := range []struct{ key, value string }{
 		{"IDENTITY_DB_URL", ""}, {"IDENTITY_DB_URL", "postgres://postgres:fixture-private@db/test"}, {"IDENTITY_DB_URL", "postgres://app_scraping:fixture-private@db/test"}, {"IDENTITY_DB_URL", "postgres://app_identity@db/test"},
 		{"JWT_SECRET", ""}, {"JWT_SECRET", "too-short"}, {"REDIS_URL", ""}, {"PORT", "0"}, {"PORT", "65536"}, {"PORT", "invalid"}, {"IDENTIDAD_COOKIE_SECURE", "maybe"},
+		{"AUTH_LOCAL_HABILITADO", "maybe"}, {"AUTH_LOCAL_HABILITADO", "TRUE"}, {"AUTH_LOCAL_HABILITADO", "1"},
 		{"REDIS_URL", "redis://user:fixture-private@bad host"},
 		{"IDENTIDAD_TRUSTED_PROXIES", ""},
 		{"IDENTIDAD_TRUSTED_PROXIES", "0.0.0.0/0"},
@@ -53,6 +54,28 @@ func TestExplicitLocalAndProxyConfig(prueba *testing.T) {
 	configuracion, errorObtenido := config.Cargar()
 	if errorObtenido != nil || configuracion.CookieSegura || len(configuracion.ProxiesConfiables) != 2 || len(configuracion.OrigenesPermitidos) != 2 {
 		prueba.Fatalf("%+v %v", configuracion, errorObtenido)
+	}
+}
+
+// TestAuthLocalHabilitadoSoloAceptaMinusculas comprueba que los únicos valores
+// explícitos admitidos son "true" y "false"; cualquier otra forma se rechaza.
+func TestAuthLocalHabilitadoSoloAceptaMinusculas(prueba *testing.T) {
+	for _, caso := range []struct {
+		valor    string
+		esperado bool
+	}{
+		{"", false},
+		{"false", false},
+		{"true", true},
+	} {
+		prueba.Run("valor="+caso.valor, func(prueba *testing.T) {
+			valid(prueba)
+			prueba.Setenv("AUTH_LOCAL_HABILITADO", caso.valor)
+			configuracion, errorObtenido := config.Cargar()
+			if errorObtenido != nil || configuracion.AuthLocalHabilitado != caso.esperado {
+				prueba.Fatalf("AUTH_LOCAL_HABILITADO=%q: esperaba %t, obtuve %t (%v)", caso.valor, caso.esperado, configuracion.AuthLocalHabilitado, errorObtenido)
+			}
+		})
 	}
 }
 

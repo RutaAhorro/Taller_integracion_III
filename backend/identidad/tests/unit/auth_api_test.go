@@ -4,6 +4,7 @@ package unit_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -279,11 +280,24 @@ func TestManejadorAuthRegistroRechazaCorreoAdminCon409(prueba *testing.T) {
 
 // ===== Bandera de acceso local =====
 
+// repositorioConContador registra las búsquedas por correo para comprobar que
+// el rechazo por bandera no consulta la base de datos.
+type repositorioConContador struct {
+	*mockUsuarioRepository
+	busquedasPorCorreo int
+}
+
+func (repositorio *repositorioConContador) BuscarPorCorreo(contexto context.Context, direccionCorreo string) (*domain.Usuario, error) {
+	repositorio.busquedasPorCorreo++
+	return repositorio.mockUsuarioRepository.BuscarPorCorreo(contexto, direccionCorreo)
+}
+
 // TestAccesoLocalDeshabilitadoPorDefecto verifica que con AuthLocalHabilitado en false
-// los endpoints /register y /login respondan 403 sin tocar el repositorio.
+// los endpoints /register y /login respondan 403 con el formato de error del
+// contrato y sin tocar el repositorio.
 func TestAccesoLocalDeshabilitadoPorDefecto(prueba *testing.T) {
 	gin.SetMode(gin.TestMode)
-	repositorio := newMockUsuarioRepository()
+	repositorio := &repositorioConContador{mockUsuarioRepository: newMockUsuarioRepository()}
 	servicioAuth := nuevoServicioAuth(repositorio)
 	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
 
@@ -306,9 +320,52 @@ func TestAccesoLocalDeshabilitadoPorDefecto(prueba *testing.T) {
 		if escritor.Code != http.StatusForbidden {
 			prueba.Fatalf("%s: esperaba HTTP 403, obtuve %d. Body: %s", ruta, escritor.Code, escritor.Body.String())
 		}
+		var respuesta api.RespuestaError
+		if errorObtenido := json.Unmarshal(escritor.Body.Bytes(), &respuesta); errorObtenido != nil {
+			prueba.Fatalf("%s: cuerpo de error inválido: %v", ruta, errorObtenido)
+		}
+		if respuesta.Estado != http.StatusForbidden || respuesta.Mensaje == "" || respuesta.Detalle != "" {
+			prueba.Fatalf("%s: el 403 no usa el formato del contrato: %+v", ruta, respuesta)
+		}
 	}
-	if len(repositorio.usuarios) != 0 {
-		prueba.Fatalf("no debe persistir usuarios cuando el acceso local está deshabilitado")
+	if repositorio.busquedasPorCorreo != 0 || len(repositorio.usuarios) != 0 {
+		prueba.Fatalf("el acceso local deshabilitado no debe consultar ni persistir usuarios: %d búsquedas, %d usuarios", repositorio.busquedasPorCorreo, len(repositorio.usuarios))
+	}
+}
+
+// TestLoginDeshabilitadoNoConsultaRepositorio comprueba que, incluso con una
+// cuenta válida en el repositorio, /login queda bloqueado antes de buscarla.
+func TestLoginDeshabilitadoNoConsultaRepositorio(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+	hash, errorOperacion := services.HashearContrasena("ClaveSegura2026!")
+	if errorOperacion != nil {
+		prueba.Fatal(errorOperacion)
+	}
+	repositorioBase := newMockUsuarioRepository()
+	repositorioBase.usuarios["usuario@ejemplo.cl"] = &domain.Usuario{
+		Correo: "usuario@ejemplo.cl", PasswordHash: &hash, EstaActivo: true,
+	}
+	repositorio := &repositorioConContador{mockUsuarioRepository: repositorioBase}
+	manejador := api.NuevoManejadorAuth(nuevoServicioAuth(repositorio), false, claveJWTDePrueba)
+	configuracion := config.Configuracion{
+		ClaveJWT:            claveJWTDePrueba,
+		Ajustes:             config.AjustesPredeterminados(),
+		AuthLocalHabilitado: false,
+	}
+
+	enrutador := gin.New()
+	api.RegistrarRutasAuth(enrutador.Group("/api/v1"), manejador, nil, nil, repositorio, configuracion)
+
+	escritor := httptest.NewRecorder()
+	peticion, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"correo":"usuario@ejemplo.cl","password":"ClaveSegura2026!"}`))
+	peticion.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(escritor, peticion)
+
+	if escritor.Code != http.StatusForbidden {
+		prueba.Fatalf("esperaba HTTP 403, obtuve %d. Body: %s", escritor.Code, escritor.Body.String())
+	}
+	if repositorio.busquedasPorCorreo != 0 {
+		prueba.Fatalf("/login con la bandera apagada consultó el repositorio %d veces", repositorio.busquedasPorCorreo)
 	}
 }
 

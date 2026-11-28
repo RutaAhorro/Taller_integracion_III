@@ -65,10 +65,12 @@ func Cargar() (Configuracion, error) {
 		}
 	}
 	if texto := os.Getenv("AUTH_LOCAL_HABILITADO"); texto != "" {
-		configuracion.AuthLocalHabilitado, errorOperacion = strconv.ParseBool(texto)
-		if errorOperacion != nil {
-			return Configuracion{}, errors.New("AUTH_LOCAL_HABILITADO debe ser booleano")
+		// Sólo "true"/"false" son válidos: ParseBool también acepta "1" y "TRUE",
+		// que facilitarían habilitar el acceso local por una configuración ambigua.
+		if texto != "true" && texto != "false" {
+			return Configuracion{}, errors.New("AUTH_LOCAL_HABILITADO debe ser true o false")
 		}
+		configuracion.AuthLocalHabilitado = texto == "true"
 	}
 	if texto := os.Getenv("CORS_ALLOWED_ORIGINS"); texto != "" {
 		for _, entrada := range strings.Split(texto, ",") {
