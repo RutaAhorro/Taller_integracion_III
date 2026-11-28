@@ -38,7 +38,8 @@ El orden real es este:
 | 19 | `14_carritos_persistentes.sql` | Borrador por cuenta con versión, envío preparado y último recibo; permisos mínimos de Motor/Listas |
 | 20 | `15_indices_busqueda_trigram.sql` | Extensión `pg_trgm`, índice GIN trigram de `sku` en `scraper.productos_crudos` (complementa `03_indices_optimizacion.sql`) y `ANALYZE` |
 | 21 | `16_desactivar_jit_roles_lectura.sql` | Desactiva JIT (`jit = off`) en `app_catalogo` y `app_rutas` para evitar ~1 s de sobrecarga en bases con poca CPU |
-| 22 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
+| 22 | `17_actualizar_sucursales_lider_santa_isabel.sql` | Coordenadas y direcciones reales de Lider Prieto Norte 0320 y Santa Isabel Carrera 499 para distancias creíbles en rutas |
+| 23 | `init.sql` | Extensiones, esquemas y **configuración inicial** (cadenas y sucursales; sin productos). Va al final porque `i` se ordena después de los dígitos |
 
 **Números repetidos (`03_`, `05_`, `07_`, `08_`).** Son históricos: se agregaron
 scripts en paralelo con el mismo número. No causan errores porque el orden
@@ -46,7 +47,7 @@ alfabético es siempre el mismo y respeta las dependencias. No se renombran
 porque el código de Identidad, Control y Motor, los tests y las bases ya
 desplegadas los identifican por su nombre actual.
 
-**Regla para scripts nuevos:** usar el siguiente número libre (hoy `17_`) y
+**Regla para scripts nuevos:** usar el siguiente número libre (hoy `18_`) y
 nunca repetir uno existente. Si el script depende de otro, debe ordenarse
 después de él.
 
@@ -57,8 +58,10 @@ después de él.
 SUP-349: sólo carga las 6 cadenas y sus 6 sucursales con ids estables. Los
 productos y precios llegan por la ingesta del scraper y los tests siembran sus
 propios datos (por ejemplo `backend/catalogo/tests/fixtures.sql`). Las
-sucursales 5 y 6 se corrigen con `13_actualizar_sucursales_acuenta_cugat.sql`:
-pasan a ser tiendas físicas con coordenadas de OpenStreetMap (SUP-317).
+sucursales 5 y 6 se corrigen con `13_actualizar_sucursales_acuenta_cugat.sql`
+(SUP-317) y las sucursales 2 y 4 con
+`17_actualizar_sucursales_lider_santa_isabel.sql`: pasan a tener direcciones
+oficiales y coordenadas reales de OpenStreetMap.
 
 **Pendiente (fuera de alcance de SUP-370):** las bases ya desplegadas conservan
 los 45 productos de demo de Jumbo, sus precios y las filas de `api.categorias`,
@@ -90,6 +93,7 @@ volúmenes existentes, como operador y con `psql -X -v ON_ERROR_STOP=1`:
 | [14_carritos_persistentes.sql](14_carritos_persistentes.sql) | Crea `rutas.carritos`: un borrador por cuenta, con versión, preparación y último resultado. Concede sólo SELECT/INSERT/UPDATE a `app_rutas`; el 06 conserva esos grants al re-ejecutarse. Aplicar como operador antes de publicar el Motor que incorpora carrito; no ejecuta cambios sobre listas ni borra datos. El arranque nuevo exige esta tabla. |
 | [15_indices_busqueda_trigram.sql](15_indices_busqueda_trigram.sql) | Habilita `pg_trgm`, crea el índice GIN (`gin_trgm_ops`) sobre `scraper.productos_crudos(sku)` —complementando los índices de `titulo_crudo`, `marca_cruda` y `categoria_cruda` creados por `03_indices_optimizacion.sql`— y ejecuta `ANALYZE scraper.productos_crudos`. Idempotente; aplicar como operador para acelerar búsquedas por SKU en Catálogo. |
 | [16_desactivar_jit_roles_lectura.sql](16_desactivar_jit_roles_lectura.sql) | Ejecuta `ALTER ROLE app_catalogo SET jit = off;` y `ALTER ROLE app_rutas SET jit = off;` si los roles existen. Idempotente; aplicar como operador después de `06` para evitar la sobrecarga de ~1 s por consulta que añade el compilador JIT en instancias PostgreSQL con CPU acotada. |
+| [17_actualizar_sucursales_lider_santa_isabel.sql](17_actualizar_sucursales_lider_santa_isabel.sql) | Corrige las sucursales 2 y 4 en volúmenes existentes: Lider pasa a `Prieto Norte 0320` (antes `Av. Caupolicán 0450`) y Santa Isabel a `Carrera 499` (antes `San Martín 0890`, local inexistente según el sitio oficial). Lat/lon reales de OSM para que `ST_Distance` en rutas sea creíble. No agrega columnas ni permisos: el índice GiST de la `13_` se actualiza solo. Aplicar después de 16. En bases nuevas `init.sql` ya siembra los mismos valores, porque corre después de esta migración. Idempotente. |
 
 Ver [datos y permisos del backend](../../docs/Guias/GUIA_DATOS_Y_PERMISOS_BACKEND.md)
 para orden de corte, Secrets, auditoría y rollback. No usar un rol runtime para
