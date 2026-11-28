@@ -3,7 +3,7 @@ import { X, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/features/catalogo/CartContext";
-import { formatPrice } from "@/features/catalogo/formatters";
+import { formatPrice, tienePrecioVigente } from "@/features/catalogo/formatters";
 import { GuardarCarrito } from "./GuardarCarrito";
 import { SincronizacionCarrito } from "./SincronizacionCarrito";
 import { MAXIMO_ENVASES_ARTICULO } from "@/features/listas/listas-api";
@@ -126,9 +126,9 @@ export function CartSidebar() {
 
                     <div className="mt-auto flex items-end justify-between pt-2">
                       <span className="font-mono font-bold">
-                        {product.price === null
-                          ? "Sin precio vigente"
-                          : formatPrice(product.price * quantity)}
+                        {tienePrecioVigente(product.price)
+                          ? formatPrice(product.price * quantity)
+                          : "Sin precio vigente"}
                       </span>
 
                       <div className="flex items-center gap-2 rounded-lg border border-border bg-background p-1">

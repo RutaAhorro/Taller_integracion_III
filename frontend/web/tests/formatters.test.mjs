@@ -8,7 +8,7 @@ const fuente = await readFile(new URL('../src/features/catalogo/formatters.ts', 
 const { outputText } = ts.transpileModule(fuente, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ES2022 },
 });
-const { formatearCategoria, formatearUnidad } = await import(
+const { formatearCategoria, formatearUnidad, tienePrecioVigente } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString('base64')}`
 );
 
@@ -32,4 +32,10 @@ test('oculta unidades inválidas y conserva unidades válidas', () => {
   assert.equal(formatearUnidad(null), null);
   assert.equal(formatearUnidad('1 kg'), '1 kg');
   assert.equal(formatearUnidad('500 ml'), '500 ml');
+});
+
+test('solo considera vigentes los precios positivos y finitos', () => {
+  for (const precio of [0, -100, NaN, Infinity, null, undefined])
+    assert.equal(tienePrecioVigente(precio), false);
+  assert.equal(tienePrecioVigente(1500), true);
 });

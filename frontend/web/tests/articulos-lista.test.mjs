@@ -82,6 +82,14 @@ const detalle = await cargar("../src/features/listas/useDetalleLista.ts", {
   "@/features/listas/listas-api": api.url,
 });
 const { useDetalleLista, esCantidadValida } = detalle.modulo;
+const urlBusquedaMock = crearModulo(`
+  export const estadoBusqueda = { productos: [] };
+  export const useBusquedaArticulos = () => ({
+    consulta: "", productos: estadoBusqueda.productos, busquedaCorta: true,
+    totalPaginas: 1, consultado: true, cargando: false, error: null,
+  });
+`);
+const { estadoBusqueda: productosBusqueda } = await import(urlBusquedaMock);
 const urlProductos = crearModulo(`
   export const catalogo = { consultar: async () => ({ products: [], totalPages: 1 }) };
   export const getProducts = (...datos) => catalogo.consultar(...datos);
@@ -337,12 +345,7 @@ const vista = await cargar("../src/features/listas/ArticulosLista.tsx", {
   "@/features/listas/listas-api": api.url,
   "@/features/listas/useDetalleLista": detalle.url,
   "@/features/catalogo/formatters": formatters.url,
-  "@/features/listas/useBusquedaArticulos": crearModulo(`
-    export const MINIMO_BYTES_BUSQUEDA_ARTICULOS = 3;
-    export const useBusquedaArticulos = () => ({
-      consulta: "", productos: [], busquedaCorta: true, totalPaginas: 1,
-    });
-  `),
+  "@/features/listas/useBusquedaArticulos": urlBusquedaMock,
   "@/components/ui/button": crearModulo(`
     import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
     export function Button({ children, variant, ...datos }) { return createElement('button', datos, children); }
@@ -453,4 +456,40 @@ test("los artículos con precio cero o negativo se ignoran en totales y etiqueta
   assert.match(contenido, /1 artículo no tiene precio vigente/);
   assert.match(contenido, /Precio vigente no disponible/);
   assert.doesNotMatch(contenido, /\$0/);
+});
+
+test("el buscador informa precios inválidos y formatea los precios vigentes", () => {
+  productosBusqueda.productos = [
+    {
+      id: "producto-sin-precio",
+      name: "Producto sin precio",
+      supermarketName: "Lider",
+      unit: "1 kg",
+      price: 0,
+      inStock: true,
+    },
+    {
+      id: "producto-con-precio",
+      name: "Producto vigente",
+      supermarketName: "Jumbo",
+      unit: "500 g",
+      price: 1200,
+      inStock: true,
+    },
+  ];
+
+  const contenido = renderToStaticMarkup(
+    createElement(vista.modulo.ArticulosLista, {
+      articulos: [],
+      ocupado: false,
+      alAgregar: async () => true,
+      alActualizar: async () => true,
+      alEliminar: async () => true,
+    }),
+  );
+
+  assert.match(contenido, /Precio vigente no disponible/);
+  assert.match(contenido, /\$1\.200/);
+  assert.doesNotMatch(contenido, /\$0/);
+  productosBusqueda.productos = [];
 });

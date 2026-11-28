@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { UiProduct as Producto } from "@/features/catalogo/tipos";
+import { tienePrecioVigente } from "@/features/catalogo/formatters";
 import { useToast } from "@/components/ToastContext";
 import { useAuth } from "@/features/autenticacion/useAuth";
 import { useGuardarCarrito } from "./useGuardarCarrito";
@@ -18,6 +19,17 @@ import {
 } from "@/features/listas/listas-api";
 
 export type CartItem = ItemCarrito;
+
+// Devuelve null si algún producto carece de precio positivo válido para evitar sumar $0 ficticios.
+export function calcularTotalCarrito(elementos: CartItem[]): number | null {
+  let total = 0;
+  for (const elemento of elementos) {
+    const precio = elemento.product.price;
+    if (!tienePrecioVigente(precio)) return null;
+    total += precio * elemento.quantity;
+  }
+  return total;
+}
 
 type TipoContextoCarrito = {
   items: CartItem[];
@@ -163,14 +175,7 @@ function CarritoDeCuenta({
   );
 
   const precioTotal = useMemo(
-    () =>
-      elementos.some((elemento) => elemento.product.price === null)
-        ? null
-        : elementos.reduce(
-            (suma, elemento) =>
-              suma + (elemento.product.price ?? 0) * elemento.quantity,
-            0,
-          ),
+    () => calcularTotalCarrito(elementos),
     [elementos],
   );
 

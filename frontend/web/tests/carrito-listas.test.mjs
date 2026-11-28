@@ -527,3 +527,84 @@ test("la vista explica la suma, la clave recuperable y el acceso a la lista conf
   assert.match(contenido, /sin precio vigente/);
   assert.match(contenido, new RegExp(`href="/listas\\?lista=${ID_LISTA}"`));
 });
+
+// ===== Precios vigentes y total del carrito =====
+
+const utilidadesFormato = await cargar("../src/features/catalogo/formatters.ts");
+const urlDependenciasCarrito = modulo(`
+  export const useToast = () => ({ toast() {} });
+  export const useAuth = () => ({ user: null });
+  export const useGuardarCarrito = () => ({});
+  export const useCarritoPersistente = () => ({});
+`);
+const carrito = await cargar("../src/features/catalogo/CartContext.tsx", {
+  react: import.meta.resolve("react"),
+  "@/features/catalogo/formatters": utilidadesFormato.url,
+  "@/components/ToastContext": urlDependenciasCarrito,
+  "@/features/autenticacion/useAuth": urlDependenciasCarrito,
+  "./useGuardarCarrito": urlDependenciasCarrito,
+  "./useCarritoPersistente": urlDependenciasCarrito,
+  "@/features/listas/listas-api": listas.url,
+});
+
+const urlCarritoSidebar = modulo(`
+  export const estado = { valor: null };
+  export const useCart = () => estado.valor;
+`);
+const { estado: estadoCarritoPrueba } = await import(urlCarritoSidebar);
+const urlBoton = modulo(`
+  import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
+  export function Button({ children: hijos, ...propiedades }) {
+    return createElement("button", propiedades, hijos);
+  }
+`);
+const vistaCarrito = await cargar("../src/features/catalogo/CartSidebar.tsx", {
+  react: import.meta.resolve("react"),
+  "lucide-react": import.meta.resolve("lucide-react"),
+  "@/components/ui/button": urlBoton,
+  "@/features/catalogo/CartContext": urlCarritoSidebar,
+  "@/features/catalogo/formatters": utilidadesFormato.url,
+  "./GuardarCarrito": modulo('export const GuardarCarrito = () => null;'),
+  "./SincronizacionCarrito": modulo(
+    'export const SincronizacionCarrito = () => null;',
+  ),
+  "@/features/listas/listas-api": listas.url,
+});
+
+test("calcularTotalCarrito rechaza precios inválidos y suma precios vigentes", () => {
+  for (const precio of [0, -500, NaN, null]) {
+    assert.equal(
+      carrito.modulo.calcularTotalCarrito([
+        { product: { ...producto, price: 1000 }, quantity: 1 },
+        { product: { ...producto, price: precio }, quantity: 2 },
+      ]),
+      null,
+    );
+  }
+  assert.equal(
+    carrito.modulo.calcularTotalCarrito([
+      { product: { ...producto, price: 1000 }, quantity: 2 },
+      { product: { ...producto, price: 1500 }, quantity: 1 },
+    ]),
+    3500,
+  );
+});
+
+test("el panel del carrito oculta el precio cero y el total no vigente", () => {
+  estadoCarritoPrueba.valor = {
+    isCartOpen: true,
+    setIsCartOpen() {},
+    items: [{ product: { ...producto, price: 0 }, quantity: 1 }],
+    updateQuantity() {},
+    totalPrice: null,
+    guardado: { bloqueado: false, abrir() {}, pendiente: false },
+  };
+  const contenido = renderToStaticMarkup(
+    createElement(vistaCarrito.modulo.CartSidebar),
+  );
+
+  assert.match(contenido, /Sin precio vigente/);
+  assert.match(contenido, /Sin total vigente/);
+  assert.doesNotMatch(contenido, /\$0/);
+  estadoCarritoPrueba.valor = null;
+});

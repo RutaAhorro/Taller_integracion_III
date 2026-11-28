@@ -3,7 +3,11 @@ import { useState, type FormEvent } from "react";
 import { Check, Package, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { formatPrice, formatearUnidad } from "@/features/catalogo/formatters";
+import {
+  formatPrice,
+  formatearUnidad,
+  tienePrecioVigente,
+} from "@/features/catalogo/formatters";
 import type { UiProduct } from "@/features/catalogo/tipos";
 import {
   MAXIMO_ARTICULOS_LISTA,
@@ -28,11 +32,6 @@ const AVISOS_PRODUCTO: Record<EstadoProducto, string> = {
   no_encontrado:
     "Producto no encontrado en Catálogo. Puedes quitarlo de la lista.",
 };
-
-// Ignora precios nulos, no finitos o no positivos (ej. 0) al calcular totales y mostrar importes.
-function tienePrecioVigente(precio: number | null | undefined): precio is number {
-  return typeof precio === "number" && Number.isFinite(precio) && precio > 0;
-}
 
 /** Calcula el subtotal sin atribuir precios a referencias sin precio vigente confirmado. */
 function calcularTotalArticulos(articulos: ArticuloDetalle[]) {
@@ -231,7 +230,15 @@ function BuscadorArticulos({
             >
               <span className="block font-semibold">{producto.name}</span>
               <span className="block">
-                {[producto.supermarketName, formatearUnidad(producto.unit), formatPrice(producto.price)].filter(Boolean).join(" · ")}
+                {[
+                  producto.supermarketName,
+                  formatearUnidad(producto.unit),
+                  tienePrecioVigente(producto.price)
+                    ? formatPrice(producto.price)
+                    : "Precio vigente no disponible",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
               {producto.inStock !== true && (
                 <span className="block text-muted-foreground">
