@@ -120,14 +120,33 @@ def sanitizar_filtros_crudos(crudo: dict) -> dict:
 
 # ===== Coincidencia por texto =====
 
-# Palabras vacías que no aportan al comparar categorías ("frutas y verduras").
-PALABRAS_VACIAS_CATEGORIA = {"y", "o", "u", "de", "del", "la", "el", "los", "las", "en", "con"}
+# Palabras vacías que no aportan al filtrar por texto ni en categorías ("harina de almendras", "frutas y verduras").
+# Nota: "sin" NO es palabra vacía porque distingue productos clave ("leche sin lactosa", "sin gluten").
+PALABRAS_VACIAS_CATEGORIA = {"y", "o", "u", "de", "del", "la", "el", "los", "las", "en", "con", "para", "por"}
+
+# Palabras vacías adicionales que se descartan al elegir la palabra única para consultar `?q=` en Catálogo.
+PALABRAS_VACIAS_BUSQUEDA = frozenset(
+    {
+        *PALABRAS_VACIAS_CATEGORIA,
+        "a",
+        "al",
+        "e",
+        "sin",
+        "un",
+        "una",
+        "unos",
+        "unas",
+    }
+)
 
 # Bug real con "bajo consumo": "bajo" contiene "ajo" y calzaba con el producto Ajo.
 # Bajo este largo se exige igualdad exacta en vez de coincidencia por prefijo.
 LONGITUD_MINIMA_PREFIJO = 4
 
-PATRON_SEPARADOR_TERMINOS = re.compile(r"[^a-zA-Zñáéíóúü]+")
+# Incluye dígitos para distinguir variantes como "arroz grado 2" frente a "arroz grado 1".
+PATRON_SEPARADOR_TERMINOS = re.compile(r"[^a-zA-Z0-9ñáéíóúü]+")
+# El respaldo desde el mensaje libre descarta números para no rescatar montos como "$2.000" ("000").
+PATRON_SEPARADOR_PALABRAS_RESPALDO = re.compile(r"[^a-zA-Zñáéíóúü]+")
 
 # ===== Términos de respaldo desde el mensaje =====
 
@@ -293,12 +312,14 @@ PALABRAS_VACIAS_MENSAJE = frozenset(
         "km",
         "kilometros",
         "metros",
+        "litro",
+        "litros",
     }
 )
 
 
 def _separar_terminos(texto: str) -> list[str]:
-    """Divide un texto en términos alfabéticos y quita las palabras vacías."""
+    """Divide un texto en términos alfanuméricos y quita las palabras vacías."""
     terminos = PATRON_SEPARADOR_TERMINOS.split(texto)
     return [termino for termino in terminos if termino and termino not in PALABRAS_VACIAS_CATEGORIA]
 
@@ -416,7 +437,7 @@ def extraer_terminos_respaldo(mensaje: str) -> list[str]:
 
     frases_utiles = []
     for segmento in PATRON_SEPARADOR_FRASES_MENSAJE.split(mensaje_normalizado):
-        tokens = PATRON_SEPARADOR_TERMINOS.split(segmento)
+        tokens = PATRON_SEPARADOR_PALABRAS_RESPALDO.split(segmento)
         terminos_utiles = list(
             dict.fromkeys(
                 token
@@ -444,39 +465,65 @@ def admitido_por_catalogo(termino: str) -> bool:
     return len(saneado.encode("utf-8")) >= LARGO_MINIMO_BUSQUEDA_CATALOGO
 
 
+def _elegir_palabra_busqueda(frase_minuscula: str) -> str | None:
+    """
+    Elige la palabra única que se consultará en Catálogo para una frase.
+
+    - Si la frase tiene una sola palabra, se devuelve tal cual (sin cambio de comportamiento).
+    - Si tiene varias palabras, descarta palabras vacías (`PALABRAS_VACIAS_BUSQUEDA`) y elige
+      la palabra más larga admitida por Catálogo (prefiriendo palabras con letras sobre
+      números sueltos; ante empate de longitud gana la primera, p. ej. "arroz" en "arroz grado 2").
+    """
+    partes = frase_minuscula.split()
+    if len(partes) <= 1:
+        return frase_minuscula or None
+
+    tokens = [token for token in PATRON_SEPARADOR_TERMINOS.split(frase_minuscula) if token]
+    palabras_utiles = [
+        token
+        for token in tokens
+        if _normalizar_texto(token) not in PALABRAS_VACIAS_BUSQUEDA and admitido_por_catalogo(token)
+    ]
+    if not palabras_utiles:
+        return frase_minuscula if admitido_por_catalogo(frase_minuscula) else None
+
+    palabras_con_letras = [token for token in palabras_utiles if any(caracter.isalpha() for caracter in token)]
+    candidatas = palabras_con_letras or palabras_utiles
+    return max(candidatas, key=len)
+
+
 def terminos_busqueda_catalogo(frase: str) -> list[str]:
     """
     Devuelve la secuencia ordenada de términos `?q=` para buscar una frase en Catálogo.
 
-    Orden de prioridad:
-    1. La frase tal cual (y su versión sin tildes si difiere).
-    2. La forma singular (y sin tildes si difiere), porque Catálogo usa prefijo/palabra
-       y "zanahorias" no coincide con "Zanahoria Granel".
-    3. Si la frase tiene varias palabras, su término más largo y su singular, porque
-       Catálogo busca la subcadena literal ("harina almendras" no calza "Harina de Almendras").
+    Catálogo trata `q` como subcadena literal (`ILIKE '%q%'`), por lo que frases sin
+    conectores como "harina almendras" devuelven 0 resultados frente a "Harina de Almendras".
+    Por eso:
+    1. Para frases de varias palabras, se consulta UNA sola palabra (la más larga/específica,
+       descartando palabras vacías) y luego la IA filtra exigiendo todas las palabras.
+    2. Si con esa palabra no hay resultados, se prueba su forma singular (y variantes sin
+       tildes si difieren).
+    3. Para frases de una sola palabra, mantiene exactamente el comportamiento original
+       (palabra tal cual, luego su singular y variante sin tildes).
     El llamador prueba cada término en orden y se detiene al obtener resultados.
     """
     frase_minuscula = " ".join(frase.lower().split())
     if not frase_minuscula:
         return []
 
-    candidatos = [frase_minuscula]
-    frase_singular = singularizar_frase(frase_minuscula)
-    if frase_singular != frase_minuscula:
-        candidatos.append(frase_singular)
+    palabra_principal = _elegir_palabra_busqueda(frase_minuscula)
+    if not palabra_principal:
+        return []
 
-    terminos = [termino for termino in _separar_terminos(frase_minuscula) if len(termino) >= LONGITUD_MINIMA_PREFIJO]
-    if len(terminos) > 1 or (terminos and terminos[0] != frase_minuscula):
-        termino_mas_largo = max(terminos, key=len)
-        candidatos.append(termino_mas_largo)
-        termino_mas_largo_singular = singularizar_palabra(termino_mas_largo)
-        if termino_mas_largo_singular != termino_mas_largo:
-            candidatos.append(termino_mas_largo_singular)
+    candidatos = [palabra_principal]
+    palabra_singular = singularizar_palabra(palabra_principal)
+    if palabra_singular != palabra_principal:
+        candidatos.append(palabra_singular)
 
     candidatos.extend([_normalizar_texto(candidato) for candidato in candidatos])
 
-    # Conserva el orden (primero el término tal cual, luego singular y variantes), quita repetidos
-    # y descarta lo que Catálogo rechazaría con 400 (< 3 bytes).
+    # Conserva el orden (primero la palabra elegida, luego singular y variantes sin tilde),
+    # quita repetidos y descarta lo que Catálogo rechazaría con 400 (< 3 bytes).
     return list(dict.fromkeys(candidato for candidato in candidatos if candidato and admitido_por_catalogo(candidato)))
 
 
@@ -514,51 +561,29 @@ def _nivel_relevancia_producto(producto: dict, palabras_clave: list[str]) -> int
     return RELEVANCIA_NORMAL
 
 
-def _cantidad_terminos_coincidentes(frase: str, producto: dict) -> int:
-    """Cuenta cuántos términos de la frase calzan por palabra o prefijo con la categoría o el nombre del producto."""
-    frase_normalizada = _normalizar_texto(frase)
-    if not frase_normalizada:
-        return 0
-
-    categoria_tokens = _separar_terminos(_normalizar_texto(producto.get("categoria") or ""))
-    nombre_tokens = _separar_terminos(_normalizar_texto(producto.get("nombre") or ""))
-    objetivos = [*categoria_tokens, *nombre_tokens]
-    if not objetivos:
-        return 0
-
-    terminos = _separar_terminos(frase_normalizada) or [frase_normalizada]
-    return sum(1 for termino in terminos if any(_texto_contiene(termino, objetivo) for objetivo in objetivos))
-
-
 def _filtrar_por_palabras_clave(productos: list, palabras_clave: list[str]) -> list:
     """
-    Conserva para cada frase los productos que calcen el mayor número de sus términos (> 0).
+    Conserva los productos que coinciden con TODAS las palabras de al menos una frase buscada.
 
-    Si existen productos que coinciden con todos los términos (p. ej. "harina almendras" ->
-    "Harina de Almendras"), solo se conservan esos; si ninguno calza todos (p. ej.
-    "leche litro" frente a "Leche Entera 1 L"), se conservan los que calcen más términos.
+    Reutiliza `_coincide_por_texto(..., exigir_todos=True)` (coincidencia por palabra o
+    prefijo y plural/singular). Como Catálogo se consulta con una sola palabra (p. ej.
+    `q=almendras`), este filtro descarta falsos positivos ("Almendras 200 g") y conserva
+    solo los productos que cumplen el término completo ("Harina de Almendras").
     """
-    indices_seleccionados: set[int] = set()
-    for frase in palabras_clave:
-        puntajes = [
-            (indice, _cantidad_terminos_coincidentes(frase, producto)) for indice, producto in enumerate(productos)
-        ]
-        maximo_coincidencias = max((puntaje for _, puntaje in puntajes), default=0)
-        if maximo_coincidencias == 0:
-            continue
-        for indice, puntaje in puntajes:
-            if puntaje == maximo_coincidencias:
-                indices_seleccionados.add(indice)
-    return [producto for indice, producto in enumerate(productos) if indice in indices_seleccionados]
+    return [
+        producto
+        for producto in productos
+        if any(_coincide_por_texto(frase, producto, exigir_todos=True) for frase in palabras_clave)
+    ]
 
 
-def filtrar_productos(catalogo: list, filtros: dict) -> list:
+def filtrar_productos(catalogo: list, filtros: dict, preservar_orden: bool = False) -> list:
     """
     Aplica precio máximo, categoría, palabras clave y distancia máxima.
 
-    Con palabras clave conserva los productos con mayor número de términos coincidentes
-    por frase, ordena primero por relevancia (primera palabra del nombre o categoría) y
-    luego por precio ascendente; sin palabras clave ordena solo por precio ascendente.
+    Cuando `preservar_orden` es True (resultados recibidos directamente de Catálogo),
+    conserva intacto el orden de relevancia que devolvió Catálogo. En caso contrario,
+    ordena por relevancia local y precio ascendente (o solo precio ascendente sin palabras clave).
     """
     resultado = catalogo
 
@@ -578,6 +603,9 @@ def filtrar_productos(catalogo: list, filtros: dict) -> list:
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:
         resultado = [producto for producto in resultado if producto["distancia_km"] <= distancia_max]
+
+    if preservar_orden:
+        return list(resultado)
 
     if palabras_clave:
         return sorted(

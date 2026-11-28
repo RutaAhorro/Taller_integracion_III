@@ -6,6 +6,7 @@ y los proveedores de IA con su configuración, y monta el chat y /health. La
 lógica vive en `app/api`, `app/services`, `app/repositories` y `app/domain`.
 """
 
+import logging
 import sys
 from contextlib import asynccontextmanager
 
@@ -37,7 +38,25 @@ class RespuestaUTF8(JSONResponse):
     media_type = "application/json; charset=utf-8"
 
 
+def configurar_logging() -> None:
+    """
+    Habilita logs INFO para el paquete `app` sin alterar los loggers de uvicorn.
+
+    Uvicorn configura sus propios handlers (`uvicorn`, `uvicorn.error`, `uvicorn.access`)
+    pero deja el logger raíz en WARNING, ocultando los logs INFO de diagnóstico del chat.
+    Configurar solo el logger `app` garantiza visibilidad de tiempos por etapa preservando
+    las líneas de acceso HTTP de uvicorn (`POST /api/v1/chat`) y la captura de `caplog`.
+    """
+    logger_aplicacion = logging.getLogger("app")
+    logger_aplicacion.setLevel(logging.INFO)
+    if not logger_aplicacion.handlers:
+        manejador_consola = logging.StreamHandler(sys.stderr)
+        manejador_consola.setFormatter(logging.Formatter("%(levelname)s:%(name)s:%(message)s"))
+        logger_aplicacion.addHandler(manejador_consola)
+
+
 configurar_consola_utf8()
+configurar_logging()
 
 
 # ===== Dependencias =====

@@ -196,14 +196,13 @@ def test_terminos_busqueda_frase_simple():
     assert terminos_busqueda_catalogo("Leche") == ["leche"]
 
 
-def test_terminos_busqueda_frase_compuesta_agrega_termino_mas_largo():
-    """Una frase de varias palabras agrega su forma singular y el término más largo (y su singular)."""
-    assert terminos_busqueda_catalogo("harina almendras") == [
-        "harina almendras",
-        "harina almendra",
-        "almendras",
-        "almendra",
-    ]
+def test_terminos_busqueda_frase_compuesta_usa_una_sola_palabra_y_su_singular():
+    """Una frase de varias palabras consulta solo la palabra más larga (y su singular si aplica)."""
+    assert terminos_busqueda_catalogo("harina de almendras") == ["almendras", "almendra"]
+    assert terminos_busqueda_catalogo("harina almendras") == ["almendras", "almendra"]
+    assert terminos_busqueda_catalogo("aceite de oliva") == ["aceite"]
+    assert terminos_busqueda_catalogo("leche sin lactosa") == ["lactosa"]
+    assert terminos_busqueda_catalogo("arroz grado 2") == ["arroz"]
 
 
 def test_terminos_busqueda_plurales_agrega_singular_despues_del_original():
@@ -214,8 +213,8 @@ def test_terminos_busqueda_plurales_agrega_singular_despues_del_original():
 
 
 def test_terminos_busqueda_agrega_variante_sin_tildes():
-    """Con tildes se agrega la variante sin ellas, porque Catálogo distingue tildes."""
-    assert terminos_busqueda_catalogo("Azúcar flor") == ["azúcar flor", "azúcar", "azucar flor", "azucar"]
+    """Con tildes elige la palabra más larga y agrega su variante sin tildes, porque Catálogo distingue tildes."""
+    assert terminos_busqueda_catalogo("Azúcar flor") == ["azúcar", "azucar"]
 
 
 def test_terminos_busqueda_descarta_lo_que_catalogo_rechaza():
@@ -293,17 +292,17 @@ def _procesar(repositorio: RepositorioDoble, filtros: dict, mensaje: str = "mens
 
 
 def test_chat_encuentra_producto_fuera_de_la_cache():
-    """El caso del diagnóstico: la harina de almendras no está en la caché, pero sí en Catálogo."""
+    """El caso del diagnóstico: 'harina de almendras' consulta Catálogo solo con `q=almendras` y filtra en IA."""
     repositorio = RepositorioDoble(
         cache=[_normalizar(YOGUR_BARATO)],
-        busquedas={"harina de almendras": [_normalizar(HARINA_ALMENDRAS)]},
+        busquedas={"almendras": [_normalizar(HARINA_ALMENDRAS)]},
     )
 
     datos = _procesar(repositorio, {"palabras_clave": ["harina de almendras"]})
 
     assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-almendras"]
     assert datos["estado_datos"] == ESTADO_VIGENTE
-    assert ("harina de almendras", None) in repositorio.terminos_buscados
+    assert repositorio.terminos_buscados == [("almendras", None)]
 
 
 def test_chat_aplica_filtro_determinista_sobre_lo_que_devuelve_catalogo():
@@ -776,6 +775,8 @@ def test_casos_chat_con_cliente_catalogo_simulado_pr208():
     casos = [
         ("Busco leche por menos de $2.000", {"palabras_clave": ["leche"], "precio_max": 2000}, "prod-leche-entera"),
         ("Busco harina de almendras", {"palabras_clave": ["harina de almendras"]}, "prod-harina-almendras"),
+        # También cubre cuando el LLM o el respaldo omite la palabra vacía "de" ("harina almendras").
+        ("Busco harina de almendras", {"palabras_clave": ["harina almendras"]}, "prod-harina-almendras"),
         ("¿Me recomiendas leche?", {"palabras_clave": ["leche"]}, "prod-leche-entera"),
         # Simula el caso en que el LLM responde texto libre sin llamar a la herramienta: rescate por respaldo.
         ("me recomiendas leche?", None, "prod-leche-entera"),
@@ -792,6 +793,227 @@ def test_casos_chat_con_cliente_catalogo_simulado_pr208():
         assert datos["respuesta"] != TEXTO_CATALOGO_NO_DISPONIBLE
         assert "Lo siento, en este momento no puedo procesar tu solicitud" not in datos["respuesta"]
         assert datos["estado_datos"] == ESTADO_VIGENTE
+
+
+# ===== Búsqueda por palabra única, filtrado multipalabra, orden, plazos (~14 s) y log diagnóstico =====
+
+
+def test_chat_harina_de_almendras_solo_catalogo_con_q_almendras():
+    """Con Catálogo que solo responde a `q=almendras`, encuentra la harina y descarta almendras sueltas."""
+    harina_con_piel = _producto("prod-harina-piel", "Harina de Almendras con Piel Libre de Gluten 500 g", 6990.0)
+    almendras_tostadas = _producto("prod-almendras-solas", "Almendras Tostadas 200 g", 3990.0)
+    consultas_realizadas: list[str] = []
+
+    def simular_get_solo_almendras(_url: str, params: dict) -> MagicMock:
+        termino = str(params.get("q", "")).strip().lower()
+        consultas_realizadas.append(termino)
+        if termino == "almendras":
+            return _respuesta_http({"data": [almendras_tostadas, harina_con_piel], "paginacion": {"total_paginas": 1}})
+        return _respuesta_http({"data": [], "paginacion": {"total_paginas": 1}})
+
+    cliente_http = MagicMock(spec=httpx.Client)
+    cliente_http.get.side_effect = simular_get_solo_almendras
+    repositorio = ProductoRepositorio(url_base=URL_CATALOGO, cliente=cliente_http)
+
+    for palabras in (["harina de almendras"], ["harina almendras"]):
+        consultas_realizadas.clear()
+        datos = anyio.run(
+            procesar_mensaje,
+            ProveedorFijo({"palabras_clave": palabras}),
+            repositorio,
+            "Busco harina de almendras",
+        )
+        assert consultas_realizadas == ["almendras"]
+        assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-piel"]
+
+
+def test_chat_multipalabra_aceite_oliva_leche_sin_lactosa_y_arroz_grado_2():
+    """Consulta con una sola palabra y exige todas las palabras del término en el filtro de la IA."""
+    aceite_maravilla = _normalizar(_producto("prod-aceite-maravilla", "Aceite de Maravilla 1 L", 1890.0))
+    aceite_oliva = _normalizar(_producto("prod-aceite-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0))
+    leche_sin_lactosa = _normalizar(_producto("prod-leche-sl", "Leche Descremada Sin Lactosa 1 L", 1390.0, "lacteos"))
+    queso_sin_lactosa = _normalizar(_producto("prod-queso-sl", "Queso Gouda Sin Lactosa 200 g", 2490.0, "lacteos"))
+    leche_entera = _normalizar(_producto("prod-leche-con", "Leche Entera con Lactosa 1 L", 1190.0, "lacteos"))
+    arroz_g1 = _normalizar(_producto("prod-arroz-1", "Arroz Grado 1 1 kg", 1490.0))
+    arroz_g2 = _normalizar(_producto("prod-arroz-2", "Arroz Grado 2 1 kg", 1190.0))
+    arroz_basmati = _normalizar(_producto("prod-arroz-basmati", "Arroz Basmati 500 g", 2290.0))
+
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "aceite": [aceite_maravilla, aceite_oliva],
+            "lactosa": [queso_sin_lactosa, leche_entera, leche_sin_lactosa],
+            "arroz": [arroz_g1, arroz_g2, arroz_basmati],
+        },
+    )
+
+    datos_aceite = _procesar(repositorio, {"palabras_clave": ["aceite de oliva"]}, mensaje="aceite de oliva")
+    assert [producto["id"] for producto in datos_aceite["productos_recomendados"]] == ["prod-aceite-oliva"]
+    assert repositorio.terminos_buscados == [("aceite", None)]
+
+    repositorio.terminos_buscados.clear()
+    datos_leche = _procesar(repositorio, {"palabras_clave": ["leche sin lactosa"]}, mensaje="leche sin lactosa")
+    assert [producto["id"] for producto in datos_leche["productos_recomendados"]] == ["prod-leche-sl"]
+    assert repositorio.terminos_buscados == [("lactosa", None)]
+
+    repositorio.terminos_buscados.clear()
+    datos_arroz = _procesar(repositorio, {"palabras_clave": ["arroz grado 2"]}, mensaje="arroz grado 2")
+    assert [producto["id"] for producto in datos_arroz["productos_recomendados"]] == ["prod-arroz-2"]
+    assert repositorio.terminos_buscados == [("arroz", None)]
+
+
+def test_chat_multipalabra_cae_a_singular_si_plural_no_trae_resultados():
+    """Si la palabra elegida en plural ('almendras') da 0 resultados, prueba su singular ('almendra')."""
+    harina_singular = _normalizar(_producto("prod-harina-almendra", "Harina de Almendra 500 g", 5590.0))
+    repositorio = RepositorioDoble(cache=[], busquedas={"almendra": [harina_singular]})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["harina de almendras"]}, mensaje="Busco harina de almendras")
+
+    assert repositorio.terminos_buscados == [("almendras", None), ("almendra", None)]
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-harina-almendra"]
+
+
+def test_chat_multipalabra_sin_resultados_descarta_coincidencia_parcial():
+    """Si Catálogo solo devuelve 'Almendras Tostadas' para `q=almendras`, 'harina de almendras' responde sin resultados."""
+    almendras_solas = _normalizar(_producto("prod-almendras", "Almendras Tostadas 200 g", 3990.0))
+    repositorio = RepositorioDoble(cache=[], busquedas={"almendras": [almendras_solas]})
+
+    datos = _procesar(repositorio, {"palabras_clave": ["harina de almendras"]}, mensaje="Busco harina de almendras")
+
+    assert datos["productos_recomendados"] == []
+    assert datos["respuesta"] == TEXTO_SIN_PRODUCTOS
+    assert datos["estado_datos"] == ESTADO_VIGENTE
+
+
+def test_chat_mantiene_orden_de_relevancia_que_devuelve_catalogo():
+    """Conserva el orden de relevancia entregado por Catálogo sin reordenar por precio."""
+    harina_mas_relevante = _normalizar(_producto("prod-rel-1", "Harina de Almendras con Piel 500 g", 6990.0))
+    harina_menos_relevante = _normalizar(_producto("prod-rel-2", "Mix Harina de Almendras 500 g", 4490.0))
+    almendras_descartadas = _normalizar(_producto("prod-descarte", "Almendras 200 g", 2990.0))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={"almendras": [almendras_descartadas, harina_mas_relevante, harina_menos_relevante]},
+    )
+
+    datos = _procesar(repositorio, {"palabras_clave": ["harina de almendras"]})
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-rel-1", "prod-rel-2"]
+
+
+def test_chat_omite_explicacion_si_etapas_1_y_2_superan_mitad_del_plazo(monkeypatch, caplog):
+    """Con proveedor lento en extracción (>50% del plazo), omite la explicación y responde con frase fija antes del plazo."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.6)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.2)
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
+
+    class ProveedorExtraccionLenta(ProveedorIA):
+        nombre = "gemini"
+
+        def __init__(self) -> None:
+            self.llamadas_explicacion = 0
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(0.35)
+            return ResultadoExtraccion(
+                filtros={"palabras_clave": ["leche"]}, tiempo_extraccion_ms=350, proveedor="gemini"
+            )
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            self.llamadas_explicacion += 1
+            await anyio.sleep(2.0)
+            return "No debería haberse llamado."
+
+    proveedor = ProveedorExtraccionLenta()
+    repositorio = RepositorioDoble(cache=[], busquedas={"leche": [_normalizar(LECHE_ENTERA)]})
+
+    inicio = time.monotonic()
+    with caplog.at_level(logging.INFO):
+        datos = anyio.run(procesar_mensaje, proveedor, repositorio, "Busco leche secreta-no-loguear")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.6
+    assert proveedor.llamadas_explicacion == 0
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["respuesta"] == "Estas son las opciones que encontré para «leche», desde $1.190."
+    assert datos["tiempo_explicacion_ms"] == 0
+    assert "Consulta chat:" in caplog.text
+    assert "proveedor=gemini" in caplog.text
+    assert "productos=1" in caplog.text
+    assert "frase_fija=si" in caplog.text
+    assert "secreta-no-loguear" not in caplog.text
+
+
+def test_chat_respeta_plazo_total_con_proveedor_lento_en_explicacion(monkeypatch, caplog):
+    """Con proveedor lento en etapa 3, responde dentro del plazo total con tarjetas y frase fija."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.5)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.2)
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
+
+    class ProveedorExplicacionMuyLenta(ProveedorIA):
+        nombre = "groq"
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(0.05)
+            return ResultadoExtraccion(filtros={"palabras_clave": ["leche"]}, tiempo_extraccion_ms=50, proveedor="groq")
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            await anyio.sleep(2.0)
+            return "Respuesta tardía."
+
+    repositorio = RepositorioDoble(cache=[], busquedas={"leche": [_normalizar(LECHE_ENTERA)]})
+
+    inicio = time.monotonic()
+    with caplog.at_level(logging.INFO):
+        datos = anyio.run(procesar_mensaje, ProveedorExplicacionMuyLenta(), repositorio, "¿Me recomiendas leche?")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.5
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-leche"]
+    assert datos["respuesta"] == "Estas son las opciones que encontré para «leche», desde $1.190."
+    assert "Consulta chat:" in caplog.text
+    assert "proveedor=groq" in caplog.text
+    assert "frase_fija=si" in caplog.text
+
+
+def test_chat_registra_linea_info_con_tiempos_por_etapa_sin_datos_sensibles(caplog):
+    """Por cada consulta al chat se emite una línea INFO con duraciones por etapa, proveedor, productos y frase_fija."""
+
+    class ProveedorGeminiSimulado(ProveedorIA):
+        nombre = "gemini"
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            return ResultadoExtraccion(
+                filtros={"palabras_clave": ["harina de almendras"]},
+                tiempo_extraccion_ms=120,
+                proveedor="gemini",
+            )
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "Encontré Harina de Almendras a $5.990."
+
+    repositorio = RepositorioDoble(cache=[], busquedas={"almendras": [_normalizar(HARINA_ALMENDRAS)]})
+
+    with caplog.at_level(logging.INFO):
+        datos = anyio.run(
+            procesar_mensaje,
+            ProveedorGeminiSimulado(),
+            repositorio,
+            "Busco harina de almendras token-privado-usuario",
+        )
+
+    assert len(datos["productos_recomendados"]) == 1
+    lineas_diagnostico = [registro.message for registro in caplog.records if "Consulta chat:" in registro.message]
+    assert len(lineas_diagnostico) == 1
+    linea = lineas_diagnostico[0]
+    assert "extraccion_ms=120" in linea
+    assert "catalogo_ms=" in linea
+    assert "explicacion_ms=" in linea
+    assert "total_ms=" in linea
+    assert "proveedor=gemini" in linea
+    assert "productos=1" in linea
+    assert "frase_fija=no" in linea
+    assert "token-privado-usuario" not in caplog.text
+    assert "harina de almendras" not in linea
 
 
 # ===== Utilidades =====
