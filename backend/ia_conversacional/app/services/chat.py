@@ -27,7 +27,11 @@ from app.domain.filtros import (
 )
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
 from app.repositories.catalogo import FUENTE_SIN_DATOS, ProductoRepositorio
-from app.services.fallback import formatear_error_seguro
+from app.services.fallback import (
+    formatear_error_seguro,
+    obtener_ultimo_proveedor_explicacion,
+    reiniciar_ultimo_proveedor_explicacion,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +96,8 @@ class DatosEtapa3:
     productos: list
     filtros: dict | None
     tiempo_extraccion_ms: int
+    tiempo_catalogo_ms: int = 0
+    proveedor_extraccion: str | None = None
     ingredientes_receta: list | None = None
     ingredientes_faltantes: list | None = None
     estado_datos: str = ESTADO_VIGENTE
@@ -102,18 +108,23 @@ class DatosEtapa3:
 class PresupuestoPlazos:
     """Reparto explícito del plazo total entre extracción+búsqueda, Catálogo y explicación."""
 
+    plazo_total: float
     plazo_etapas_1_y_2: float
     plazo_catalogo_max: float
     reserva_explicacion: float
+    plazo_explicacion_max: float
+    umbral_omitir_explicacion: float
 
 
 def calcular_presupuesto_plazos() -> PresupuestoPlazos:
     """
-    Reparte `CHAT_TIMEOUT_TOTAL` para que Catálogo no agote el tiempo de la explicación.
+    Reparte `CHAT_TIMEOUT_TOTAL` (~14 s) para responder siempre antes del corte de 20 s del gateway.
 
-    - La explicación conserva un mínimo garantizado (`CHAT_EXPLICACION_PLAZO_MINIMO`, acotado
-      a la mitad del plazo total si este se reduce en pruebas o configuración).
+    - La explicación conserva un presupuesto acotado (`reserva_explicacion`) y nunca
+      excede el tiempo restante del plazo total.
     - Catálogo no puede superar `CATALOGO_TIMEOUT` ni `CHAT_CATALOGO_FRACCION_PLAZO` del total.
+    - Si al terminar la búsqueda ya pasó `CHAT_UMBRAL_OMITIR_EXPLICACION` del plazo total
+      (cerca de la mitad), se omite la explicación del modelo y se responde con frase fija.
     """
     plazo_total = config.CHAT_TIMEOUT_TOTAL
     reserva_explicacion = min(
@@ -122,10 +133,48 @@ def calcular_presupuesto_plazos() -> PresupuestoPlazos:
     )
     plazo_etapas_1_y_2 = max(PLAZO_MINIMO_ETAPAS_1_Y_2, plazo_total - reserva_explicacion)
     plazo_catalogo_max = min(config.CATALOGO_TIMEOUT, plazo_total * config.CHAT_CATALOGO_FRACCION_PLAZO)
+    umbral_omitir_explicacion = plazo_total * config.CHAT_UMBRAL_OMITIR_EXPLICACION
+    plazo_explicacion_max = max(reserva_explicacion, plazo_total - umbral_omitir_explicacion)
     return PresupuestoPlazos(
+        plazo_total=plazo_total,
         plazo_etapas_1_y_2=plazo_etapas_1_y_2,
         plazo_catalogo_max=plazo_catalogo_max,
         reserva_explicacion=reserva_explicacion,
+        plazo_explicacion_max=plazo_explicacion_max,
+        umbral_omitir_explicacion=umbral_omitir_explicacion,
+    )
+
+
+def _formatear_proveedor_diagnostico(
+    proveedor_extraccion: str | None,
+    proveedor_explicacion: str | None = None,
+) -> str:
+    """Resume qué proveedor respondió en la consulta sin incluir datos sensibles."""
+    if proveedor_extraccion and proveedor_explicacion and proveedor_extraccion != proveedor_explicacion:
+        return f"{proveedor_extraccion}->{proveedor_explicacion}"
+    return proveedor_explicacion or proveedor_extraccion or "ninguno"
+
+
+def _registrar_diagnostico_chat(
+    tiempo_extraccion_ms: int,
+    tiempo_catalogo_ms: int,
+    tiempo_explicacion_ms: int,
+    tiempo_total_ms: int,
+    proveedor: str,
+    cantidad_productos: int,
+    uso_frase_fija: bool,
+) -> None:
+    """Emite una línea INFO de diagnóstico por consulta sin texto del usuario, claves ni tokens."""
+    logger.info(
+        "Consulta chat: extraccion_ms=%d catalogo_ms=%d explicacion_ms=%d total_ms=%d "
+        "proveedor=%s productos=%d frase_fija=%s",
+        tiempo_extraccion_ms,
+        tiempo_catalogo_ms,
+        tiempo_explicacion_ms,
+        tiempo_total_ms,
+        proveedor,
+        cantidad_productos,
+        "si" if uso_frase_fija else "no",
     )
 
 
@@ -266,23 +315,22 @@ def construir_explicacion_respaldo(productos_filtrados: list, termino_buscado: s
     return f"Estas son las opciones que encontré para «{etiqueta}»."
 
 
-async def generar_explicacion_con_tiempo(
+async def _generar_explicacion_con_estado(
     generador: GeneradorExplicacion,
     mensaje_usuario: str,
     productos_filtrados: list,
     tiempo_limite: float | None = None,
     termino_buscado: str | None = None,
-) -> tuple[str, int]:
+) -> tuple[str, int, bool]:
     """
-    Ejecuta la redacción con un plazo opcional, mide su duración en milisegundos
-    y nunca propaga errores.
+    Ejecuta la redacción con plazo opcional, mide su duración e indica si se usó la frase fija.
 
     Los productos filtrados ya son válidos: la explicación es un complemento,
     así que un fallo de red o de cuota (o plazo agotado) se reemplaza por una
     frase fija corta basada en el término buscado (o `TEXTO_EXPLICACION_RESPALDO`).
     """
     if not productos_filtrados:
-        return TEXTO_SIN_PRODUCTOS, 0
+        return TEXTO_SIN_PRODUCTOS, 0, False
 
     inicio = time.perf_counter()
     explicacion = None
@@ -300,8 +348,28 @@ async def generar_explicacion_con_tiempo(
     tiempo_ms = round((time.perf_counter() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
 
     explicacion_limpia = limpiar_explicacion(explicacion) if explicacion else ""
+    if explicacion_limpia:
+        return explicacion_limpia, tiempo_ms, False
     respaldo = construir_explicacion_respaldo(productos_filtrados, termino_buscado)
-    return explicacion_limpia or respaldo, tiempo_ms
+    return respaldo, tiempo_ms, True
+
+
+async def generar_explicacion_con_tiempo(
+    generador: GeneradorExplicacion,
+    mensaje_usuario: str,
+    productos_filtrados: list,
+    tiempo_limite: float | None = None,
+    termino_buscado: str | None = None,
+) -> tuple[str, int]:
+    """Envoltorio público que devuelve `(explicacion, tiempo_ms)` para mantener el contrato existente."""
+    explicacion, tiempo_ms, _uso_frase_fija = await _generar_explicacion_con_estado(
+        generador,
+        mensaje_usuario,
+        productos_filtrados,
+        tiempo_limite=tiempo_limite,
+        termino_buscado=termino_buscado,
+    )
+    return explicacion, tiempo_ms
 
 
 # ===== Candidatos de la etapa 2 =====
@@ -459,7 +527,9 @@ def _completar_filtros_con_respaldo(filtros: dict, mensaje: str) -> dict | None:
     if not terminos_respaldo:
         return None
 
-    logger.info("Extracción sin criterio de producto; se usan términos de respaldo del mensaje: %s", terminos_respaldo)
+    logger.info(
+        "Extracción sin criterio de producto; se usan %d términos de respaldo del mensaje.", len(terminos_respaldo)
+    )
     return {**filtros, "palabras_clave": terminos_respaldo}
 
 
@@ -485,19 +555,20 @@ async def _ejecutar_etapas_1_y_2(
     repositorio: ProductoRepositorio,
     mensaje: str,
     presupuesto: PresupuestoPlazos,
-) -> tuple[dict | None, DatosEtapa3 | None]:
+) -> tuple[dict | None, DatosEtapa3 | None, int, str | None]:
     """
     Ejecuta las etapas 1 y 2 dentro de su parte reservada del plazo total.
 
-    Devuelve un par `(respuesta, datos_etapa_3)`: con la respuesta ya armada cuando el
-    proveedor no encuentra filtros o Catálogo no responde; o con los datos de la etapa 3
-    cuando ya hay candidatos validados para explicar.
+    Devuelve `(respuesta, datos_etapa_3, tiempo_catalogo_ms, proveedor_extraccion)`:
+    con la respuesta ya armada cuando el proveedor no encuentra filtros o Catálogo no responde,
+    o con los datos de la etapa 3 cuando ya hay candidatos validados para explicar.
     """
     limite_etapas_1_y_2 = time.monotonic() + presupuesto.plazo_etapas_1_y_2
 
     with anyio.fail_after(presupuesto.plazo_etapas_1_y_2):
         # Etapa 1: extracción de filtros por function calling.
         resultado = await proveedor.extraer_filtros(mensaje)
+        proveedor_extraccion = resultado.proveedor or getattr(proveedor, "nombre", None)
 
         if resultado.error:
             logger.error("Falló la extracción: %s", resultado.error)
@@ -506,25 +577,35 @@ async def _ejecutar_etapas_1_y_2(
         filtros_base_extraccion = resultado.filtros if isinstance(resultado.filtros, dict) else {}
         filtros_efectivos = _completar_filtros_con_respaldo(filtros_base_extraccion, mensaje)
         if not filtros_efectivos:
-            logger.debug(
-                "Sin filtros ni términos útiles en el mensaje (texto libre omitido): %s", resultado.texto_libre
+            logger.debug("Sin filtros ni términos útiles en el mensaje; texto libre omitido.")
+            return (
+                _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0),
+                None,
+                0,
+                proveedor_extraccion,
             )
-            return _respuesta_chat(TEXTO_SIN_FILTROS, None, [], resultado.tiempo_extraccion_ms, 0), None
 
         # Etapa 2: búsqueda directa en Catálogo acotada a su fracción del plazo y al tiempo restante.
+        inicio_catalogo = time.perf_counter()
         plazo_catalogo = max(0.0, min(presupuesto.plazo_catalogo_max, limite_etapas_1_y_2 - time.monotonic()))
         productos, estado_datos, catalogo_disponible = await _obtener_candidatos(
             repositorio, filtros_efectivos, plazo_catalogo=plazo_catalogo
         )
+        tiempo_catalogo_ms = round((time.perf_counter() - inicio_catalogo) * MILISEGUNDOS_POR_SEGUNDO)
         if not productos and not catalogo_disponible:
-            return _respuesta_chat(
-                TEXTO_CATALOGO_NO_DISPONIBLE,
-                filtros_efectivos,
-                [],
-                resultado.tiempo_extraccion_ms,
-                0,
-                estado_datos=estado_datos,
-            ), None
+            return (
+                _respuesta_chat(
+                    TEXTO_CATALOGO_NO_DISPONIBLE,
+                    filtros_efectivos,
+                    [],
+                    resultado.tiempo_extraccion_ms,
+                    0,
+                    estado_datos=estado_datos,
+                ),
+                None,
+                tiempo_catalogo_ms,
+                proveedor_extraccion,
+            )
 
         termino_buscado = _etiqueta_termino_buscado(filtros_efectivos)
 
@@ -550,7 +631,9 @@ async def _ejecutar_etapas_1_y_2(
                     for candidato in ingrediente["candidatos"]
                 }
             )
+            inicio_disponibilidad = time.perf_counter()
             disponibilidad = await anyio.to_thread.run_sync(repositorio.consultar_disponibilidad, ids_candidatos)
+            tiempo_catalogo_ms += round((time.perf_counter() - inicio_disponibilidad) * MILISEGUNDOS_POR_SEGUNDO)
 
             # Si disponibilidad es None, loguear warning y continuar con los datos obtenidos de Catálogo
             if disponibilidad is None:
@@ -622,59 +705,130 @@ async def _ejecutar_etapas_1_y_2(
                     productos=productos_receta[: config.EXPLICACION_MAX_PRODUCTOS],
                     filtros=filtros_efectivos,
                     tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
+                    tiempo_catalogo_ms=tiempo_catalogo_ms,
+                    proveedor_extraccion=proveedor_extraccion,
                     ingredientes_receta=ingredientes_receta_validados,
                     ingredientes_faltantes=ingredientes_faltantes,
                     estado_datos=estado_datos,
                     termino_buscado=termino_buscado,
                 ),
+                tiempo_catalogo_ms,
+                proveedor_extraccion,
             )
 
-        # Camino no-receta: filtrar deterministamente y respetar el límite de tarjetas.
-        productos_filtrados = filtrar_productos(productos, filtros_efectivos)[: config.EXPLICACION_MAX_PRODUCTOS]
+        # Camino no-receta: filtrar exigiendo todas las palabras y mantener el orden de relevancia de Catálogo.
+        productos_filtrados = filtrar_productos(productos, filtros_efectivos, preservar_orden=True)[
+            : config.EXPLICACION_MAX_PRODUCTOS
+        ]
         return (
             None,
             DatosEtapa3(
                 productos=productos_filtrados,
                 filtros=filtros_efectivos,
                 tiempo_extraccion_ms=resultado.tiempo_extraccion_ms,
+                tiempo_catalogo_ms=tiempo_catalogo_ms,
+                proveedor_extraccion=proveedor_extraccion,
                 estado_datos=estado_datos,
                 termino_buscado=termino_buscado,
             ),
+            tiempo_catalogo_ms,
+            proveedor_extraccion,
         )
 
 
 async def procesar_mensaje(proveedor: ProveedorIA, repositorio: ProductoRepositorio, mensaje: str) -> dict:
     """
-    Ejecuta las etapas 1 y 2 con plazo acotado y la etapa 3 con mínimo garantizado y respaldo.
+    Ejecuta las etapas 1 y 2 con plazo acotado y la etapa 3 dentro del plazo total (~14 s).
 
     - `_ejecutar_etapas_1_y_2` corre dentro de `presupuesto.plazo_etapas_1_y_2`.
     - La búsqueda en Catálogo no puede gastar más de `presupuesto.plazo_catalogo_max`.
-    - Si devuelve datos de etapa 3, la explicación corre FUERA del `fail_after` con al menos
-      `presupuesto.reserva_explicacion` segundos; si falla o vence, responde igualmente con
-      los productos reales y una frase fija corta basada en el término buscado.
+    - Si al terminar la búsqueda ya pasó `presupuesto.umbral_omitir_explicacion` (cerca de
+      la mitad del plazo total), omite la explicación del modelo y responde de inmediato con
+      la frase fija y las tarjetas de productos.
+    - Deja siempre una línea de log INFO con tiempos por etapa, proveedor, cantidad de
+      productos y si se usó la frase fija (sin texto del usuario ni secretos).
     """
     inicio = time.monotonic()
     presupuesto = calcular_presupuesto_plazos()
+    reiniciar_ultimo_proveedor_explicacion()
 
     try:
-        respuesta, datos_etapa_3 = await _ejecutar_etapas_1_y_2(proveedor, repositorio, mensaje, presupuesto)
+        respuesta, datos_etapa_3, tiempo_catalogo_ms, proveedor_extraccion = await _ejecutar_etapas_1_y_2(
+            proveedor, repositorio, mensaje, presupuesto
+        )
     except TimeoutError as error_tiempo:
+        tiempo_total_ms = round((time.monotonic() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
+        _registrar_diagnostico_chat(
+            tiempo_extraccion_ms=tiempo_total_ms,
+            tiempo_catalogo_ms=0,
+            tiempo_explicacion_ms=0,
+            tiempo_total_ms=tiempo_total_ms,
+            proveedor="ninguno",
+            cantidad_productos=0,
+            uso_frase_fija=False,
+        )
         logger.error("Falló la extracción: plazo total agotado.")
         raise AsistenteNoDisponible("Tiempo total agotado en el asistente") from error_tiempo
+    except AsistenteNoDisponible:
+        tiempo_total_ms = round((time.monotonic() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
+        _registrar_diagnostico_chat(
+            tiempo_extraccion_ms=tiempo_total_ms,
+            tiempo_catalogo_ms=0,
+            tiempo_explicacion_ms=0,
+            tiempo_total_ms=tiempo_total_ms,
+            proveedor="ninguno",
+            cantidad_productos=0,
+            uso_frase_fija=False,
+        )
+        raise
 
     if respuesta is not None:
+        tiempo_total_ms = round((time.monotonic() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
+        _registrar_diagnostico_chat(
+            tiempo_extraccion_ms=respuesta["tiempo_extraccion_ms"],
+            tiempo_catalogo_ms=tiempo_catalogo_ms,
+            tiempo_explicacion_ms=0,
+            tiempo_total_ms=tiempo_total_ms,
+            proveedor=_formatear_proveedor_diagnostico(proveedor_extraccion),
+            cantidad_productos=len(respuesta["productos_recomendados"]),
+            uso_frase_fija=False,
+        )
         return respuesta
 
-    # Fuera del bloque fail_after: garantizar el mínimo de plazo reservado para la explicación.
-    tiempo_restante = config.CHAT_TIMEOUT_TOTAL - (time.monotonic() - inicio)
-    plazo_explicacion = max(presupuesto.reserva_explicacion, tiempo_restante)
+    tiempo_transcurrido = time.monotonic() - inicio
+    if not datos_etapa_3.productos:
+        explicacion = TEXTO_SIN_PRODUCTOS
+        tiempo_explicacion_ms = 0
+        uso_frase_fija = False
+        proveedor_explicacion = None
+    elif tiempo_transcurrido >= presupuesto.umbral_omitir_explicacion:
+        # Ya se consumió cerca de la mitad del plazo total: omitir explicación del modelo
+        # para responder rápido con las tarjetas reales y no acercarse al corte del gateway.
+        explicacion = construir_explicacion_respaldo(datos_etapa_3.productos, datos_etapa_3.termino_buscado)
+        tiempo_explicacion_ms = 0
+        uso_frase_fija = True
+        proveedor_explicacion = None
+    else:
+        tiempo_restante = max(0.0, presupuesto.plazo_total - tiempo_transcurrido)
+        plazo_explicacion = min(tiempo_restante, presupuesto.plazo_explicacion_max)
+        explicacion, tiempo_explicacion_ms, uso_frase_fija = await _generar_explicacion_con_estado(
+            proveedor.generar_explicacion,
+            mensaje,
+            datos_etapa_3.productos,
+            tiempo_limite=plazo_explicacion,
+            termino_buscado=datos_etapa_3.termino_buscado,
+        )
+        proveedor_explicacion = None if uso_frase_fija else obtener_ultimo_proveedor_explicacion()
 
-    explicacion, tiempo_explicacion_ms = await generar_explicacion_con_tiempo(
-        proveedor.generar_explicacion,
-        mensaje,
-        datos_etapa_3.productos,
-        tiempo_limite=plazo_explicacion,
-        termino_buscado=datos_etapa_3.termino_buscado,
+    tiempo_total_ms = round((time.monotonic() - inicio) * MILISEGUNDOS_POR_SEGUNDO)
+    _registrar_diagnostico_chat(
+        tiempo_extraccion_ms=datos_etapa_3.tiempo_extraccion_ms,
+        tiempo_catalogo_ms=datos_etapa_3.tiempo_catalogo_ms,
+        tiempo_explicacion_ms=tiempo_explicacion_ms,
+        tiempo_total_ms=tiempo_total_ms,
+        proveedor=_formatear_proveedor_diagnostico(datos_etapa_3.proveedor_extraccion, proveedor_explicacion),
+        cantidad_productos=len(datos_etapa_3.productos),
+        uso_frase_fija=uso_frase_fija,
     )
 
     return _respuesta_chat(

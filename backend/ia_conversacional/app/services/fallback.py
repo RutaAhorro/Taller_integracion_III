@@ -12,6 +12,7 @@ import logging
 import random
 import re
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from typing import TypeVar
 
 import httpx
@@ -20,6 +21,20 @@ from app import config
 from app.domain.proveedores import ProveedorIA, ResultadoExtraccion
 
 logger = logging.getLogger(__name__)
+
+# Almacena por tarea asíncrona el proveedor que generó la última explicación sin estado compartido.
+_ultimo_proveedor_explicacion: ContextVar[str | None] = ContextVar("ultimo_proveedor_explicacion", default=None)
+
+
+def reiniciar_ultimo_proveedor_explicacion() -> None:
+    """Limpia el registro del proveedor de explicación al iniciar una consulta."""
+    _ultimo_proveedor_explicacion.set(None)
+
+
+def obtener_ultimo_proveedor_explicacion() -> str | None:
+    """Devuelve el nombre del proveedor que generó la explicación en la tarea actual, o None."""
+    return _ultimo_proveedor_explicacion.get()
+
 
 # ===== Constantes =====
 
@@ -146,7 +161,9 @@ class FallbackProveedor(ProveedorIA):
                     self._reintentos_para(indice_proveedor),
                     ETAPA_EXTRACCION,
                 )
-                logger.info("Extracción resuelta por %s", proveedor.nombre)
+                if not resultado.proveedor:
+                    resultado.proveedor = proveedor.nombre
+                logger.info("Extracción resuelta por %s", resultado.proveedor)
                 return resultado
             except Exception as error:
                 ultimo_error = error
@@ -171,6 +188,7 @@ class FallbackProveedor(ProveedorIA):
                 )
                 if not explicacion or not explicacion.strip():
                     raise ValueError("Explicación vacía o None")
+                _ultimo_proveedor_explicacion.set(proveedor.nombre)
                 logger.info("Explicación generada por %s", proveedor.nombre)
                 return explicacion
             except Exception as error:

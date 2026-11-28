@@ -26,6 +26,7 @@ class ResultadoExtraccion:
     texto_libre: str | None = None
     error: str | None = None
     tiempo_extraccion_ms: int = 0
+    proveedor: str | None = None
 
 
 class ProveedorIA(ABC):

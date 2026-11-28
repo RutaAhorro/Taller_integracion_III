@@ -120,8 +120,10 @@ GROQ_ENDPOINT = _leer_env_str("GROQ_ENDPOINT", "https://api.groq.com/openai/v1/c
 # Groq retiró llama-3.1-8b-instant y llama-3.3-70b-versatile el 16-ago-2026.
 GROQ_MODEL_EXTRACCION = _leer_env_str("GROQ_MODEL_EXTRACCION", "openai/gpt-oss-20b")
 GROQ_MODEL_EXPLICACION = _leer_env_str("GROQ_MODEL_EXPLICACION", "openai/gpt-oss-120b")
-GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 6.0)
-GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 512)
+GROQ_TIMEOUT = _leer_env_float("IA_GROQ_TIMEOUT", 4.0)
+# Los modelos gpt-oss razonan por defecto en nivel "medium"; "low" acota la latencia sin perder precisión.
+GROQ_REASONING_EFFORT = _leer_env_str("IA_GROQ_REASONING_EFFORT", "low")
+GROQ_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXTRACCION", 256)
 GROQ_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GROQ_MAX_TOKENS_EXPLICACION", 600)
 GROQ_FREQUENCY_PENALTY = _leer_env_float("IA_GROQ_FREQUENCY_PENALTY", 0.4)
 
@@ -133,10 +135,11 @@ GEMINI_API_BASE_URL = _leer_env_str("GEMINI_API_BASE_URL", "https://generativela
     "/"
 )
 GEMINI_ENDPOINT = _leer_env_str("GEMINI_ENDPOINT", f"{GEMINI_API_BASE_URL}/models/{GEMINI_MODEL}:generateContent")
-GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 6.0)
-GEMINI_THINKING_LEVEL = _leer_env_str("IA_GEMINI_THINKING_LEVEL", "low")
-GEMINI_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXTRACCION", 1200)
-GEMINI_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXPLICACION", 2048)
+GEMINI_TIMEOUT = _leer_env_float("IA_GEMINI_TIMEOUT", 4.0)
+# gemini-3.1-flash-lite admite "minimal" (razonamiento casi nulo) para responder en 1-2 s.
+GEMINI_THINKING_LEVEL = _leer_env_str("IA_GEMINI_THINKING_LEVEL", "minimal")
+GEMINI_MAX_TOKENS_EXTRACCION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXTRACCION", 256)
+GEMINI_MAX_TOKENS_EXPLICACION = _leer_env_int("IA_GEMINI_MAX_TOKENS_EXPLICACION", 600)
 
 # ===== Reintentos y respaldo entre proveedores =====
 
@@ -152,11 +155,13 @@ EXPLICACION_MAX_PRODUCTOS = _leer_env_int("IA_EXPLICACION_MAX_PRODUCTOS", 8)
 CHAT_RATE_LIMIT_SOLICITUDES = _leer_env_int("IA_CHAT_RATE_LIMIT_SOLICITUDES", 10)
 CHAT_RATE_LIMIT_VENTANA_SEGUNDOS = _leer_env_float("IA_CHAT_RATE_LIMIT_VENTANA_SEGUNDOS", 60.0)
 
-CHAT_TIMEOUT_TOTAL = _leer_env_float("IA_CHAT_TIMEOUT_TOTAL", 18.0)
-# Reparto explícito del plazo total: Catálogo nunca puede consumir más de esta fracción
-# y la explicación conserva un mínimo garantizado para no quedarse sin tiempo.
-CHAT_CATALOGO_FRACCION_PLAZO = _leer_env_float("IA_CHAT_CATALOGO_FRACCION_PLAZO", 0.35)
-CHAT_EXPLICACION_PLAZO_MINIMO = _leer_env_float("IA_CHAT_EXPLICACION_PLAZO_MINIMO", 5.0)
+# Plazo total acotado a 14 s para responder siempre con holgura antes del corte de 20 s del gateway.
+CHAT_TIMEOUT_TOTAL = _leer_env_float("IA_CHAT_TIMEOUT_TOTAL", 14.0)
+# Reparto explícito del plazo total: Catálogo no puede consumir más de esta fracción,
+# la explicación tiene un presupuesto acotado y se omite si etapas 1+2 superan el umbral.
+CHAT_CATALOGO_FRACCION_PLAZO = _leer_env_float("IA_CHAT_CATALOGO_FRACCION_PLAZO", 0.25)
+CHAT_EXPLICACION_PLAZO_MINIMO = _leer_env_float("IA_CHAT_EXPLICACION_PLAZO_MINIMO", 4.0)
+CHAT_UMBRAL_OMITIR_EXPLICACION = _leer_env_float("IA_CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
 
 
 # ===== Antigüedad de la caché de Catálogo (SUP-315) =====
@@ -261,6 +266,9 @@ def _validar_limites_numericos() -> None:
 
     if not (0 < CHAT_CATALOGO_FRACCION_PLAZO < 1):
         raise RuntimeError("IA_CHAT_CATALOGO_FRACCION_PLAZO debe estar entre 0 y 1.")
+
+    if not (0 < CHAT_UMBRAL_OMITIR_EXPLICACION < 1):
+        raise RuntimeError("IA_CHAT_UMBRAL_OMITIR_EXPLICACION debe estar entre 0 y 1.")
 
     no_negativos = (
         ("CATALOGO_CACHE_TTL", CATALOGO_CACHE_TTL),

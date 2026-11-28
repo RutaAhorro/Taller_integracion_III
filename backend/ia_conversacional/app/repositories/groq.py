@@ -86,6 +86,7 @@ class GroqProveedor(ProveedorIA):
         max_tokens_extraccion: int = config.GROQ_MAX_TOKENS_EXTRACCION,
         max_tokens_explicacion: int = config.GROQ_MAX_TOKENS_EXPLICACION,
         penalizacion_frecuencia: float = config.GROQ_FREQUENCY_PENALTY,
+        esfuerzo_razonamiento: str = config.GROQ_REASONING_EFFORT,
     ):
         """Guarda la clave, el endpoint, los modelos de cada etapa y sus límites."""
         self.clave_api = clave_api
@@ -96,6 +97,7 @@ class GroqProveedor(ProveedorIA):
         self.max_tokens_extraccion = max_tokens_extraccion
         self.max_tokens_explicacion = max_tokens_explicacion
         self.penalizacion_frecuencia = penalizacion_frecuencia
+        self.esfuerzo_razonamiento = esfuerzo_razonamiento
 
     def _encabezados(self) -> dict:
         """Encabezados HTTP con la clave como Bearer."""
@@ -113,7 +115,7 @@ class GroqProveedor(ProveedorIA):
         if not self.clave_api:
             raise ValueError("GROQ_API_KEY no configurada")
         inicio = time.perf_counter()
-        cuerpo = {
+        cuerpo: dict = {
             "model": self.modelo_extraccion,
             "messages": [{"role": "user", "content": mensaje}],
             "tools": [HERRAMIENTA_FILTROS_OPENAI],
@@ -121,6 +123,8 @@ class GroqProveedor(ProveedorIA):
             "max_tokens": self.max_tokens_extraccion,
             "frequency_penalty": self.penalizacion_frecuencia,
         }
+        if self.esfuerzo_razonamiento:
+            cuerpo["reasoning_effort"] = self.esfuerzo_razonamiento
 
         try:
             datos = await self._enviar(cuerpo)
@@ -129,7 +133,7 @@ class GroqProveedor(ProveedorIA):
             rescatados = rescatar_filtros_de_error_groq(error_http.response)
             if rescatados is not None:
                 logger.info("Groq rechazo el schema; filtros rescatados del failed_generation: %s", rescatados)
-                return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms)
+                return ResultadoExtraccion(filtros=rescatados, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
             estado_http = error_http.response.status_code
             logger.warning("Groq respondió HTTP %s sin filtros rescatables.", estado_http)
             # Sin filtros rescatables el error debe relanzarse: el respaldo ya decide reintentar/conmutar.
@@ -141,20 +145,26 @@ class GroqProveedor(ProveedorIA):
 
         if not llamadas_herramienta:
             # El modelo no llamó la función: el chat descarta este texto para no alucinar.
-            return ResultadoExtraccion(texto_libre=mensaje_modelo.get("content"), tiempo_extraccion_ms=tiempo_ms)
+            return ResultadoExtraccion(
+                texto_libre=mensaje_modelo.get("content"),
+                tiempo_extraccion_ms=tiempo_ms,
+                proveedor=self.nombre,
+            )
 
         filtros = sanitizar_filtros_crudos(json.loads(llamadas_herramienta[0]["function"]["arguments"]))
         logger.debug("Filtros extraidos (Groq): %s", filtros)
-        return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms)
+        return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
         """Etapa 3; deja propagar los errores HTTP para que el respaldo los reintente."""
-        cuerpo = {
+        cuerpo: dict = {
             "model": self.modelo_explicacion,
             "messages": [
                 {"role": "user", "content": construir_prompt_explicacion(mensaje_usuario, productos_filtrados)}
             ],
             "max_tokens": self.max_tokens_explicacion,
         }
+        if self.esfuerzo_razonamiento:
+            cuerpo["reasoning_effort"] = self.esfuerzo_razonamiento
         datos = await self._enviar(cuerpo)
         return datos["choices"][0]["message"]["content"]

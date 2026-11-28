@@ -96,11 +96,11 @@ class GeminiProveedor(ProveedorIA):
             if "functionCall" in parte:
                 filtros = sanitizar_filtros_crudos(parte["functionCall"].get("args", {}))
                 logger.debug("Filtros extraidos (Gemini): %s", filtros)
-                return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms)
+                return ResultadoExtraccion(filtros=filtros, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
 
         # El modelo no llamó la función: el chat descarta este texto para no alucinar.
         texto_libre = "".join(parte.get("text", "") for parte in partes)
-        return ResultadoExtraccion(texto_libre=texto_libre, tiempo_extraccion_ms=tiempo_ms)
+        return ResultadoExtraccion(texto_libre=texto_libre, tiempo_extraccion_ms=tiempo_ms, proveedor=self.nombre)
 
     async def generar_explicacion(self, mensaje_usuario: str, productos_filtrados: list) -> str:
         """Etapa 3; deja propagar los errores HTTP para que el respaldo los reintente."""
@@ -111,8 +111,8 @@ class GeminiProveedor(ProveedorIA):
                     "parts": [{"text": construir_prompt_explicacion(mensaje_usuario, productos_filtrados)}],
                 }
             ],
-            # Sin acotar el razonamiento, Gemini 3.1 consumía el presupuesto de tokens y dejaba la
-            # respuesta vacía o cortada. "low" es el mínimo que admite esta serie.
+            # Sin acotar el razonamiento, Gemini 3.1 consumía el presupuesto de tokens y disparaba la
+            # latencia. "minimal" reduce al mínimo el pensamiento interno en Flash-Lite.
             "generationConfig": {
                 "maxOutputTokens": self.max_tokens_explicacion,
                 "thinkingConfig": {"thinkingLevel": self.nivel_razonamiento},
