@@ -23,6 +23,7 @@ from app.domain.filtros import (
     filtrar_productos,
     formatear_precio_clp,
     terminos_busqueda_catalogo,
+    terminos_fallback_busqueda_catalogo,
     vincular_ingredientes_catalogo,
 )
 from app.domain.proveedores import MILISEGUNDOS_POR_SEGUNDO, ProveedorIA
@@ -431,9 +432,11 @@ async def _buscar_en_catalogo(
     """
     Busca cada frase por separado en Catálogo (`?q=`, primera página) y combina resultados sin duplicados.
 
-    Para cada frase se prueba primero el término tal cual y, solo si Catálogo devuelve 0
-    resultados, se prueban la forma singular y variantes. Todas las frases corren en paralelo
-    respetando `CATALOGO_BUSQUEDA_CONCURRENCIA` y comparten `plazo_maximo`.
+    Cada frase se consulta primero completa (Catálogo la trata como frase y ordena por
+    relevancia). Solo si devuelve 0 resultados se consultan hasta 3 palabras significativas
+    por separado, en paralelo; se unen sus candidatos y el filtrado posterior exige que
+    calcen todas las palabras. Las frases y sus fallback corren dentro del mismo plazo
+    (`CATALOGO_TIMEOUT`) y comparten `CATALOGO_BUSQUEDA_CONCURRENCIA`.
     Devuelve `(productos, hubo_error_red)`: `hubo_error_red` es verdadero si alguna consulta
     falló por red/HTTP o se agotó el plazo.
     """
@@ -445,23 +448,50 @@ async def _buscar_en_catalogo(
     resultados: dict[str, list | None] = {}
     limitador = anyio.CapacityLimiter(config.CATALOGO_BUSQUEDA_CONCURRENCIA)
 
+    async def _consultar(termino: str) -> list | None:
+        """Ejecuta una búsqueda `?q=` en un hilo, bajo el limitador compartido."""
+        return await anyio.to_thread.run_sync(
+            repositorio.buscar_productos, termino, precio_max, limiter=limitador, abandon_on_cancel=True
+        )
+
     async def _buscar_frase(frase: str) -> None:
-        """Prueba la frase tal cual y, si no hay resultados, su forma singular y variantes."""
-        variantes = terminos_busqueda_catalogo(frase)
-        if not variantes:
+        """Prueba la frase completa y, solo si está vacía, sus palabras significativas en paralelo."""
+        terminos_iniciales = terminos_busqueda_catalogo(frase)
+        if not terminos_iniciales:
             resultados[frase] = []
             return
-        for termino in variantes:
-            encontrados = await anyio.to_thread.run_sync(
-                repositorio.buscar_productos, termino, precio_max, limiter=limitador, abandon_on_cancel=True
-            )
+        for termino in terminos_iniciales:
+            encontrados = await _consultar(termino)
             if encontrados is None:
                 resultados[frase] = None
                 return
             if encontrados:
                 resultados[frase] = encontrados
                 return
-        resultados[frase] = []
+
+        palabras = [
+            palabra for palabra in terminos_fallback_busqueda_catalogo(frase) if palabra not in terminos_iniciales
+        ]
+        if not palabras:
+            resultados[frase] = []
+            return
+        logger.debug("Frase sin resultados en Catálogo; se prueban %d palabras por separado.", len(palabras))
+        por_palabra: dict[str, list | None] = {palabra: None for palabra in palabras}
+
+        async def _buscar_palabra(palabra: str) -> None:
+            por_palabra[palabra] = await _consultar(palabra)
+
+        async with anyio.create_task_group() as grupo_palabras:
+            for palabra in palabras:
+                grupo_palabras.start_soon(_buscar_palabra, palabra)
+
+        if any(resultado is None for resultado in por_palabra.values()):
+            resultados[frase] = None
+            return
+        # Se une en el orden de las palabras, no en el de las respuestas, para conservar relevancia.
+        resultados[frase] = _unir_sin_duplicados(
+            *(por_palabra[palabra] for palabra in palabras if por_palabra[palabra])
+        )
 
     with anyio.move_on_after(plazo_maximo) as plazo_busquedas:
         async with anyio.create_task_group() as grupo_busquedas:
