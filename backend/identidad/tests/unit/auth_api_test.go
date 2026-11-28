@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/api"
+	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/config"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/domain"
 	"github.com/danirc2024/Taller_integracion_III/backend/identidad/internal/services"
 	"github.com/gin-gonic/gin"
@@ -273,5 +274,91 @@ func TestManejadorAuthRegistroRechazaCorreoAdminCon409(prueba *testing.T) {
 		if cookie.Name == "jwt" {
 			prueba.Fatal("el registro rechazado no debe emitir cookie jwt")
 		}
+	}
+}
+
+// ===== Bandera de acceso local =====
+
+// TestAccesoLocalDeshabilitadoPorDefecto verifica que con AuthLocalHabilitado en false
+// los endpoints /register y /login respondan 403 sin tocar el repositorio.
+func TestAccesoLocalDeshabilitadoPorDefecto(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repositorio := newMockUsuarioRepository()
+	servicioAuth := nuevoServicioAuth(repositorio)
+	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
+
+	configuracion := config.Configuracion{
+		ClaveJWT:            claveJWTDePrueba,
+		Ajustes:             config.AjustesPredeterminados(),
+		AuthLocalHabilitado: false,
+	}
+
+	enrutador := gin.New()
+	api.RegistrarRutasAuth(enrutador.Group("/api/v1"), manejador, nil, nil, repositorio, configuracion)
+
+	for _, ruta := range []string{"/api/v1/auth/register", "/api/v1/auth/login"} {
+		cuerpo := []byte(`{"correo":"usuario@ejemplo.cl","password":"ClaveSegura2026!","nombre_completo":"Usuario"}`)
+		escritor := httptest.NewRecorder()
+		peticion, _ := http.NewRequest(http.MethodPost, ruta, bytes.NewBuffer(cuerpo))
+		peticion.Header.Set("Content-Type", "application/json")
+		enrutador.ServeHTTP(escritor, peticion)
+
+		if escritor.Code != http.StatusForbidden {
+			prueba.Fatalf("%s: esperaba HTTP 403, obtuve %d. Body: %s", ruta, escritor.Code, escritor.Body.String())
+		}
+	}
+	if len(repositorio.usuarios) != 0 {
+		prueba.Fatalf("no debe persistir usuarios cuando el acceso local está deshabilitado")
+	}
+}
+
+// TestAccesoLocalHabilitadoPermiteRegistroYLogin verifica que con AuthLocalHabilitado
+// en true las rutas /register y /login no son bloqueadas por la bandera (no responden 403)
+// y que los handlers de registro y login local operan con normalidad.
+func TestAccesoLocalHabilitadoPermiteRegistroYLogin(prueba *testing.T) {
+	gin.SetMode(gin.TestMode)
+	repositorio := newMockUsuarioRepository()
+	servicioAuth := nuevoServicioAuth(repositorio)
+	manejador := api.NuevoManejadorAuth(servicioAuth, false, claveJWTDePrueba)
+
+	configuracion := config.Configuracion{
+		ClaveJWT:            claveJWTDePrueba,
+		Ajustes:             config.AjustesPredeterminados(),
+		AuthLocalHabilitado: true,
+	}
+
+	enrutadorRutas := gin.New()
+	api.RegistrarRutasAuth(enrutadorRutas.Group("/api/v1"), manejador, nil, nil, repositorio, configuracion)
+
+	for _, ruta := range []string{"/api/v1/auth/register", "/api/v1/auth/login"} {
+		escritor := httptest.NewRecorder()
+		peticion, _ := http.NewRequest(http.MethodPost, ruta, bytes.NewBufferString(`{}`))
+		peticion.Header.Set("Content-Type", "application/json")
+		enrutadorRutas.ServeHTTP(escritor, peticion)
+		if escritor.Code == http.StatusForbidden {
+			prueba.Fatalf("%s: no debió responder 403 con AuthLocalHabilitado=true", ruta)
+		}
+	}
+
+	enrutador := gin.New()
+	enrutador.POST("/api/v1/auth/register", manejador.RegistrarUsuario)
+	enrutador.POST("/api/v1/auth/login", manejador.LoginUsuario)
+
+	cuerpoRegistro := []byte(`{"correo":"local@ejemplo.cl","password":"ClaveSegura2026!","nombre_completo":"Usuario Local"}`)
+	escritorRegistro := httptest.NewRecorder()
+	peticionRegistro, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/register", bytes.NewBuffer(cuerpoRegistro))
+	peticionRegistro.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(escritorRegistro, peticionRegistro)
+	if escritorRegistro.Code != http.StatusCreated {
+		prueba.Fatalf("esperaba HTTP 201 al registrar, obtuve %d. Body: %s", escritorRegistro.Code, escritorRegistro.Body.String())
+	}
+
+	cuerpoLogin := []byte(`{"correo":"local@ejemplo.cl","password":"ClaveSegura2026!"}`)
+	escritorLogin := httptest.NewRecorder()
+	peticionLogin, _ := http.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBuffer(cuerpoLogin))
+	peticionLogin.Header.Set("Content-Type", "application/json")
+	enrutador.ServeHTTP(escritorLogin, peticionLogin)
+	if escritorLogin.Code != http.StatusOK {
+		prueba.Fatalf("esperaba HTTP 200 al iniciar sesión, obtuve %d. Body: %s", escritorLogin.Code, escritorLogin.Body.String())
 	}
 }

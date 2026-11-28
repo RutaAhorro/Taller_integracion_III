@@ -27,6 +27,7 @@ type Configuracion struct {
 	CorreosAdmin                                       map[string]struct{}
 	Ajustes                                            Ajustes
 	CookieSegura                                       bool
+	AuthLocalHabilitado                                bool
 	OrigenesPermitidos                                 []string
 	ProxiesConfiables                                  []string
 }
@@ -61,6 +62,12 @@ func Cargar() (Configuracion, error) {
 		configuracion.CookieSegura, errorOperacion = strconv.ParseBool(texto)
 		if errorOperacion != nil {
 			return Configuracion{}, errors.New("IDENTIDAD_COOKIE_SECURE debe ser booleano")
+		}
+	}
+	if texto := os.Getenv("AUTH_LOCAL_HABILITADO"); texto != "" {
+		configuracion.AuthLocalHabilitado, errorOperacion = strconv.ParseBool(texto)
+		if errorOperacion != nil {
+			return Configuracion{}, errors.New("AUTH_LOCAL_HABILITADO debe ser booleano")
 		}
 	}
 	if texto := os.Getenv("CORS_ALLOWED_ORIGINS"); texto != "" {

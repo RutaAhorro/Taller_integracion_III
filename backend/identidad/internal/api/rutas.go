@@ -178,13 +178,24 @@ func RegistrarRutasAuth(grupo *gin.RouterGroup, manejador *ManejadorAuth, maneja
 	ajustes := configuracion.Ajustes
 	sesion := ExigirSesion(repositorio, configuracion.ClaveJWT)
 	auth := grupo.Group("/auth")
-	auth.POST("/register", LimitarRegistro(redisCliente, ajustes), manejador.RegistrarUsuario)
-	auth.POST("/login", LimitarLogin(redisCliente, ajustes), manejador.LoginUsuario)
+	if configuracion.AuthLocalHabilitado {
+		auth.POST("/register", LimitarRegistro(redisCliente, ajustes), manejador.RegistrarUsuario)
+		auth.POST("/login", LimitarLogin(redisCliente, ajustes), manejador.LoginUsuario)
+	} else {
+		auth.POST("/register", rechazarAccesoLocal)
+		auth.POST("/login", rechazarAccesoLocal)
+	}
 	auth.POST("/google", LimitarGoogle(redisCliente, ajustes), manejador.LoginGoogleUsuario)
 	auth.POST("/restablecer", LimitarRestablecer(redisCliente, ajustes), manejadorRestablecer.Restablecer)
 	auth.POST("/logout", manejador.CerrarSesion)
 	auth.GET("/me", sesion, manejador.PerfilUsuario)
 	auth.PUT("/me", sesion, manejador.ActualizarPerfil)
+}
+
+// rechazarAccesoLocal responde 403 cuando el registro y el login con contraseña
+// local están deshabilitados por configuración, sin consultar la base de datos.
+func rechazarAccesoLocal(contexto *gin.Context) {
+	contexto.JSON(http.StatusForbidden, gin.H{"error": "el acceso con contraseña local está deshabilitado"})
 }
 
 // ===== Administración de cuentas =====
