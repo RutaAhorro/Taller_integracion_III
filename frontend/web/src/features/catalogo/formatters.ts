@@ -17,6 +17,11 @@ export function formatPrice(precio: number | undefined | null): string {
   }).format(precio);
 }
 
+// Valida que el precio sea un número finito positivo; descarta 0, negativos y valores ausentes.
+export function tienePrecioVigente(precio: number | null | undefined): precio is number {
+  return typeof precio === 'number' && Number.isFinite(precio) && precio > 0;
+}
+
 /**
  * Calcula el porcentaje de descuento entre un precio normal y un precio oferta.
  * @param precioOriginal Precio normal/original.
