@@ -23,15 +23,35 @@ Vite se utiliza para desarrollo y compilación.
 
 En **Mis listas**, seleccionar una lista y pulsar **Calcular ruta** abre
 `/route?lista=<UUID>`, protegida por sesión. La pantalla consulta
-`POST /api/v1/rutas/optimizar` por Gateway, enviando solo `lista_id` y la cookie
-HttpOnly. Motor aplica el origen por defecto (centro de Temuco); no se pide
-geolocalización ni se envían claves o tokens internos desde el navegador.
+`POST /api/v1/rutas/optimizar` por Gateway, enviando `lista_id`, `medio_transporte`,
+el origen opcional y la cookie HttpOnly. **Usar mi ubicación actual** solicita
+permiso solo al pulsar; no guarda las coordenadas en el perfil. Se puede volver
+al centro de Temuco. Si se rechaza el permiso o vence la solicitud, se informa
+y se conserva el origen anterior. En móvil se requiere HTTPS; localhost sirve
+para probar desde el mismo equipo.
+
+Se pide una lectura sin caché (`maximumAge: 0`), pero el navegador puede usar
+Wi-Fi o IP: `enableHighAccuracy` no garantiza GPS ni posición exacta. El marcador
+O muestra el origen devuelto por Motor; el círculo representa la precisión
+reportada. El encuadre incluye origen y paradas aunque el recorrido comience en
+una calle cercana. **Centrar en origen** y **Ver recorrido completo** permiten
+comprobarlo sin imprimir coordenadas personales en logs.
+
+Si el navegador entrega una posición equivocada, **Elegir punto de partida en
+el mapa** abre un selector independiente del resultado. Marcar, arrastrar o
+seleccionar el centro solo prepara un borrador; **Confirmar punto de partida**
+envía el origen y recalcula. Cancelar no cambia la ruta. No se consulta GPS ni
+se persiste el punto manual. El resultado lo identifica como elegido en el mapa,
+sin atribuirle precisión GPS. Se puede abrir incluso ante un error del cálculo.
 
 La recomendación muestra total de los artículos incluidos, ahorro frente a una
 sola tienda (o ausencia de comparación), distancia estimada con retorno al
-origen, paradas ordenadas y compra por sucursal. **No es un mapa ni un recorrido
-por calles y no incluye combustible.** Cada parada permite abrir su ubicación
-en Google Maps sin API key. Los artículos `no_cubiertos` se advierten como
+origen, paradas ordenadas y compra por sucursal. Con ORS configurado, muestra
+el mapa Leaflet/OpenStreetMap, geometría por calles y tiempo estimado del perfil,
+con máximo dos tiendas. **No incluye combustible ni costo del tiempo.**
+**Ver recorrido en el mapa** y los enlaces de cada parada llevan al mapa integrado.
+También se conserva la ubicación externa en Google Maps sin API key.
+Los artículos `no_cubiertos` se advierten como
 excluidos del total; sus nombres se consultan como complemento en el detalle de
 la lista y, si no se pueden recuperar, se conserva su identificador.
 
@@ -72,6 +92,38 @@ El pulido visual se limita a la pantalla de rutas: resumen con importes destacad
 paradas numeradas, carga y errores diferenciados. Se conserva el formato actual
 de `router.tsx`, sin otra reformateada global, y no se modifica el catálogo ni el
 layout compartido del PR #209.
+
+El alcance acordado conserva **vehículo particular, bicicleta y a pie**; sin
+transporte público ni scooter. Cambiar el perfil o el origen recalcula y cancela
+la petición anterior; no se reutilizan sus resultados. Motor usa una matriz
+dirigida ORS antes de elegir el orden y devuelve las geometrías del mismo perfil.
+Las duraciones son estimaciones sin tráfico ni tiempo de compra. El fondo OSM
+es externo y requiere conexión: se muestra atribución y no se precargan tiles.
+Se respeta la [política del servidor de tiles](https://operations.osmfoundation.org/policies/tiles/).
+Un fallo de ORS no produce una polilínea ficticia; un fallo del fondo no borra
+la compra confirmada. No se necesitan mapas ni grafos locales. Origen y sucursales
+se envían a ORS por HTTPS desde Motor, con clave privada; el mapa atribuye ORS/HeiGIT
+y OpenStreetMap. No se guardan coordenadas personales en logs.
+
+### Probar las conexiones localmente
+
+Se necesitan **Motor y frontend reconstruidos**, no toda la plataforma.
+Guardar URL y clave ORS en `.env` raíz. Con PostgreSQL, Catálogo y Gateway activos:
+
+```sh
+docker compose up -d --build --no-deps motor_rutas frontend
+```
+
+Abrir `http://localhost:3000`, seleccionar una lista, calcular, probar los tres
+perfiles, pedir ubicación y pulsar **Ver recorrido en el mapa**. Comprobar en
+Network el cuerpo con modo/origen y la respuesta con `fuente_recorrido: "ors_osm"`,
+tramos con geometría y `max_paradas: 2`. Probar también permiso denegado.
+No copiar cookies ni coordenadas personales a capturas de diagnóstico.
+
+El archivo Compose base inyecta `RUTAS_ORS_URL` y `RUTAS_ORS_API_KEY` solo en Motor.
+No usar el complemento Compose anterior, que fue retirado.
+No se requieren migraciones ni reconstrucción de Gateway, Catálogo o BD.
+Ver configuración y cuotas en el [README de Motor](../../backend/motor_rutas/README.md#recorridos-viales-con-go--openrouteservice).
 
 ### Desarrollo y pruebas sin backend
 

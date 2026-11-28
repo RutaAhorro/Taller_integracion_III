@@ -100,7 +100,9 @@ test('ningún error HTTP se presenta como respuesta real del asistente', async p
     const respuesta = ultimaRespuesta(leerChat());
     assert.equal(respuesta.type, 'error');
     assert.equal(respuesta.content, ERROR_IA);
-    assert.equal(leerChat().inputValue, 'Busco leche');
+    // El texto queda asociado al error para "Reintentar" y no vuelve al campo de entrada.
+    assert.equal(respuesta.textoReintento, 'Busco leche');
+    assert.equal(leerChat().inputValue, '');
     peticion.mock.restore();
   }
 });
@@ -140,12 +142,90 @@ test('un fallo de red permite reintentar sin inventar una respuesta', async prue
   const leerChat = montarChat();
   const peticion = prueba.mock.method(globalThis, 'fetch', async () => { throw new TypeError('Sin conexión'); });
   await leerChat().handleSend('Busco arroz');
-  assert.match(ultimaRespuesta(leerChat()).content, /Revisa la conexión/);
-  assert.equal(leerChat().inputValue, 'Busco arroz');
+  const error = ultimaRespuesta(leerChat());
+  assert.match(error.content, /Revisa la conexión/);
+  assert.equal(error.textoReintento, 'Busco arroz');
   peticion.mock.restore();
   prueba.mock.method(globalThis, 'fetch', async () => Response.json({ respuesta: 'Respuesta real' }));
-  await leerChat().handleSend(leerChat().inputValue);
+  await leerChat().handleRetry(error.id);
   assert.equal(ultimaRespuesta(leerChat()).content, 'Respuesta real');
+});
+
+// Regresión: tras un 503 el texto volvía al input y reenviarlo duplicaba el mensaje del usuario.
+test('503 → Reintentar reenvía el mismo mensaje sin duplicarlo ni tocar el input', async prueba => {
+  const leerChat = montarChat();
+  const cuerposEnviados = [];
+  let estadoRespuesta = 503;
+  prueba.mock.method(globalThis, 'fetch', async (_url, opciones) => {
+    cuerposEnviados.push(JSON.parse(opciones.body));
+    return estadoRespuesta === 503
+      ? Response.json({ detail: 'No disponible' }, { status: 503 })
+      : Response.json({ respuesta: 'Leche disponible' });
+  });
+
+  await leerChat().handleSend('Busco leche');
+  const error = ultimaRespuesta(leerChat());
+  assert.equal(error.type, 'error');
+  assert.equal(error.textoReintento, 'Busco leche');
+  assert.equal(leerChat().inputValue, '');
+
+  estadoRespuesta = 200;
+  await leerChat().handleRetry(error.id);
+  const mensajes = leerChat().messages;
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Leche disponible');
+  assert.deepEqual(cuerposEnviados, [{ mensaje: 'Busco leche' }, { mensaje: 'Busco leche' }]);
+  assert.equal(mensajes.filter(mensaje => mensaje.role === 'user').length, 1);
+  assert.equal(mensajes.some(mensaje => mensaje.type === 'error'), false);
+  assert.equal(leerChat().inputValue, '');
+});
+
+test('reintentar conserva un borrador nuevo y bloquea el doble clic', async prueba => {
+  const leerChat = montarChat();
+  const peticion = prueba.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 503 }));
+  await leerChat().handleSend('Busco arroz');
+  const error = ultimaRespuesta(leerChat());
+  peticion.mock.restore();
+
+  leerChat().setInputValue('Busco fideos');
+  let resolver;
+  const reenvios = prueba.mock.method(globalThis, 'fetch', () => new Promise(completar => { resolver = completar; }));
+  const chat = leerChat();
+  const pendiente = chat.handleRetry(error.id);
+  await chat.handleRetry(error.id);
+  assert.equal(reenvios.mock.callCount(), 1);
+  resolver(Response.json({ respuesta: 'Arroz disponible' }));
+  await pendiente;
+
+  assert.equal(ultimaRespuesta(leerChat()).content, 'Arroz disponible');
+  assert.equal(leerChat().inputValue, 'Busco fideos');
+  assert.equal(leerChat().messages.filter(mensaje => mensaje.role === 'user').length, 1);
+});
+
+test('no reintenta automáticamente, ni errores antiguos ni los que exigen corregir el mensaje', async prueba => {
+  const leerChat = montarChat();
+  const peticion = prueba.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 503 }));
+  await leerChat().handleSend('Busco arroz');
+  const errorAntiguo = ultimaRespuesta(leerChat());
+  assert.equal(peticion.mock.callCount(), 1);
+  await leerChat().handleSend('Busco leche');
+  await leerChat().handleRetry(errorAntiguo.id);
+  assert.equal(peticion.mock.callCount(), 2);
+  peticion.mock.restore();
+
+  // 422: no hay botón; el texto vuelve para corregirlo solo si el campo está vacío.
+  const peticionInvalida = prueba.mock.method(globalThis, 'fetch', async () => new Response(null, { status: 422 }));
+  await leerChat().handleSend('Mensaje inválido');
+  assert.equal(ultimaRespuesta(leerChat()).textoReintento, undefined);
+  assert.equal(leerChat().inputValue, 'Mensaje inválido');
+  leerChat().setInputValue('');
+  let resolver;
+  peticionInvalida.mock.restore();
+  prueba.mock.method(globalThis, 'fetch', () => new Promise(completar => { resolver = completar; }));
+  const pendiente = leerChat().handleSend('Otro inválido');
+  leerChat().setInputValue('Borrador nuevo');
+  resolver(new Response(null, { status: 422 }));
+  await pendiente;
+  assert.equal(leerChat().inputValue, 'Borrador nuevo');
 });
 
 test('dos envíos inmediatos comparten el bloqueo hasta terminar la primera petición', async prueba => {

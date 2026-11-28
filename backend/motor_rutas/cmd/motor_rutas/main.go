@@ -23,6 +23,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/db"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/httpapi"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/listas"
+	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/vial"
 )
 
 // =============================================================================
@@ -33,7 +34,7 @@ const (
 	plazoPing         = 2 * time.Second  // máximo para responder la sonda ready
 	plazoCabeceras    = 5 * time.Second  // evita clientes que envían cabeceras muy lento
 	plazoLectura      = 10 * time.Second // lectura completa de la petición
-	plazoEscritura    = 15 * time.Second // escritura completa de la respuesta
+	plazoEscritura    = 25 * time.Second // permite Catálogo (5s) + ORS (12s) sin cortar la respuesta
 	plazoInactividad  = 60 * time.Second // conexiones keep-alive sin uso
 	plazoApagadoSuave = 10 * time.Second // espera a peticiones en curso al apagar
 )
@@ -74,7 +75,12 @@ func ejecutar(log *slog.Logger) error {
 
 	// --- 3. Servidor HTTP --------------------------------------------------------
 	clienteCatalogo := listas.NuevoClienteCatalogo(configuracion.CatalogoURL, configuracion.CatalogoToken, configuracion.CatalogoPlazo)
+	var proveedorVial vial.Proveedor
+	if configuracion.ORSURL != "" && configuracion.ORSAPIKey != "" {
+		proveedorVial = vial.Nuevo(configuracion.ORSURL, configuracion.ORSAPIKey)
+	}
 	manejadorHTTP := httpapi.Nuevo(httpapi.Opciones{
+		Vial:     proveedorVial,
 		Repo:     listas.NuevoPostgres(pool),
 		Carritos: listas.NuevoPostgres(pool),
 		Catalogo: clienteCatalogo,

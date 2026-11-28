@@ -1,10 +1,25 @@
 # Contrato del motor de rutas
 
+> **Ampliación vial local (28-11-2026):** se admite `medio_transporte` opcional
+> (`vehiculo`, `bicicleta`, `pie`), además de `lista_id` y `origen`. Con modo
+> explícito se exige `RUTAS_ORS_URL` y `RUTAS_ORS_API_KEY`, se usa una matriz dirigida ORS/OSM **antes**
+> de seleccionar el orden y se limita la compra a tres tiendas. La respuesta añade
+> `fuente_recorrido: "ors_osm"`, `medio_transporte`, `ruta.duracion_segundos`,
+> `tramos[].duracion_segundos` y `tramos[].geometrias` (polilíneas codificadas
+> de cinco decimales). `factor_distancia` solo aplica al cálculo Haversine.
+> `estimado: true` sigue indicando que tiempos/distancias no son mediciones en
+> vivo. Matrix compara candidatos; una petición Directions obtiene la geometría
+> y métricas finales del orden elegido. Total y ahorro siguen siendo de productos, **sin costo de traslado**.
+> Sin modo se conserva el contrato estimado siguiente, identificado ahora por
+> `fuente_recorrido: "haversine"`. Perfil inválido: 400; proveedor ausente/fallido:
+> 503; alternativas sin conexión vial: 422. No hay GTFS, transporte público,
+> scooter ni respaldo silencioso a líneas rectas en modo vial.
+
 > **Estado:** **MVP vigente implementado** (`POST /api/v1/rutas/optimizar`) · Basado en SUP-323
 > **Revisan:** Marcelo (Catálogo, SUP-317), Daniela (frontend, SUP-330 y SUP-261) y Esban (Listas y Motor en Go)
 
 > **Distancias estimadas y recortes del MVP.**
-> - El motor **no calcula rutas por calles reales**: usa Haversine × `RUTAS_FACTOR_DISTANCIA` (`1.3`). Toda respuesta lleva `"estimado": true` y el frontend debe mostrarlo.
+> - **Sin `medio_transporte`**, se conserva Haversine × `RUTAS_FACTOR_DISTANCIA` (`1.3`), no calles reales. Con modo explícito aplica la ampliación ORS descrita arriba. Toda respuesta lleva `"estimado": true`: tampoco los tiempos ORS son mediciones en vivo.
 > - **Sin costo de combustible en el MVP:** `costo_traslado` es `0`, `total == costo_productos`, no se pide `rendimiento_km_l` y no se consulta CNE.
 > - **Entrada mínima:** solo `lista_id` (sin lista ad-hoc de artículos) y **`origen` opcional**. Si `origen` se omite o es `null`, se usa el **centro de Temuco** (`lat: -38.7359`, `lon: -72.5904`) y la respuesta informa `origen.por_defecto: true`.
 > - **`ruta` es siempre la opción recomendada:** si por el umbral de ahorro (`RUTAS_UMBRAL_AHORRO`, `500` CLP por defecto) gana comprar todo en una sola tienda, `ruta` tiene una sola parada y `ahorro` es `0`.

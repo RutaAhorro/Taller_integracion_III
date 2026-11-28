@@ -27,6 +27,35 @@ type Recorrido struct {
 	Orden       []Sucursal
 	TramosKm    []float64 // origen → primera, entre tiendas y última → origen
 	DistanciaKm float64
+	Viales      []TrayectoVial
+}
+
+// ordenarVisitasViales usa la matriz dirigida, incluidos ida y regreso distintos.
+// Un tramo ausente invalida ese orden; nunca se rellena con Haversine.
+func ordenarVisitasViales(conjunto []Sucursal, matriz map[[2]int]TrayectoVial) (Recorrido, bool) {
+	var mejor Recorrido
+	encontrado := false
+	for _, orden := range permutaciones(conjunto) {
+		candidato := Recorrido{Orden: orden}
+		anterior := 0
+		valido := true
+		destinos := append(idsDe(orden), 0)
+		for _, destino := range destinos {
+			tramo, existe := matriz[[2]int{anterior, destino}]
+			if !existe {
+				valido = false
+				break
+			}
+			candidato.TramosKm = append(candidato.TramosKm, tramo.DistanciaKm)
+			candidato.Viales = append(candidato.Viales, tramo)
+			candidato.DistanciaKm += tramo.DistanciaKm
+			anterior = destino
+		}
+		if valido && (!encontrado || candidato.DistanciaKm < mejor.DistanciaKm-toleranciaKm) {
+			mejor, encontrado = candidato, true
+		}
+	}
+	return mejor, encontrado
 }
 
 // OrdenarVisitas prueba todos los órdenes del conjunto (6 como máximo con 3

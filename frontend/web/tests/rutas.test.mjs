@@ -16,6 +16,8 @@ const crearModulo = (codigo) =>
 /** Transpila únicamente para Node y sustituye las dependencias indicadas. */
 async function cargar(ruta, dependencias = {}) {
   let fuente = await readFile(new URL(ruta, import.meta.url), "utf8");
+  // El CSS de Leaflet lo procesa Vite; Node solo verifica el componente sin DOM.
+  fuente = fuente.replace('import "leaflet/dist/leaflet.css";', "");
   fuente = fuente.replace("import.meta.env.VITE_API_URL", '"/api/v1/"');
   for (const [nombre, destino] of Object.entries(dependencias)) {
     fuente = fuente
@@ -65,6 +67,30 @@ const resultado = await cargar("../src/features/rutas/ResultadoRuta.tsx", {
   "./presentacion-ruta": presentacion.url,
 });
 const { ResultadoRuta, enlaceGoogleMaps } = resultado.modulo;
+const selectorOrigen = await cargar(
+  "../src/features/rutas/SelectorOrigen.tsx",
+  {
+    react: import.meta.resolve("react"),
+    "@/components/ui/button": crearModulo(`
+    import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
+    export const Button = ({ children, variant, ...propiedades }) => createElement("button", propiedades, children);
+  `),
+  },
+);
+
+test("el selector manual exige marcar y confirmar sin solicitar ubicación al renderizar", () => {
+  const html = renderToStaticMarkup(
+    createElement(selectorOrigen.modulo.SelectorOrigen, {
+      inicial: null,
+      confirmar: () => assert.fail("No debe confirmar automáticamente."),
+      cancelar: () => {},
+    }),
+  );
+  assert.match(html, /Todavía no has marcado un punto/);
+  assert.match(html, /disabled=""[^>]*>Confirmar punto de partida/);
+  assert.match(html, /Usar centro del mapa/);
+  assert.match(html, /Cancelar selección/);
+});
 
 // ===== Cliente público =====
 
@@ -459,9 +485,12 @@ test("una parada larga conserva totales y deja los productos adicionales en un d
 test("sin base comparativa no presenta ahorro cero y conserva referencias sin nombre", () => {
   const datos = { ...ejemplo, base_una_tienda: null, ahorro: null };
   const html = presentar(datos);
-  assert.match(html, /Sin comparación disponible/);
-  assert.match(html, /Ninguna tienda sola/);
+  assert.match(html, /Sin tienda única para comparar/);
+  assert.match(html, /no hay una compra en un solo lugar con la cual comparar/);
   assert.doesNotMatch(html, /\$0/);
+  // La aclaración del total vale también para rutas parciales y no promete un precio menor.
+  assert.match(html, /Puede diferir del total de tu lista/);
+  assert.doesNotMatch(html, /siempre|más barat/i);
   assert.ok(html.includes(`Producto ${datos.no_cubiertos[0].producto_id}`));
 });
 
@@ -518,9 +547,9 @@ const hook = await cargar("../src/features/rutas/useRutaLista.ts", {
 const { useRutaLista } = hook.modulo;
 
 /** Simula un render y la confirmación de sus efectos como los demás tests de hooks del proyecto. */
-function renderHook(listaID, reiniciar = false) {
+function renderHook(listaID, reiniciar = false, medio, origen) {
   ciclo.preparar(reiniciar);
-  const estado = useRutaLista(listaID);
+  const estado = useRutaLista(listaID, medio, origen);
   ciclo.confirmar();
   return estado;
 }
@@ -540,6 +569,31 @@ test("el hook no consulta ni optimización ni detalle con selección inválida",
   assert.equal(renderHook("lista-invalida").estado.tipo, "lista_invalida");
   assert.equal(renderHook(null).estado.tipo, "lista_invalida");
   assert.equal(renderHook(null).estado.tipo, "sin_lista");
+  ciclo.desmontar();
+});
+
+test("el hook envía modo y origen y cancela el cálculo anterior al cambiar de perfil", async (prueba) => {
+  const llamadas = [];
+  prueba.mock.method(globalThis, "fetch", async (url, opciones) => {
+    llamadas.push({
+      cuerpo: JSON.parse(opciones.body),
+      senal: opciones.signal,
+    });
+    return Response.json({ ...ejemplo, no_cubiertos: [] });
+  });
+  const origen = { lat: -38.7359, lon: -72.5904 };
+  renderHook(LISTA_ID, true, "vehiculo", origen);
+  await resolver();
+  renderHook(LISTA_ID, false, "bicicleta", origen);
+  await resolver();
+  assert.deepEqual(
+    llamadas.map((llamada) => llamada.cuerpo),
+    [
+      { lista_id: LISTA_ID, medio_transporte: "vehiculo", origen },
+      { lista_id: LISTA_ID, medio_transporte: "bicicleta", origen },
+    ],
+  );
+  assert.equal(llamadas[0].senal.aborted, true);
   ciclo.desmontar();
 });
 
@@ -731,6 +785,8 @@ const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
   ),
   "./rutas-api": api.url,
   "./ResultadoRuta": resultado.url,
+  "./MapaRuta": crearModulo("export const MapaRuta = () => null;"),
+  "./SelectorOrigen": crearModulo("export const SelectorOrigen = () => null;"),
   "./useRutaLista": crearModulo(
     'export const useRutaLista = () => ({ estado: { tipo: "sin_lista" }, nombres: {}, recalcular() {} });',
   ),
@@ -769,7 +825,7 @@ test("página muestra carga, ausencia de selección y acciones adecuadas a cada 
   }
 });
 
-test("la página de rutas presenta los cuatro medios de transporte con selección accesible", () => {
+test("la página de rutas presenta solo los tres medios viales con selección accesible", () => {
   const html = renderToStaticMarkup(
     createElement(
       MemoryRouter,
@@ -778,15 +834,13 @@ test("la página de rutas presenta los cuatro medios de transporte con selecció
     ),
   );
 
-  for (const etiqueta of [
-    "Vehículo particular",
-    "Transporte público",
-    "Bicicleta",
-    "A pie",
-  ])
+  for (const etiqueta of ["Vehículo particular", "Bicicleta", "A pie"])
     assert.ok(html.includes(etiqueta));
   assert.match(html, /type="radio"/);
-  assert.match(html, /La selección es visual por ahora/);
+  assert.equal((html.match(/type="radio"/g) || []).length, 3);
+  assert.doesNotMatch(html, /Transporte público|scooter/i);
+  assert.match(html, /Usar mi ubicación actual/);
+  assert.match(html, /Recorrido vial/);
 });
 
 test("un error de cobertura muestra nombres, alcance y acciones, nunca el detalle técnico arbitrario", () => {
@@ -973,6 +1027,9 @@ test("ruta parcial explica el motivo de cada artículo y usa el nombre del motor
   assert.match(html, /Compra parcial/);
   assert.match(html, /Aceite maravilla 1 L/);
   assert.match(html, /exigiría visitar más tiendas que el máximo de paradas/);
-  assert.match(html, /Sin oferta vigente disponible en las sucursales evaluadas/);
+  assert.match(
+    html,
+    /Sin oferta vigente disponible en las sucursales evaluadas/,
+  );
   assert.ok(html.includes("Producto sin-oferta"));
 });

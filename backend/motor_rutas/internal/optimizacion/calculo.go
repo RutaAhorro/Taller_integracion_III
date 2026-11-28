@@ -51,6 +51,13 @@ func Calcular(entrada Entrada) (Resultado, error) {
 	evaluadas := make([]evaluada, 0, len(asignacion.Alternativas))
 	for _, alternativa := range asignacion.Alternativas {
 		recorrido := OrdenarVisitas(entrada.Origen, alternativa.Sucursales, entrada.Parametros.FactorDistancia)
+		if entrada.Viales != nil {
+			var conectado bool
+			recorrido, conectado = ordenarVisitasViales(alternativa.Sucursales, entrada.Viales)
+			if !conectado {
+				continue
+			}
+		}
 		traslado := CostoTraslado(recorrido.DistanciaKm, entrada.Parametros)
 		evaluadas = append(evaluadas, evaluada{
 			alternativa: alternativa,
@@ -58,6 +65,9 @@ func Calcular(entrada Entrada) (Resultado, error) {
 			traslado:    traslado,
 			total:       float64(alternativa.CostoProductos) + traslado,
 		})
+	}
+	if len(evaluadas) == 0 {
+		return Resultado{}, ErrSinRecorrido
 	}
 	slices.SortStableFunc(evaluadas, compararEvaluadas)
 
@@ -160,6 +170,11 @@ func construirRuta(elegida evaluada) Ruta {
 	}
 	ultimoTramo := elegida.recorrido.TramosKm[len(elegida.recorrido.TramosKm)-1]
 	ruta.Tramos = append(ruta.Tramos, Tramo{Desde: anterior, Hasta: ExtremoTramo{}, DistanciaKm: kilometros(ultimoTramo)})
+	for indice, vial := range elegida.recorrido.Viales {
+		ruta.Tramos[indice].DuracionSegundos = vial.DuracionSegundos
+		ruta.Tramos[indice].Geometrias = vial.Geometrias
+		ruta.DuracionSegundos += vial.DuracionSegundos
+	}
 	return ruta
 }
 

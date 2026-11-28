@@ -52,6 +52,13 @@ spec:
                 secretKeyRef:
                   name: catalogo-internal-secret
                   key: consulta-token
+            # Provisión por el operador; sin clave solo quedan habilitados CRUD/contrato antiguo.
+            - name: RUTAS_ORS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rutas-ors-secret
+                  key: api-key
+                  optional: true
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

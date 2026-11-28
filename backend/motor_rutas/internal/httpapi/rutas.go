@@ -7,6 +7,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/listas"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/optimizacion"
+	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/vial"
 	"github.com/google/uuid"
 )
 
@@ -27,8 +29,9 @@ const (
 	latitudTemucoPorDefecto  = -38.7359
 	longitudTemucoPorDefecto = -72.5904
 
-	latitudMaximaGeo  = 90.0
-	longitudMaximaGeo = 180.0
+	latitudMaximaGeo    = 90.0
+	longitudMaximaGeo   = 180.0
+	maximoParadasViales = 3
 )
 
 // OpcionesOptimizacion reúne los parámetros del cálculo de rutas inyectados
@@ -89,10 +92,12 @@ type solicitudOrigen struct {
 }
 
 // solicitudOptimizar es el cuerpo aceptado por POST /api/v1/rutas/optimizar.
-// En el MVP se recibe únicamente lista_id y origen opcional.
+// Los clientes nuevos envían un modo vial explícito; los anteriores conservan
+// lista_id y origen opcional sin geometría.
 type solicitudOptimizar struct {
-	ListaID string           `json:"lista_id"`
-	Origen  *solicitudOrigen `json:"origen"`
+	MedioTransporte string           `json:"medio_transporte"`
+	ListaID         string           `json:"lista_id"`
+	Origen          *solicitudOrigen `json:"origen"`
 }
 
 // origenRespuesta informa las coordenadas usadas y si se aplicó el valor por defecto.
@@ -112,6 +117,8 @@ type parametrosRespuesta struct {
 
 // respuestaOptimizar es la salida 200 OK del endpoint (contrato MVP).
 type respuestaOptimizar struct {
+	MedioTransporte     string                      `json:"medio_transporte,omitempty"`
+	FuenteRecorrido     string                      `json:"fuente_recorrido"`
 	Estimado            bool                        `json:"estimado"`
 	Origen              origenRespuesta             `json:"origen"`
 	Parametros          parametrosRespuesta         `json:"parametros"`
@@ -127,10 +134,14 @@ type respuestaOptimizar struct {
 // =============================================================================
 
 // optimizarRuta calcula la combinación más barata de sucursales y el orden de
-// visita por Haversine para los artículos pendientes de una lista del usuario.
+// visita por calles si se solicita modo, o Haversine para el contrato anterior.
 func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, peticion *http.Request) {
 	var solicitud solicitudOptimizar
 	if !leerJSON(respuesta, peticion, &solicitud) {
+		return
+	}
+	if solicitud.MedioTransporte != "" && vial.PerfilORS(solicitud.MedioTransporte) == "" {
+		escribirError(respuesta, http.StatusBadRequest, mensajeSolicitudInvalida, "medio_transporte: usa vehiculo, bicicleta o pie")
 		return
 	}
 
@@ -160,6 +171,13 @@ func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, pet
 
 	// --- Artículos pendientes de compra --------------------------------------
 	opcionesOpt := resolverOpcionesOptimizacion(manejador.opciones.Optimizacion)
+	if solicitud.MedioTransporte != "" {
+		opcionesOpt.MaxParadas = min(opcionesOpt.MaxParadas, maximoParadasViales)
+		if manejador.opciones.Vial == nil {
+			escribirError(respuesta, http.StatusServiceUnavailable, "El servicio de recorridos por calles no está disponible.", "")
+			return
+		}
+	}
 	articulosPendientes, productoIDs := extraerArticulosPendientes(detalleLista.Articulos)
 	if len(articulosPendientes) == 0 {
 		escribirError(respuesta, http.StatusUnprocessableEntity, mensajeListaSinArticulos, "")
@@ -197,15 +215,39 @@ func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, pet
 
 	// --- Cálculo de la ruta óptima (sin costo de combustible) ----------------
 	entrada := construirEntradaOptimizacion(origenUsado, articulosPendientes, preciosCatalogo, opcionesOpt)
+	fuente := "haversine"
+	contextoVial, cancelarVial := context.WithTimeout(peticion.Context(), vial.PlazoCalculo)
+	defer cancelarVial()
+	if solicitud.MedioTransporte != "" {
+		var errorVial error
+		entrada.Viales, errorVial = manejador.opciones.Vial.Matriz(contextoVial, solicitud.MedioTransporte, entrada.Origen, entrada.Sucursales)
+		if errorVial != nil || entrada.Viales == nil {
+			escribirError(respuesta, http.StatusServiceUnavailable, "El servicio de recorridos por calles no está disponible.", "")
+			return
+		}
+		fuente = "ors_osm"
+	}
 	resultado, errorCalculo := optimizacion.Calcular(entrada)
 	if errorCalculo != nil {
+		if errors.Is(errorCalculo, optimizacion.ErrSinRecorrido) {
+			escribirError(respuesta, http.StatusUnprocessableEntity, "No hay un recorrido por calles para esta compra y medio de transporte.", "")
+			return
+		}
 		manejador.responderErrorCalculo(respuesta, peticion, errorCalculo)
 		return
 	}
+	if solicitud.MedioTransporte != "" {
+		if errorTrazado := manejador.opciones.Vial.Trazar(contextoVial, solicitud.MedioTransporte, entrada.Origen, &resultado.Ruta); errorTrazado != nil {
+			escribirError(respuesta, http.StatusServiceUnavailable, "El servicio de recorridos por calles no está disponible.", "")
+			return
+		}
+	}
 
 	escribirJSON(respuesta, http.StatusOK, respuestaOptimizar{
-		Estimado: true,
-		Origen:   origenUsado,
+		MedioTransporte: solicitud.MedioTransporte,
+		FuenteRecorrido: fuente,
+		Estimado:        true,
+		Origen:          origenUsado,
 		Parametros: parametrosRespuesta{
 			FactorDistancia: opcionesOpt.FactorDistancia,
 			MaxParadas:      opcionesOpt.MaxParadas,

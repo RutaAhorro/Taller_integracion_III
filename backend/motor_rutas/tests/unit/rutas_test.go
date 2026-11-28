@@ -14,6 +14,7 @@ import (
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/httpapi"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/listas"
 	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/optimizacion"
+	"github.com/danirc2024/Taller_integracion_III/backend/motor_rutas/internal/vial"
 )
 
 // =============================================================================
@@ -44,11 +45,16 @@ func (falso *preciosFalso) ConsultarPreciosComparables(_ context.Context, consul
 }
 
 // nuevoClienteRutas arma un servidor HTTP completo con catálogo de precios falso.
-func nuevoClienteRutas(prueba *testing.T, precios *preciosFalso, opcionesOpt httpapi.OpcionesOptimizacion) *cliente {
+func nuevoClienteRutas(prueba *testing.T, precios *preciosFalso, opcionesOpt httpapi.OpcionesOptimizacion, proveedores ...vial.Proveedor) *cliente {
 	prueba.Helper()
 	repo := nuevaMemoria()
 	catalogo := &catalogoFalso{estados: map[string]listas.Disponibilidad{}}
+	var proveedor vial.Proveedor
+	if len(proveedores) > 0 {
+		proveedor = proveedores[0]
+	}
 	manejador := httpapi.Nuevo(httpapi.Opciones{
+		Vial:         proveedor,
 		Repo:         repo,
 		Catalogo:     catalogo,
 		Precios:      precios,
