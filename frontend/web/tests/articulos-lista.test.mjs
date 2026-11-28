@@ -407,3 +407,50 @@ test("la tarjeta de artículo presenta la imagen real del catálogo con texto al
   assert.match(contenido, /alt="Imagen de Arroz 1 kg"/);
   assert.match(contenido, /loading="lazy"/);
 });
+
+test("los artículos con precio cero o negativo se ignoran en totales y etiquetas", () => {
+  for (const precioInvalido of [0, -1500]) {
+    const contenido = renderToStaticMarkup(
+      createElement(vista.modulo.ArticulosLista, {
+        articulos: [
+          {
+            ...articulo,
+            producto: { ...producto, precio: precioInvalido },
+          },
+        ],
+        ocupado: false,
+        alAgregar() {},
+        alActualizar() {},
+        alEliminar() {},
+      }),
+    );
+    assert.match(contenido, /Total no disponible/);
+    assert.match(contenido, /Precio vigente no disponible/);
+    assert.doesNotMatch(contenido, /\$0/);
+  }
+
+  const contenido = renderToStaticMarkup(
+    createElement(vista.modulo.ArticulosLista, {
+      articulos: [
+        {
+          ...articulo,
+          producto: { ...producto, precio: 1500 },
+        },
+        {
+          ...articulo,
+          id: 42,
+          cantidad: 1,
+          producto: { ...producto, precio: 0 },
+        },
+      ],
+      ocupado: false,
+      alAgregar() {},
+      alActualizar() {},
+      alEliminar() {},
+    }),
+  );
+  assert.match(contenido, /Subtotal con precio vigente: \$3\.000/);
+  assert.match(contenido, /1 artículo no tiene precio vigente/);
+  assert.match(contenido, /Precio vigente no disponible/);
+  assert.doesNotMatch(contenido, /\$0/);
+});
