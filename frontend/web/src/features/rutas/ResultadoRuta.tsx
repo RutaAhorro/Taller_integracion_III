@@ -292,7 +292,7 @@ export function ResultadoRuta({
   nombres?: Record<string, string>;
 }) {
   const { ruta, base_una_tienda: base, ahorro } = datos;
-  const vial = datos.fuente_recorrido === "otp_osm";
+  const vial = datos.fuente_recorrido === "ors_osm";
   const cantidadEnvases = ruta.paradas.reduce(
     (cantidad, parada) =>
       cantidad +

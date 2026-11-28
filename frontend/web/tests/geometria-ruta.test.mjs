@@ -18,7 +18,7 @@ const { decodificarPolilinea } = await import(
   `data:text/javascript;base64,${Buffer.from(outputText).toString("base64")}`
 );
 
-test("decodifica latitud/longitud con precisión OTP de cinco decimales", () => {
+test("decodifica latitud/longitud con precisión de cinco decimales", () => {
   assert.deepEqual(decodificarPolilinea("_p~iF~ps|U_ulLnnqC_mqNvxq`@"), [
     [38.5, -120.2],
     [40.7, -120.95],

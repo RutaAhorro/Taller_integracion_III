@@ -24,7 +24,7 @@ export function MapaRuta({
     let cancelado = false;
     let limpiar: (() => void) | undefined;
     setError("");
-    if (datos.fuente_recorrido !== "otp_osm") return;
+    if (datos.fuente_recorrido !== "ors_osm") return;
     void import("leaflet")
       .then((leaflet) => {
         if (cancelado || !contenedor.current) return;
@@ -136,7 +136,7 @@ export function MapaRuta({
               .addTo(mapa)
               .bindTooltip(etiqueta);
           }
-          /** Incluye el origen aunque OTP haya ajustado el recorrido a la red vial. */
+          /** Incluye el origen aunque ORS haya ajustado el recorrido a la red vial. */
           const verRecorrido = () =>
             mapa.fitBounds(limites, {
               padding: [45, 45],
@@ -170,7 +170,7 @@ export function MapaRuta({
       limpiar?.();
     };
   }, [datos, precisionMetros, origenManual]);
-  if (datos.fuente_recorrido !== "otp_osm") return null;
+  if (datos.fuente_recorrido !== "ors_osm") return null;
   return (
     <section
       id="mapa-ruta"
@@ -181,6 +181,18 @@ export function MapaRuta({
       <h2 className="font-display text-xl font-bold">
         Tu recorrido por calles
       </h2>
+      <p className="text-xs text-muted-foreground">
+        Recorrido:{" "}
+        <a
+          href="https://openrouteservice.org/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline"
+        >
+          openrouteservice / HeiGIT
+        </a>
+        .
+      </p>
       <p className="text-sm text-muted-foreground">
         Origen O, paradas numeradas y retorno. Distancias y tiempos estimados
         sobre OpenStreetMap, sin tráfico en vivo.

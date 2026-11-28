@@ -21,7 +21,8 @@
 //	RUTAS_MAX_ARTICULOS   máximo de artículos pendientes por cálculo, 1–100 (por defecto 30)
 //	RUTAS_FACTOR_DISTANCIA factor de corrección sobre Haversine, (0, 5] (por defecto 1.3)
 //	RUTAS_UMBRAL_AHORRO   ahorro mínimo en CLP para recomendar varias tiendas (por defecto 500)
-//	RUTAS_OTP_URL         origen OTP opcional, solo HTTP(S), sin rutas ni credenciales
+//	RUTAS_ORS_URL         origen ORS opcional, solo HTTP(S), sin rutas ni credenciales
+//	RUTAS_ORS_API_KEY     clave ORS solo para backend, nunca registrar
 //
 // Los topes de artículos de listas no son variables: son constantes de internal/listas
 // (ver MaxArticulosPorLista y MaxEnvasesPorArticulo).
@@ -58,7 +59,8 @@ const (
 
 // Config es la configuración ya validada del servicio.
 type Config struct {
-	OTPURL       string   // RUTAS_OTP_URL: origen OTP opcional, sin rutas ni credenciales
+	ORSURL       string   // RUTAS_ORS_URL: origen ORS opcional
+	ORSAPIKey    string   // RUTAS_ORS_API_KEY: secreto, nunca registrar
 	Puerto       string   // puerto HTTP, como texto ("8001")
 	DBURL        string   // DSN completo de PostgreSQL (contiene la contraseña: no registrar)
 	JWTSecret    string   // secreto para verificar la firma de la cookie jwt
@@ -160,16 +162,13 @@ func Cargar(buscarVariable func(string) (string, bool)) (Config, error) {
 	}
 
 	// --- Optimización de rutas (MVP) -----------------------------------------
-	configuracion.OTPURL = leerVariable("RUTAS_OTP_URL", "")
-	if configuracion.OTPURL != "" && !origenExacto(configuracion.OTPURL) {
-		return Config{}, errors.New("RUTAS_OTP_URL requiere un origen HTTP(S) exacto")
+	configuracion.ORSURL = leerVariable("RUTAS_ORS_URL", "")
+	if configuracion.ORSURL != "" && !origenExacto(configuracion.ORSURL) {
+		return Config{}, errors.New("RUTAS_ORS_URL requiere un origen HTTP(S) exacto")
 	}
-	// Grizzly (OTP) rechaza Host con guion bajo aunque Docker lo resuelva por DNS.
-	if configuracion.OTPURL != "" {
-		urlOTP, _ := url.Parse(configuracion.OTPURL)
-		if strings.Contains(urlOTP.Hostname(), "_") {
-			return Config{}, errors.New("RUTAS_OTP_URL requiere un hostname sin guion bajo; usa el alias otp-vial")
-		}
+	configuracion.ORSAPIKey = leerVariable("RUTAS_ORS_API_KEY", "")
+	if strings.ContainsAny(configuracion.ORSAPIKey, "\r\n") || strings.TrimSpace(configuracion.ORSAPIKey) != configuracion.ORSAPIKey {
+		return Config{}, errors.New("RUTAS_ORS_API_KEY tiene un formato inválido")
 	}
 	configuracion.RadioKm, errorObtenido = decimalPositivo(leerVariable("RUTAS_RADIO_KM", "10"), radioMaximoKm)
 	if errorObtenido != nil {

@@ -37,7 +37,7 @@ import (
 
 // Opciones reúne las dependencias del servidor.
 type Opciones struct {
-	Vial         vial.Proveedor             // OTP opcional; sin él no se simula un perfil
+	Vial         vial.Proveedor             // ORS opcional; sin él no se simula un perfil
 	Repo         listas.Repositorio         // acceso a datos (PostgreSQL o memoria en pruebas)
 	Carritos     listas.RepositorioCarrito  // borrador y envío atómico en el mismo dominio
 	Catalogo     listas.Catalogo            // disponibilidad de productos (HTTP a Catálogo o falso en pruebas)

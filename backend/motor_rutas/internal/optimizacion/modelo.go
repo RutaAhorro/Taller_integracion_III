@@ -144,7 +144,7 @@ type Tramo struct {
 	Hasta            ExtremoTramo `json:"hasta"`
 	DistanciaKm      float64      `json:"distancia_km"` // dos decimales
 	DuracionSegundos float64      `json:"duracion_segundos,omitempty"`
-	Geometrias       []string     `json:"geometrias,omitempty"` // polilíneas codificadas OTP
+	Geometrias       []string     `json:"geometrias,omitempty"` // polilíneas 2D, cinco decimales
 }
 
 // Ruta es la alternativa elegida: paradas en orden, tramos y costos.

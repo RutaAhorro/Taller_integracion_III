@@ -373,9 +373,10 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                     />
                   )}
                   <p className="text-xs text-muted-foreground">
-                    La ubicación solo se solicita con tu permiso y se envía al
-                    Motor para calcular. No se guarda en tu perfil. En móvil se
-                    necesita HTTPS; localhost permite la prueba local.
+                    La ubicación solo se solicita con tu permiso. El Motor envía
+                    el origen y las sucursales a openrouteservice para calcular.
+                    No se guarda en tu perfil. En móvil se necesita HTTPS;
+                    localhost permite la prueba local.
                   </p>
                   {avisoUbicacion && (
                     <p role="status" className="text-sm">
@@ -391,7 +392,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
               recalcular={recalcular}
             />
             {estado.tipo === "resultado" &&
-              estado.datos.fuente_recorrido === "otp_osm" && (
+              estado.datos.fuente_recorrido === "ors_osm" && (
                 <MapaRuta
                   datos={estado.datos}
                   origenManual={origenManual}

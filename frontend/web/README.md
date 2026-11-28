@@ -46,7 +46,7 @@ sin atribuirle precisión GPS. Se puede abrir incluso ante un error del cálculo
 
 La recomendación muestra total de los artículos incluidos, ahorro frente a una
 sola tienda (o ausencia de comparación), distancia estimada con retorno al
-origen, paradas ordenadas y compra por sucursal. Con OTP vial configurado, muestra
+origen, paradas ordenadas y compra por sucursal. Con ORS configurado, muestra
 el mapa Leaflet/OpenStreetMap, geometría por calles y tiempo estimado del perfil,
 con máximo dos tiendas. **No incluye combustible ni costo del tiempo.**
 **Ver recorrido en el mapa** y los enlaces de cada parada llevan al mapa integrado.
@@ -96,34 +96,34 @@ layout compartido del PR #209.
 El alcance acordado conserva **vehículo particular, bicicleta y a pie**; sin
 transporte público ni scooter. Cambiar el perfil o el origen recalcula y cancela
 la petición anterior; no se reutilizan sus resultados. Motor usa una matriz
-dirigida OTP antes de elegir el orden y devuelve las geometrías del mismo perfil.
+dirigida ORS antes de elegir el orden y devuelve las geometrías del mismo perfil.
 Las duraciones son estimaciones sin tráfico ni tiempo de compra. El fondo OSM
 es externo y requiere conexión: se muestra atribución y no se precargan tiles.
 Se respeta la [política del servidor de tiles](https://operations.osmfoundation.org/policies/tiles/).
-Un fallo de OTP no produce una polilínea ficticia; un fallo del fondo no borra
-la compra confirmada. El mapa local queda en `datos-locales/mapas/`, fuera de Git.
+Un fallo de ORS no produce una polilínea ficticia; un fallo del fondo no borra
+la compra confirmada. No se necesitan mapas ni grafos locales. Origen y sucursales
+se envían a ORS por HTTPS desde Motor, con clave privada; el mapa atribuye ORS/HeiGIT
+y OpenStreetMap. No se guardan coordenadas personales en logs.
 
 ### Probar las conexiones localmente
 
-Se necesitan **Motor y frontend reconstruidos, más OTP**, no toda la plataforma.
-Con PostgreSQL, Catálogo y Gateway ya activos y `streetGraph.obj` preparado:
+Se necesitan **Motor y frontend reconstruidos**, no toda la plataforma.
+Guardar URL y clave ORS en `.env` raíz. Con PostgreSQL, Catálogo y Gateway activos:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml up -d --build --no-deps otp_vial motor_rutas frontend
+docker compose up -d --build --no-deps motor_rutas frontend
 ```
 
-Esperar que OTP termine de cargar; revisar con
-`docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml logs --tail=30 otp_vial`.
 Abrir `http://localhost:3000`, seleccionar una lista, calcular, probar los tres
 perfiles, pedir ubicación y pulsar **Ver recorrido en el mapa**. Comprobar en
-Network el cuerpo con modo/origen y la respuesta con `fuente_recorrido: "otp_osm"`,
+Network el cuerpo con modo/origen y la respuesta con `fuente_recorrido: "ors_osm"`,
 tramos con geometría y `max_paradas: 2`. Probar también permiso denegado.
 No copiar cookies ni coordenadas personales a capturas de diagnóstico.
 
-Usar siempre ambos archivos Compose al recrear Motor; el archivo base solo no
-configura `RUTAS_OTP_URL` y la nueva pantalla responderá con error de recorrido.
+El archivo Compose base inyecta `RUTAS_ORS_URL` y `RUTAS_ORS_API_KEY` solo en Motor.
+No usar el complemento Compose anterior, que fue retirado.
 No se requieren migraciones ni reconstrucción de Gateway, Catálogo o BD.
-Ver la preparación del grafo en el [README de Motor](../../backend/motor_rutas/README.md#recorridos-viales-locales).
+Ver configuración y cuotas en el [README de Motor](../../backend/motor_rutas/README.md#recorridos-viales-con-go--openrouteservice).
 
 ### Desarrollo y pruebas sin backend
 

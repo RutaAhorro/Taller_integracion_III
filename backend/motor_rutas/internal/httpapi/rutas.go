@@ -7,6 +7,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"math"
 	"net/http"
@@ -139,7 +140,7 @@ func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, pet
 	if !leerJSON(respuesta, peticion, &solicitud) {
 		return
 	}
-	if solicitud.MedioTransporte != "" && vial.ModoOTP(solicitud.MedioTransporte) == "" {
+	if solicitud.MedioTransporte != "" && vial.PerfilORS(solicitud.MedioTransporte) == "" {
 		escribirError(respuesta, http.StatusBadRequest, mensajeSolicitudInvalida, "medio_transporte: usa vehiculo, bicicleta o pie")
 		return
 	}
@@ -215,14 +216,16 @@ func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, pet
 	// --- Cálculo de la ruta óptima (sin costo de combustible) ----------------
 	entrada := construirEntradaOptimizacion(origenUsado, articulosPendientes, preciosCatalogo, opcionesOpt)
 	fuente := "haversine"
+	contextoVial, cancelarVial := context.WithTimeout(peticion.Context(), vial.PlazoCalculo)
+	defer cancelarVial()
 	if solicitud.MedioTransporte != "" {
 		var errorVial error
-		entrada.Viales, errorVial = manejador.opciones.Vial.Matriz(peticion.Context(), solicitud.MedioTransporte, entrada.Origen, entrada.Sucursales)
+		entrada.Viales, errorVial = manejador.opciones.Vial.Matriz(contextoVial, solicitud.MedioTransporte, entrada.Origen, entrada.Sucursales)
 		if errorVial != nil || entrada.Viales == nil {
 			escribirError(respuesta, http.StatusServiceUnavailable, "El servicio de recorridos por calles no está disponible.", "")
 			return
 		}
-		fuente = "otp_osm"
+		fuente = "ors_osm"
 	}
 	resultado, errorCalculo := optimizacion.Calcular(entrada)
 	if errorCalculo != nil {
@@ -232,6 +235,12 @@ func (manejador *handlerListas) optimizarRuta(respuesta http.ResponseWriter, pet
 		}
 		manejador.responderErrorCalculo(respuesta, peticion, errorCalculo)
 		return
+	}
+	if solicitud.MedioTransporte != "" {
+		if errorTrazado := manejador.opciones.Vial.Trazar(contextoVial, solicitud.MedioTransporte, entrada.Origen, &resultado.Ruta); errorTrazado != nil {
+			escribirError(respuesta, http.StatusServiceUnavailable, "El servicio de recorridos por calles no está disponible.", "")
+			return
+		}
 	}
 
 	escribirJSON(respuesta, http.StatusOK, respuestaOptimizar{

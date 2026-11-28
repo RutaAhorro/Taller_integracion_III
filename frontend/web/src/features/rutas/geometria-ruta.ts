@@ -1,4 +1,4 @@
-// Adapta las polilíneas OTP a pares latitud/longitud, sin inventar tramos.
+// Adapta las polilíneas 2D de cinco decimales a latitud/longitud, sin inventar tramos.
 
 /** Rechaza polilíneas truncadas, excesivas o fuera de rango antes de dibujarlas. */
 export function decodificarPolilinea(texto: string): [number, number][] {

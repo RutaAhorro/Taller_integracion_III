@@ -1,86 +1,82 @@
 # Motor de rutas
 
-## Recorridos viales locales
+## Recorridos viales con Go + openrouteservice
 
-`POST /api/v1/rutas/optimizar` admite `medio_transporte` (`vehiculo`, `bicicleta`,
-`pie`) y `origen: {lat, lon}` junto con `lista_id`. Sigue filtrando por el dueño
-de la lista. Con modo explícito exige OTP: sin proveedor o con fallo devuelve
-503; sin conexión vial para las alternativas devuelve 422. No hay respaldo
-silencioso a Haversine. Las solicitudes antiguas sin modo conservan el cálculo
-estimado anterior (`fuente_recorrido: "haversine"`).
+`POST /api/v1/rutas/optimizar` admite `lista_id`, `medio_transporte`
+(`vehiculo`, `bicicleta`, `pie`) y `origen: {lat, lon}` opcional. Sigue
+filtrando por el dueño de la lista y conserva el centro de Temuco como origen
+por defecto. Los perfiles ORS son `driving-car`, `cycling-regular` y `foot-walking`.
 
-OTP se consulta por HTTP antes de elegir visitas, con matriz **dirigida** de
-origen/sucursales/retorno, plazo global de 8 s y concurrencia de cuatro consultas.
-Se conserva el algoritmo puro sin HTTP ni SQL, con hasta dos paradas en modo
-vial. Gana el menor costo de productos y se desempata por recorrido; el traslado
-monetario continúa en cero. No se afirma ahorro neto ni tiempos reales.
-La respuesta vial identifica `fuente_recorrido: "otp_osm"`, el modo, duraciones
-en segundos y polilíneas codificadas OTP de cinco decimales en `tramos[].geometrias`.
+Por cálculo se hace **una petición Matrix** con origen y sucursales. Go evalúa
+la matriz dirigida y las ofertas, con máximo dos tiendas. Después se hace
+**una petición Directions** con el orden elegido y el retorno, usando el mismo
+perfil y criterio `fastest`. No se consulta cada pareja por separado. Hay un
+plazo global de 12 s para ambas peticiones; no hay reintentos automáticos.
+Un tramo null se considera desconectado. Las métricas finales del recorrido
+dibujado proceden de Directions; no se modifica la asignación de productos.
 
-La configuración adicional `docker-compose.rutas-viales.yml` es opt-in local:
-añade OTP 2.8.1, configura `RUTAS_OTP_URL=http://otp-vial:8080` y usa un grafo
-solo de calles, sin GTFS. El puerto de inspección es `127.0.0.1:8092`.
-No acredita despliegue ni presupuesto de memoria en Kubernetes.
+La respuesta identifica `fuente_recorrido: "ors_osm"`, el modo, duración en
+segundos y `tramos[].geometrias` como polilíneas 2D de cinco decimales. Son
+estimaciones, sin tráfico en vivo ni costo monetario del traslado. Sin proveedor,
+clave, cuota o geometría válida devuelve 503; sin alternativas conectadas, 422.
+No sustituye silenciosamente las calles por Haversine. El contrato antiguo sin
+modo conserva `fuente_recorrido: "haversine"`.
 
-El servicio Compose se llama `otp_vial`, pero la URL usa su alias DNS
-`otp-vial`: el servidor Grizzly de OTP rechaza el encabezado `Host` con guion
-bajo y devuelve HTTP 500. No usar `http://otp_vial:8080`.
+### Prueba local
 
-### Preparar el grafo una sola vez
+Guardar `RUTAS_ORS_URL=https://api.heigit.org` y `RUTAS_ORS_API_KEY`
+en `.env` (ignorado por Git), sin prefijo `VITE_`. La clave se envía solo desde
+Motor mediante el encabezado Authorization, nunca en query strings ni logs.
+El navegador informa que origen y sucursales se envían a ORS por HTTPS.
+El cliente agrega `/openrouteservice/v2/...`; la URL no lleva ruta.
+`api.openrouteservice.org` fue retirado el 24-11-2026 y responde HTTP 410.
+La clave y las cuotas se conservan al usar el dominio nuevo
+([anuncio oficial](https://ask.openrouteservice.org/t/deprecating-api-openrouteservice-org-in-favour-of-api-heigit-org/7912)).
+No se necesitan PBF, grafos locales ni contenedores de enrutamiento.
 
-Guardar el PBF de Temuco en `datos-locales/mapas/`, excluido de Git. Para este
-equipo ya se preparó `streetGraph.obj`. Si se prepara desde otra máquina:
+La red de Docker también debe resolver `api.heigit.org` y permitir HTTPS saliente.
+Si Motor devuelve 503, comprobar DNS desde el contenedor y su salida a Internet:
+una prueba exitosa desde el host no acredita la conectividad de Compose.
+No desactivar TLS ni fijar la IP del proveedor como solución.
 
-```sh
-docker run --rm --network none --memory 3g --memory-swap 3g --cpus 2 \
-  -e JAVA_TOOL_OPTIONS="-Xmx2g -XX:ActiveProcessorCount=2" \
-  -v "$PWD/datos-locales/mapas:/var/opentripplanner" \
-  opentripplanner/opentripplanner:2.8.1 --buildStreet
-```
-
-No colocar GTFS ni configuraciones históricas en esa carpeta. No reconstruir
-encima de un grafo que esté sirviendo: preparar otro directorio y reemplazarlo
-solo con OTP detenido. El servidor monta `streetGraph.obj` como `graph.obj`
-en modo solo lectura y usa `--load`, no `--loadStreet`.
-Mapas, grafos y logs no se suben al repositorio.
-
-Con los servicios base ya activos:
+Con BD, Catálogo y Gateway ya activos, desde la raíz:
 
 ```sh
-docker compose -f docker-compose.yml -f docker-compose.rutas-viales.yml up -d --build --no-deps otp_vial motor_rutas frontend
+docker compose up -d --build --no-deps motor_rutas frontend
 ```
 
-Las pruebas `go test ./...` no usan BD compartida ni requieren OTP. El test
-`TestEndpointConOTPReal` se habilita con `OTP_VIAL_TEST_URL`: conecta el adaptador,
-el algoritmo y el handler reales con listas y precios controlados en memoria.
-Esto no equivale a un E2E con Catálogo/PostgreSQL reales.
+El archivo Compose adicional de la prueba anterior fue retirado. Sin clave
+los CRUD siguen operativos, pero el frontend vial informa que falta el proveedor.
+Las pruebas normales `go test ./...` no consumen cuota ni usan BD compartida.
+`TestEndpointConORSReal` requiere `ORS_VIAL_TEST=1`, `RUTAS_ORS_URL` y
+`RUTAS_ORS_API_KEY`: consume tres Matrix y tres Directions, con puntos públicos
+y precios controlados. No equivale a un E2E con Catálogo/PostgreSQL reales.
 
-### Clúster: fondo del mapa frente al grafo
+### Clúster y cuotas
 
-El navegador obtiene el fondo de `tile.openstreetmap.org`; no lee el PBF ni
-`streetGraph.obj`. Esos archivos son datos de entrada y un artefacto de OTP,
-no archivos estáticos del frontend.
+No se despliega ORS: se utiliza su API alojada. El fondo del mapa viene de
+`tile.openstreetmap.org`, y Motor devuelve la geometría obtenida de ORS.
+El ConfigMap de Motor define la URL pública; el operador debe crear el Secret
+`rutas-ors-secret`, clave `api-key`, sin subirlo a Git, y permitir salida HTTPS.
+Los manifiestos no se aplican automáticamente. La referencia al Secret es
+opcional para no romper CRUD al arrancar, pero es necesaria para los modos viales.
 
-Para servir recorridos viales en Kubernetes falta desplegar OTP, su Service y
-un grafo del mismo formato/versionado (por ejemplo, en un volumen persistente
-de solo lectura, o incluido en una imagen publicada en el registry).
-Motor deberá configurar `RUTAS_OTP_URL` con ese Service, sin guiones bajos.
-Hay que verificar memoria disponible, almacenamiento y NetworkPolicy antes de
-desplegar. El complemento Compose no configura Kubernetes. Publicar únicamente
-el frontend nuevo no habilita OTP: las solicitudes viales responderán 503.
-No se suben datos pesados a Git ni se depende de archivos del computador de
-desarrollo desde el clúster.
+Consultar las cuotas de la cuenta: los límites diarios y por minuto pertenecen
+al proveedor, no son un servicio ilimitado ni una garantía de disponibilidad.
+La cuota de Matrix no equivale a usuarios concurrentes. Cambiar origen o perfil
+genera un nuevo cálculo; cancelar en el navegador no garantiza que ORS no cuente
+una petición ya recibida.
 
 Servicio Go (`net/http`) que implementa el CRUD de listas de compra y de sus
 artículos sobre tablas de `rutas.*` (SUP-240, SUP-241). Se reescribió desde Python en SUP-348
 ([D11](../../docs/Decisiones/11_Motor_de_rutas_en_Go.md)) sin cambiar el
-contrato HTTP ni la base. El cálculo de rutas ya está implementado; OTP vial es
-opcional mediante la configuración local anterior. No se persisten ejecuciones
+contrato HTTP ni la base. El cálculo de rutas ya está implementado; ORS es
+opcional mediante la configuración anterior. No se persisten ejecuciones
 de optimización ni se amplían permisos de base de datos.
 
 El Motor se levanta por defecto en el Compose vigente. No formó parte del
 inventario de nueve pods informado para el cierre del Sprint 2. Tener código
-y manifiestos no acredita un despliegue activo ni un OTP operativo en Kubernetes.
+y manifiestos no acredita un despliegue activo ni conectividad real a ORS.
 
 ## API (tras el Gateway)
 

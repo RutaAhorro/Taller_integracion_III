@@ -162,6 +162,9 @@ services:
       RUTAS_MAX_ARTICULOS: ${RUTAS_MAX_ARTICULOS:-30}
       RUTAS_FACTOR_DISTANCIA: ${RUTAS_FACTOR_DISTANCIA:-1.3}
       RUTAS_UMBRAL_AHORRO: ${RUTAS_UMBRAL_AHORRO:-500}
+      # ORS alojado: clave solo en Motor, sin contenedor geográfico ni grafos locales.
+      RUTAS_ORS_URL: ${RUTAS_ORS_URL:-https://api.heigit.org}
+      RUTAS_ORS_API_KEY: ${RUTAS_ORS_API_KEY:-}
     depends_on:
       db: {condition: service_healthy}
     restart: unless-stopped

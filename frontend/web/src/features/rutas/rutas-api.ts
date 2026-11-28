@@ -81,7 +81,7 @@ export type ArticuloNoCubierto = {
 
 /** Respuesta vigente; no incluye los parámetros históricos de combustible. */
 export type RespuestaOptimizacion = {
-  fuente_recorrido?: "otp_osm" | "haversine";
+  fuente_recorrido?: "ors_osm" | "haversine";
   medio_transporte?: MedioTransporte;
   estimado: true;
   origen: { lat: number; lon: number; por_defecto: boolean };
@@ -184,7 +184,7 @@ export function orientacionErrorRuta(errorObtenido: unknown): string {
     errorObtenido.message ===
       "El servicio de recorridos por calles no está disponible."
   )
-    return "No se obtuvo un recorrido por calles. Revisa que OTP esté iniciado y conectado al Motor; no se ha sustituido por líneas rectas.";
+    return "No se obtuvo un recorrido por calles. El proveedor ORS puede no estar disponible, tener la cuota agotada o faltar configuración en Motor. No se ha sustituido por líneas rectas.";
   if (errorObtenido.estado === 503)
     return "El servicio de precios no está disponible ahora. Tu lista sigue guardada; vuelve a intentarlo más tarde.";
   if (errorObtenido.estado === 404)

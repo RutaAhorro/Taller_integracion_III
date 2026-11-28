@@ -69,13 +69,13 @@ Thumbs.db
 *.synctex.gz
 *.pdf
 
-# Mapas Geoespaciales de OTP (Archivos Pesados)
+# Artefactos geoespaciales locales (no son necesarios para ORS alojado).
 *.osm
 *.osm.pbf
 *.otp
 *.otp.*
 backend/motor_rutas/data/
-# Entradas locales del experimento vial (nunca subir ZIP ni grafos).
+# Protección frente a entradas de pruebas antiguas (nunca subir ZIP ni grafos).
 /datos-locales/mapas/
 streetGraph.obj
 graph.obj
