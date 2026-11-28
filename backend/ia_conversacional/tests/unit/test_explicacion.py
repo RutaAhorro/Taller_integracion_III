@@ -186,3 +186,42 @@ def test_construir_explicacion_respaldo_formatea_precio_clp():
         construir_explicacion_respaldo(productos, "harina de almendras")
         == "Estas son las opciones que encontré para «harina de almendras», desde $10.600."
     )
+
+
+def test_prompt_explicacion_omite_distancia_y_categoria_e_incluye_datos_verificables():
+    """El prompt solo entrega nombre, marca, precio CLP y tienda; jamás pasa distancia_km ni slugs de categoría."""
+    productos = [
+        {
+            "nombre": "Aceite de Oliva Extra Virgen 500 ml",
+            "marca": "Chef",
+            "precio": 5490.0,
+            "supermercado": "Jumbo",
+            "categoria": "despensa",
+            "distancia_km": 0.0,
+        },
+        {
+            "nombre": "Harina de Almendras 500 g",
+            "marca": "",
+            "precio": 10600.0,
+            "supermercado": "",
+            "categoria": "abarrotes-gourmet",
+            "distancia_km": 2.5,
+        },
+    ]
+
+    prompt = construir_prompt_explicacion("Busco harina almendras", productos)
+
+    assert "Aceite de Oliva Extra Virgen 500 ml" in prompt
+    assert '"marca": "Chef"' in prompt
+    assert '"tienda": "Jumbo"' in prompt
+    assert "$5.490" in prompt
+    assert "$10.600" in prompt
+    assert "distancia_km" not in prompt
+    assert "0.0" not in prompt
+    assert "2.5" not in prompt
+    assert "despensa" not in prompt
+    assert "abarrotes-gourmet" not in prompt
+    assert "No encontré coincidencias exactas" in prompt
+    assert "sin gluten" in prompt
+    assert "sustituto" in prompt
+    assert "No repitas la lista completa de tarjetas" in prompt

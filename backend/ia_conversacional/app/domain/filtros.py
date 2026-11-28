@@ -392,6 +392,33 @@ def _normalizar_texto(texto: str) -> str:
     return "".join(letras_sin_marcas).strip().lower()
 
 
+def categoria_mencionada_en_mensaje(categoria: str, mensaje: str) -> bool:
+    """
+    Indica si el usuario nombró explícitamente la categoría en su mensaje.
+
+    Evalúa categorías simples ("verduras") y compuestas ("frutas y verduras")
+    comparando tokens normalizados sin tildes y admitiendo singular/plural,
+    para distinguir una categoría pedida por el usuario de una inferida por el LLM.
+    """
+    if not isinstance(categoria, str) or not isinstance(mensaje, str):
+        return False
+    categoria_normalizada = _normalizar_texto(categoria)
+    mensaje_normalizado = _normalizar_texto(mensaje)
+    if not categoria_normalizada or not mensaje_normalizado:
+        return False
+
+    tokens_mensaje = _separar_terminos(mensaje_normalizado)
+    if not tokens_mensaje:
+        return False
+
+    grupos = re.split(r"\b(?:y|o|u)\b", categoria_normalizada)
+    return any(
+        all(any(_texto_contiene(termino, token) for token in tokens_mensaje) for termino in _separar_terminos(grupo))
+        for grupo in grupos
+        if _separar_terminos(grupo)
+    )
+
+
 def _coincide_por_texto(frase: str, producto: dict, exigir_todos: bool = True) -> bool:
     """Indica si los términos de la frase calzan por palabra o prefijo con la categoría o el nombre del producto.
 
@@ -582,14 +609,24 @@ def filtrar_productos(catalogo: list, filtros: dict, preservar_orden: bool = Fal
     if isinstance(precio_max, (int, float)) and precio_max > 0:
         resultado = [producto for producto in resultado if producto["precio"] <= precio_max]
 
-    categoria = filtros.get("categoria")
-    if isinstance(categoria, str) and categoria.strip():
-        # Sin exigir_todos: las categorías compuestas ("frutas y verduras") matchean productos de cualquiera de sus partes.
-        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto, exigir_todos=False)]
-
     palabras_clave = _a_lista_de_terminos(filtros.get("palabras_clave"))
+    categoria = filtros.get("categoria")
+    tiene_categoria = isinstance(categoria, str) and bool(categoria.strip())
+
     if palabras_clave:
         resultado = _filtrar_por_palabras_clave(resultado, palabras_clave)
+        if tiene_categoria:
+            # Con palabras clave presentes, la categoría solo acota si conserva al menos un
+            # producto: los slugs de Catálogo (p. ej. "despensa") no siempre coinciden con el
+            # nombre que usa el usuario o el modelo (p. ej. "abarrotes").
+            con_categoria = [
+                producto for producto in resultado if _coincide_por_texto(categoria, producto, exigir_todos=False)
+            ]
+            if con_categoria:
+                resultado = con_categoria
+    elif tiene_categoria:
+        # Sin palabras clave: la categoría es el criterio principal y las compuestas ("frutas y verduras") son alternativas.
+        resultado = [producto for producto in resultado if _coincide_por_texto(categoria, producto, exigir_todos=False)]
 
     distancia_max = filtros.get("distancia_max")
     if isinstance(distancia_max, (int, float)) and distancia_max > 0:

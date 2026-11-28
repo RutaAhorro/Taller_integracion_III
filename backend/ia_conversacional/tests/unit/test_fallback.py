@@ -396,3 +396,69 @@ async def test_gemini_y_groq_envian_razonamiento_acotado_y_reportan_nombre_prove
     assert resultado_groq.proveedor == "groq"
     assert cuerpos_groq[0]["reasoning_effort"] == "low"
     assert cuerpos_groq[0]["max_tokens"] == 256
+
+
+@pytest.mark.anyio
+async def test_fallback_groq_primario_no_llama_a_gemini_cuando_groq_responde():
+    """Con orden Groq -> Gemini, si Groq resuelve extracción y explicación no se invoca a Gemini."""
+    proveedor_groq = ProveedorFalso("groq")
+    proveedor_gemini = ProveedorFalso("gemini")
+
+    orquestador = FallbackProveedor(
+        proveedores=[proveedor_groq, proveedor_gemini],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+
+    extraccion = await orquestador.extraer_filtros("Busco aceite de oliva")
+    explicacion = await orquestador.generar_explicacion("Busco aceite de oliva", [])
+
+    assert extraccion.proveedor == "groq"
+    assert explicacion == "Explicacion generada por groq"
+    assert proveedor_groq.llamadas_extraccion == 1
+    assert proveedor_groq.llamadas_explicacion == 1
+    assert proveedor_gemini.llamadas_extraccion == 0
+    assert proveedor_gemini.llamadas_explicacion == 0
+
+
+@pytest.mark.anyio
+async def test_groq_proveedor_rescata_tool_use_failed_sin_conmutar_a_gemini():
+    """Ante HTTP 400 `tool_use_failed` con JSON rescatable, Groq extrae filtros sin caer a Gemini."""
+    proveedor_groq = GroqProveedor(
+        clave_api="clave-groq",
+        url_endpoint="https://api.groq.test/v1/chat/completions",
+        modelo_extraccion="openai/gpt-oss-20b",
+        modelo_explicacion="openai/gpt-oss-120b",
+    )
+    peticion = httpx.Request("POST", proveedor_groq.url_endpoint)
+    respuesta_400 = httpx.Response(
+        400,
+        json={
+            "error": {
+                "code": "tool_use_failed",
+                "failed_generation": (
+                    '<function=extraer_filtros_busqueda>{"palabras_clave": ["aceite de oliva"]}</function>'
+                ),
+            }
+        },
+        request=peticion,
+    )
+
+    async def enviar_tool_use_failed(_cuerpo: dict) -> dict:
+        raise httpx.HTTPStatusError("400 Bad Request", request=peticion, response=respuesta_400)
+
+    proveedor_groq._enviar = enviar_tool_use_failed
+    proveedor_gemini = ProveedorFalso("gemini")
+
+    orquestador = FallbackProveedor(
+        proveedores=[proveedor_groq, proveedor_gemini],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+
+    resultado = await orquestador.extraer_filtros("Busco aceite de oliva")
+
+    assert resultado.error is None
+    assert resultado.proveedor == "groq"
+    assert resultado.filtros == {"palabras_clave": ["aceite de oliva"]}
+    assert proveedor_gemini.llamadas_extraccion == 0

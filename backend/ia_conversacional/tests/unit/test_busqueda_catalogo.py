@@ -32,8 +32,10 @@ from app.services.chat import (
     TEXTO_CATALOGO_NO_DISPONIBLE,
     TEXTO_SIN_FILTROS,
     TEXTO_SIN_PRODUCTOS,
+    AsistenteNoDisponible,
     procesar_mensaje,
 )
+from app.services.fallback import FallbackProveedor
 
 URL_CATALOGO = "http://catalogo:8080"
 
@@ -1132,6 +1134,237 @@ def test_chat_registra_linea_info_con_tiempos_por_etapa_sin_datos_sensibles(capl
     assert "frase_fija=no" in linea
     assert "token-privado-usuario" not in caplog.text
     assert "harina de almendras" not in linea
+
+
+# ===== Categoría inferida por el modelo con término de búsqueda presente =====
+
+
+def test_chat_aceite_de_oliva_ignora_categoria_inventada_y_mantiene_relevancia():
+    """Con término presente, una categoría inferida incompatible ('abarrotes') no descarta los aceites de oliva reales."""
+    aceite_oliva_1 = _normalizar(_producto("prod-oliva-1", "Aceite de Oliva Extra Virgen 500 ml", 6490.0, "despensa"))
+    aceite_oliva_2 = _normalizar(_producto("prod-oliva-2", "Aceite de Oliva Clásico 1 L", 8990.0, "despensa"))
+    aceite_vegetal = _normalizar(_producto("prod-vegetal", "Aceite Vegetal 1 L", 1890.0, "despensa"))
+    repositorio = RepositorioDoble(
+        cache=[],
+        busquedas={"aceite de oliva": [aceite_oliva_1, aceite_oliva_2, aceite_vegetal]},
+    )
+
+    datos = _procesar(
+        repositorio,
+        {"categoria": "abarrotes", "palabras_clave": ["aceite de oliva"]},
+        mensaje="Busco aceite de oliva",
+    )
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva-1", "prod-oliva-2"]
+    assert "categoria" not in datos["filtros_aplicados"]
+    assert _terminos_buscados(repositorio) == ["aceite de oliva"]
+
+
+def test_chat_busco_oliva_con_categoria_inventada_no_devuelve_cero_productos():
+    """Reproduce 'Busco oliva': si el modelo inventa una categoría ('abarrotes' o 'aceites'), no se pierden los resultados."""
+    aceite_oliva = _normalizar(_producto("prod-oliva-1", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    aceitunas_oliva = _normalizar(_producto("prod-oliva-2", "Aceitunas Verdes de Oliva 250 g", 2490.0, "conservas"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"oliva": [aceite_oliva, aceitunas_oliva]})
+
+    for categoria_inventada in ("abarrotes", "aceites", "frutas"):
+        repositorio.terminos_buscados.clear()
+        datos = _procesar(
+            repositorio,
+            {"categoria": categoria_inventada, "palabras_clave": ["oliva"]},
+            mensaje="Busco oliva",
+        )
+        assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva-1", "prod-oliva-2"]
+        assert "categoria" not in datos["filtros_aplicados"]
+
+
+def test_chat_harina_almendras_con_y_sin_coincidencia_exacta_ignora_categoria_inventada():
+    """'harina almendras' con categoría inventada devuelve la harina de almendras si existe, o 0 si solo hay harinas comunes."""
+    harina_almendras = _normalizar(_producto("prod-harina-almendras", "Harina de Almendras 500 g", 5990.0, "despensa"))
+    harina_trigo = _normalizar(_producto("prod-harina-trigo", "Harina de Trigo 1 kg", 1290.0, "despensa"))
+    almendras_solas = _normalizar(_producto("prod-almendras", "Almendras Tostadas 200 g", 3990.0, "despensa"))
+
+    # Caso 1: existe un producto que contiene ambas palabras y el modelo inventó categoría 'abarrotes'.
+    repositorio_con_producto = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "harina": [harina_trigo],
+            "almendras": [almendras_solas, harina_almendras],
+        },
+    )
+    datos_con = _procesar(
+        repositorio_con_producto,
+        {"categoria": "abarrotes", "palabras_clave": ["harina almendras"]},
+        mensaje="Busco harina almendras",
+    )
+    assert [producto["id"] for producto in datos_con["productos_recomendados"]] == ["prod-harina-almendras"]
+    assert "categoria" not in datos_con["filtros_aplicados"]
+
+    # Caso 2: ningún producto contiene ambas palabras; no debe entregar harinas sin relación.
+    repositorio_sin_producto = RepositorioDoble(
+        cache=[],
+        busquedas={
+            "harina": [harina_trigo],
+            "almendras": [almendras_solas],
+        },
+    )
+    datos_sin = _procesar(
+        repositorio_sin_producto,
+        {"categoria": "abarrotes", "palabras_clave": ["harina almendras"]},
+        mensaje="Busco harina almendras",
+    )
+    assert datos_sin["productos_recomendados"] == []
+    assert datos_sin["respuesta"] == TEXTO_SIN_PRODUCTOS
+
+
+def test_chat_categoria_explicita_en_mensaje_reintenta_sin_categoria_si_da_cero():
+    """Si el usuario nombró una categoría que no calza con el slug de Catálogo, se reintenta sin categoría sin llamada extra."""
+    aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"aceite de oliva": [aceite_oliva]})
+
+    datos = _procesar(
+        repositorio,
+        {"categoria": "abarrotes", "palabras_clave": ["aceite de oliva"]},
+        mensaje="Busco aceite de oliva en abarrotes",
+    )
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
+    assert _terminos_buscados(repositorio) == ["aceite de oliva"]
+
+
+def test_chat_solo_categoria_inventada_con_cero_resultados_reintenta_con_mensaje():
+    """Si el modelo devolvió solo una categoría inventada ('abarrotes') y Catálogo dio 0, reintenta con los términos del mensaje."""
+    aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"abarrotes": [], "oliva": [aceite_oliva]})
+
+    datos = _procesar(repositorio, {"categoria": "abarrotes"}, mensaje="Busco oliva")
+
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
+    assert datos["filtros_aplicados"] == {"palabras_clave": ["oliva"]}
+    assert _terminos_buscados(repositorio) == ["abarrotes", "abarrote", "oliva"]
+
+
+def test_chat_peor_caso_ambos_proveedores_lentos_en_explicacion_responde_con_frase_fija_antes_del_plazo(monkeypatch):
+    """Con Groq y Gemini lentos en etapa 3, responde con tarjetas y frase fija antes del plazo total (sin 504)."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.7)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.2)
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
+
+    class ProveedorLentoEnExplicacion(ProveedorIA):
+        def __init__(self, nombre_proveedor: str) -> None:
+            self.nombre = nombre_proveedor
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(0.05)
+            return ResultadoExtraccion(
+                filtros={"palabras_clave": ["aceite de oliva"]},
+                tiempo_extraccion_ms=50,
+                proveedor=self.nombre,
+            )
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            await anyio.sleep(2.0)
+            return "Demasiado tarde."
+
+    orquestador = FallbackProveedor(
+        proveedores=[ProveedorLentoEnExplicacion("groq"), ProveedorLentoEnExplicacion("gemini")],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+    aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"aceite de oliva": [aceite_oliva]})
+
+    inicio = time.monotonic()
+    datos = anyio.run(procesar_mensaje, orquestador, repositorio, "Busco aceite de oliva")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.7
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
+    assert datos["respuesta"] == "Estas son las opciones que encontré para «aceite de oliva», desde $5.490."
+
+
+def test_chat_peor_caso_ambos_proveedores_lentos_en_extraccion_corta_antes_del_plazo(monkeypatch):
+    """Si Groq y Gemini agotan tiempo o caen en etapa 1, corta dentro del plazo de etapas 1+2 (503, nunca 504)."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.6)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.2)
+
+    class ProveedorColgado(ProveedorIA):
+        def __init__(self, nombre_proveedor: str) -> None:
+            self.nombre = nombre_proveedor
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(2.0)
+            return ResultadoExtraccion(filtros={"palabras_clave": ["oliva"]}, proveedor=self.nombre)
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "No debe ejecutarse."
+
+    orquestador = FallbackProveedor(
+        proveedores=[ProveedorColgado("groq"), ProveedorColgado("gemini")],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+    repositorio = RepositorioDoble(cache=[], busquedas={})
+
+    inicio = time.monotonic()
+    with pytest.raises(AsistenteNoDisponible):
+        anyio.run(procesar_mensaje, orquestador, repositorio, "Busco oliva")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.6
+
+
+def test_chat_groq_primario_falla_y_gemini_respalda_con_frase_fija_si_supera_umbral(monkeypatch, caplog):
+    """Si Groq agota su timeout en etapa 1 y Gemini respalda pasando la mitad del plazo, responde con tarjetas y frase fija."""
+    monkeypatch.setattr(config, "CHAT_TIMEOUT_TOTAL", 0.8)
+    monkeypatch.setattr(config, "CHAT_EXPLICACION_PLAZO_MINIMO", 0.2)
+    monkeypatch.setattr(config, "CHAT_UMBRAL_OMITIR_EXPLICACION", 0.5)
+
+    class GroqTimeoutSimulado(ProveedorIA):
+        nombre = "groq"
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(0.25)
+            raise httpx.ReadTimeout("Timeout simulado en groq")
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            return "No debería llamarse."
+
+    class GeminiRespaldoLento(ProveedorIA):
+        nombre = "gemini"
+
+        def __init__(self) -> None:
+            self.llamadas_explicacion = 0
+
+        async def extraer_filtros(self, mensaje: str) -> ResultadoExtraccion:
+            await anyio.sleep(0.2)
+            return ResultadoExtraccion(
+                filtros={"palabras_clave": ["oliva"]}, tiempo_extraccion_ms=200, proveedor="gemini"
+            )
+
+        async def generar_explicacion(self, mensaje: str, productos: list) -> str:
+            self.llamadas_explicacion += 1
+            return "No debería llamarse por umbral."
+
+    gemini = GeminiRespaldoLento()
+    orquestador = FallbackProveedor(
+        proveedores=[GroqTimeoutSimulado(), gemini],
+        reintentos_primario=0,
+        reintentos_secundario=0,
+    )
+    aceite_oliva = _normalizar(_producto("prod-oliva", "Aceite de Oliva Extra Virgen 500 ml", 5490.0, "despensa"))
+    repositorio = RepositorioDoble(cache=[], busquedas={"oliva": [aceite_oliva]})
+
+    inicio = time.monotonic()
+    with caplog.at_level(logging.INFO):
+        datos = anyio.run(procesar_mensaje, orquestador, repositorio, "Busco oliva")
+    duracion = time.monotonic() - inicio
+
+    assert duracion < 0.8
+    assert gemini.llamadas_explicacion == 0
+    assert [producto["id"] for producto in datos["productos_recomendados"]] == ["prod-oliva"]
+    assert datos["respuesta"] == "Estas son las opciones que encontré para «oliva», desde $5.490."
+    assert "proveedor=gemini" in caplog.text
+    assert "frase_fija=si" in caplog.text
 
 
 # ===== Utilidades =====

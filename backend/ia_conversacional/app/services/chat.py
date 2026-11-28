@@ -18,6 +18,7 @@ import anyio
 
 from app import config
 from app.domain.filtros import (
+    categoria_mencionada_en_mensaje,
     dividir_frases_compuestas,
     extraer_terminos_respaldo,
     filtrar_productos,
@@ -543,6 +544,25 @@ def _tiene_criterio_busqueda(filtros: dict) -> bool:
     return bool(filtros.get("palabras_clave") or filtros.get("ingredientes") or filtros.get("categoria"))
 
 
+def _descartar_categoria_inferida(filtros: dict, mensaje: str) -> dict:
+    """
+    Elimina la categoría si hay un término de búsqueda y el usuario no la nombró en el mensaje.
+
+    Evita que una categoría inventada por el LLM (p. ej. "abarrotes" o "aceites" al buscar
+    "oliva" o "aceite de oliva") descarte productos reales cuyos slugs en Catálogo son otros
+    (p. ej. "despensa").
+    """
+    categoria = filtros.get("categoria")
+    tiene_termino_busqueda = bool(filtros.get("palabras_clave") or filtros.get("ingredientes"))
+    if not tiene_termino_busqueda or not isinstance(categoria, str) or not categoria.strip():
+        return filtros
+    if categoria_mencionada_en_mensaje(categoria, mensaje):
+        return filtros
+
+    logger.debug("Categoría inferida '%s' descartada por no figurar en el mensaje con término presente.", categoria)
+    return {clave: valor for clave, valor in filtros.items() if clave != "categoria"}
+
+
 def _completar_filtros_con_respaldo(filtros: dict, mensaje: str) -> dict | None:
     """
     Garantiza un criterio de producto antes de consultar Catálogo.
@@ -614,6 +634,7 @@ async def _ejecutar_etapas_1_y_2(
                 0,
                 proveedor_extraccion,
             )
+        filtros_efectivos = _descartar_categoria_inferida(filtros_efectivos, mensaje)
 
         # Etapa 2: búsqueda directa en Catálogo acotada a su fracción del plazo y al tiempo restante.
         inicio_catalogo = time.perf_counter()
@@ -621,6 +642,34 @@ async def _ejecutar_etapas_1_y_2(
         productos, estado_datos, catalogo_disponible = await _obtener_candidatos(
             repositorio, filtros_efectivos, plazo_catalogo=plazo_catalogo
         )
+        # Si el modelo solo entregó una categoría inventada (sin palabras clave) y dio 0 resultados,
+        # reintenta una vez con los términos del mensaje dentro del plazo restante de Catálogo.
+        categoria_sola = filtros_efectivos.get("categoria")
+        if (
+            not productos
+            and catalogo_disponible
+            and isinstance(categoria_sola, str)
+            and categoria_sola.strip()
+            and not filtros_efectivos.get("palabras_clave")
+            and not filtros_efectivos.get("ingredientes")
+            and not categoria_mencionada_en_mensaje(categoria_sola, mensaje)
+        ):
+            terminos_respaldo = extraer_terminos_respaldo(mensaje)
+            tiempo_consumido_catalogo = time.perf_counter() - inicio_catalogo
+            plazo_reintento = max(
+                0.0,
+                min(presupuesto.plazo_catalogo_max - tiempo_consumido_catalogo, limite_etapas_1_y_2 - time.monotonic()),
+            )
+            if terminos_respaldo and plazo_reintento > 0:
+                filtros_sin_categoria = {
+                    clave: valor for clave, valor in filtros_efectivos.items() if clave != "categoria"
+                }
+                filtros_reintento = {**filtros_sin_categoria, "palabras_clave": terminos_respaldo}
+                productos, estado_datos, catalogo_disponible = await _obtener_candidatos(
+                    repositorio, filtros_reintento, plazo_catalogo=plazo_reintento
+                )
+                filtros_efectivos = filtros_reintento
+
         tiempo_catalogo_ms = round((time.perf_counter() - inicio_catalogo) * MILISEGUNDOS_POR_SEGUNDO)
         if not productos and not catalogo_disponible:
             return (
@@ -647,7 +696,16 @@ async def _ejecutar_etapas_1_y_2(
                 if clave in ("precio_max", "categoria", "distancia_max")
             }
             if filtros_base:
-                productos = filtrar_productos(productos, filtros_base)
+                productos_filtrados_base = filtrar_productos(productos, filtros_base)
+                if not productos_filtrados_base and "categoria" in filtros_base:
+                    filtros_sin_categoria = {
+                        clave: valor for clave, valor in filtros_base.items() if clave != "categoria"
+                    }
+                    productos = (
+                        filtrar_productos(productos, filtros_sin_categoria) if filtros_sin_categoria else productos
+                    )
+                else:
+                    productos = productos_filtrados_base
 
             # NOTE: limite_candidatos=None para no descartar un 4º candidato vigente antes de validar
             ingredientes_receta, ingredientes_faltantes = vincular_ingredientes_catalogo(

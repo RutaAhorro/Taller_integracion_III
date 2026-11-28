@@ -320,11 +320,14 @@ def test_defaults_plazos_razonamiento_y_tokens_acotados(monkeypatch):
         assert config.CHAT_CATALOGO_FRACCION_PLAZO == 0.25
         assert config.CHAT_EXPLICACION_PLAZO_MINIMO == 4.0
         assert config.CHAT_UMBRAL_OMITIR_EXPLICACION == 0.5
-        assert config.GEMINI_TIMEOUT == 4.0
+        assert config.GEMINI_TIMEOUT == 5.0
         assert config.GEMINI_THINKING_LEVEL == "minimal"
         assert config.GEMINI_MAX_TOKENS_EXTRACCION == 256
         assert config.GEMINI_MAX_TOKENS_EXPLICACION == 600
         assert config.GROQ_TIMEOUT == 4.0
+        assert config.GROQ_TIMEOUT + config.GEMINI_TIMEOUT < (
+            config.CHAT_TIMEOUT_TOTAL - config.CHAT_EXPLICACION_PLAZO_MINIMO
+        )
         assert config.GROQ_REASONING_EFFORT == "low"
         assert config.GROQ_MAX_TOKENS_EXTRACCION == 256
         assert config.GROQ_MAX_TOKENS_EXPLICACION == 600

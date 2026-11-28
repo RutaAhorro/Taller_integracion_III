@@ -73,12 +73,12 @@ def test_repositorio_productos_modulo_main_no_autocarga_en_import(monkeypatch):
 
 
 def test_orden_proveedores_y_logging_app_sin_apagar_uvicorn_access():
-    """Verifica orden Gemini -> Groq y que el logger `app` emite INFO sin deshabilitar `uvicorn.access`."""
+    """Verifica orden Groq -> Gemini y que el logger `app` emite INFO sin deshabilitar `uvicorn.access`."""
     import logging
 
     from app.main import configurar_logging, proveedor_respaldo
 
-    assert [proveedor.nombre for proveedor in proveedor_respaldo.proveedores] == ["gemini", "groq"]
+    assert [proveedor.nombre for proveedor in proveedor_respaldo.proveedores] == ["groq", "gemini"]
 
     configurar_logging()
     logger_app = logging.getLogger("app")
