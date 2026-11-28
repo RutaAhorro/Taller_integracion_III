@@ -30,6 +30,20 @@ al centro de Temuco. Si se rechaza el permiso o vence la solicitud, se informa
 y se conserva el origen anterior. En móvil se requiere HTTPS; localhost sirve
 para probar desde el mismo equipo.
 
+Se pide una lectura sin caché (`maximumAge: 0`), pero el navegador puede usar
+Wi-Fi o IP: `enableHighAccuracy` no garantiza GPS ni posición exacta. El marcador
+O muestra el origen devuelto por Motor; el círculo representa la precisión
+reportada. El encuadre incluye origen y paradas aunque el recorrido comience en
+una calle cercana. **Centrar en origen** y **Ver recorrido completo** permiten
+comprobarlo sin imprimir coordenadas personales en logs.
+
+Si el navegador entrega una posición equivocada, **Elegir punto de partida en
+el mapa** abre un selector independiente del resultado. Marcar, arrastrar o
+seleccionar el centro solo prepara un borrador; **Confirmar punto de partida**
+envía el origen y recalcula. Cancelar no cambia la ruta. No se consulta GPS ni
+se persiste el punto manual. El resultado lo identifica como elegido en el mapa,
+sin atribuirle precisión GPS. Se puede abrir incluso ante un error del cálculo.
+
 La recomendación muestra total de los artículos incluidos, ahorro frente a una
 sola tienda (o ausencia de comparación), distancia estimada con retorno al
 origen, paradas ordenadas y compra por sucursal. Con OTP vial configurado, muestra

@@ -16,6 +16,8 @@ const crearModulo = (codigo) =>
 /** Transpila únicamente para Node y sustituye las dependencias indicadas. */
 async function cargar(ruta, dependencias = {}) {
   let fuente = await readFile(new URL(ruta, import.meta.url), "utf8");
+  // El CSS de Leaflet lo procesa Vite; Node solo verifica el componente sin DOM.
+  fuente = fuente.replace('import "leaflet/dist/leaflet.css";', "");
   fuente = fuente.replace("import.meta.env.VITE_API_URL", '"/api/v1/"');
   for (const [nombre, destino] of Object.entries(dependencias)) {
     fuente = fuente
@@ -65,6 +67,30 @@ const resultado = await cargar("../src/features/rutas/ResultadoRuta.tsx", {
   "./presentacion-ruta": presentacion.url,
 });
 const { ResultadoRuta, enlaceGoogleMaps } = resultado.modulo;
+const selectorOrigen = await cargar(
+  "../src/features/rutas/SelectorOrigen.tsx",
+  {
+    react: import.meta.resolve("react"),
+    "@/components/ui/button": crearModulo(`
+    import { createElement } from ${JSON.stringify(import.meta.resolve("react"))};
+    export const Button = ({ children, variant, ...propiedades }) => createElement("button", propiedades, children);
+  `),
+  },
+);
+
+test("el selector manual exige marcar y confirmar sin solicitar ubicación al renderizar", () => {
+  const html = renderToStaticMarkup(
+    createElement(selectorOrigen.modulo.SelectorOrigen, {
+      inicial: null,
+      confirmar: () => assert.fail("No debe confirmar automáticamente."),
+      cancelar: () => {},
+    }),
+  );
+  assert.match(html, /Todavía no has marcado un punto/);
+  assert.match(html, /disabled=""[^>]*>Confirmar punto de partida/);
+  assert.match(html, /Usar centro del mapa/);
+  assert.match(html, /Cancelar selección/);
+});
 
 // ===== Cliente público =====
 
@@ -757,6 +783,7 @@ const pagina = await cargar("../src/features/rutas/RutaLista.tsx", {
   "./rutas-api": api.url,
   "./ResultadoRuta": resultado.url,
   "./MapaRuta": crearModulo("export const MapaRuta = () => null;"),
+  "./SelectorOrigen": crearModulo("export const SelectorOrigen = () => null;"),
   "./useRutaLista": crearModulo(
     'export const useRutaLista = () => ({ estado: { tipo: "sin_lista" }, nombres: {}, recalcular() {} });',
   ),

@@ -5,8 +5,20 @@ import { decodificarPolilinea } from "./geometria-ruta";
 import "leaflet/dist/leaflet.css";
 
 /** Renderiza calles, origen y paradas; limpia la instancia al cambiar el resultado. */
-export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
+export function MapaRuta({
+  datos,
+  precisionMetros = null,
+  origenManual = false,
+}: {
+  datos: RespuestaOptimizacion;
+  precisionMetros?: number | null;
+  origenManual?: boolean;
+}) {
   const contenedor = useRef<HTMLDivElement>(null);
+  const accionesMapa = useRef<{
+    centrarOrigen: () => void;
+    verRecorrido: () => void;
+  } | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     let cancelado = false;
@@ -16,12 +28,21 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
     void import("leaflet")
       .then((leaflet) => {
         if (cancelado || !contenedor.current) return;
-        const mapa = leaflet.map(contenedor.current, {
-          scrollWheelZoom: false,
-        });
+        // El círculo de precisión y el tooltip permanente necesitan una vista inicial.
+        const mapa = leaflet
+          .map(contenedor.current, {
+            scrollWheelZoom: false,
+            zoomAnimation: false,
+            fadeAnimation: false,
+            markerZoomAnimation: false,
+          })
+          .setView([datos.origen.lat, datos.origen.lon], 14);
         // El carrito flotante ocupa la esquina inferior; no debe tapar la atribución.
         mapa.attributionControl.setPosition("topright");
-        limpiar = () => mapa.remove();
+        limpiar = () => {
+          mapa.stop();
+          mapa.remove();
+        };
         /** Usa nodos de texto para no interpretar nombres o etiquetas como HTML. */
         function iconoMarcador(texto: string, color: string) {
           const etiqueta = document.createElement("span");
@@ -69,7 +90,7 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
               ),
             )
             .addTo(mapa);
-          leaflet
+          const marcadorOrigen = leaflet
             .marker([datos.origen.lat, datos.origen.lon], {
               title: "Origen",
               icon: iconoMarcador("O", "#1961b1"),
@@ -78,9 +99,33 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
             .bindTooltip(
               datos.origen.por_defecto
                 ? "Centro de Temuco (origen por defecto)"
-                : "Origen indicado",
+                : origenManual
+                  ? "Origen elegido en el mapa"
+                  : "Origen indicado por el navegador",
+              { permanent: true, direction: "top", offset: [0, -15] },
             );
+          // La precisión es una estimación del navegador, no una garantía de GPS.
+          if (
+            !datos.origen.por_defecto &&
+            !origenManual &&
+            precisionMetros !== null &&
+            Number.isFinite(precisionMetros) &&
+            precisionMetros > 0
+          ) {
+            leaflet
+              .circle([datos.origen.lat, datos.origen.lon], {
+                radius: precisionMetros,
+                color: "#1961b1",
+                fillOpacity: 0.08,
+                weight: 1,
+              })
+              .addTo(mapa);
+          }
+          const limites = trazado
+            .getBounds()
+            .extend(marcadorOrigen.getLatLng());
           for (const parada of datos.ruta.paradas) {
+            limites.extend([parada.lat, parada.lon]);
             const etiqueta = document.createElement("span");
             etiqueta.textContent = `${parada.orden}. ${parada.nombre}`;
             leaflet
@@ -91,9 +136,24 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
               .addTo(mapa)
               .bindTooltip(etiqueta);
           }
-          mapa.fitBounds(trazado.getBounds(), { padding: [30, 30] });
+          /** Incluye el origen aunque OTP haya ajustado el recorrido a la red vial. */
+          const verRecorrido = () =>
+            mapa.fitBounds(limites, {
+              padding: [45, 45],
+              maxZoom: 17,
+              animate: false,
+            });
+          accionesMapa.current = {
+            centrarOrigen: () => {
+              mapa.setView(marcadorOrigen.getLatLng(), 17, { animate: false });
+              marcadorOrigen.openTooltip();
+            },
+            verRecorrido,
+          };
+          verRecorrido();
           mapa.invalidateSize();
         } catch {
+          accionesMapa.current = null;
           limpiar();
           limpiar = undefined;
           setError(
@@ -106,9 +166,10 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
       });
     return () => {
       cancelado = true;
+      accionesMapa.current = null;
       limpiar?.();
     };
-  }, [datos]);
+  }, [datos, precisionMetros, origenManual]);
   if (datos.fuente_recorrido !== "otp_osm") return null;
   return (
     <section
@@ -124,6 +185,36 @@ export function MapaRuta({ datos }: { datos: RespuestaOptimizacion }) {
         Origen O, paradas numeradas y retorno. Distancias y tiempos estimados
         sobre OpenStreetMap, sin tráfico en vivo.
       </p>
+      <p className="text-xs text-muted-foreground">
+        {datos.origen.por_defecto
+          ? "O representa el centro de Temuco, no tu ubicación actual."
+          : origenManual
+            ? "O es el punto que confirmaste en el mapa. El trazado puede comenzar en una calle cercana por las restricciones de acceso del modo elegido."
+            : "O es el punto indicado por tu navegador. El trazado puede comenzar en una calle cercana por las restricciones de acceso del modo elegido."}
+        {!datos.origen.por_defecto && precisionMetros !== null && (
+          <>
+            {" "}
+            El círculo indica una precisión aproximada de{" "}
+            {Math.round(precisionMetros)} m; no garantiza tu posición exacta.
+          </>
+        )}
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          className="min-h-10 rounded-lg border border-border px-3 py-2 text-sm font-semibold"
+          onClick={() => accionesMapa.current?.centrarOrigen()}
+        >
+          Centrar en origen
+        </button>
+        <button
+          type="button"
+          className="min-h-10 rounded-lg border border-border px-3 py-2 text-sm font-semibold"
+          onClick={() => accionesMapa.current?.verRecorrido()}
+        >
+          Ver recorrido completo
+        </button>
+      </div>
       {error && (
         <p role="alert" className="text-sm">
           {error}

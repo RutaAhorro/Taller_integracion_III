@@ -14,6 +14,7 @@ import {
   type MedioTransporte,
 } from "./rutas-api";
 import { MapaRuta } from "./MapaRuta";
+import { SelectorOrigen } from "./SelectorOrigen";
 import { ArticulosSinCobertura, ResultadoRuta } from "./ResultadoRuta";
 import { useRutaLista, type EstadoRuta } from "./useRutaLista";
 
@@ -146,6 +147,11 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
     null,
   );
   const [ubicando, setUbicando] = useState(false);
+  const [seleccionandoOrigen, setSeleccionandoOrigen] = useState(false);
+  const [origenManual, setOrigenManual] = useState(false);
+  const [precisionUbicacion, setPrecisionUbicacion] = useState<number | null>(
+    null,
+  );
   const [avisoUbicacion, setAvisoUbicacion] = useState("");
   const solicitudUbicacion = useRef(0);
   useEffect(
@@ -161,6 +167,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
   );
   /** Solicita permiso sin persistir coordenadas ni consultar ubicación al entrar. */
   function usarUbicacion() {
+    setSeleccionandoOrigen(false);
     if (!navigator.geolocation) {
       setAvisoUbicacion(
         "Este navegador no permite obtener tu ubicación. Puedes usar el centro de Temuco.",
@@ -178,8 +185,10 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
           lat: posicion.coords.latitude,
           lon: posicion.coords.longitude,
         });
+        setOrigenManual(false);
+        setPrecisionUbicacion(posicion.coords.accuracy);
         setAvisoUbicacion(
-          `Ubicación obtenida (precisión aproximada: ${Math.round(posicion.coords.accuracy)} m). Revisa el punto de partida en el mapa.`,
+          `El navegador indicó una ubicación (precisión aproximada: ${Math.round(posicion.coords.accuracy)} m). Confirma el marcador O en el mapa; en un computador puede no corresponder a tu posición física exacta.`,
         );
       },
       (errorObtenido) => {
@@ -191,7 +200,7 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
             : "No se pudo obtener tu ubicación. Se conserva el origen indicado.",
         );
       },
-      { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 },
+      { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 },
     );
   }
   return (
@@ -306,7 +315,9 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                   <p className="text-sm">
                     <strong>Punto de partida:</strong>{" "}
                     {origen
-                      ? "Ubicación indicada desde este navegador"
+                      ? origenManual
+                        ? "Punto elegido en el mapa"
+                        : "Ubicación indicada desde este navegador"
                       : "Centro de Temuco (por defecto)"}
                   </p>
                   <div className="flex flex-wrap gap-2">
@@ -324,13 +335,43 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
                       onClick={() => {
                         solicitudUbicacion.current++;
                         setUbicando(false);
+                        setSeleccionandoOrigen(true);
+                      }}
+                    >
+                      Elegir punto de partida en el mapa
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        solicitudUbicacion.current++;
+                        setUbicando(false);
                         setOrigen(null);
+                        setOrigenManual(false);
+                        setSeleccionandoOrigen(false);
+                        setPrecisionUbicacion(null);
                         setAvisoUbicacion("Se usará el centro de Temuco.");
                       }}
                     >
                       Usar centro de Temuco
                     </Button>
                   </div>
+                  {seleccionandoOrigen && (
+                    <SelectorOrigen
+                      inicial={origen}
+                      cancelar={() => setSeleccionandoOrigen(false)}
+                      confirmar={(punto) => {
+                        solicitudUbicacion.current++;
+                        setUbicando(false);
+                        setOrigen(punto);
+                        setOrigenManual(true);
+                        setPrecisionUbicacion(null);
+                        setSeleccionandoOrigen(false);
+                        setAvisoUbicacion(
+                          "Punto de partida confirmado en el mapa. Se recalcula la ruta desde ese lugar.",
+                        );
+                      }}
+                    />
+                  )}
                   <p className="text-xs text-muted-foreground">
                     La ubicación solo se solicita con tu permiso y se envía al
                     Motor para calcular. No se guarda en tu perfil. En móvil se
@@ -351,7 +392,11 @@ function ContenidoRuta({ listaID }: { listaID: string | null }) {
             />
             {estado.tipo === "resultado" &&
               estado.datos.fuente_recorrido === "otp_osm" && (
-                <MapaRuta datos={estado.datos} />
+                <MapaRuta
+                  datos={estado.datos}
+                  origenManual={origenManual}
+                  precisionMetros={origen ? precisionUbicacion : null}
+                />
               )}
           </div>
         </div>

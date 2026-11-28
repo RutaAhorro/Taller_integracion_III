@@ -55,6 +55,22 @@ Las pruebas `go test ./...` no usan BD compartida ni requieren OTP. El test
 el algoritmo y el handler reales con listas y precios controlados en memoria.
 Esto no equivale a un E2E con Catálogo/PostgreSQL reales.
 
+### Clúster: fondo del mapa frente al grafo
+
+El navegador obtiene el fondo de `tile.openstreetmap.org`; no lee el PBF ni
+`streetGraph.obj`. Esos archivos son datos de entrada y un artefacto de OTP,
+no archivos estáticos del frontend.
+
+Para servir recorridos viales en Kubernetes falta desplegar OTP, su Service y
+un grafo del mismo formato/versionado (por ejemplo, en un volumen persistente
+de solo lectura, o incluido en una imagen publicada en el registry).
+Motor deberá configurar `RUTAS_OTP_URL` con ese Service, sin guiones bajos.
+Hay que verificar memoria disponible, almacenamiento y NetworkPolicy antes de
+desplegar. El complemento Compose no configura Kubernetes. Publicar únicamente
+el frontend nuevo no habilita OTP: las solicitudes viales responderán 503.
+No se suben datos pesados a Git ni se depende de archivos del computador de
+desarrollo desde el clúster.
+
 Servicio Go (`net/http`) que implementa el CRUD de listas de compra y de sus
 artículos sobre tablas de `rutas.*` (SUP-240, SUP-241). Se reescribió desde Python en SUP-348
 ([D11](../../docs/Decisiones/11_Motor_de_rutas_en_Go.md)) sin cambiar el
